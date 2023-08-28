@@ -1,0 +1,5 @@
+scripts/venv
+.env
+**/log.out
+**/history.json
+.vscode
