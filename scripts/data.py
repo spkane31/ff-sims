@@ -3,15 +3,78 @@ import json
 import os
 
 from dotenv import find_dotenv, load_dotenv
-from espn_api.football import League, matchup
-
-# import necessary packages
-import matplotlib.pyplot as plt
+from espn_api.football import League, BoxPlayer
+from prettytable import PrettyTable
 
 load_dotenv(find_dotenv())
 
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
+
+
+def flatten_extend(matrix):
+    flat_list = []
+    for row in matrix:
+        flat_list.extend(row)
+    return flat_list
+
+
+def get_lineup_dict(box_score: list[BoxPlayer]):
+    return [
+        {
+            "name": player.name,
+            "projection": player.projected_points,
+            "actual": player.points,
+            "diff": player.points - player.projected_points,
+            "position": player.position,
+            "status": player.slot_position,
+        }
+        for player in box_score
+    ]
+
+
+def calc_team_overperformance(data: dict[str, list[float]]) -> None:
+    # Print out averages for ESPN diff
+    pt = PrettyTable()
+    pt.field_names = ["#", "Team", "Total Difference"]
+
+    rows = []
+    for team in data:
+        rows.append([team, round(sum(data[team]), 2)])
+
+    rows = sorted(rows, key=lambda row: row[1], reverse=True)
+
+    sum_out_perform = []
+    for idx, row in enumerate(rows):
+        pt.add_row([idx + 1, row[0], row[1]])
+        sum_out_perform.append(row[1])
+    pt.add_row(["", "", ""])
+    pt.add_row(["", "Average", sum(sum_out_perform) / len(sum_out_perform)])
+
+    print("ESPN Accuracy by Team")
+    print(pt)
+
+
+def calc_position_performances(data: dict[str, list[float]]) -> None:
+    pt = PrettyTable()
+    pt.field_names = ["#", "Position", "Total Difference"]
+
+    rows = []
+    for pos in data:
+        rows.append([pos, round(sum(data[pos]), 2)])
+
+    rows = sorted(rows, key=lambda row: row[1], reverse=True)
+
+    sum_out_perform = []
+    for idx, row in enumerate(rows):
+        pt.add_row([idx + 1, row[0], row[1]])
+        sum_out_perform.append(row[1])
+
+    pt.add_row(["", "", ""])
+    pt.add_row(["", "Average", sum(sum_out_perform) / len(sum_out_perform)])
+
+    print("ESPN Accuracy by Position")
+    print(pt)
 
 
 def scrape_matchups():
@@ -25,38 +88,54 @@ def scrape_matchups():
         matchup_data = {}
 
         matchup_data[year] = {}
-        league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2)
+        league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
-        diffs = []
+        diffs = {}
+        positional_diffs = {}
 
         for week in range(1, 15):
             matchup_data[year][week] = []
             print(PRINT_STR.format(year, week))
             for box_score in league.box_scores(week):
+                home_owner = box_score.home_team.owner.rstrip(" ")
+                away_owner = box_score.away_team.owner.rstrip(" ")
                 matchup_data[year][week].append(
                     {
-                        "home_team": box_score.home_team.owner.rstrip(" "),
-                        "away_team": box_score.away_team.owner.rstrip(" "),
+                        "home_team": home_owner,
+                        "away_team": away_owner,
                         "home_team_score": box_score.home_score,
                         "home_team_projected_score": box_score.home_projected,
                         "away_team_score": box_score.away_score,
                         "away_team_projected_score": box_score.away_projected,
+                        "home_lineup": get_lineup_dict(box_score.home_lineup),
+                        "away_lineup": get_lineup_dict(box_score.away_lineup),
                     }
                 )
                 if box_score.home_score > 0 and box_score.away_score > 0:
-                    diffs.append(box_score.home_score - box_score.home_projected)
-                    diffs.append(box_score.away_score - box_score.away_projected)
+                    try:
+                        diffs[home_owner].append(box_score.home_score - box_score.home_projected)
+                    except KeyError:
+                        diffs[home_owner] = [box_score.home_score - box_score.home_projected]
 
-        # Print out averages for ESPN diff
-        print(f"Average difference in scores: {sum(diffs) / len(diffs)}")
-        print(f"Std. Dev. in scores vs projected: {std_dev(diffs)}")
+                    try:
+                        diffs[away_owner].append(box_score.away_score - box_score.away_projected)
+                    except KeyError:
+                        diffs[away_owner] = [box_score.away_score - box_score.away_projected]
 
-        # Enable later
-        # plotting labelled histogram
-        # plt.hist(diffs, density=True)
-        # plt.xlabel('score differential')
-        # plt.ylabel('Count')
-        # plt.savefig("img.png")
+                for player in get_lineup_dict(box_score.home_lineup):
+                    try:
+                        positional_diffs[player["position"]].append(player["diff"])
+                    except KeyError:
+                        positional_diffs[player["position"]] = [player["diff"]]
+
+                for player in get_lineup_dict(box_score.away_lineup):
+                    try:
+                        positional_diffs[player["position"]].append(player["diff"])
+                    except KeyError:
+                        positional_diffs[player["position"]] = [player["diff"]]
+
+        calc_team_overperformance(diffs)
+        calc_position_performances(positional_diffs)
 
         # draft stuff
         draft_data = []
