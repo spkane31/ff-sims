@@ -3,3 +3,5 @@ scripts/venv
 **/log.out
 **/history.json
 .vscode
+
+**/__pycache__
