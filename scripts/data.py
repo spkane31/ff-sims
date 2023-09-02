@@ -1,6 +1,8 @@
 import math
 import json
 import os
+import logging
+import sys
 
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League, BoxPlayer
@@ -12,6 +14,17 @@ SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
 
+if os.environ.get("DEBUG_LEVEL") != "" and False:
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+
+
 def flatten_extend(matrix):
     flat_list = []
     for row in matrix:
@@ -19,7 +32,7 @@ def flatten_extend(matrix):
     return flat_list
 
 
-def get_lineup_dict(box_score: list[BoxPlayer]):
+def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
     return [
         {
             "name": player.name,
@@ -33,6 +46,7 @@ def get_lineup_dict(box_score: list[BoxPlayer]):
     ]
 
 
+# TODO seankane: Update this to take the full data table, meaning it'll have to calculate everything frest.
 def calc_team_overperformance(data: dict[str, list[float]]) -> None:
     # Print out averages for ESPN diff
     pt = PrettyTable()
@@ -55,6 +69,7 @@ def calc_team_overperformance(data: dict[str, list[float]]) -> None:
     print(pt)
 
 
+# TODO seankane: Update this to take the full data table, meaning it'll have to calculate everything frest.
 def calc_position_performances(data: dict[str, list[float]]) -> None:
     pt = PrettyTable()
     pt.field_names = ["#", "Position", "Total Difference"]
@@ -77,10 +92,61 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
     print(pt)
 
 
-def scrape_matchups():
+def perform_draft_analytics(data: dict[str, any], league: League):
+    points_per_team = {}
+
+    for pick in data["draft_data"]:
+        player = league.player_info(playerId=pick["player_id"])
+
+        round_number = pick["round_number"]
+        round_pick = pick["round_pick"]
+        player_name = pick["player_name"]
+        team_name = pick["team_name"]
+
+        try:
+            player_points = pick["total_points"]
+        except KeyError:
+            # Get total points and add to dict
+            player_points = player.total_points
+            pick["total_points"] = player_points
+
+        print(
+            f"Draft position: {((round_number - 1) * 10) + round_pick}, player: {player_name}, total points: {player_points}"
+        )
+
+        try:
+            points_per_team[team_name] += player_points
+        except KeyError:
+            points_per_team[team_name] = player_points
+
+    sortable_list = []
+    for team_name in points_per_team:
+        sortable_list.append([team_name, points_per_team[team_name]])
+
+    sortable_list = sorted(sortable_list, key=lambda row: row[1], reverse=True)
+
+    pt = PrettyTable()
+    pt.field_names = ["#", "Team", "Total Drafted Points"]
+
+    for idx, row in enumerate(sortable_list):
+        pt.add_row([idx, row[0], round(row[1], 2)])
+
+    print(pt)
+
+    return
+
+
+def scrape_matchups(file_name: str = "history.json") -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
-    all_data = {}
+
     years = [2022]
+    all_data = {}
+
+    if os.path.isfile(file_name):
+        # Read this file and return the data
+        logging.info(f"found existing data, remove {file_name} to regen")
+        f = open(file_name)
+        return json.load(f), League(league_id=345674, year=years[0], swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     PRINT_STR = "Year: {}\tWeek: {}"
 
@@ -134,9 +200,6 @@ def scrape_matchups():
                     except KeyError:
                         positional_diffs[player["position"]] = [player["diff"]]
 
-        calc_team_overperformance(diffs)
-        calc_position_performances(positional_diffs)
-
         # draft stuff
         draft_data = []
         for pick in league.draft:
@@ -145,6 +208,7 @@ def scrape_matchups():
                     "player_name": pick.playerName,
                     "player_id": pick.playerId,
                     "team": pick.team.team_id,
+                    "team_name": pick.team.team_name,
                     "round_number": pick.round_num,
                     "round_pick": pick.round_pick,
                 }
@@ -157,8 +221,12 @@ def scrape_matchups():
 
         all_data[year] = matchup_data
 
-    with open("history.json", mode="w") as f:
-        json.dump(output_data, f, indent=4)
+    return output_data, league
+
+
+def write_to_file(data: dict[str, any], file_name: str = "history.json") -> None:
+    with open(file_name, mode="w") as f:
+        json.dump(data, f, indent=4)
 
 
 def std_dev(arr: list[int | float]) -> int | float:
@@ -169,4 +237,20 @@ def std_dev(arr: list[int | float]) -> int | float:
     return math.pow(sum_squares / len(arr), 0.5)
 
 
-scrape_matchups()
+if __name__ == "__main__":
+    logging.info("Scraping fantasy football data from ESPN")
+    data, league = scrape_matchups()
+
+    try:
+        logging.info("calculating stats about the draft")
+        perform_draft_analytics(data, league)
+
+        raise Exception("early quit")
+
+        logging.info("calculating overperformance by team")
+        calc_team_overperformance(data)
+
+        logging.info("calculating basic statistics for positional data")
+        calc_position_performances(data)
+    finally:
+        write_to_file(data)
