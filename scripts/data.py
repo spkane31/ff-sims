@@ -1,7 +1,8 @@
 import json
-import os
 import logging
+import os
 import sys
+import time
 
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League, BoxPlayer
@@ -47,24 +48,51 @@ def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
 
 # TODO seankane: Update this to take the full data table, meaning it'll have to calculate everything frest.
 def calc_team_overperformance(data: dict[str, list[float]]) -> None:
-    # Print out averages for ESPN diff
+    """calc_team_overperformances calculates how much a teams starters outperform the ESPN projections"""
+
+    differences_by_team = {}
+
+    matchup_data = data["matchup_data"]
+    for _, year_data in matchup_data.items():
+        for _, matchups in year_data.items():
+            for match_result in matchups:
+                try:
+                    differences_by_team[match_result["home_team"]].append(
+                        match_result["home_team_score"] - match_result["home_team_projected_score"]
+                    )
+                except KeyError:
+                    differences_by_team[match_result["home_team"]] = [
+                        match_result["home_team_score"] - match_result["home_team_projected_score"]
+                    ]
+
+                try:
+                    differences_by_team[match_result["away_team"]].append(
+                        match_result["away_team_score"] - match_result["away_team_projected_score"]
+                    )
+                except KeyError:
+                    differences_by_team[match_result["away_team"]] = [
+                        match_result["away_team_score"] - match_result["away_team_projected_score"]
+                    ]
+
     pt = PrettyTable()
-    pt.field_names = ["#", "Team", "Total Difference"]
+    pt.field_names = ["#", "Team", "Total Difference", "Avg. Difference"]
 
     rows = []
-    for team in data:
-        rows.append([team, round(sum(data[team]), 2)])
+    for team, data in differences_by_team.items():
+        rows.append(
+            [
+                team,
+                round(sum(data), 2),
+                round(mean(data), 2),
+            ]
+        )
 
     rows = sorted(rows, key=lambda row: row[1], reverse=True)
 
-    sum_out_perform = []
     for idx, row in enumerate(rows):
-        pt.add_row([idx + 1, row[0], row[1]])
-        sum_out_perform.append(row[1])
-    pt.add_row(["", "", ""])
-    pt.add_row(["", "Average", sum(sum_out_perform) / len(sum_out_perform)])
+        pt.add_row(flatten_extend([[idx], row]))
 
-    print("ESPN Accuracy by Team")
+    pt.title = "ESPN Accuracy by Team (Actual - Projected score)"
     print(pt)
 
 
@@ -78,7 +106,6 @@ def add_positional_diffs(diffs_per_position: dict[str, float], lineup: dict[str,
     return
 
 
-# TODO seankane: Update this to take the full data table, meaning it'll have to calculate everything frest.
 # Get the rosters per week and look at projection vs actual by position
 def calc_position_performances(data: dict[str, list[float]]) -> None:
     diff_per_position = {}
@@ -119,7 +146,7 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
     normal_test = stats.normaltest(all_diffs)
     pt.add_row(["Average", round(mean(all_diffs), 2), round(std_dev(all_diffs), 2), normal_test.pvalue])
 
-    print("ESPN Accuracy by Position")
+    pt.title = "ESPN Accuracy by Position"
     print(pt)
 
 
@@ -218,7 +245,7 @@ def scrape_matchups(file_name: str = "history.json", years=YEARS) -> dict[str, a
         league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
         diffs = {}
-        positional_diffs = {}
+        # positional_diffs = {}
 
         for week in range(1, 15):
             matchup_data[year][week] = []
@@ -248,18 +275,6 @@ def scrape_matchups(file_name: str = "history.json", years=YEARS) -> dict[str, a
                         diffs[away_owner].append(box_score.away_score - box_score.away_projected)
                     except KeyError:
                         diffs[away_owner] = [box_score.away_score - box_score.away_projected]
-
-                for player in get_lineup_dict(box_score.home_lineup):
-                    try:
-                        positional_diffs[player["position"]].append(player["diff"])
-                    except KeyError:
-                        positional_diffs[player["position"]] = [player["diff"]]
-
-                for player in get_lineup_dict(box_score.away_lineup):
-                    try:
-                        positional_diffs[player["position"]].append(player["diff"])
-                    except KeyError:
-                        positional_diffs[player["position"]] = [player["diff"]]
 
         # draft stuff
         draft_data = []
@@ -332,7 +347,6 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
 
 
 # TODO list:
-#  * Fix up current todos
 #  * Add a season simulator
 #    * Probably need to migrate to using a poisson distribution
 #    * Add a best lineup picker
@@ -350,6 +364,7 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
 #  Should probably do this w/ and without QBs.
 
 if __name__ == "__main__":
+    start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
     data, league = scrape_matchups()
 
@@ -363,10 +378,9 @@ if __name__ == "__main__":
         logging.info("calculating basic statistics for positional data")
         calc_position_performances(data)
 
-        raise Exception("early quit")
-
         logging.info("calculating overperformance by team")
         calc_team_overperformance(data)
 
     finally:
         write_to_file(data)
+        print(f"Completed in {round(time.time() - start,2)} seconds")
