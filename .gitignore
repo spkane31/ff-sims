@@ -5,3 +5,5 @@ scripts/venv
 .vscode
 
 **/__pycache__
+scripts/*.json
+scripts/*.txt

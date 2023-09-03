@@ -46,7 +46,6 @@ def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
     ]
 
 
-# TODO seankane: Update this to take the full data table, meaning it'll have to calculate everything frest.
 def calc_team_overperformance(data: dict[str, list[float]]) -> None:
     """calc_team_overperformances calculates how much a teams starters outperform the ESPN projections"""
 
@@ -290,6 +289,12 @@ def scrape_matchups(file_name: str = "history.json", years=YEARS) -> dict[str, a
                 }
             )
 
+        # Waiver wire and draft activity
+        for offset in [0, 25, 50, 75]:
+            activities = league.recent_activity(25, offset=offset)
+            for activity in activities:
+                print(activity)
+
         output_data = {
             "matchup_data": matchup_data,
             "draft_data": draft_data,
@@ -367,6 +372,7 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
     data, league = scrape_matchups()
+    # exit(0)
 
     try:
         logging.info("calculating stats about the draft")
