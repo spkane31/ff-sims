@@ -83,8 +83,6 @@ class Roster:
 
     def projected_points(self) -> float:
         roster = self.best_projected_lineup()
-        for p in roster:
-            print(f"{str(p)}\n")
         return sum([player.projection for player in roster])
 
     def best_projected_lineup(self) -> list[Player]:
@@ -107,7 +105,6 @@ class Roster:
         for player in projected_roster:
             (mean, std_dev) = positional_stats[player.position]
             rng = sample_normal_distribution(mean, std_dev)
-            print(rng)
-            total_points += player.projection + rng
+            total_points += (player.projection) * (1 + rng)
 
         return total_points

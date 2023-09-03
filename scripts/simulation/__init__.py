@@ -1,3 +1,3 @@
-from ._season import simulate_season
+from ._season import SeasonSimulation
 
-__all__ = ["simulate_season"]
+__all__ = ["SeasonSimulation"]

@@ -10,7 +10,7 @@ from prettytable import PrettyTable
 from scipy import stats
 
 from models.roster import Roster
-from simulation import simulate_season
+from simulation import SeasonSimulation
 from utils import write_to_file, mean, std_dev, flatten_extend
 
 
@@ -19,7 +19,7 @@ load_dotenv(find_dotenv())
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
-YEARS = [2022]
+YEARS = [2023]
 
 
 if os.environ.get("DEBUG_LEVEL") != "" and False:
@@ -99,6 +99,8 @@ def calc_team_overperformance(data: dict[str, list[float]]) -> None:
 def add_positional_diffs(diffs_per_position: dict[str, float], lineup: dict[str, any]) -> None:
     for player in lineup:
         diff = player["actual"] - player["projection"]
+        if player["projection"] != 0:
+            diff = diff / player["projection"]
         try:
             diffs_per_position[player["position"]].append(diff)
         except KeyError:
@@ -120,14 +122,15 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
                 add_positional_diffs(diff_per_position, matchup["away_lineup"])
 
     pt = PrettyTable()
-    pt.field_names = ["Position", "Average Difference", "Std. Dev.", "P-Value"]
+    pt.field_names = ["Position", "Average Difference (%)", "Std. Dev.", "P-Value"]
 
+    pct_string = "%"  # Stupid python hack because you cannot put a '%' in an f-string
     all_diffs = []
     rows = []
     idx = 1
     for pos, items in diff_per_position.items():
         normal_test = stats.normaltest(items)
-        rows.append([round(mean(items), 2), round(std_dev(items), 2), normal_test.pvalue])
+        rows.append([pos, f"{round(100 * mean(items), 2)} {pct_string}", round(std_dev(items), 2), normal_test.pvalue])
         all_diffs = flatten_extend([all_diffs, items])
         idx += 1
         positional_data[pos] = (mean(items), std_dev(items))
@@ -135,7 +138,7 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
     rows = sorted(rows, key=lambda row: row[1], reverse=True)
 
     for idx, row in enumerate(rows):
-        pt.add_row(flatten_extend([[idx], row]))
+        pt.add_row(row)
 
     pt.add_row(
         [
@@ -362,16 +365,13 @@ def run_monte_carlo_simulation_from_week(
 ) -> None:
     season_data = data["matchup_data"][str(YEARS[0])]
 
-    for i in range(0, n):
-        results = simulate_season(season_data, positional_data)
+    season_simulation = SeasonSimulation(season_data, positional_data)
+    season_simulation.run(100)
+    season_simulation.print_regular_season_predictions()
 
 
 # TODO list:
-#  * The differences per position needs to be changed to a percentage. Has to be normalized
 #  * Add a season simulator
-#    * Probably need to migrate to using a poisson distribution
-#    * Add a best lineup picker
-#    * Add a random point generator per position based on ESPN accuracy
 #    * Last place chances
 #    * Playoff odds
 #  * Add a trade analyzer
