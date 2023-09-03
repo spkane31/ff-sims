@@ -10,6 +10,7 @@ from prettytable import PrettyTable
 from scipy import stats
 
 from models.roster import Roster
+from simulation import simulate_season
 from utils import write_to_file, mean, std_dev, flatten_extend
 
 
@@ -106,7 +107,9 @@ def add_positional_diffs(diffs_per_position: dict[str, float], lineup: dict[str,
 
 
 # Get the rosters per week and look at projection vs actual by position
+# Returns a dictionary mapping position to a (mean, std_dev) tuple
 def calc_position_performances(data: dict[str, list[float]]) -> None:
+    positional_data = {}
     diff_per_position = {}
 
     matchup_data = data["matchup_data"]
@@ -127,6 +130,7 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
         rows.append([round(mean(items), 2), round(std_dev(items), 2), normal_test.pvalue])
         all_diffs = flatten_extend([all_diffs, items])
         idx += 1
+        positional_data[pos] = (mean(items), std_dev(items))
 
     rows = sorted(rows, key=lambda row: row[1], reverse=True)
 
@@ -147,6 +151,8 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
 
     pt.title = "ESPN Accuracy by Position"
     print(pt)
+
+    return positional_data
 
 
 # Performs two calculations on draft data:
@@ -351,7 +357,17 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
     return None
 
 
+def run_monte_carlo_simulation_from_week(
+    data: dict[str, any], positional_data: dict[str, tuple[float, float]], week: int = 0, n: int = 10000
+) -> None:
+    season_data = data["matchup_data"][str(YEARS[0])]
+
+    for i in range(0, n):
+        results = simulate_season(season_data, positional_data)
+
+
 # TODO list:
+#  * The differences per position needs to be changed to a percentage. Has to be normalized
 #  * Add a season simulator
 #    * Probably need to migrate to using a poisson distribution
 #    * Add a best lineup picker
@@ -372,20 +388,21 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
     data, league = scrape_matchups()
-    # exit(0)
 
     try:
-        logging.info("calculating stats about the draft")
+        # logging.info("calculating stats about the draft")
 
-        perform_draft_analytics(data, league)
+        # perform_draft_analytics(data, league)
 
-        perform_roster_analysis(data)
+        # perform_roster_analysis(data)
+
+        # logging.info("calculating overperformance by team")
+        # calc_team_overperformance(data)
 
         logging.info("calculating basic statistics for positional data")
-        calc_position_performances(data)
+        position_data = calc_position_performances(data)
 
-        logging.info("calculating overperformance by team")
-        calc_team_overperformance(data)
+        run_monte_carlo_simulation_from_week(data, position_data, n=1, week=3)
 
     finally:
         write_to_file(data)
