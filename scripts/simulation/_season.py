@@ -1,10 +1,10 @@
 from prettytable import PrettyTable as PT
 
-
 from models import Roster
 
 from utils import flatten_extend
 
+# This has to be hard coded for now, can't find a way to get the information from the API
 _DIVISIONAL_BREAKDOWN = {
     "EAST": ["nick toth", "Connor Brand", "mitch lichtinger", "Nick DeHaven", "Josh Doepker"],
     "WEST": ["Kyle Burns", "Ethan Moran", "jack aldridge", "Sean  Kane", "Kevin Dailey"],

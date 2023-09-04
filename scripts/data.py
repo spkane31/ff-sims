@@ -19,8 +19,6 @@ load_dotenv(find_dotenv())
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
-YEARS = [2023]
-
 
 if os.environ.get("DEBUG_LEVEL") != "" and False:
     root = logging.getLogger()
@@ -53,26 +51,25 @@ def calc_team_overperformance(data: dict[str, list[float]]) -> None:
     differences_by_team = {}
 
     matchup_data = data["matchup_data"]
-    for _, year_data in matchup_data.items():
-        for _, matchups in year_data.items():
-            for match_result in matchups:
-                try:
-                    differences_by_team[match_result["home_team"]].append(
-                        match_result["home_team_score"] - match_result["home_team_projected_score"]
-                    )
-                except KeyError:
-                    differences_by_team[match_result["home_team"]] = [
-                        match_result["home_team_score"] - match_result["home_team_projected_score"]
-                    ]
+    for _, matchups in matchup_data.items():
+        for match_result in matchups:
+            try:
+                differences_by_team[match_result["home_team"]].append(
+                    match_result["home_team_score"] - match_result["home_team_projected_score"]
+                )
+            except KeyError:
+                differences_by_team[match_result["home_team"]] = [
+                    match_result["home_team_score"] - match_result["home_team_projected_score"]
+                ]
 
-                try:
-                    differences_by_team[match_result["away_team"]].append(
-                        match_result["away_team_score"] - match_result["away_team_projected_score"]
-                    )
-                except KeyError:
-                    differences_by_team[match_result["away_team"]] = [
-                        match_result["away_team_score"] - match_result["away_team_projected_score"]
-                    ]
+            try:
+                differences_by_team[match_result["away_team"]].append(
+                    match_result["away_team_score"] - match_result["away_team_projected_score"]
+                )
+            except KeyError:
+                differences_by_team[match_result["away_team"]] = [
+                    match_result["away_team_score"] - match_result["away_team_projected_score"]
+                ]
 
     pt = PrettyTable()
     pt.field_names = ["#", "Team", "Total Difference", "Avg. Difference"]
@@ -115,11 +112,10 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
     diff_per_position = {}
 
     matchup_data = data["matchup_data"]
-    for _, year_data in matchup_data.items():
-        for _, matchups in year_data.items():
-            for matchup in matchups:
-                add_positional_diffs(diff_per_position, matchup["home_lineup"])
-                add_positional_diffs(diff_per_position, matchup["away_lineup"])
+    for _, matchups in matchup_data.items():
+        for matchup in matchups:
+            add_positional_diffs(diff_per_position, matchup["home_lineup"])
+            add_positional_diffs(diff_per_position, matchup["away_lineup"])
 
     pt = PrettyTable()
     pt.field_names = ["Position", "Average Difference (%)", "Std. Dev.", "P-Value"]
@@ -230,86 +226,82 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     return
 
 
-def scrape_matchups(file_name: str = "history.json", years=YEARS) -> dict[str, any]:
+def scrape_matchups(file_name: str = "history.json", year=2022) -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
-
-    all_data = {}
 
     if os.path.isfile(file_name):
         # Read this file and return the data
         logging.info(f"found existing data, remove {file_name} to regen")
         f = open(file_name)
         try:
-            return json.load(f), League(league_id=345674, year=years[0], swid=SWID, espn_s2=ESPN_S2, debug=False)
+            return json.load(f), League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
         except json.decoder.JSONDecodeError:
             pass
 
     PRINT_STR = "Year: {}\tWeek: {}"
 
-    for year in years:
-        matchup_data = {}
+    matchup_data = {}
 
-        matchup_data[year] = {}
-        league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
-        diffs = {}
-        # positional_diffs = {}
-
-        for week in range(1, 15):
-            matchup_data[year][week] = []
-            print(PRINT_STR.format(year, week))
-            for box_score in league.box_scores(week):
-                home_owner = box_score.home_team.owner.rstrip(" ")
-                away_owner = box_score.away_team.owner.rstrip(" ")
-                matchup_data[year][week].append(
-                    {
-                        "home_team": home_owner,
-                        "away_team": away_owner,
-                        "home_team_score": box_score.home_score,
-                        "home_team_projected_score": box_score.home_projected,
-                        "away_team_score": box_score.away_score,
-                        "away_team_projected_score": box_score.away_projected,
-                        "home_lineup": get_lineup_dict(box_score.home_lineup),
-                        "away_lineup": get_lineup_dict(box_score.away_lineup),
-                    }
-                )
-                if box_score.home_score > 0 and box_score.away_score > 0:
-                    try:
-                        diffs[home_owner].append(box_score.home_score - box_score.home_projected)
-                    except KeyError:
-                        diffs[home_owner] = [box_score.home_score - box_score.home_projected]
-
-                    try:
-                        diffs[away_owner].append(box_score.away_score - box_score.away_projected)
-                    except KeyError:
-                        diffs[away_owner] = [box_score.away_score - box_score.away_projected]
-
-        # draft stuff
-        draft_data = []
-        for pick in league.draft:
-            draft_data.append(
+    for week in range(1, 15):
+        matchup_data[week] = []
+        print(PRINT_STR.format(year, week))
+        for box_score in league.box_scores(week):
+            home_owner = box_score.home_team.owner.rstrip(" ")
+            away_owner = box_score.away_team.owner.rstrip(" ")
+            matchup_data[week].append(
                 {
-                    "player_name": pick.playerName,
-                    "player_id": pick.playerId,
-                    "team": pick.team.team_id,
-                    "team_name": pick.team.team_name,
-                    "round_number": pick.round_num,
-                    "round_pick": pick.round_pick,
+                    "home_team": home_owner,
+                    "away_team": away_owner,
+                    "home_team_score": box_score.home_score,
+                    "home_team_projected_score": box_score.home_projected,
+                    "away_team_score": box_score.away_score,
+                    "away_team_projected_score": box_score.away_projected,
+                    "home_lineup": get_lineup_dict(box_score.home_lineup),
+                    "away_lineup": get_lineup_dict(box_score.away_lineup),
                 }
             )
 
-        # Waiver wire and draft activity
-        for offset in [0, 25, 50, 75]:
-            activities = league.recent_activity(25, offset=offset)
-            for activity in activities:
-                print(activity)
+    # draft stuff
+    draft_data = []
+    for pick in league.draft:
+        draft_data.append(
+            {
+                "player_name": pick.playerName,
+                "player_id": pick.playerId,
+                "team": pick.team.team_id,
+                "team_name": pick.team.team_name,
+                "round_number": pick.round_num,
+                "round_pick": pick.round_pick,
+            }
+        )
 
-        output_data = {
-            "matchup_data": matchup_data,
-            "draft_data": draft_data,
-        }
+    activities = []
+    # Waiver wire and draft activity
+    for offset in [0, 25, 50, 75, 100, 125]:
+        recent_activity = league.recent_activity(25, offset=offset)
+        for activity in recent_activity:
+            print(activity)
+            activities.append(
+                {
+                    "date": activity.date,
+                    "actions": [
+                        {
+                            "team": action[0].team_name,
+                            "action": action[1],
+                            "player": {"name": action[2].name, "player_id": action[2].playerId},
+                        }
+                        for action in activity.actions
+                    ],
+                }
+            )
 
-        all_data[year] = matchup_data
+    output_data = {
+        "matchup_data": matchup_data,
+        "draft_data": draft_data,
+        "activity_data": activities,
+    }
 
     return output_data, league
 
@@ -318,28 +310,27 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
     matchup_data = data["matchup_data"]
     points_left_on_bench = {}
 
-    for year in YEARS:
-        for week, matchups in matchup_data[str(year)].items():
-            for matchup in matchups:
-                home_roster = Roster(matchup["home_lineup"])
-                away_roster = Roster(matchup["away_lineup"])
+    for week, matchups in matchup_data.items():
+        for matchup in matchups:
+            home_roster = Roster(matchup["home_lineup"])
+            away_roster = Roster(matchup["away_lineup"])
 
-                home_diff = home_roster.maximum_points() - home_roster.points_scored()
-                try:
-                    points_left_on_bench[matchup["home_team"]] += home_diff
-                except KeyError:
-                    points_left_on_bench[matchup["home_team"]] = home_diff
+            home_diff = home_roster.maximum_points() - home_roster.points_scored()
+            try:
+                points_left_on_bench[matchup["home_team"]] += home_diff
+            except KeyError:
+                points_left_on_bench[matchup["home_team"]] = home_diff
 
-                away_diff = away_roster.maximum_points() - away_roster.points_scored()
-                try:
-                    points_left_on_bench[matchup["away_team"]] += away_diff
-                except KeyError:
-                    points_left_on_bench[matchup["away_team"]] = away_diff
+            away_diff = away_roster.maximum_points() - away_roster.points_scored()
+            try:
+                points_left_on_bench[matchup["away_team"]] += away_diff
+            except KeyError:
+                points_left_on_bench[matchup["away_team"]] = away_diff
 
-                if home_diff == 0.0:
-                    print(f"Perfect roster by {matchup['home_team']} in week {week}")
-                if away_diff == 0.0:
-                    print(f"Perfect roster by {matchup['away_team']} in week {week}")
+            if home_diff == 0.0:
+                print(f"Perfect roster by {matchup['home_team']} in week {week}")
+            if away_diff == 0.0:
+                print(f"Perfect roster by {matchup['away_team']} in week {week}")
 
     pt = PrettyTable()
     pt.field_names = ["", "Team Name", "Points Left on Bench"]
@@ -363,7 +354,7 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
 def run_monte_carlo_simulation_from_week(
     data: dict[str, any], positional_data: dict[str, tuple[float, float]], week: int = 0, n: int = 10000
 ) -> None:
-    season_data = data["matchup_data"][str(YEARS[0])]
+    season_data = data["matchup_data"]
 
     season_simulation = SeasonSimulation(season_data, positional_data)
     season_simulation.run(100)
@@ -390,14 +381,14 @@ if __name__ == "__main__":
     data, league = scrape_matchups()
 
     try:
-        # logging.info("calculating stats about the draft")
+        logging.info("calculating stats about the draft")
 
-        # perform_draft_analytics(data, league)
+        perform_draft_analytics(data, league)
 
-        # perform_roster_analysis(data)
+        perform_roster_analysis(data)
 
-        # logging.info("calculating overperformance by team")
-        # calc_team_overperformance(data)
+        logging.info("calculating overperformance by team")
+        calc_team_overperformance(data)
 
         logging.info("calculating basic statistics for positional data")
         position_data = calc_position_performances(data)
