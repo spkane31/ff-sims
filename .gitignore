@@ -7,3 +7,5 @@ scripts/venv
 **/__pycache__
 scripts/*.json
 scripts/*.txt
+
+simulation/target

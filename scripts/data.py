@@ -226,7 +226,7 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     return
 
 
-def scrape_matchups(file_name: str = "history.json", year=2022) -> dict[str, any]:
+def scrape_matchups(file_name: str = "history.json", year=2023) -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
 
     if os.path.isfile(file_name):
@@ -253,7 +253,9 @@ def scrape_matchups(file_name: str = "history.json", year=2022) -> dict[str, any
             matchup_data[week].append(
                 {
                     "home_team": home_owner,
+                    "home_team_id": box_score.home_team.team_id,
                     "away_team": away_owner,
+                    "away_team_id": box_score.away_team.team_id,
                     "home_team_score": box_score.home_score,
                     "home_team_projected_score": box_score.home_projected,
                     "away_team_score": box_score.away_score,
@@ -279,23 +281,23 @@ def scrape_matchups(file_name: str = "history.json", year=2022) -> dict[str, any
 
     activities = []
     # Waiver wire and draft activity
-    for offset in [0, 25, 50, 75, 100, 125]:
-        recent_activity = league.recent_activity(25, offset=offset)
-        for activity in recent_activity:
-            print(activity)
-            activities.append(
-                {
-                    "date": activity.date,
-                    "actions": [
-                        {
-                            "team": action[0].team_name,
-                            "action": action[1],
-                            "player": {"name": action[2].name, "player_id": action[2].playerId},
-                        }
-                        for action in activity.actions
-                    ],
-                }
-            )
+    # for offset in [0, 25, 50, 75]:
+    #     recent_activity = league.recent_activity(25, offset=offset)
+    #     for activity in recent_activity:
+    #         print(activity)
+    #         activities.append(
+    #             {
+    #                 "date": activity.date,
+    #                 "actions": [
+    #                     {
+    #                         "team": action[0].team_name,
+    #                         "action": action[1],
+    #                         "player": {"name": action[2].name, "player_id": action[2].playerId},
+    #                     }
+    #                     for action in activity.actions
+    #                 ],
+    #             }
+    #         )
 
     output_data = {
         "matchup_data": matchup_data,
@@ -352,25 +354,26 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
 
 
 def run_monte_carlo_simulation_from_week(
-    data: dict[str, any], positional_data: dict[str, tuple[float, float]], week: int = 0, n: int = 10000
-) -> None:
+    league: League, data: dict[str, any], positional_data: dict[str, tuple[float, float]], week: int = 0, n: int = 10000
+) -> tuple[dict, dict]:
     season_data = data["matchup_data"]
 
-    season_simulation = SeasonSimulation(season_data, positional_data)
-    season_simulation.run(100)
+    season_simulation = SeasonSimulation(season_data, positional_data, league)
+    reg, playoff = season_simulation.run(100)
     season_simulation.print_regular_season_predictions()
+    season_simulation.print_playoff_predictions()
+
+    return reg, playoff
 
 
 # TODO list:
 #  * Add a season simulator
 #    * Last place chances
 #    * Playoff odds
+#  * Save data to JSON .
 #  * Add a trade analyzer
 #  * Add a waiver wire pickup analyzer
 #  * Rank value of upcoming games. 538 does this, but can't find anything about the methodology.
-#  * Weekly roster analysis - Done
-#    * What players should have been played - Done
-#    * How many perfect rosters were chosen - Done
 
 # Hope I remember later: A graph that shows who you should have picked at each spot, so for 1 - ?? it would be mahomes, then the next highest scorer
 #  Should probably do this w/ and without QBs.
@@ -392,8 +395,13 @@ if __name__ == "__main__":
 
         logging.info("calculating basic statistics for positional data")
         position_data = calc_position_performances(data)
+        data["position_data"] = position_data
 
-        run_monte_carlo_simulation_from_week(data, position_data, n=1, week=3)
+        regular_season_results, playoff_results = run_monte_carlo_simulation_from_week(
+            league, data, position_data, n=1, week=3
+        )
+        data["regular_season_results"] = regular_season_results
+        data["playoff_results"] = playoff_results
 
     finally:
         write_to_file(data)
