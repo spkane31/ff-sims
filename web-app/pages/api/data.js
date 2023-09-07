@@ -2,6 +2,8 @@
 
 import Cors from "cors";
 
+import json_data from "./data.json";
+
 // Initializing the cors middleware
 // You can read more about the available options here: https://github.com/expressjs/cors#configuration-options
 const cors = Cors({
@@ -27,34 +29,5 @@ export default async function handler(req, res) {
   await runMiddleware(req, res, cors);
 
   // Rest of the API logic
-  res.json({
-    final_standings: [
-      [
-        "Team 1",
-        ".12",
-        ".02",
-        ".03",
-        ".04",
-        ".05",
-        ".06",
-        ".07",
-        ".08",
-        ".09",
-        ".10",
-      ],
-      [
-        "Team 2",
-        ".13",
-        ".02",
-        ".03",
-        ".04",
-        ".05",
-        ".06",
-        ".07",
-        ".08",
-        ".09",
-        ".10",
-      ],
-    ],
-  });
+  res.json(json_data);
 }
