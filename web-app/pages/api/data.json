@@ -1,0 +1,72 @@
+{
+  "final_standings": [
+    [
+      "Team 1",
+      ".12",
+      ".02",
+      ".03",
+      ".04",
+      ".05",
+      ".06",
+      ".07",
+      ".08",
+      ".09",
+      ".10"
+    ],
+    [
+      "Team 2",
+      ".13",
+      ".02",
+      ".03",
+      ".04",
+      ".05",
+      ".06",
+      ".07",
+      ".08",
+      ".09",
+      ".10"
+    ]
+  ],
+  "playoff_seeds": [
+    ["Team 1", ".12", ".02", ".03", ".04", ".05", ".06"],
+    ["Team 2", ".13", ".02", ".03", ".04", ".05", ".06"]
+  ],
+  "points_left_on_bench": [
+    ["mitch lichtinger", 290.58],
+    ["jack aldridge", 282.1],
+    ["Nick DeHaven", 257.32],
+    ["Sean  Kane", 242.74],
+    ["Connor Brand", 238.3],
+    ["Kyle Burns", 207.18],
+    ["Kevin Dailey", 204.58],
+    ["Ethan Moran", 188.94],
+    ["nick toth", 180.06],
+    ["Josh Doepker", 177.04]
+  ],
+  "boxscores": {},
+  "espn_accuracy": {
+    "by_team": [
+      ["Ethan Moran", 89.9, 6.42],
+      ["nick toth", 56.1, 4.01],
+      ["Kyle Burns", 18.99, 1.36],
+      ["Sean  Kane", -11.05, -0.79],
+      ["Connor Brand", -19.33, -1.38],
+      ["mitch lichtinger", -32.36, -2.31],
+      ["Nick DeHaven", -57.85, -4.13],
+      ["Kevin Dailey", -73.07, -5.22],
+      ["Josh Doepker", -115.3, -8.24],
+      ["jack aldridge", -139.66, -9.98]
+    ],
+    "by_position": [
+      [" D/ST  ", 16.06, 1.07],
+      ["K", 1.62, 0.61],
+      ["QB", 0.45, 0.67],
+      ["TE", -7.07, 0.6],
+      ["RB", -1.99, 0.59],
+      ["WR", -0.45, 0.56]
+    ]
+  },
+  "waiver_history": {},
+  "trades": {},
+  "draft": {}
+}
