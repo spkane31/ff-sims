@@ -2,6 +2,7 @@ import Head from "next/head";
 import BasicTable from "../components/table";
 import styles from "../styles/Home.module.css";
 import * as React from "react";
+import DropDownMenu from "../components/drowdown";
 
 export default function Home() {
   const [data, setData] = React.useState([]);
@@ -20,6 +21,9 @@ export default function Home() {
 
       <main className={styles.main}>
         <h1>The League Fantasy Football Analytics</h1>
+
+        <DropDownMenu />
+
         {data.length === 0 ? (
           <></>
         ) : (
