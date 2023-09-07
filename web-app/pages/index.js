@@ -1,91 +1,98 @@
 import Head from "next/head";
+import BasicTable from "../components/table";
 import styles from "../styles/Home.module.css";
+import * as React from "react";
 
 export default function Home() {
+  const [data, setData] = React.useState([]);
+
+  React.useEffect(() => {
+    fetch("http://localhost:3000/api/data", { method: "GET" })
+      .then((res) => res.json())
+      .then((data) => setData(data));
+  }, []);
+
   return (
     <div className={styles.container}>
       <Head>
-        <title>Create Next App</title>
+        <title>The League Fantasy Football</title>
       </Head>
 
       <main className={styles.main}>
         <h1>The League Fantasy Football Analytics</h1>
+        {data.length === 0 ? (
+          <></>
+        ) : (
+          <BasicTable
+            columns={[
+              "Team",
+              "1st",
+              "2nd",
+              "3rd",
+              "4th",
+              "5th",
+              "6th",
+              "7th",
+              "8th",
+              "9th",
+              "Hot Dog",
+            ]}
+            data={data.final_standings}
+          />
+        )}
+        <h2>Playoff Seed Probabilities</h2>
 
-        <h2>Playoff Probabilities</h2>
-
-        <h2>Final Standings Probabilities</h2>
-
-        <h2>Hot Dog Odds</h2>
+        <BasicTable
+          columns={["Team", "1st", "2nd", "3rd", "4th", "5th", "6th"]}
+        />
 
         <h2>This Weeks Games</h2>
+
+        <BasicTable
+          columns={[
+            "Home Team",
+            "Home Projected",
+            "Away Projected",
+            "Away Team",
+          ]}
+        />
 
         <h2>ESPN Accuracy</h2>
 
         <h3>By Team</h3>
 
+        <BasicTable columns={["Team", "Point Differential"]} />
+
         <h3>By Position</h3>
+
+        <BasicTable columns={["Position", "Point Differential"]} />
 
         <h2>Waiver Wires</h2>
 
+        <BasicTable
+          columns={[
+            "Players Added",
+            "Players Dropped",
+            "Players Added Points",
+            "Players Dropped Points",
+          ]}
+        />
+
         <h2>Trades</h2>
 
+        <BasicTable
+          columns={[
+            "Team 1 Gets",
+            "Team 2 Gets",
+            "Team 1 Points Scored",
+            "Team 2 Points Scored",
+          ]}
+        />
+
         <h2>Draft</h2>
+
+        <BasicTable columns={["Pick #", "Player", "Position", "Points"]} />
       </main>
     </div>
-  );
-}
-
-import * as React from "react";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
-import Paper from "@mui/material/Paper";
-
-function createData(name, calories, fat, carbs, protein) {
-  return { name, calories, fat, carbs, protein };
-}
-
-const rows = [
-  createData("Frozen yoghurt", 159, 6.0, 24, 4.0),
-  createData("Ice cream sandwich", 237, 9.0, 37, 4.3),
-  createData("Eclair", 262, 16.0, 24, 6.0),
-  createData("Cupcake", 305, 3.7, 67, 4.3),
-  createData("Gingerbread", 356, 16.0, 49, 3.9),
-];
-
-function BasicTable() {
-  return (
-    <TableContainer component={Paper}>
-      <Table sx={{ minWidth: 650 }} aria-label="simple table">
-        <TableHead>
-          <TableRow>
-            <TableCell>Dessert (100g serving)</TableCell>
-            <TableCell align="right">Calories</TableCell>
-            <TableCell align="right">Fat&nbsp;(g)</TableCell>
-            <TableCell align="right">Carbs&nbsp;(g)</TableCell>
-            <TableCell align="right">Protein&nbsp;(g)</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={row.name}
-              sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
-            >
-              <TableCell component="th" scope="row">
-                {row.name}
-              </TableCell>
-              <TableCell align="right">{row.calories}</TableCell>
-              <TableCell align="right">{row.fat}</TableCell>
-              <TableCell align="right">{row.carbs}</TableCell>
-              <TableCell align="right">{row.protein}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
   );
 }
