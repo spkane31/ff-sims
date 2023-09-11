@@ -19,6 +19,8 @@ load_dotenv(find_dotenv())
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
+PRINT_STR = "Year: {}\tWeek: {}"
+
 
 if os.environ.get("DEBUG_LEVEL") != "" and False:
     root = logging.getLogger()
@@ -230,7 +232,7 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     return
 
 
-def scrape_matchups(file_name: str = "history.json", year=2022, debug=False) -> dict[str, any]:
+def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
 
     if os.path.isfile(file_name):
@@ -242,8 +244,6 @@ def scrape_matchups(file_name: str = "history.json", year=2022, debug=False) -> 
         except json.decoder.JSONDecodeError:
             pass
 
-    PRINT_STR = "Year: {}\tWeek: {}"
-
     matchup_data = {}
 
     league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
@@ -251,7 +251,10 @@ def scrape_matchups(file_name: str = "history.json", year=2022, debug=False) -> 
     for week in range(1, 15):
         matchup_data[week] = []
         print(PRINT_STR.format(year, week))
+        # NOTE seankane: This might not work for current leagues, only for past leagues in which case will have to simulate in a different way.
+        # If that is the case, I will be very sad
         for box_score in league.box_scores(week):
+            print(f"{week}: {box_score.home_team}, {box_score.away_team}")
             home_owner = box_score.home_team.owner.rstrip(" ")
             away_owner = box_score.away_team.owner.rstrip(" ")
             matchup_data[week].append(
@@ -365,7 +368,7 @@ def run_monte_carlo_simulation_from_week(
     league: League,
     data: dict[str, any],
     positional_data: dict[str, tuple[float, float]],
-    week: int = 3,
+    week: int = None,
     n: int = 10000,
 ) -> tuple[dict, dict]:
     if not week:
@@ -399,15 +402,14 @@ if __name__ == "__main__":
     data, league = scrape_matchups()
 
     try:
-        # raise ValueError("early exit")
         logging.info("calculating stats about the draft")
 
-        # perform_draft_analytics(data, league)
+        perform_draft_analytics(data, league)
 
-        # perform_roster_analysis(data)
+        perform_roster_analysis(data)
 
         logging.info("calculating overperformance by team")
-        # calc_team_overperformance(data, league.current_week)
+        calc_team_overperformance(data, league.current_week)
 
         logging.info("calculating basic statistics for positional data")
         position_data = calc_position_performances(data)
