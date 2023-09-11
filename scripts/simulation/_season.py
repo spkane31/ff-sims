@@ -71,6 +71,14 @@ class SingleSeasonSimulationResults:
 
         print(pt)
 
+    def print_current_standings(self) -> None:
+        pt = PT()
+        pt.title = "Current Standings"
+        pt.field_names = ["Team", "Wins", "losses", "PF", "PA"]
+        pt.add_rows(self.get_sorted_results())
+
+        print(pt)
+
     def select_playoff_teams(self) -> None:
         """Leage is set up to so top team in each division get a bye"""
         sorted_teams = self.get_sorted_results()
@@ -112,7 +120,11 @@ class SingleSeasonSimulationResults:
 
 class SeasonSimulation:
     def __init__(
-        self, data: dict[str, any], position_data: dict[str, tuple[float, float]], league: League = None
+        self,
+        data: dict[str, any],
+        position_data: dict[str, tuple[float, float]],
+        league: League = None,
+        starting_week: int = 0,
     ) -> None:
         self.league: League = league
         self.teams, self._team_to_id = _get_teams_from_annual_data(data)
@@ -121,6 +133,8 @@ class SeasonSimulation:
         self.regular_season_simulation_results: dict[str, list[int]] = {}
         self.playoff_simulation_results: dict[str, list[int]] = {}
         self.matchup_data = data
+        self.starting_week = starting_week
+        self.raw_results = []
 
         for team in self.teams:
             self.standings[team] = Standing()
@@ -129,6 +143,27 @@ class SeasonSimulation:
             ]  # Counting of how many times a team is in each position.
             self.playoff_simulation_results[team] = [0 for t in self.teams]
         self._validate_teams()
+        self._current_standings()
+
+    def _current_standings(self) -> None:
+        results = SingleSeasonSimulationResults(self.teams)
+        for week, matchups in self.matchup_data.items():
+            if int(week) > self.starting_week:
+                break
+
+            for matchup in matchups:
+                home_score = matchup["home_team_score"]
+                away_score = matchup["away_team_score"]
+
+                if home_score > away_score:
+                    results.team_win(matchup["home_team"], home_score, away_score)
+                    results.team_loss(matchup["away_team"], away_score, home_score)
+                else:
+                    results.team_win(matchup["away_team"], away_score, home_score)
+                    results.team_loss(matchup["home_team"], home_score, away_score)
+
+        results.print_current_standings()
+        return
 
     def _validate_teams(self) -> None:
         """This function ensures each team is in one of the divisions. I don't know of a way to get this data from the API, so this is a work around"""
@@ -144,9 +179,10 @@ class SeasonSimulation:
 
     def run(self, n: int) -> tuple[dict, dict]:
         for i in range(n):
-            if i % 25 == 0:
+            if i % 50 == 0:
                 print(f"Simulation #{i}")
             results = self._run_single_simulation()
+            self.raw_results.append(results)
             sorted_results = results.get_sorted_results()
             for idx, team in enumerate(sorted_results):
                 team_name = team[0]
@@ -156,6 +192,36 @@ class SeasonSimulation:
                 self.playoff_simulation_results[team][idx] += 1.0 / n
 
         return self.regular_season_simulation_results, self.playoff_simulation_results
+
+    def print_regular_season_projected_win_losses(self) -> None:
+        expected_results = {t: Standing() for t in self.teams}
+        n = len(self.raw_results)
+        for result in self.raw_results:
+            for team, standing in result.standings.items():
+                expected_results[team].wins += standing.wins / len(self.raw_results)
+                expected_results[team].losses += standing.losses / len(self.raw_results)
+                expected_results[team].points_against += standing.points_against / len(self.raw_results)
+                expected_results[team].points_scored += standing.points_scored / len(self.raw_results)
+
+        pt = PT()
+        pt.title = "Projected Standings"
+        pt.field_names = ["Team", "Wins", "Losses", "PF", "PA"]
+
+        sortable_list = []
+        for team, standing in expected_results.items():
+            sortable_list.append(
+                [
+                    team,
+                    round(standing.wins, 2),
+                    round(standing.losses, 2),
+                    round(standing.points_scored, 2),
+                    round(standing.points_against, 2),
+                ]
+            )
+        sortable_list = sorted(sortable_list, key=lambda row: row[1:], reverse=True)
+
+        pt.add_rows(sortable_list)
+        print(pt)
 
     def print_regular_season_predictions(self) -> None:
         pt = PT()
@@ -178,7 +244,7 @@ class SeasonSimulation:
 
         for team, result in self.regular_season_simulation_results.items():
             sortable_list.append(flatten_extend([[team], [round(r * 100, 2) for r in result]]))
-        sortable_list = sorted(sortable_list, key=lambda row: row[-1])  # Sort by last place chances
+        sortable_list = sorted(sortable_list, key=lambda row: row[1:])  # Sort by last place chances
         pt.add_rows(sortable_list)
 
         print(pt)
@@ -214,6 +280,9 @@ class SeasonSimulation:
 
         print(pt)
 
+    def _matchup_is_completed(self, matchup: dict[str, any]) -> bool:
+        return matchup["home_team_score"] != 0.0 and matchup["away_team_score"] != 0.0
+
     def _run_single_simulation(self) -> SingleSeasonSimulationResults:
         results = SingleSeasonSimulationResults(self.teams)
 
@@ -223,8 +292,19 @@ class SeasonSimulation:
                 home_roster = Roster(matchup["home_lineup"])
                 away_roster = Roster(matchup["away_lineup"])
 
+                if int(week) > self.starting_week:
+                    if matchup["home_team_score"] > matchup["away_team_score"]:
+                        results.team_win(matchup["home_team"], matchup["home_team_score"], matchup["away_team_score"])
+                        results.team_loss(matchup["away_team"], matchup["away_team_score"], matchup["home_team_score"])
+                    else:
+                        results.team_win(matchup["away_team"], matchup["away_team_score"], matchup["home_team_score"])
+                        results.team_loss(matchup["home_team"], matchup["home_team_score"], matchup["away_team_score"])
+                    continue
+
                 home_score = home_roster.simulate_projected_score(self.position_stats)
                 away_score = away_roster.simulate_projected_score(self.position_stats)
+
+                # print(f"\tProjection: {home_score}, {away_score}")
 
                 if home_score > away_score:
                     results.team_win(matchup["home_team"], home_score, away_score)

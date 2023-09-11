@@ -45,30 +45,34 @@ def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
     ]
 
 
-def calc_team_overperformance(data: dict[str, list[float]]) -> None:
+def calc_team_overperformance(data: dict[str, list[float]], current_week: int) -> None:
     """calc_team_overperformances calculates how much a teams starters outperform the ESPN projections"""
 
     differences_by_team = {}
 
     matchup_data = data["matchup_data"]
-    for _, matchups in matchup_data.items():
+    for week, matchups in matchup_data.items():
+        if int(week) > current_week:
+            break
         for match_result in matchups:
+            home_roster = Roster(match_result["home_lineup"])
+            away_roster = Roster(match_result["away_lineup"])
             try:
                 differences_by_team[match_result["home_team"]].append(
-                    match_result["home_team_score"] - match_result["home_team_projected_score"]
+                    home_roster.points_scored() - home_roster.projected_score()
                 )
             except KeyError:
                 differences_by_team[match_result["home_team"]] = [
-                    match_result["home_team_score"] - match_result["home_team_projected_score"]
+                    home_roster.points_scored() - home_roster.projected_score()
                 ]
 
             try:
                 differences_by_team[match_result["away_team"]].append(
-                    match_result["away_team_score"] - match_result["away_team_projected_score"]
+                    away_roster.points_scored() - away_roster.projected_score()
                 )
             except KeyError:
                 differences_by_team[match_result["away_team"]] = [
-                    match_result["away_team_score"] - match_result["away_team_projected_score"]
+                    away_roster.points_scored() - away_roster.projected_score()
                 ]
 
     pt = PrettyTable()
@@ -226,7 +230,7 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     return
 
 
-def scrape_matchups(file_name: str = "history.json", year=2023) -> dict[str, any]:
+def scrape_matchups(file_name: str = "history.json", year=2022, debug=False) -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
 
     if os.path.isfile(file_name):
@@ -234,7 +238,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023) -> dict[str, any
         logging.info(f"found existing data, remove {file_name} to regen")
         f = open(file_name)
         try:
-            return json.load(f), League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+            return json.load(f), League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
         except json.decoder.JSONDecodeError:
             pass
 
@@ -242,7 +246,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023) -> dict[str, any
 
     matchup_data = {}
 
-    league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
 
     for week in range(1, 15):
         matchup_data[week] = []
@@ -308,11 +312,14 @@ def scrape_matchups(file_name: str = "history.json", year=2023) -> dict[str, any
     return output_data, league
 
 
-def perform_roster_analysis(data: dict[str, any]) -> None:
+def perform_roster_analysis(data: dict[str, any], current_week: int = 1) -> None:
     matchup_data = data["matchup_data"]
     points_left_on_bench = {}
 
+    print("Perfect Rosters:")
     for week, matchups in matchup_data.items():
+        if int(week) > current_week:
+            break
         for matchup in matchups:
             home_roster = Roster(matchup["home_lineup"])
             away_roster = Roster(matchup["away_lineup"])
@@ -334,6 +341,7 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
             if away_diff == 0.0:
                 print(f"Perfect roster by {matchup['away_team']} in week {week}")
 
+    print()
     pt = PrettyTable()
     pt.field_names = ["", "Team Name", "Points Left on Bench"]
     pt.title = "Points left on Bench"
@@ -354,12 +362,19 @@ def perform_roster_analysis(data: dict[str, any]) -> None:
 
 
 def run_monte_carlo_simulation_from_week(
-    league: League, data: dict[str, any], positional_data: dict[str, tuple[float, float]], week: int = 0, n: int = 10000
+    league: League,
+    data: dict[str, any],
+    positional_data: dict[str, tuple[float, float]],
+    week: int = 3,
+    n: int = 10000,
 ) -> tuple[dict, dict]:
+    if not week:
+        week = league.current_week
     season_data = data["matchup_data"]
 
-    season_simulation = SeasonSimulation(season_data, positional_data, league)
-    reg, playoff = season_simulation.run(100)
+    season_simulation = SeasonSimulation(season_data, positional_data, league, starting_week=week)
+    reg, playoff = season_simulation.run(1000)
+    season_simulation.print_regular_season_projected_win_losses()
     season_simulation.print_regular_season_predictions()
     season_simulation.print_playoff_predictions()
 
@@ -384,22 +399,21 @@ if __name__ == "__main__":
     data, league = scrape_matchups()
 
     try:
+        # raise ValueError("early exit")
         logging.info("calculating stats about the draft")
 
-        perform_draft_analytics(data, league)
+        # perform_draft_analytics(data, league)
 
-        perform_roster_analysis(data)
+        # perform_roster_analysis(data)
 
         logging.info("calculating overperformance by team")
-        calc_team_overperformance(data)
+        # calc_team_overperformance(data, league.current_week)
 
         logging.info("calculating basic statistics for positional data")
         position_data = calc_position_performances(data)
         data["position_data"] = position_data
 
-        regular_season_results, playoff_results = run_monte_carlo_simulation_from_week(
-            league, data, position_data, n=1, week=3
-        )
+        regular_season_results, playoff_results = run_monte_carlo_simulation_from_week(league, data, position_data, n=1)
         data["regular_season_results"] = regular_season_results
         data["playoff_results"] = playoff_results
 

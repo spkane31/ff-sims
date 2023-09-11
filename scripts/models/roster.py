@@ -37,7 +37,7 @@ class Roster:
         return available[:n]
 
     def points_scored(self) -> float:
-        return sum([p.actual for p in self.players if p.status != "BE"])
+        return sum([p.actual for p in self.players if p.on_bench()])
 
     def maximum_points(self) -> float:
         roster = self._max_points_by_sorting_func(_get_positions_by_actual)
@@ -82,11 +82,16 @@ class Roster:
         ]
 
     def projected_points(self) -> float:
+        """Projected score of best possible roster"""
         roster = self.best_projected_lineup()
         return sum([player.projection for player in roster])
 
     def best_projected_lineup(self) -> list[Player]:
         return self._max_points_by_sorting_func(_get_positions_by_projected)
+
+    def projected_score(self) -> float:
+        """Projected score of actual roster"""
+        return sum([p.projection for p in self.players if p.on_bench()])
 
     def _trim_flexes(
         self, potential: list[Player], wrs: list[Player] = None, rbs: list[Player] = None, te: list[Player] = None
