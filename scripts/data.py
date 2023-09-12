@@ -254,7 +254,6 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
         # NOTE seankane: This might not work for current leagues, only for past leagues in which case will have to simulate in a different way.
         # If that is the case, I will be very sad
         for box_score in league.box_scores(week):
-            print(f"{week}: {box_score.home_team}, {box_score.away_team}")
             home_owner = box_score.home_team.owner.rstrip(" ")
             away_owner = box_score.away_team.owner.rstrip(" ")
             matchup_data[week].append(
@@ -315,14 +314,15 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
     return output_data, league
 
 
-def perform_roster_analysis(data: dict[str, any], current_week: int = 1) -> None:
+def perform_roster_analysis(data: dict[str, any], current_week: int) -> None:
     matchup_data = data["matchup_data"]
     points_left_on_bench = {}
 
     print("Perfect Rosters:")
     for week, matchups in matchup_data.items():
-        if int(week) > current_week:
+        if int(week) >= current_week:
             break
+
         for matchup in matchups:
             home_roster = Roster(matchup["home_lineup"])
             away_roster = Roster(matchup["away_lineup"])
@@ -376,10 +376,11 @@ def run_monte_carlo_simulation_from_week(
     season_data = data["matchup_data"]
 
     season_simulation = SeasonSimulation(season_data, positional_data, league, starting_week=week)
-    reg, playoff = season_simulation.run(1000)
-    season_simulation.print_regular_season_projected_win_losses()
-    season_simulation.print_regular_season_predictions()
-    season_simulation.print_playoff_predictions()
+    reg, playoff = season_simulation.run(100)
+    # season_simulation.print_regular_season_projected_win_losses()
+    season_simulation.expected_wins()
+    # season_simulation.print_regular_season_predictions()
+    # season_simulation.print_playoff_predictions()
 
     return reg, playoff
 
@@ -406,7 +407,7 @@ if __name__ == "__main__":
 
         perform_draft_analytics(data, league)
 
-        perform_roster_analysis(data)
+        perform_roster_analysis(data, league.current_week)
 
         logging.info("calculating overperformance by team")
         calc_team_overperformance(data, league.current_week)

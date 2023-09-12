@@ -1,4 +1,5 @@
 from .player import Player
+from espn_api.football import Team
 
 from utils import sample_normal_distribution
 
@@ -19,6 +20,21 @@ class Roster:
     def __init__(self, data: list[dict[str, any]]):
         self.players = [Player(d) for d in data]
 
+    @classmethod
+    def from_matchup(cls, team: Team, week: int):
+        return Roster(
+            [
+                {
+                    "name": player.name,
+                    "projection": player.stats[week]["projected_points"],
+                    "actual": player.stats[week]["points"],
+                    "position": player.position,
+                    "status": player.position,
+                }
+                for player in team.roster
+            ]
+        )
+
     def __str__(self):
         return f"Roster({[str(p) for p in self.players]})"
 
@@ -37,7 +53,7 @@ class Roster:
         return available[:n]
 
     def points_scored(self) -> float:
-        return sum([p.actual for p in self.players if p.on_bench()])
+        return sum([p.actual for p in self.players if not p.on_bench()])
 
     def maximum_points(self) -> float:
         roster = self._max_points_by_sorting_func(_get_positions_by_actual)
