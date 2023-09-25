@@ -4,10 +4,10 @@ from espn_api.football import Player
 class Player:
     def __init__(self, data: dict[str, any]):
         self.name = data["name"]
-        self.projection = data["projection"]
-        self.actual = data["actual"]
-        self.position = data["position"]
-        self.status = data["status"]
+        self.projection = data.get("projection", 0)
+        self.actual = data.get("actual", 0)
+        self.position = data.get("position", "")
+        self.status = data.get("status", "")
         self.diff = self.projection - self.actual
 
     def on_bench(self) -> bool:

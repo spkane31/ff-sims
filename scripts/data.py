@@ -86,7 +86,7 @@ def calc_team_overperformance(data: dict[str, list[float]], current_week: int) -
             [
                 team,
                 round(sum(data), 2),
-                round(mean(data), 2),
+                round(sum(data) / (len(data) - 1), 2),
             ]
         )
 
@@ -108,6 +108,7 @@ def add_positional_diffs(diffs_per_position: dict[str, float], lineup: dict[str,
             diffs_per_position[player["position"]].append(diff)
         except KeyError:
             diffs_per_position[player["position"]] = [diff]
+
     return
 
 
@@ -167,6 +168,10 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     points_per_team = {}
     best_pick_per_round = {}
 
+    pt = PrettyTable()
+    pt.title = "Draft Selections"
+    pt.field_names = ["Pick #", "Player", "Total Points", "Drafting Team"]
+
     for pick in data["draft_data"]:
 
         round_number = pick["round_number"]
@@ -182,9 +187,10 @@ def perform_draft_analytics(data: dict[str, any], league: League):
             player_points = player.total_points
             pick["total_points"] = player_points
 
-            print(
-                f"Draft position: {((round_number - 1) * 10) + round_pick}, player: {player_name}, total points: {player_points}"
-            )
+            pt.add_row([((round_number - 1) * 10) + round_pick, player_name, player_points, team_name])
+            # print(
+            #     f"Draft position: {((round_number - 1) * 10) + round_pick}, player: {player_name}, total points: {player_points}"
+            # )
 
         # Points per team
         try:
@@ -199,6 +205,8 @@ def perform_draft_analytics(data: dict[str, any], league: League):
                 best_pick_per_round[round_number] = [round_number, team_name, player_name, player_points]
         except KeyError:
             best_pick_per_round[round_number] = [round_number, team_name, player_name, player_points]
+
+    print(pt)
 
     # Sort and print total points per draft
     sortable_list = []
@@ -245,6 +253,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
             pass
 
     matchup_data = {}
+    schedule = []
 
     league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
 
@@ -271,6 +280,18 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
                 }
             )
 
+        week_schedule = []
+        for matchup in league.scoreboard(week):
+            week_schedule.append(
+                {
+                    "home_team": matchup.home_team.owner.rstrip(" "),
+                    "home_team_score": matchup.home_score,
+                    "away_team": matchup.away_team.owner.rstrip(" "),
+                    "away_team_score": matchup.away_score,
+                }
+            )
+        schedule.append(week_schedule)
+
     # draft stuff
     draft_data = []
     for pick in league.draft:
@@ -279,7 +300,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
                 "player_name": pick.playerName,
                 "player_id": pick.playerId,
                 "team": pick.team.team_id,
-                "team_name": pick.team.team_name,
+                "team_name": pick.team.owner.rstrip(" "),
                 "round_number": pick.round_num,
                 "round_pick": pick.round_pick,
             }
@@ -309,6 +330,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
         "matchup_data": matchup_data,
         "draft_data": draft_data,
         "activity_data": activities,
+        "schedule": schedule,
     }
 
     return output_data, league
@@ -368,6 +390,7 @@ def run_monte_carlo_simulation_from_week(
     league: League,
     data: dict[str, any],
     positional_data: dict[str, tuple[float, float]],
+    schedule: list[list[dict[str, any]]],
     week: int = None,
     n: int = 10000,
 ) -> tuple[dict, dict]:
@@ -375,10 +398,10 @@ def run_monte_carlo_simulation_from_week(
         week = league.current_week
     season_data = data["matchup_data"]
 
-    season_simulation = SeasonSimulation(season_data, positional_data, league, starting_week=week)
+    season_simulation = SeasonSimulation(season_data, positional_data, league, schedule, starting_week=week)
+    season_simulation.expected_wins()
     reg, playoff = season_simulation.run(100)
     # season_simulation.print_regular_season_projected_win_losses()
-    season_simulation.expected_wins()
     # season_simulation.print_regular_season_predictions()
     # season_simulation.print_playoff_predictions()
 
@@ -415,8 +438,11 @@ if __name__ == "__main__":
         logging.info("calculating basic statistics for positional data")
         position_data = calc_position_performances(data)
         data["position_data"] = position_data
+        schedule = data["schedule"]
 
-        regular_season_results, playoff_results = run_monte_carlo_simulation_from_week(league, data, position_data, n=1)
+        regular_season_results, playoff_results = run_monte_carlo_simulation_from_week(
+            league, data, position_data, schedule, n=1
+        )
         data["regular_season_results"] = regular_season_results
         data["playoff_results"] = playoff_results
 

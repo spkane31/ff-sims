@@ -1,8 +1,10 @@
+import os
+
 from espn_api.football import League, Team, Player
 from prettytable import PrettyTable as PT
 
 from models import Roster
-from utils import mean
+from utils import mean, sample_normal_distribution, std_dev
 
 from utils import flatten_extend
 
@@ -124,10 +126,13 @@ class SeasonSimulation:
         data: dict[str, any],
         position_data: dict[str, tuple[float, float]],
         league: League = None,
+        schedule: list[list[dict[str, any]]] = None,
         starting_week: int = 0,
     ) -> None:
         self.league: League = league
+        self.schedule = schedule
         self.teams, self._team_to_id = _get_teams_from_annual_data(data)
+        self._team_scores = _get_team_scores_from_annual_data(data)
         self.position_stats = position_data
         self.standings: dict[str, Standing] = {}
         self.regular_season_simulation_results: dict[str, list[int]] = {}
@@ -178,52 +183,60 @@ class SeasonSimulation:
                 raise ValueError(f"team `{team}` not in the stated divisions")
 
     def expected_wins(self, n: int = 1000) -> None:
-        team_expected = {}
-        for week in range(1, self.league.current_week):
-            for matchup in self.league.scoreboard(week):
-                try:
-                    team_expected[matchup.home_team.team_name] = Standing()
-                    team_expected[matchup.away_team.team_name] = Standing()
-                except KeyError:
-                    pass
+        sims_completed = 0
+        team_expected = {t: 0.0 for t in self.teams}
+        for idx, week in enumerate(self.schedule):
+            if idx + 1 > self.league.current_week:
+                break
+            for matchup in week:
+                if matchup["home_team_score"] == 0.0 or matchup["away_team_score"] == 0.0:
+                    # This is a week that hasn't finished yet
+                    continue
 
-                for _ in range(1, n):
-                    home_team_score = Roster.from_matchup(matchup.home_team, week).simulate_projected_score(
-                        self.position_stats
-                    )
-                    away_team_score = Roster.from_matchup(matchup.away_team, week).simulate_projected_score(
-                        self.position_stats
-                    )
+                for _ in range(0, n):
+                    home_scores = self._team_scores[matchup["home_team"]]
+                    home_score = sample_normal_distribution(mean(home_scores), std_dev(home_scores))
 
-                    if home_team_score > away_team_score:
-                        team_expected[matchup.home_team.team_name].wins += 1 / n
-                        team_expected[matchup.away_team.team_name].losses += 1 / n
+                    away_scores = self._team_scores[matchup["away_team"]]
+                    away_score = sample_normal_distribution(mean(away_scores), std_dev(away_scores))
+
+                    if home_score > away_score:
+                        team_expected[matchup["home_team"]] += 1.0 / n
                     else:
-                        team_expected[matchup.away_team.team_name].wins += 1 / n
-                        team_expected[matchup.home_team.team_name].losses += 1 / n
+                        team_expected[matchup["away_team"]] += 1.0 / n
 
-                    team_expected[matchup.home_team.team_name].points_scored += home_team_score / n
-                    team_expected[matchup.home_team.team_name].points_against += away_team_score / n
+                    sims_completed += 1
 
-                    team_expected[matchup.away_team.team_name].points_against += home_team_score / n
-                    team_expected[matchup.away_team.team_name].points_scored += away_team_score / n
+        team_actual = {t: 0 for t in self.teams}
+        for idx, week in enumerate(self.schedule):
+            if idx + 1 > self.league.current_week:
+                break
+            for matchup in week:
+                if matchup["home_team_score"] == 0.0 or matchup["away_team_score"] == 0.0:
+                    # This is a week that hasn't finished yet
+                    continue
+
+                if matchup["home_team_score"] > matchup["away_team_score"]:
+                    team_actual[matchup["home_team"]] += 1
+                else:
+                    team_actual[matchup["away_team"]] += 1
 
         pt = PT()
         pt.title = "Expected Wins"
-        pt.field_names = ["Team", "xWins", "xLosses", "xPF", "xPA"]
+        pt.field_names = ["Team", "xWins", "Wins", "Over Performance"]
         sortable_list = [
             [
                 team,
-                round(standings.wins, 2),
-                round(standings.losses, 2),
-                round(standings.points_scored, 2),
-                round(standings.points_against, 2),
+                round(team_expected[team], 2),
+                round(team_actual[team], 2),
+                round(team_actual[team] - team_expected[team], 2),
             ]
-            for team, standings in team_expected.items()
+            for team in team_expected.keys()
         ]
-        sortable_list = sorted(sortable_list, key=lambda row: row[1:], reverse=True)
+        sortable_list = sorted(sortable_list, key=lambda row: row[3], reverse=True)
         pt.add_rows(sortable_list)
         print(pt)
+        return
 
     def run(self, n: int) -> tuple[dict, dict]:
         for i in range(n):
@@ -333,6 +346,7 @@ class SeasonSimulation:
         return matchup["home_team_score"] != 0.0 and matchup["away_team_score"] != 0.0
 
     def _run_single_simulation(self) -> SingleSeasonSimulationResults:
+        # TODO seankane: this needs to be reimplemented to predict scores in a better way
         results = SingleSeasonSimulationResults(self.teams)
 
         # Regular season simulation
@@ -443,3 +457,29 @@ def _get_teams_from_annual_data(matchup_data: dict[str, any]) -> tuple[list[str]
             team_ids[matchup["home_team"]] = matchup["home_team_id"]
             team_ids[matchup["away_team"]] = matchup["away_team_id"]
         return teams, team_ids
+
+
+# TODO seankane: to improve how I predict a teams scores I'd like to use the individual players on the roster and see the odds they outperform
+# their projection. For now, use the average score of a team and average score of the entire league.
+def _get_team_scores_from_annual_data(matchup_data: dict[str, any]) -> dict[str, list[float]]:
+    all_scores = []
+    ret = {}
+    for _, scoreboard in matchup_data.items():
+        for matchup in scoreboard:
+            if matchup["home_team_score"] == 0.0 or matchup["away_team_score"] == 0.0:
+                continue
+            try:
+                ret[matchup["home_team"]].append(matchup["home_team_score"])
+            except KeyError:
+                ret[matchup["home_team"]] = [matchup["home_team_score"]]
+
+            try:
+                ret[matchup["away_team"]].append(matchup["away_team_score"])
+            except KeyError:
+                ret[matchup["away_team"]] = [matchup["away_team_score"]]
+
+            all_scores.append(matchup["home_team_score"])
+            all_scores.append(matchup["away_team_score"])
+
+    ret["ALL_SCORES"] = all_scores
+    return ret

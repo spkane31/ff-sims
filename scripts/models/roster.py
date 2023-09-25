@@ -21,13 +21,15 @@ class Roster:
         self.players = [Player(d) for d in data]
 
     @classmethod
-    def from_matchup(cls, team: Team, week: int):
+    def from_matchup(cls, team: Team):
+        # print(team.roster[0].name)
+        # print(team.roster[0].stats)
         return Roster(
             [
                 {
                     "name": player.name,
-                    "projection": player.stats[week]["projected_points"],
-                    "actual": player.stats[week]["points"],
+                    "actual": player.stats[0]["points"],
+                    "projection": -1,
                     "position": player.position,
                     "status": player.position,
                 }
