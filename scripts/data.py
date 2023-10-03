@@ -463,6 +463,42 @@ def perform_roster_analysis(data: dict[str, any], current_week: int) -> None:
     return None
 
 
+def rank_weekly_performances(data: dict[str, any]) -> None:
+    pt = PrettyTable()
+    pt.title = "Best/Worst Weekly Performances"
+    pt.field_names = ["Week", "Team Name", "Performance Over Expected"]
+
+    all_data = []
+
+    for week, matchups in data["matchup_data"].items():
+        for matchup in matchups:
+            if matchup["home_team_score"] == 0.0:
+                continue
+            all_data.append(
+                [
+                    week,
+                    matchup["home_team"],
+                    round(matchup["home_team_score"] - matchup["home_team_projected_score"], 2),
+                ]
+            )
+            all_data.append(
+                [
+                    week,
+                    matchup["away_team"],
+                    round(matchup["away_team_score"] - matchup["away_team_projected_score"], 2),
+                ]
+            )
+
+    sorted_data = sorted(all_data, key=lambda p: p[2])
+
+    pt.add_rows(sorted_data[:5])
+    pt.add_row(["-", "-", "-"])
+    pt.add_rows(sorted_data[-5:])
+
+    print(pt)
+    return
+
+
 def run_monte_carlo_simulation_from_week(
     league: League,
     data: dict[str, any],
@@ -506,6 +542,8 @@ if __name__ == "__main__":
     # exit(1)
 
     data, league = scrape_matchups()
+
+    rank_weekly_performances(data)
 
     try:
         logging.info("calculating stats about the draft")

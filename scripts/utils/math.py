@@ -1,9 +1,10 @@
+from typing import Union
 import math
 
 import numpy as np
 
 
-def std_dev(arr: list[int | float]) -> int | float:
+def std_dev(arr: list[Union[int, float]]) -> Union[int, float]:
     if len(arr) == 0:
         return 0
     avg = sum(arr) / len(arr)
@@ -11,7 +12,7 @@ def std_dev(arr: list[int | float]) -> int | float:
     return math.pow(sum_squares / len(arr), 0.5)
 
 
-def mean(arr: list[int | float]) -> int | float:
+def mean(arr: list[Union[int, float]]) -> Union[int, float]:
     return sum(arr) / len(arr)
 
 
