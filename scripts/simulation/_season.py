@@ -149,6 +149,7 @@ class SeasonSimulation:
             self.playoff_simulation_results[team] = [0 for t in self.teams]
         self._validate_teams()
         self._current_standings()
+        self._n = None
 
     def _current_standings(self) -> None:
         results = SingleSeasonSimulationResults(self.teams)
@@ -182,7 +183,11 @@ class SeasonSimulation:
             if not flag:
                 raise ValueError(f"team `{team}` not in the stated divisions")
 
-    def expected_wins(self, n: int = 1000) -> None:
+    def _simulate_team_from_previous_scores(self, team: str) -> float:
+        scores = self._team_scores[team]
+        return sample_normal_distribution(mean(scores), std_dev(scores))
+
+    def expected_wins(self, n: int = 10000) -> None:
         sims_completed = 0
         team_expected = {t: 0.0 for t in self.teams}
         for idx, week in enumerate(self.schedule):
@@ -194,11 +199,8 @@ class SeasonSimulation:
                     continue
 
                 for _ in range(0, n):
-                    home_scores = self._team_scores[matchup["home_team"]]
-                    home_score = sample_normal_distribution(mean(home_scores), std_dev(home_scores))
-
-                    away_scores = self._team_scores[matchup["away_team"]]
-                    away_score = sample_normal_distribution(mean(away_scores), std_dev(away_scores))
+                    home_score = self._simulate_team_from_previous_scores(matchup["home_team"])
+                    away_score = self._simulate_team_from_previous_scores(matchup["away_team"])
 
                     if home_score > away_score:
                         team_expected[matchup["home_team"]] += 1.0 / n
@@ -222,7 +224,7 @@ class SeasonSimulation:
                     team_actual[matchup["away_team"]] += 1
 
         pt = PT()
-        pt.title = "Expected Wins"
+        pt.title = f"Expected Wins (n={n})"
         pt.field_names = ["Team", "xWins", "Wins", "Over Performance"]
         sortable_list = [
             [
@@ -239,6 +241,7 @@ class SeasonSimulation:
         return
 
     def run(self, n: int) -> tuple[dict, dict]:
+        self._n = n
         for i in range(n):
             if i % 50 == 0:
                 if False:
@@ -266,7 +269,7 @@ class SeasonSimulation:
                 expected_results[team].points_scored += standing.points_scored / len(self.raw_results)
 
         pt = PT()
-        pt.title = "Projected Standings"
+        pt.title = f"Projected Standings (n={self._n})"
         pt.field_names = ["Team", "Wins", "Losses", "PF", "PA"]
 
         sortable_list = []
@@ -287,7 +290,7 @@ class SeasonSimulation:
 
     def print_regular_season_predictions(self) -> None:
         pt = PT()
-        pt.title = "Final Position Probability"
+        pt.title = f"Final Position Probability (n={self._n})"
         pt.field_names = [
             "Team",
             "1st %",
@@ -317,12 +320,12 @@ class SeasonSimulation:
         pt.field_names = ["Team", "Odds"]
         sortable_list = sorted(sortable_list, key=lambda row: sum(row[1:7]), reverse=True)  # Sort by playoff odds
         for row in sortable_list:
-            pt.add_row([row[0], sum(row[1:7])])
+            pt.add_row([row[0], f"{round(sum(row[1:7]), 2)}"])
         print(pt)
 
     def print_playoff_predictions(self) -> None:
         pt = PT()
-        pt.title = "Playoff Results Probability"
+        pt.title = f"Playoff Results Probability (n={self._n})"
         pt.field_names = [
             "Team",
             "1st %",
@@ -350,22 +353,23 @@ class SeasonSimulation:
         results = SingleSeasonSimulationResults(self.teams)
 
         # Regular season simulation
-        for week, scoreboard in self.matchup_data.items():
-            for matchup in scoreboard:
-                home_roster = Roster(matchup["home_lineup"])
-                away_roster = Roster(matchup["away_lineup"])
-
-                if int(week) > self.starting_week:
-                    if matchup["home_team_score"] > matchup["away_team_score"]:
-                        results.team_win(matchup["home_team"], matchup["home_team_score"], matchup["away_team_score"])
-                        results.team_loss(matchup["away_team"], matchup["away_team_score"], matchup["home_team_score"])
+        for week_schedule in self.schedule:
+            for matchup in week_schedule:
+                home_team = matchup["home_team"]
+                home_score = matchup["home_team_score"]
+                away_team = matchup["away_team"]
+                away_score = matchup["away_team_score"]
+                if home_score != 0.0 and away_score != 0.0:
+                    if home_score > away_score:
+                        results.team_win(home_team, home_score, away_score)
+                        results.team_loss(away_team, away_score, home_score)
                     else:
-                        results.team_win(matchup["away_team"], matchup["away_team_score"], matchup["home_team_score"])
-                        results.team_loss(matchup["home_team"], matchup["home_team_score"], matchup["away_team_score"])
+                        results.team_win(away_team, away_score, home_score)
+                        results.team_loss(home_team, home_score, away_score)
                     continue
 
-                home_score = home_roster.simulate_projected_score(self.position_stats)
-                away_score = away_roster.simulate_projected_score(self.position_stats)
+                home_score = self._simulate_team_from_previous_scores(home_team)
+                away_score = self._simulate_team_from_previous_scores(away_team)
 
                 if home_score > away_score:
                     results.team_win(matchup["home_team"], home_score, away_score)
