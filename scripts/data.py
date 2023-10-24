@@ -441,6 +441,32 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
     return output_data, league
 
 
+def get_waiver_wire_activity(league: League) -> list[dict[str, any]]:
+    activities = []
+    # Waiver wire and draft activity
+    for offset in [0, 25, 50, 75]:
+        recent_activity = league.recent_activity(25, offset=offset)
+        for activity in recent_activity:
+            print(activity)
+            activities.append(
+                {
+                    "date": activity.date,
+                    "actions": [
+                        {
+                            "team": action[0].team_name,
+                            "action": action[1],
+                            "player": {"name": action[2].name, "player_id": action[2].playerId},
+                        }
+                        for action in activity.actions
+                    ],
+                }
+            )
+
+    print(activities)
+
+    return activities
+
+
 def perform_roster_analysis(data: dict[str, any], current_week: int) -> None:
     matchup_data = data["matchup_data"]
     points_left_on_bench = {}
@@ -596,13 +622,10 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
-    # waiver_wire = get_waiver_wire_activity(league)
-    # write_to_file(waiver_wire, "waiver_wire.json")
-
-    # perform_waiver_analysis(waiver_wire)
-    # exit(1)
 
     data, league = scrape_matchups()
+
+    rank_weekly_performances(data)
 
     try:
         logging.info("calculating stats about the draft")
