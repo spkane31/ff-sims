@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import sys
 import time
 
@@ -11,7 +12,7 @@ from scipy import stats
 
 from models.roster import Roster
 from models.activity import get_waiver_wire_activity, perform_waiver_analysis
-from simulation import SeasonSimulation
+from simulation import SeasonSimulation, SingleSeasonSimulationResults
 from utils import write_to_file, mean, std_dev, flatten_extend
 
 
@@ -29,7 +30,9 @@ if os.environ.get("DEBUG_LEVEL") != "" and False:
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
@@ -103,7 +106,9 @@ def calc_team_overperformance(data: dict[str, list[float]], current_week: int) -
     print(pt)
 
 
-def add_positional_diff_as_pct(diffs_per_position: dict[str, float], lineup: dict[str, any]) -> None:
+def add_positional_diff_as_pct(
+    diffs_per_position: dict[str, float], lineup: dict[str, any]
+) -> None:
     for player in lineup:
         diff = player["actual"] - player["projection"]
         if player["projection"] != 0:
@@ -115,7 +120,9 @@ def add_positional_diff_as_pct(diffs_per_position: dict[str, float], lineup: dic
     return
 
 
-def add_positional_diff_as_raw(diffs_per_position: dict[str, float], lineup: dict[str, any]) -> None:
+def add_positional_diff_as_raw(
+    diffs_per_position: dict[str, float], lineup: dict[str, any]
+) -> None:
     for player in lineup:
         diff = player["actual"] - player["projection"]
         if player["projection"] != 0:
@@ -143,7 +150,13 @@ def calc_position_performances(data: dict[str, list[float]]) -> None:
             add_positional_diff_as_raw(raw_diff_per_position, matchup["away_lineup"])
 
     pt = PrettyTable()
-    pt.field_names = ["Position", "Average Difference (%)", "Total Difference", "Std. Dev.", "P-Value"]
+    pt.field_names = [
+        "Position",
+        "Average Difference (%)",
+        "Total Difference",
+        "Std. Dev.",
+        "P-Value",
+    ]
 
     pct_string = "%"  # Stupid python hack because you cannot put a '%' in an f-string
     all_diffs = []
@@ -225,8 +238,15 @@ def perform_redraft(draft_data: list[dict[str, any]]) -> None:
     sorted_redraft = sorted(redraft_difference, key=lambda p: p[-1], reverse=True)
 
     pt = PrettyTable()
-    pt.table = "Best/Worst Picks By Value"
-    pt.field_names = ["Player Name", "Team Name", "Total Points", "Redraft Position", "Draft Position", "Difference"]
+    pt.title = "Best/Worst Picks By Value"
+    pt.field_names = [
+        "Player Name",
+        "Team Name",
+        "Total Points",
+        "Redraft Position",
+        "Draft Position",
+        "Difference",
+    ]
 
     top_n = 10
     sorted_redraft = flatten_extend([sorted_redraft[:top_n], sorted_redraft[-top_n:]])
@@ -240,12 +260,21 @@ def perform_redraft(draft_data: list[dict[str, any]]) -> None:
 
     # Sort by team
     sorted_redraft = sorted(
-        sorted(redraft_difference, key=lambda p: p[-1], reverse=True), key=lambda p: p[1], reverse=False
+        sorted(redraft_difference, key=lambda p: p[-1], reverse=True),
+        key=lambda p: p[1],
+        reverse=False,
     )
 
     pt = PrettyTable()
     pt.title = "Draft Performance By Team"
-    pt.field_names = ["Player Name", "Team Name", "Total Points", "Redraft Position", "Draft Position", "Difference"]
+    pt.field_names = [
+        "Player Name",
+        "Team Name",
+        "Total Points",
+        "Redraft Position",
+        "Draft Position",
+        "Difference",
+    ]
     pt.add_rows(sorted_redraft)
     print(pt)
 
@@ -279,7 +308,14 @@ def perform_draft_analytics(data: dict[str, any], league: League):
             player_points = player.total_points
             pick["total_points"] = player_points
 
-            pt.add_row([((round_number - 1) * 10) + round_pick, player_name, player_points, team_name])
+            pt.add_row(
+                [
+                    ((round_number - 1) * 10) + round_pick,
+                    player_name,
+                    player_points,
+                    team_name,
+                ]
+            )
 
         # Points per team
         try:
@@ -291,15 +327,29 @@ def perform_draft_analytics(data: dict[str, any], league: League):
         try:
             player = best_pick_per_round[round_number]
             if player[3] < player_points:
-                best_pick_per_round[round_number] = [round_number, team_name, player_name, player_points]
+                best_pick_per_round[round_number] = [
+                    round_number,
+                    team_name,
+                    player_name,
+                    player_points,
+                ]
         except KeyError:
-            best_pick_per_round[round_number] = [round_number, team_name, player_name, player_points]
+            best_pick_per_round[round_number] = [
+                round_number,
+                team_name,
+                player_name,
+                player_points,
+            ]
 
         # Worst pick per round
         try:
             player = worst_pick_per_round[round_number]
             if player[2] > player_points:
-                worst_pick_per_round[round_number] = [team_name, player_name, player_points]
+                worst_pick_per_round[round_number] = [
+                    team_name,
+                    player_name,
+                    player_points,
+                ]
         except KeyError:
             worst_pick_per_round[round_number] = [team_name, player_name, player_points]
 
@@ -328,7 +378,11 @@ def perform_draft_analytics(data: dict[str, any], league: League):
 
     sortable_list = []
     for round_number in best_pick_per_round:
-        sortable_list.append(flatten_extend([best_pick_per_round[round_number], worst_pick_per_round[round_number]]))
+        sortable_list.append(
+            flatten_extend(
+                [best_pick_per_round[round_number], worst_pick_per_round[round_number]]
+            )
+        )
     sortable_list = sorted(sortable_list, key=lambda row: row[0], reverse=False)
 
     pt = PrettyTable()
@@ -363,7 +417,9 @@ def perform_draft_analytics(data: dict[str, any], league: League):
     return
 
 
-def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> dict[str, any]:
+def scrape_matchups(
+    file_name: str = "history.json", year=2023, debug=False
+) -> dict[str, any]:
     """Scrape all matchup data from 2017 to 2020"""
 
     if os.path.isfile(file_name):
@@ -371,14 +427,18 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
         logging.info(f"found existing data, remove {file_name} to regen")
         f = open(file_name)
         try:
-            return json.load(f), League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
+            return json.load(f), League(
+                league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug
+            )
         except json.decoder.JSONDecodeError:
             pass
 
     matchup_data = {}
     schedule = []
 
-    league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug)
+    league = League(
+        league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=debug
+    )
 
     for week in range(1, 15):
         matchup_data[week] = []
@@ -447,7 +507,6 @@ def get_waiver_wire_activity(league: League) -> list[dict[str, any]]:
     for offset in [0, 25, 50, 75]:
         recent_activity = league.recent_activity(25, offset=offset)
         for activity in recent_activity:
-            print(activity)
             activities.append(
                 {
                     "date": activity.date,
@@ -455,14 +514,15 @@ def get_waiver_wire_activity(league: League) -> list[dict[str, any]]:
                         {
                             "team": action[0].team_name,
                             "action": action[1],
-                            "player": {"name": action[2].name, "player_id": action[2].playerId},
+                            "player": {
+                                "name": action[2].name,
+                                "player_id": action[2].playerId,
+                            },
                         }
                         for action in activity.actions
                     ],
                 }
             )
-
-    print(activities)
 
     return activities
 
@@ -496,18 +556,42 @@ def perform_roster_analysis(data: dict[str, any], current_week: int) -> None:
             if home_roster.points_scored() > away_roster.points_scored():
                 margin = home_roster.points_scored() - away_roster.points_scored()
                 points_left_on_bench_per_week.append(
-                    [str(week), matchup["home_team"], home_diff, "WIN", f"{round(margin, 2)}"]
+                    [
+                        str(week),
+                        matchup["home_team"],
+                        home_diff,
+                        "WIN",
+                        f"{round(margin, 2)}",
+                    ]
                 )
                 points_left_on_bench_per_week.append(
-                    [str(week), matchup["away_team"], away_diff, "LOSS", f"{round(-margin, 2)}"]
+                    [
+                        str(week),
+                        matchup["away_team"],
+                        away_diff,
+                        "LOSS",
+                        f"{round(-margin, 2)}",
+                    ]
                 )
             else:
                 margin = home_roster.points_scored() - away_roster.points_scored()
                 points_left_on_bench_per_week.append(
-                    [str(week), matchup["home_team"], home_diff, "LOSS", f"{round(margin, 2)}"]
+                    [
+                        str(week),
+                        matchup["home_team"],
+                        home_diff,
+                        "LOSS",
+                        f"{round(margin, 2)}",
+                    ]
                 )
                 points_left_on_bench_per_week.append(
-                    [str(week), matchup["away_team"], away_diff, "WIN", f"{round(-margin, 2)}"]
+                    [
+                        str(week),
+                        matchup["away_team"],
+                        away_diff,
+                        "WIN",
+                        f"{round(-margin, 2)}",
+                    ]
                 )
 
             if home_diff == 0.0:
@@ -533,13 +617,17 @@ def perform_roster_analysis(data: dict[str, any], current_week: int) -> None:
     print(pt)
 
     # The weekly points left on bench
-    points_left_on_bench_per_week = sorted(points_left_on_bench_per_week, key=lambda p: p[2], reverse=True)
+    points_left_on_bench_per_week = sorted(
+        points_left_on_bench_per_week, key=lambda p: p[2], reverse=True
+    )
     pt = PrettyTable()
     pt.field_names = ["Week", "Team", "Points Left on Bench", "Result", "Margin"]
     pt.title = "Points left on Bench per week"
 
     for idx, sl in enumerate(points_left_on_bench_per_week):
-        points_left_on_bench_per_week[idx][2] = f"{round(points_left_on_bench_per_week[idx][2], 2)}"
+        points_left_on_bench_per_week[idx][
+            2
+        ] = f"{round(points_left_on_bench_per_week[idx][2], 2)}"
 
     pt.add_rows(points_left_on_bench_per_week)
     print(pt)
@@ -562,14 +650,22 @@ def rank_weekly_performances(data: dict[str, any]) -> None:
                 [
                     week,
                     matchup["home_team"],
-                    round(matchup["home_team_score"] - matchup["home_team_projected_score"], 2),
+                    round(
+                        matchup["home_team_score"]
+                        - matchup["home_team_projected_score"],
+                        2,
+                    ),
                 ]
             )
             all_data.append(
                 [
                     week,
                     matchup["away_team"],
-                    round(matchup["away_team_score"] - matchup["away_team_projected_score"], 2),
+                    round(
+                        matchup["away_team_score"]
+                        - matchup["away_team_projected_score"],
+                        2,
+                    ),
                 ]
             )
 
@@ -581,6 +677,117 @@ def rank_weekly_performances(data: dict[str, any]) -> None:
 
     print(pt)
     return
+
+
+def random_scheduling(data: dict[str, any]) -> None:
+    matchup_data = data["matchup_data"]
+
+    all_teams = set()
+    team_scores_by_week = {}
+    weeks_completed = -1
+    team_wins = {}
+
+    for week, scoreboard in matchup_data.items():
+        for matchup in scoreboard:
+            if matchup["home_team_score"] == 0.0 and matchup["away_team_score"] == 0.0:
+                continue
+
+            all_teams.add(matchup["home_team"])
+            all_teams.add(matchup["away_team"])
+
+            home_score = matchup["home_team_score"]
+            away_score = matchup["away_team_score"]
+            try:
+                team_scores_by_week[matchup["home_team"]].append(
+                    matchup["home_team_score"]
+                )
+            except KeyError:
+                team_scores_by_week[matchup["home_team"]] = [matchup["home_team_score"]]
+
+            try:
+                team_scores_by_week[matchup["away_team"]].append(
+                    matchup["away_team_score"]
+                )
+            except KeyError:
+                team_scores_by_week[matchup["away_team"]] = [matchup["away_team_score"]]
+
+            if home_score > away_score:
+                try:
+                    team_wins[matchup["home_team"]] += 1
+                except KeyError:
+                    team_wins[matchup["home_team"]] = 1
+            else:
+                try:
+                    team_wins[matchup["away_team"]] += 1
+                except KeyError:
+                    team_wins[matchup["away_team"]] = 1
+
+            weeks_completed = int(week)
+
+    team_results = {t: [0 for i in range(0, weeks_completed + 1)] for t in all_teams}
+
+    number_of_sims = 250_000
+    for i in range(0, number_of_sims):
+        results = SingleSeasonSimulationResults([t for t in all_teams])
+        for week in range(0, weeks_completed):
+            schedule = _randomize_set(all_teams)
+
+            for j in range(0, len(schedule), 2):
+                first_score = team_scores_by_week[schedule[j]][week]
+                second_score = team_scores_by_week[schedule[j + 1]][week]
+
+                if first_score > second_score:
+                    results.team_win(schedule[j], first_score, second_score)
+                    results.team_loss(schedule[j + 1], second_score, first_score)
+                else:
+                    results.team_win(schedule[j + 1], second_score, first_score)
+                    results.team_loss(schedule[j], first_score, second_score)
+
+        for team in results.get_sorted_results():
+            # This increments the win count for a team
+            team_results[team[0]][team[1]] += 1
+
+    team_results_as_list = [
+        flatten_extend([[team_name], results])
+        for team_name, results in team_results.items()
+    ]
+    team_results_as_list = sorted(
+        team_results_as_list, key=lambda p: p[1:], reverse=True
+    )
+
+    # Add two columns for actual and expected # of wins
+    for idx, _ in enumerate(team_results_as_list):
+        team_results_as_list[idx].append(0)
+        team_results_as_list[idx].append(0)
+
+    for idx, team_results in enumerate(team_results_as_list):
+        for i in range(1, len(team_results) - 2):
+            if team_results[i] == 0:
+                team_results[i] = " "
+            else:
+                team_results[-1] += team_results[i] * (i - 1) / number_of_sims
+                team_results[
+                    i
+                ] = f"{round(100 * team_results[i] / number_of_sims, 1)} %"
+        team_results_as_list[idx][-2] = team_wins[team_results[0]]
+        team_results_as_list[idx][-1] = f"{round(team_results[-1], 1)}"
+
+    pt = PrettyTable()
+    field_names = flatten_extend(
+        [["Team Name"], [str(i) for i in range(0, weeks_completed + 1)]]
+    )
+    pt.field_names = flatten_extend([field_names, ["Actual Wins", "Average Wins"]])
+    pt.title = f"Odds of # of Wins ({number_of_sims} random schedules)"
+    pt.add_rows(team_results_as_list)
+    print(pt)
+
+    return
+
+
+def _randomize_set(teams: set[str]) -> list[str]:
+    teams_list = [t for t in teams]
+    random.shuffle(teams_list)
+    return teams_list
 
 
 def run_monte_carlo_simulation_from_week(
@@ -595,7 +802,9 @@ def run_monte_carlo_simulation_from_week(
         week = league.current_week
     season_data = data["matchup_data"]
 
-    season_simulation = SeasonSimulation(season_data, positional_data, league, schedule, starting_week=week)
+    season_simulation = SeasonSimulation(
+        season_data, positional_data, league, schedule, starting_week=week
+    )
     season_simulation.expected_wins()
     reg, playoff = season_simulation.run(50000)
     season_simulation.print_regular_season_projected_win_losses()
@@ -621,9 +830,13 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
-    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(
+        league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False
+    )
 
     data, league = scrape_matchups()
+
+    random_scheduling(data)
 
     rank_weekly_performances(data)
 
@@ -636,7 +849,7 @@ if __name__ == "__main__":
 
         perform_roster_analysis(data, league.current_week)
 
-        perform_waiver_analysis(data["activity_data"])
+        # perform_waiver_analysis(data["activity_data"])
 
         rank_weekly_performances(data)
 

@@ -20,7 +20,9 @@ def get_waiver_wire_activity(league: League) -> list[dict[str, any]]:
                         "action": action[1],
                         "player_name": action[2].name,
                         "player_id": action[2].playerId,
-                        "player_weekly_points": _get_weekly_points_from_activity(action[2], league),
+                        "player_weekly_points": _get_weekly_points_from_activity(
+                            action[2], league
+                        ),
                     }
                     for action in activity.actions
                 ],
@@ -46,18 +48,29 @@ def perform_waiver_analysis(waivers: list) -> None:
             if action["action"] == "DROPPED":
                 # Subtract points from team_net_points
                 try:
-                    team_net_points[action["team"]] -= sum(action["player_weekly_points"][week - 1 :])
+                    team_net_points[action["team"]] -= sum(
+                        action["player_weekly_points"][week - 1 :]
+                    )
                 except KeyError:
-                    team_net_points[action["team"]] = -sum(action["player_weekly_points"][week - 1 :])
+                    team_net_points[action["team"]] = -sum(
+                        action["player_weekly_points"][week - 1 :]
+                    )
 
             if action["action"] == "FA ADDED" or action["action"] == "WAIVER ADDED":
                 # Subtract points from team_net_points
                 try:
-                    team_net_points[action["team"]] += sum(action["player_weekly_points"][week - 1 :])
+                    team_net_points[action["team"]] += sum(
+                        action["player_weekly_points"][week - 1 :]
+                    )
                 except KeyError:
-                    team_net_points[action["team"]] = sum(action["player_weekly_points"][week - 1 :])
+                    team_net_points[action["team"]] = sum(
+                        action["player_weekly_points"][week - 1 :]
+                    )
 
-    sortable_list = [[team, f"{round(net_points, 2)}"] for team, net_points in team_net_points.items()]
+    sortable_list = [
+        [team, f"{round(net_points, 2)}"]
+        for team, net_points in team_net_points.items()
+    ]
     sortable_list = sorted(sortable_list, key=lambda x: float(x[1]), reverse=True)
 
     pt = PrettyTable()

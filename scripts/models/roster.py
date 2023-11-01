@@ -48,7 +48,9 @@ class Roster:
         players = [p for p in self.players if p.position in pos]
         return sorted(players, key=lambda p: p.actual, reverse=True)
 
-    def get_top_n_by_position(self, pos: str, n: int, sorting_func=_get_positions_by_actual) -> list[Player]:
+    def get_top_n_by_position(
+        self, pos: str, n: int, sorting_func=_get_positions_by_actual
+    ) -> list[Player]:
         available = sorting_func(self.players, [pos])
         if len(available) < n:
             return available
@@ -112,7 +114,11 @@ class Roster:
         return sum([p.projection for p in self.players if p.on_bench()])
 
     def _trim_flexes(
-        self, potential: list[Player], wrs: list[Player] = None, rbs: list[Player] = None, te: list[Player] = None
+        self,
+        potential: list[Player],
+        wrs: list[Player] = None,
+        rbs: list[Player] = None,
+        te: list[Player] = None,
     ):
         if wrs:
             [potential.remove(wr) for wr in wrs]
@@ -121,7 +127,9 @@ class Roster:
         if te:
             [potential.remove(te) for te in te]
 
-    def simulate_projected_score(self, positional_stats: dict[str, tuple[float, float]]) -> float:
+    def simulate_projected_score(
+        self, positional_stats: dict[str, tuple[float, float]]
+    ) -> float:
         projected_roster = self.best_projected_lineup()
 
         total_points = 0
