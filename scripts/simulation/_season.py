@@ -79,9 +79,7 @@ class SingleSeasonSimulationResults:
                     f"{round(standings.points_against, 2)}",
                 ]
             )
-        return sorted(
-            sortable_list, key=lambda row: (row[1], row[3], row[4]), reverse=True
-        )
+        return sorted(sortable_list, key=lambda row: (row[1], row[3], row[4]), reverse=True)
 
     def print(self) -> None:
         """Pretty print a table of the season simulation, this is for debugging purposes primarily"""
@@ -170,9 +168,7 @@ class SeasonSimulation:
         self._validate_teams()
         self._current_standings()
         self._n = None
-        self._all_scores = [
-            score for team, scores in self._team_scores.items() for score in scores
-        ]
+        self._all_scores = [score for team, scores in self._team_scores.items() for score in scores]
 
     def _current_standings(self) -> None:
         results = SingleSeasonSimulationResults(self.teams)
@@ -210,10 +206,7 @@ class SeasonSimulation:
         scores = self._team_scores[team]
         # Sample from the specific team + a little bit of variance from all teams schedule
         return (0.5 * sample_normal_distribution(mean(scores), std_dev(scores))) + (
-            0.5
-            * sample_normal_distribution(
-                mean(self._all_scores), std_dev(self._all_scores)
-            )
+            0.5 * sample_normal_distribution(mean(self._all_scores), std_dev(self._all_scores))
         )
 
     def expected_wins(self, n: int = 10000) -> None:
@@ -223,20 +216,13 @@ class SeasonSimulation:
             if idx + 1 > self.league.current_week:
                 break
             for matchup in week:
-                if (
-                    matchup["home_team_score"] == 0.0
-                    or matchup["away_team_score"] == 0.0
-                ):
+                if matchup["home_team_score"] == 0.0 or matchup["away_team_score"] == 0.0:
                     # This is a week that hasn't finished yet
                     continue
 
                 for _ in range(0, n):
-                    home_score = self._simulate_team_from_previous_scores(
-                        matchup["home_team"]
-                    )
-                    away_score = self._simulate_team_from_previous_scores(
-                        matchup["away_team"]
-                    )
+                    home_score = self._simulate_team_from_previous_scores(matchup["home_team"])
+                    away_score = self._simulate_team_from_previous_scores(matchup["away_team"])
 
                     if home_score > away_score:
                         team_expected[matchup["home_team"]] += 1.0 / n
@@ -250,10 +236,7 @@ class SeasonSimulation:
             if idx + 1 > self.league.current_week:
                 break
             for matchup in week:
-                if (
-                    matchup["home_team_score"] == 0.0
-                    or matchup["away_team_score"] == 0.0
-                ):
+                if matchup["home_team_score"] == 0.0 or matchup["away_team_score"] == 0.0:
                     # This is a week that hasn't finished yet
                     continue
 
@@ -304,12 +287,8 @@ class SeasonSimulation:
             for team, standing in result.standings.items():
                 expected_results[team].wins += standing.wins / len(self.raw_results)
                 expected_results[team].losses += standing.losses / len(self.raw_results)
-                expected_results[team].points_against += standing.points_against / len(
-                    self.raw_results
-                )
-                expected_results[team].points_scored += standing.points_scored / len(
-                    self.raw_results
-                )
+                expected_results[team].points_against += standing.points_against / len(self.raw_results)
+                expected_results[team].points_scored += standing.points_scored / len(self.raw_results)
 
         pt = PT()
         pt.title = f"Projected Standings (n={self._n})"
@@ -351,12 +330,8 @@ class SeasonSimulation:
         sortable_list = []
 
         for team, result in self.regular_season_simulation_results.items():
-            sortable_list.append(
-                flatten_extend([[team], [round(r * 100, 2) for r in result]])
-            )
-        sortable_list = sorted(
-            sortable_list, key=lambda row: row[1:]
-        )  # Sort by last place chances
+            sortable_list.append(flatten_extend([[team], [round(r * 100, 2) for r in result]]))
+        sortable_list = sorted(sortable_list, key=lambda row: row[1:])  # Sort by last place chances
         pt.add_rows(sortable_list)
 
         print(pt)
@@ -365,9 +340,7 @@ class SeasonSimulation:
         pt = PT()
         pt.title = "Playoff Odds"
         pt.field_names = ["Team", "Odds"]
-        sortable_list = sorted(
-            sortable_list, key=lambda row: sum(row[1:7]), reverse=True
-        )  # Sort by playoff odds
+        sortable_list = sorted(sortable_list, key=lambda row: sum(row[1:7]), reverse=True)  # Sort by playoff odds
         for row in sortable_list:
             pt.add_row([row[0], f"{round(sum(row[1:7]), 2)}"])
         print(pt)
@@ -388,12 +361,8 @@ class SeasonSimulation:
         sortable_list = []
 
         for team, result in self.playoff_simulation_results.items():
-            sortable_list.append(
-                flatten_extend([[team], [round(r * 100, 2) for r in result[:6]]])
-            )
-        sortable_list = sorted(
-            sortable_list, key=lambda row: row[1:], reverse=True
-        )  # Sort by last place chances
+            sortable_list.append(flatten_extend([[team], [round(r * 100, 2) for r in result[:6]]]))
+        sortable_list = sorted(sortable_list, key=lambda row: row[1:], reverse=True)  # Sort by last place chances
         pt.add_rows(sortable_list)
 
         print(pt)
@@ -456,16 +425,12 @@ class SeasonSimulation:
         champ_game2, third_place_game2 = self.simulate_game(second, winner2)
 
         # Simulate 3rd place game
-        third_place, fourth_place = self.simulate_game(
-            third_place_game1, third_place_game2
-        )
+        third_place, fourth_place = self.simulate_game(third_place_game1, third_place_game2)
 
         # Simulate Championship game
         winner, loser = self.simulate_game(champ_game1, champ_game2)
 
-        results.set_playoff_results(
-            [winner, loser, third_place, fourth_place, fifth_place, sixth_place]
-        )
+        results.set_playoff_results([winner, loser, third_place, fourth_place, fifth_place, sixth_place])
 
         return results
 
@@ -506,9 +471,7 @@ class SeasonSimulation:
         return r.simulate_projected_score(self.position_stats)
 
 
-def _get_teams_from_annual_data(
-    matchup_data: dict[str, any]
-) -> tuple[list[str], dict[str, int]]:
+def _get_teams_from_annual_data(matchup_data: dict[str, any]) -> tuple[list[str], dict[str, int]]:
     """Returns a list of all teams and a mapping of team name to team id"""
     teams = []
     team_ids = {}
@@ -523,9 +486,7 @@ def _get_teams_from_annual_data(
 
 # TODO seankane: to improve how I predict a teams scores I'd like to use the individual players on the roster and see the odds they outperform
 # their projection. For now, use the average score of a team and average score of the entire league.
-def _get_team_scores_from_annual_data(
-    matchup_data: dict[str, any]
-) -> dict[str, list[float]]:
+def _get_team_scores_from_annual_data(matchup_data: dict[str, any]) -> dict[str, list[float]]:
     all_scores = []
     ret = {}
     for _, scoreboard in matchup_data.items():
