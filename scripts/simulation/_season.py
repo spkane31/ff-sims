@@ -296,6 +296,7 @@ class SeasonSimulation:
 
         sortable_list = []
         for team, standing in expected_results.items():
+            # TODO seankane: when sorted this will sort a 9 before a 10
             sortable_list.append(
                 [
                     team,

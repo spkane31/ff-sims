@@ -797,7 +797,7 @@ if __name__ == "__main__":
 
     data, league = scrape_matchups()
 
-    random_scheduling(data)
+    # random_scheduling(data)
 
     rank_weekly_performances(data)
 
