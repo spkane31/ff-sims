@@ -3,14 +3,20 @@ use js_sys::Math::{cos, log, random, sqrt};
 pub struct Stats {
     average: f64,
     std_dev: f64,
+    total: f64,
 }
 
 impl Stats {
     pub fn new(data: Vec<f64>) -> Stats {
-        let average: f64 = data.iter().sum::<f64>() / data.len() as f64;
+        let total: f64 = data.clone().iter().sum::<f64>();
+        let average: f64 = total / data.len() as f64;
         let std_dev: f64 = std_deviation(data);
 
-        Stats { average, std_dev }
+        Stats {
+            average,
+            std_dev,
+            total,
+        }
     }
 
     // Thanks to SO for the answer on converting uniform distribution -> normal distr
@@ -38,6 +44,10 @@ impl Stats {
 
     pub fn std_deviation(&self) -> f64 {
         self.std_dev
+    }
+
+    pub fn total(&self) -> f64 {
+        self.total
     }
 }
 

@@ -22,9 +22,9 @@ impl LeagueData {
         self.draft_data.clone()
     }
 
-    fn matchup_data(&self) -> HashMap<i32, Vec<Scoreboard>> {
-        self.matchup_data.clone()
-    }
+    // fn matchup_data(&self) -> HashMap<i32, Vec<Scoreboard>> {
+    //     self.matchup_data.clone()
+    // }
 }
 
 #[wasm_bindgen]
