@@ -4,6 +4,7 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY . .
 RUN npm install
+RUN npm run build:wasm
 RUN npm run build
 
 ENV NODE_ENV production
