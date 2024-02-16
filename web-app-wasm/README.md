@@ -1,37 +1,47 @@
-# WebAssembly example
+# Next.js with WebAssembly
 
-This example shows how to import WebAssembly files (`.wasm`) and use them inside of a React component that is server rendered. So the WebAssembly code is executed on the server too. In the case of this example we're showing Rust compiled to WebAssembly.
+[![StandWithUkraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://github.com/vshymanskyy/StandWithUkraine/blob/main/docs/README.md)
 
-## Preview
+[Next.js](https://nextjs.org/)-based web application template with [WebAssembly](https://webassembly.org/) module written in [Rust](https://www.rust-lang.org/) programming language.
 
-Preview the example live on [StackBlitz](http://stackblitz.com/):
+## Try in [Gitpod](https://www.gitpod.io/)
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/vercel/next.js/tree/canary/examples/with-webassembly)
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/satelllte/nextjs-wasm)
 
-## How to use
+## Try in [GitHub Codespaces](https://github.com/features/codespaces)
 
-Execute [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/satelllte/nextjs-wasm)
+
+## Prerequisites
+
+- [NodeJS](https://nodejs.org/) | recommended version: `>= 16`
+- [Rust & Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) | recommended version: `>= 1.61`
+
+## Getting Started
+
+Install dependencies:
 
 ```bash
-npx create-next-app --example with-webassembly with-webassembly-app
+npm install
 ```
 
+Compile WebAssembly:
+
 ```bash
-yarn create next-app --example with-webassembly with-webassembly-app
+npm run build:wasm
 ```
 
+Run the development server:
+
 ```bash
-pnpm create next-app --example with-webassembly with-webassembly-app
+npm run dev
 ```
 
-This example uses Rust compiled to wasm, the wasm file is included in the example, but to compile your own Rust code you'll have to [install](https://www.rust-lang.org/learn/get-started) Rust.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-To compile `src/add.rs` to `add.wasm` run:
+## Build for Production
 
 ```bash
-npm run build-rust
-# or
-yarn build-rust
-# or
-pnpm build-rust
+npm run build:wasm # if wasn't built yet
+npm run build
 ```
