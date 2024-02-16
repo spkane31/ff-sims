@@ -20,40 +20,18 @@ extern crate prettytable;
 use prettytable::Table;
 
 #[wasm_bindgen]
-pub fn return_some_string(x: i32, y: i32) -> String {
-    format!("{:}    {:}", x, y)
+pub fn simulate() -> String {
+    // let mut table1: Table = Table::new();
+    // return format!("{}", table1.to_string());
+    "".to_string()
 }
 
 #[wasm_bindgen]
-pub fn simulate() -> String {
-    let mut table1: Table = Table::new();
-    let mut teams_header: Vec<String> = Vec::new();
-    teams_header.push("".to_string());
-    teams_header.push("A".to_string());
-    teams_header.push("B".to_string());
-    teams_header.push("C".to_string());
-    table1.add_row(teams_header.into());
-
-    let mut some_other_row: Vec<String> = Vec::new();
-    some_other_row.push("Row".to_string());
-    some_other_row.push("1".to_string());
-    some_other_row.push("2".to_string());
-    some_other_row.push("3".to_string());
-    table1.add_row(some_other_row.into());
-
-    let mut some_other_row: Vec<String> = Vec::new();
-    some_other_row.push("Row".to_string());
-    some_other_row.push("4".to_string());
-    some_other_row.push("5".to_string());
-    some_other_row.push("6".to_string());
-    table1.add_row(some_other_row.into());
-
-    let mut some_other_row: Vec<String> = Vec::new();
-    some_other_row.push("Row".to_string());
-    some_other_row.push("4".to_string());
-    table1.add_row(some_other_row.into());
-
-    return format!("{}", table1.to_string());
+pub fn all_time_leaders_table() -> String {
+    let mut table: Table = Table::new();
+    table.add_row(row!["", "Wins", "Losses", "Points For", "Points Against"]);
+    table.set_titles(row!["All Time Leaderboards"]);
+    return format!("{}", table.to_string());
 }
 
 // #[wasm_bindgen]

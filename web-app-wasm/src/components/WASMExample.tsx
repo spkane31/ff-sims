@@ -11,16 +11,12 @@ export const WASMExample = () => {
 
   return (
     <div>
-      Time
-      <input />
-      <br />
-      Distance
-      <input />
-      <br />
-      Pace
-      <input />
-      <br />
-      <div className={styles.displaylinebreak}>{ctx.wasm.simulate()}</div>
+      <div>
+        <div className={styles.displaylinebreak}>{ctx.wasm.simulate()}</div>
+      </div>
+      <div className={styles.displaylinebreak}>
+        {ctx.wasm.all_time_leaders_table()}
+      </div>
     </div>
   );
 };

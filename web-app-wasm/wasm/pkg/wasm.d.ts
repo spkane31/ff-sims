@@ -7,23 +7,21 @@
 */
 export function add(x: number, y: number): number;
 /**
-* @param {number} x
-* @param {number} y
-* @returns {string}
-*/
-export function return_some_string(x: number, y: number): string;
-/**
 * @returns {string}
 */
 export function simulate(): string;
+/**
+* @returns {string}
+*/
+export function all_time_leaders_table(): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly add: (a: number, b: number) => number;
-  readonly return_some_string: (a: number, b: number, c: number) => void;
   readonly simulate: (a: number) => void;
+  readonly all_time_leaders_table: (a: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_free: (a: number, b: number) => void;
 }

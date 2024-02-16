@@ -37,14 +37,12 @@ function getStringFromWasm0(ptr, len) {
     return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
 }
 /**
-* @param {number} x
-* @param {number} y
 * @returns {string}
 */
-export function return_some_string(x, y) {
+export function simulate() {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.return_some_string(retptr, x, y);
+        wasm.simulate(retptr);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         return getStringFromWasm0(r0, r1);
@@ -57,10 +55,10 @@ export function return_some_string(x, y) {
 /**
 * @returns {string}
 */
-export function simulate() {
+export function all_time_leaders_table() {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.simulate(retptr);
+        wasm.all_time_leaders_table(retptr);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         return getStringFromWasm0(r0, r1);

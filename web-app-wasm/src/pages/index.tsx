@@ -7,8 +7,11 @@ const Home: NextPage = () => {
   return (
     <div className={styles.container}>
       <Head>
-        <title>Pace Calculator (with WebAssembly)</title>
-        <meta name="description" content="Pace Calculator (with WebAssembly)" />
+        <title>The League Fantasy Football History</title>
+        <meta
+          name="description"
+          content="The League Fantasy Football History"
+        />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
