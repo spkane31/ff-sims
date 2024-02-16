@@ -4,7 +4,8 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY . .
 RUN npm install
-RUN npm run build:wasm
+# TODO seankane: running the build:wasm step fails in a Dockerfile, so for now build everything locally and package into Dockerfile
+# RUN npm run build:wasm
 RUN npm run build
 
 ENV NODE_ENV production

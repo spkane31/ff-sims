@@ -111,6 +111,7 @@ docs/_build/
 
 # PyBuilder
 target/
+!web-app-wasm/wasm/target
 
 # Jupyter Notebook
 .ipynb_checkpoints
