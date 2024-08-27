@@ -4,7 +4,7 @@ charset-normalizer==3.2.0
 click==8.1.7
 contourpy==1.1.0
 cycler==0.11.0
-espn-api @ git+https://github.com/cwendt94/espn-api@38860d424c368c0c933333f98a0df771dfae815a
+espn-api==0.37.0
 fonttools==4.42.1
 idna==3.4
 importlib-resources==6.1.0
