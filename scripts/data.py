@@ -21,6 +21,8 @@ load_dotenv(find_dotenv())
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
+print(SWID, ESPN_S2)
+
 PRINT_STR = "Year: {}\tWeek: {}"
 
 
@@ -777,6 +779,41 @@ def run_monte_carlo_simulation_from_week(
     return reg, playoff
 
 
+def get_historical_basic_stats() -> None:
+    output = {}
+    for year in range(2023, 2017, -1):
+        league = League(league_id=345674, year=year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+
+        result = league.standings()
+
+        # ret = {}
+        for team in result:
+            team = league.get_team_data(team.team_id)
+            owner = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
+            try:
+                data = output[owner]
+                data["wins"] += team.wins
+                data["losses"] += team.losses
+                data["total_points_for"] += team.points_for
+                data["total_points_against"] += team.points_against
+                data["record"] = data["wins"] / (data["wins"] + data["losses"])
+            except KeyError:
+                output[owner] = {
+                    "owner": ""
+                    if len(team.owners) == 0
+                    else f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title(),
+                    "wins": team.wins,
+                    "losses": team.losses,
+                    "total_points_for": team.points_for,
+                    "total_points_against": team.points_against,
+                    "id": len(output) + 1,
+                }
+
+    write_to_file([i for _, i in output.items()], "basic.json")
+
+    return None
+
+
 # TODO list:
 #  * Add a season simulator
 #    * Last place chances
@@ -792,6 +829,10 @@ def run_monte_carlo_simulation_from_week(
 if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
+
+    get_historical_basic_stats()
+
+    exit(1)
 
     league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
