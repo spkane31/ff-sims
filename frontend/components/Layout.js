@@ -1,7 +1,14 @@
-// components/Layout.js
-
 import React from "react";
-import { Container, Typography, Box, AppBar, Toolbar } from "@mui/material";
+import {
+  Container,
+  Typography,
+  Box,
+  AppBar,
+  Toolbar,
+  Grid2,
+} from "@mui/material";
+
+// components/Layout.js
 
 const Layout = ({ children }) => {
   return (

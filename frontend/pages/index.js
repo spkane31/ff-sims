@@ -26,13 +26,9 @@ export default function Home() {
               alignItems: "center",
             }}
           >
-            {/* <main className={styles.main}> */}
-            {/* <h1 className={styles.title}>The League</h1> */}
             <TitleComponent>The League</TitleComponent>
-
             <p>All Time Standings</p>
             <Table />
-            {/* </main> */}
           </Box>
         </div>
       </Layout>
