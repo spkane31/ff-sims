@@ -809,7 +809,8 @@ def get_historical_basic_stats() -> None:
                     "id": len(output) + 1,
                 }
 
-    write_to_file([i for _, i in output.items()], "basic.json")
+    # Remove the last two, sorry Knapp and Trev
+    write_to_file(sorted([i for _, i in output.items()], key=lambda x: x["wins"], reverse=True)[:-2], "basic.json")
 
     return None
 
