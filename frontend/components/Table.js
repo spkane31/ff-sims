@@ -36,7 +36,7 @@ const columns = [
 export default function Table() {
   return (
     <div style={{ width: "100%", overflowX: "auto" }}>
-      <DataGrid rows={historical} columns={columns} autoHeight />
+      <DataGrid rows={historical.slice(0, 10)} columns={columns} autoHeight />
     </div>
   );
 }
