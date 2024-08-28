@@ -41,17 +41,20 @@ export default function Table() {
   return (
     <Box
       sx={{
-        width: "100%",
         maxWidth: "100%",
         overflowX: "auto",
       }}
     >
-      <Paper sx={{ width: "100%", height: 400 }}>
+      <Paper
+        sx={{
+          minWidth: 500,
+          minHeight: 400,
+        }}
+      >
         <DataGrid
-          rows={historical.slice(0, 10)}
+          rows={historical}
           columns={columns}
           autosizeOnMount
-          autoHeight
           hideFooter
         />
       </Paper>

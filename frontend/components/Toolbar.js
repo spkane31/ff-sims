@@ -51,17 +51,17 @@ const MyToolbar = () => {
                 },
               }}
             >
-              <MenuItem onClick={handleMenuClose} component={Link} to="/">
+              <MenuItem onClick={handleMenuClose} component={Link} href="/">
                 Home
               </MenuItem>
               <MenuItem
                 onClick={handleMenuClose}
                 component={Link}
-                to="/simulations"
+                href="/simulations"
               >
                 Simulations
               </MenuItem>
-              <MenuItem onClick={handleMenuClose} component={Link} to="/data">
+              <MenuItem onClick={handleMenuClose} component={Link} href="/data">
                 Data
               </MenuItem>
             </Menu>
@@ -73,7 +73,7 @@ const MyToolbar = () => {
             </Typography>
             <div style={{ display: "flex" }}>
               <Link
-                to="/"
+                href="/"
                 style={{
                   textDecoration: "none",
                   color: "white",
@@ -83,7 +83,7 @@ const MyToolbar = () => {
                 Home
               </Link>
               <Link
-                to="/simulations"
+                href="/simulations"
                 style={{
                   textDecoration: "none",
                   color: "white",
@@ -93,7 +93,7 @@ const MyToolbar = () => {
                 Simulations
               </Link>
               <Link
-                to="/data"
+                href="/data"
                 style={{
                   textDecoration: "none",
                   color: "white",

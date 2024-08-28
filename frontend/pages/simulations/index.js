@@ -1,23 +1,16 @@
 import * as React from "react";
-
-import {
-  Table,
-  TableHead,
-  TableCell,
-  TableRow,
-  TableBody,
-} from "@mui/material";
-
 import schedule from "../../data/schedule.json";
 import team_avgs from "../../data/team_avgs.json";
+import { DataGrid } from "@mui/x-data-grid";
+import { Box, Paper } from "@mui/material";
 
 export default function Home() {
   return (
-    <div>
+    <>
       <h1>Simulations</h1>
       <TeamData />
-      <Schedule />
-    </div>
+      {/* <Schedule /> */}
+    </>
   );
 }
 
@@ -105,27 +98,42 @@ const TeamMatchup = ({ game, numSimulations = 75 }) => {
 };
 
 const TeamData = () => {
+  const columns = [
+    { field: "teamName", headerName: "Team Name", flex: 1 },
+    { field: "average", headerName: "Average", flex: 1 },
+    { field: "std_dev", headerName: "Standard Deviation", flex: 1 },
+  ];
+
+  const rows = Object.entries(team_avgs).map(
+    ([teamName, { average, std_dev }]) => ({
+      id: teamName,
+      teamName,
+      average: average.toFixed(2),
+      std_dev: std_dev.toFixed(2),
+    })
+  );
+
   return (
-    <>
-      <h1>Team Data</h1>
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableCell>Team Name</TableCell>
-            <TableCell>Average</TableCell>
-            <TableCell>Standard Deviation</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {Object.entries(team_avgs).map(([teamName, { average, std_dev }]) => (
-            <TableRow key={teamName}>
-              <TableCell>{teamName}</TableCell>
-              <TableCell>{average.toFixed(2)}</TableCell>
-              <TableCell>{std_dev.toFixed(2)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </>
+    <Box
+      sx={{
+        maxWidth: "100%",
+        overflowX: "auto",
+      }}
+    >
+      <Paper
+        sx={{
+          minWidth: 500,
+          minHeight: 400,
+        }}
+      >
+        <DataGrid
+          columns={columns}
+          rows={rows}
+          autosizeOnMount
+          autoHeight
+          hideFooter
+        />
+      </Paper>
+    </Box>
   );
 };

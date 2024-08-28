@@ -1,4 +1,5 @@
 import MyToolbar from "../components/Toolbar";
+import Footer from "../components/Footer";
 import { ThemeProvider } from "@mui/material";
 import theme from "../components/theme";
 
@@ -7,6 +8,7 @@ function MyApp({ Component, pageProps }) {
     <ThemeProvider theme={theme}>
       <MyToolbar />
       <Component {...pageProps} />
+      <Footer />
     </ThemeProvider>
   );
 }
