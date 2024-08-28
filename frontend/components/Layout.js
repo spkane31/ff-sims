@@ -17,6 +17,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 
 const Layout = ({ children }) => {
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
 
   const toggleDrawer = () => {
     setIsDrawerOpen(!isDrawerOpen);
@@ -27,16 +28,18 @@ const Layout = ({ children }) => {
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6">The League Statistics</Typography>
-          <Box sx={{ flexGrow: 1 }}>
-            <IconButton
-              edge="end"
-              color="inherit"
-              aria-label="menu"
-              onClick={toggleDrawer}
-            >
-              <MenuIcon />
-            </IconButton>
-          </Box>
+          {isMobile && (
+            <Box sx={{ flexGrow: 1 }}>
+              <IconButton
+                edge="end"
+                color="inherit"
+                aria-label="menu"
+                onClick={toggleDrawer}
+              >
+                <MenuIcon />
+              </IconButton>
+            </Box>
+          )}
         </Toolbar>
       </AppBar>
 
