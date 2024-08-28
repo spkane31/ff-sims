@@ -853,8 +853,9 @@ def get_schedule(league: League) -> None:
 
 
 def get_basic_stats(league: League) -> None:
-    team_id_to_owner = {}
-    scores = {}
+    team_id_to_owner: dict[str, str] = {}
+    scores: dict[str, list[float]] = {}
+    all_scores: list[float] = []
 
     result = league.standings()
     for team in result:
@@ -871,6 +872,8 @@ def get_basic_stats(league: League) -> None:
             try:
                 scores[team_id_to_owner[matchup.home_team.team_id]].append(matchup.home_score)
                 scores[team_id_to_owner[matchup.away_team.team_id]].append(matchup.away_score)
+                all_scores.append(matchup.home_score)
+                all_scores.append(matchup.away_score)
             except KeyError:
                 pass
 
@@ -880,6 +883,11 @@ def get_basic_stats(league: League) -> None:
             "average": round(mean(score), 3),
             "std_dev": round(std_dev(score), 3),
         }
+
+    output["League"] = {
+        "average": round(mean(all_scores), 3),
+        "std_dev": round(std_dev(all_scores), 3),
+    }
 
     print(output)
 
