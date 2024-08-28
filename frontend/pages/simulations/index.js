@@ -56,8 +56,8 @@ const TeamData = () => {
           {Object.entries(team_avgs).map(([teamName, { average, std_dev }]) => (
             <TableRow key={teamName}>
               <TableCell>{teamName}</TableCell>
-              <TableCell>{average}</TableCell>
-              <TableCell>{std_dev}</TableCell>
+              <TableCell>{average.toFixed(2)}</TableCell>
+              <TableCell>{std_dev.toFixed(2)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -852,6 +852,39 @@ def get_schedule(league: League) -> None:
     return None
 
 
+def get_basic_stats(league: League) -> None:
+    team_id_to_owner = {}
+    scores = {}
+
+    result = league.standings()
+    for team in result:
+        team = league.get_team_data(team.team_id)
+        owner = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
+        team_id_to_owner[team.team_id] = owner
+        scores[owner] = []
+
+    for week in range(1, 15):
+        weekly_schedule = league.scoreboard(week=week)
+        for matchup in weekly_schedule:
+            try:
+                scores[team_id_to_owner[matchup.home_team.team_id]].append(matchup.home_score)
+                scores[team_id_to_owner[matchup.away_team.team_id]].append(matchup.away_score)
+            except KeyError:
+                pass
+
+    output = {}
+    for owner, score in scores.items():
+        output[owner] = {
+            "average": round(mean(score), 3),
+            "std_dev": round(std_dev(score), 3),
+        }
+
+    print(output)
+
+    write_to_file(output, "team_avgs.json")
+    return None
+
+
 # TODO list:
 #  * Add a season simulator
 #    * Last place chances
@@ -872,7 +905,8 @@ if __name__ == "__main__":
 
     league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
-    get_schedule(league)
+    # get_schedule(league)
+    get_basic_stats(league)
 
     exit(1)
 
