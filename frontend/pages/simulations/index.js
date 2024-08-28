@@ -9,7 +9,7 @@ export default function Home() {
     <>
       <h1>Simulations</h1>
       <TeamData />
-      {/* <Schedule /> */}
+      <Schedule />
     </>
   );
 }
@@ -31,7 +31,7 @@ const Schedule = () => {
   );
 };
 
-const TeamMatchup = ({ game, numSimulations = 75 }) => {
+const TeamMatchup = ({ game, numSimulations = 100 }) => {
   // const [homeWins, setHomeWins] = React.useState(0);
   // const [awayWins, setAwayWins] = React.useState(0);
 
@@ -91,8 +91,8 @@ const TeamMatchup = ({ game, numSimulations = 75 }) => {
 
   return (
     <li>
-      {game.away_team_owner} ({(100 * awayWinPercentage).toFixed(3)}) @{" "}
-      {game.home_team_owner} ({(100 * homeWinPercentage).toFixed(3)})
+      {game.away_team_owner} ({(100 * awayWinPercentage).toFixed(3)} %) @{" "}
+      {game.home_team_owner} ({(100 * homeWinPercentage).toFixed(3)} %)
     </li>
   );
 };
