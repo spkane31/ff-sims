@@ -1,0 +1,10 @@
+{
+  "Connor Brand": {
+    "average": 100.0,
+    "std_dev": 5.0
+  },
+  "Sean Kane": {
+    "average": 90.0,
+    "std_dev": 15.0
+  }
+}
