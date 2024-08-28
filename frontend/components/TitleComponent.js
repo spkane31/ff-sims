@@ -9,8 +9,6 @@ const TitleComponent = ({ children }) => {
       variant="h1"
       component="h1"
       sx={{
-        margin: 0,
-        lineHeight: 1.15,
         fontSize: "4rem",
         textAlign: "center",
       }}

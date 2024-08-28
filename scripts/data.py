@@ -809,8 +809,81 @@ def get_historical_basic_stats() -> None:
                     "id": len(output) + 1,
                 }
 
-    write_to_file([i for _, i in output.items()], "basic.json")
+    # Remove the last two, sorry Knapp and Trev
+    write_to_file(sorted([i for _, i in output.items()], key=lambda x: x["wins"], reverse=True)[:-2], "basic.json")
 
+    return None
+
+
+def get_schedule(league: League) -> None:
+    schedule = []
+
+    team_to_id = {}
+    team_id_to_owner = {}
+
+    # Get the owners names from each Team
+    result = league.standings()
+    for team in result:
+        team = league.get_team_data(team.team_id)
+        team_to_id[f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()] = team.team_id
+        team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
+
+    for week in range(1, 15):
+        weekly_schedule = league.scoreboard(week=week)
+        week_matchups = []
+        for matchup in weekly_schedule:
+            home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
+            away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
+            home_team_owner = team_id_to_owner[home_team_id]
+            away_team_owner = team_id_to_owner[away_team_id]
+            week_matchups.append(
+                {
+                    "home_team_id": home_team_id,
+                    "away_team_id": away_team_id,
+                    "home_team_owner": home_team_owner,
+                    "away_team_owner": away_team_owner,
+                }
+            )
+
+        schedule.append(week_matchups)
+
+    write_to_file(schedule, "schedule.json")
+
+    return None
+
+
+def get_basic_stats(league: League) -> None:
+    team_id_to_owner = {}
+    scores = {}
+
+    result = league.standings()
+    for team in result:
+        team = league.get_team_data(team.team_id)
+        owner = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
+        team_id_to_owner[team.team_id] = owner
+        scores[owner] = []
+
+    for week in range(1, 15):
+        weekly_schedule = league.scoreboard(week=week)
+        for matchup in weekly_schedule:
+            if matchup.is_playoff:
+                continue
+            try:
+                scores[team_id_to_owner[matchup.home_team.team_id]].append(matchup.home_score)
+                scores[team_id_to_owner[matchup.away_team.team_id]].append(matchup.away_score)
+            except KeyError:
+                pass
+
+    output = {}
+    for owner, score in scores.items():
+        output[owner] = {
+            "average": round(mean(score), 3),
+            "std_dev": round(std_dev(score), 3),
+        }
+
+    print(output)
+
+    write_to_file(output, "team_avgs.json")
     return None
 
 
@@ -830,11 +903,14 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
-    get_historical_basic_stats()
-
-    exit(1)
+    # get_historical_basic_stats()
 
     league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
+
+    # get_schedule(league)
+    get_basic_stats(league)
+
+    exit(1)
 
     data, league = scrape_matchups()
 
