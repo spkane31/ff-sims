@@ -866,6 +866,8 @@ def get_basic_stats(league: League) -> None:
     for week in range(1, 15):
         weekly_schedule = league.scoreboard(week=week)
         for matchup in weekly_schedule:
+            if matchup.is_playoff:
+                continue
             try:
                 scores[team_id_to_owner[matchup.home_team.team_id]].append(matchup.home_score)
                 scores[team_id_to_owner[matchup.away_team.team_id]].append(matchup.away_score)
