@@ -15,13 +15,15 @@ import {
   Button,
   Select,
   MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import Simulator from "../../simulation/simulator";
 
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
-  const [steps, setSteps] = React.useState(1);
+  const [steps, setSteps] = React.useState(1000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
@@ -57,36 +59,39 @@ export default function Home() {
         paddingRight: "5%",
       }}
     >
-      <Button
-        onClick={() => {
-          const start = new Date().getTime();
-          for (let i = 0; i < steps; i++) {
-            simulator.step();
-          }
-          const end = new Date().getTime();
-          setTotalRunTime(totalRunTime + (end - start));
-          setTeamData(simulator.getTeamScoringData());
-        }}
-        variant="contained"
-      >
-        Simulate (n={simulator.simulations})
-      </Button>
-      {/* Add a drop menu to optionally set step to 1, 5, 10, 25, 50 */}
-      <Select
-        labelId="demo-simple-select-label"
-        id="demo-simple-select"
-        value={steps}
-        label="Step Size"
-        onChange={handleChange}
-      >
-        <MenuItem value={1}>1</MenuItem>
-        <MenuItem value={5}>5</MenuItem>
-        <MenuItem value={10}>10</MenuItem>
-        <MenuItem value={25}>25</MenuItem>
-        <MenuItem value={50}>50</MenuItem>
-        <MenuItem value={100}>100</MenuItem>
-        <MenuItem value={500}>500</MenuItem>
-      </Select>
+      <Box sx={{ display: "flex", alignItems: "center" }}>
+        <Button
+          onClick={() => {
+            const start = new Date().getTime();
+            for (let i = 0; i < steps; i++) {
+              simulator.step();
+            }
+            const end = new Date().getTime();
+            setTotalRunTime(totalRunTime + (end - start));
+            setTeamData(simulator.getTeamScoringData());
+          }}
+          variant="contained"
+        >
+          Simulate (n={simulator.simulations})
+        </Button>
+        <FormControl fullWidth>
+          <InputLabel id="demo-simple-select-label">Age</InputLabel>{" "}
+          <Select
+            labelId="demo-simple-select-label"
+            id="demo-simple-select"
+            value={steps}
+            label="Step Size"
+            onChange={handleChange}
+            sx={{ marginLeft: "10px" }}
+          >
+            <MenuItem value={1}>1</MenuItem>
+            <MenuItem value={100}>100</MenuItem>
+            <MenuItem value={500}>500</MenuItem>
+            <MenuItem value={1000}>1000</MenuItem>
+            <MenuItem value={5000}>5000</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
       <Paper>Total Run Time: {totalRunTime}ms</Paper>
       <TeamData teamData={teamData} />
       <Box sx={{ marginTop: "25px" }} />
