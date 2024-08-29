@@ -70,5 +70,8 @@ describe("Simulator", () => {
       expect(teamResults.pointsAgainst).toBeGreaterThan(0);
       expect(teamResults.wins + teamResults.losses).toBe(28);
     });
+
+    const scoringData = simulator.getTeamScoringData();
+    expect(scoringData.length).toBe(10);
   });
 });

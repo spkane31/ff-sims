@@ -18,12 +18,24 @@ import Simulator from "../../simulation/simulator";
 
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
+  const [teamData, setTeamData] = React.useState(null);
 
   React.useEffect(() => {
     setSimulator(new Simulator());
   }, []);
 
-  return (
+  React.useEffect(() => {
+    if (simulator !== null) {
+      console.log(
+        "setting team scoring data, this should only happen one time"
+      );
+      setTeamData(simulator.getTeamScoringData());
+    }
+  }, [simulator]);
+
+  return simulator === null ? (
+    <div>Loading...</div>
+  ) : (
     <Box
       sx={{
         padding: "5rem 0",
@@ -37,17 +49,24 @@ export default function Home() {
         paddingRight: "5%",
       }}
     >
-      <Button onClick={() => simulator.step()} variant="contained">
+      <Button
+        onClick={() => {
+          simulator.step();
+          setTeamData(simulator.getTeamScoringData());
+          console.log("RESULTS: ", teamData);
+        }}
+        variant="contained"
+      >
         Simulate
       </Button>
-      <TeamData />
+      <TeamData teamData={teamData} />
       <Box sx={{ marginTop: "25px" }} />
       <Schedule />
     </Box>
   );
 }
 
-const Schedule = () => {
+const Schedule = ({ simulator }) => {
   return (
     <>
       <Typography variant="h5" sx={{ textAlign: "center" }}>
@@ -147,7 +166,12 @@ const TeamMatchup = ({ game, numSimulations = 500 }) => {
   );
 };
 
-const TeamData = () => {
+const TeamData = ({ teamData }) => {
+  if (teamData === null) {
+    return <div>Loading...</div>;
+  }
+
+  console.log("<TeamData>: teamData: ", teamData);
   const columns = [
     { field: "teamName", headerName: "Team Name", flex: 1 },
     { field: "average", headerName: "Average", flex: 1 },
@@ -158,21 +182,18 @@ const TeamData = () => {
     { field: "last_place_odds", headerName: "Last Place Odds", flex: 1 },
   ];
 
-  const rows = Object.entries(team_avgs).map(
-    ([teamName, { average, std_dev }]) => {
-      const wins = Math.random() * 14;
-      return {
-        id: teamName,
-        teamName,
-        average: average.toFixed(2),
-        std_dev: std_dev.toFixed(2),
-        projected_wins: wins.toFixed(2),
-        projected_losses: (14 - wins).toFixed(2),
-        playoff_odds: Math.random().toFixed(2),
-        last_place_odds: Math.random().toFixed(2),
-      };
-    }
-  );
+  const rows2 = Object.entries(teamData).map(([teamName, teamResults]) => {
+    return {
+      id: teamResults.id,
+      teamName: teamResults.teamName,
+      average: teamResults.average.toFixed(2),
+      std_dev: teamResults.std_dev.toFixed(2),
+      projected_wins: teamResults.wins.toFixed(2),
+      projected_losses: teamResults.losses.toFixed(2),
+      playoff_odds: 0.0, //teamResults.playoff_odds.toFixed(2),
+      last_place_odds: 0.0, //teamResults.last_place_odds.toFixed(2),
+    };
+  });
 
   return (
     <Box
@@ -192,7 +213,7 @@ const TeamData = () => {
         </Typography>
         <DataGrid
           columns={columns}
-          rows={rows}
+          rows={rows2}
           autosizeOnMount
           autoHeight
           hideFooter

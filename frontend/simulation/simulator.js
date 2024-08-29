@@ -1,4 +1,5 @@
 import team_to_id from "../data/team_to_id.json";
+import team_id_to_owner from "../data/team_id_to_owner.json";
 import schedule from "../data/schedule.json";
 import team_avgs from "../data/team_avgs.json";
 
@@ -26,6 +27,31 @@ class Simulator {
         std_dev: value.std_dev,
       });
     });
+  }
+
+  // list of all teams, and projected wins, losses, points for, points against, playoff odds, last place odds
+  getTeamScoringData() {
+    const data = [];
+    const sims = this.simulations;
+    this.results.forEach((value, key) => {
+      data.push({
+        id: key,
+        teamName: team_id_to_owner[parseInt(key)],
+        average: this.teamStats.get(key).average,
+        std_dev: this.teamStats.get(key).std_dev,
+        wins: sims === 0 ? 0.0 : value.wins / sims,
+        losses: sims === 0 ? 0.0 : value.losses / sims,
+        pointsFor: sims === 0 ? 0.0 : value.pointsFor / sims,
+        pointsAgainst: sims === 0 ? 0.0 : value.pointsAgainst / sims,
+        playoff_odds: sims === 0 ? 0.0 : value.madePlayoffs / sims,
+        last_place_odds: sims === 0 ? 0.0 : value.lastPlace / sims,
+      });
+    });
+    return data;
+  }
+
+  totalGames() {
+    return this.schedule.length * this.simulations;
   }
 
   getTeams() {
@@ -63,10 +89,13 @@ class Simulator {
   }
 
   step() {
+    // create a map of team_id to SingleSeasonResults
+    const singleSeasonResults = new SingleSeasonResults();
+    console.log("single season results: ", singleSeasonResults);
+
     this.schedule.forEach((game) => {
       // Code to print or process each game object in this.schedule
       game.forEach((matchup) => {
-        console.log(matchup);
         const { average: home_team_avg, std_dev: home_team_std_dev } =
           this.teamStats.get(team_to_id[matchup.home_team_owner]);
 
@@ -103,6 +132,43 @@ class Simulator {
     });
 
     this.simulations++;
+    console.log(`Simulations: ${this.simulations}`);
+  }
+}
+
+class SingleSeasonResults {
+  constructor() {
+    this.results = new Map();
+    Object.entries(team_to_id).forEach(([key, value]) => {
+      this.results.set(value, new SingleTeamResults());
+    });
+  }
+
+  teamWin(teamName) {
+    this.results.get(team_to_id[teamName]).wins++;
+  }
+
+  teamLoss(teamName) {
+    this.results.get(team_to_id[teamName]).losses++;
+  }
+
+  teamPointsFor(teamName, points) {
+    this.results.get(team_to_id[teamName]).pointsFor += points;
+  }
+
+  teamPointsAgainst(teamName, points) {
+    this.results.get(team_to_id[teamName]).pointsAgainst += points;
+  }
+}
+
+class SingleTeamResults {
+  constructor() {
+    this.wins = 0;
+    this.losses = 0;
+    this.pointsFor = 0;
+    this.pointsAgainst = 0;
+    this.madePlayoffs = false;
+    this.lastPlace = false;
   }
 }
 
@@ -112,10 +178,21 @@ class Results {
     this.losses = 0;
     this.pointsFor = 0;
     this.pointsAgainst = 0;
+    this.madePlayoffs = 0;
+    this.lastPlace = 0;
   }
 
   games() {
     return this.wins + this.losses;
+  }
+
+  addSingleSeasonResults(singleSeasonResults) {
+    this.wins += singleSeasonResults.wins;
+    this.losses += singleSeasonResults.losses;
+    this.pointsFor += singleSeasonResults.pointsFor;
+    this.pointsAgainst += singleSeasonResults.pointsAgainst;
+    this.madePlayoffs += singleSeasonResults.madePlayoffs ? 1 : 0;
+    this.lastPlace += singleSeasonResults.lastPlace ? 1 : 0;
   }
 }
 
