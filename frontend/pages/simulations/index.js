@@ -5,7 +5,6 @@ import { DataGrid } from "@mui/x-data-grid";
 import {
   Box,
   Paper,
-  Head,
   Typography,
   Table,
   TableBody,
@@ -13,9 +12,17 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Button,
 } from "@mui/material";
+import Simulator from "../../simulation/simulator";
 
 export default function Home() {
+  const [simulator, setSimulator] = React.useState(null);
+
+  React.useEffect(() => {
+    setSimulator(new Simulator());
+  }, []);
+
   return (
     <Box
       sx={{
@@ -30,6 +37,9 @@ export default function Home() {
         paddingRight: "5%",
       }}
     >
+      <Button onClick={() => simulator.step()} variant="contained">
+        Simulate
+      </Button>
       <TeamData />
       <Box sx={{ marginTop: "25px" }} />
       <Schedule />
@@ -43,6 +53,7 @@ const Schedule = () => {
       <Typography variant="h5" sx={{ textAlign: "center" }}>
         Season Prediction
       </Typography>
+
       <TableContainer component={Paper}>
         <Table stickyHeader>
           <TableHead>

@@ -1,46 +1,46 @@
 {
-    "Ethan Moran": {
-        "average": 137.629,
-        "std_dev": 28.712
-    },
-    "Jack Aldridge": {
-        "average": 131.51,
-        "std_dev": 24.148
-    },
-    "Nick Toth ": {
-        "average": 131.5,
-        "std_dev": 28.761
-    },
-    "Josh Doepker": {
-        "average": 147.456,
-        "std_dev": 26.909
-    },
-    "Kyle Burns": {
-        "average": 147.13,
-        "std_dev": 25.546
-    },
-    "Sean  Kane": {
-        "average": 151.756,
-        "std_dev": 28.79
-    },
-    "Mitch Lichtinger": {
-        "average": 125.667,
-        "std_dev": 28.141
-    },
-    "Nick Dehaven": {
-        "average": 127.336,
-        "std_dev": 32.181
-    },
-    "Kevin Dailey": {
-        "average": 127.957,
-        "std_dev": 28.368
-    },
-    "Connor Brand": {
-        "average": 131.193,
-        "std_dev": 13.16
-    },
-    "League": {
-        "average": 135.913,
-        "std_dev": 28.393
-    }
+  "Ethan Moran": {
+    "average": 137.629,
+    "std_dev": 28.712
+  },
+  "Jack Aldridge": {
+    "average": 131.51,
+    "std_dev": 24.148
+  },
+  "Nick Toth ": {
+    "average": 131.5,
+    "std_dev": 28.761
+  },
+  "Josh Doepker": {
+    "average": 147.456,
+    "std_dev": 26.909
+  },
+  "Kyle Burns": {
+    "average": 147.13,
+    "std_dev": 25.546
+  },
+  "Sean  Kane": {
+    "average": 151.756,
+    "std_dev": 28.79
+  },
+  "Mitch Lichtinger": {
+    "average": 125.667,
+    "std_dev": 28.141
+  },
+  "Nick Dehaven": {
+    "average": 127.336,
+    "std_dev": 32.181
+  },
+  "Kevin Dailey": {
+    "average": 127.957,
+    "std_dev": 28.368
+  },
+  "Connor Brand": {
+    "average": 131.193,
+    "std_dev": 13.16
+  },
+  "League": {
+    "average": 135.913,
+    "std_dev": 28.393
+  }
 }
