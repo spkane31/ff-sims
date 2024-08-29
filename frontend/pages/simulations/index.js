@@ -92,7 +92,11 @@ export default function Home() {
           </Select>
         </FormControl>
       </Box>
-      <Paper>Total Run Time: {totalRunTime}ms</Paper>
+      <Box sx={{ marginTop: "15px" }} />
+      <Typography variant="h6" sx={{ textAlign: "center" }}>
+        Total Run Time: {totalRunTime}ms
+      </Typography>
+      <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />
       <Box sx={{ marginTop: "25px" }} />
       <Schedule />

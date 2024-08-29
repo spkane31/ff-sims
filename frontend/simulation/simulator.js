@@ -105,16 +105,17 @@ class Simulator {
           this.leagueStats;
 
         // random number between 0.05 and 0.25
-        const league_jitter = Math.random() * 0.2 + 0.05;
+        const league_jitter_home = Math.random() * 0.2 + 0.05;
+        const league_jitter_away = Math.random() * 0.2 + 0.05;
 
         const home_score =
-          (1 - league_jitter) *
+          (1 - league_jitter_home) *
             (Math.random() * home_team_std_dev + home_team_avg) +
-          league_jitter * (Math.random() * league_std_dev + league_avg);
+          league_jitter_home * (Math.random() * league_std_dev + league_avg);
         const away_score =
-          (1 - league_jitter) *
+          (1 - league_jitter_away) *
             (Math.random() * away_team_std_dev + away_team_avg) +
-          league_jitter * (Math.random() * league_std_dev + league_avg);
+          league_jitter_away * (Math.random() * league_std_dev + league_avg);
 
         if (home_score > away_score) {
           singleSeasonResults.teamWin(matchup.home_team_owner);
