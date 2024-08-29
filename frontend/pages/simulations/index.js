@@ -1,4 +1,4 @@
-import * as React from "react";
+import React from "react";
 import schedule from "../../data/schedule.json";
 import team_avgs from "../../data/team_avgs.json";
 import { DataGrid } from "@mui/x-data-grid";
