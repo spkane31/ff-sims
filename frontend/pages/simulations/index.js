@@ -99,7 +99,7 @@ export default function Home() {
       <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />
       <Box sx={{ marginTop: "25px" }} />
-      <Schedule />
+      {/* <Schedule /> */}
     </Box>
   );
 }
