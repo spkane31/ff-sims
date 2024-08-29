@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   AppBar,
   Toolbar,
-  Typography,
   IconButton,
   Link,
   Menu,
@@ -30,9 +29,18 @@ const MyToolbar = () => {
       <Toolbar>
         {isMobile ? (
           <>
-            <Typography variant="h6" style={{ flexGrow: 1 }}>
+            <Link
+              href="/"
+              variant="h6"
+              style={{
+                flexGrow: 1,
+                textDecoration: "none",
+                color: "white",
+                margin: "0 10px",
+              }}
+            >
               The League
-            </Typography>
+            </Link>
             <IconButton
               edge="end"
               color="inherit"
@@ -68,9 +76,18 @@ const MyToolbar = () => {
           </>
         ) : (
           <>
-            <Typography variant="h6" style={{ flexGrow: 1 }}>
+            <Link
+              href="/"
+              variant="h6"
+              style={{
+                flexGrow: 1,
+                textDecoration: "none",
+                color: "white",
+                margin: "0 10px",
+              }}
+            >
               The League
-            </Typography>
+            </Link>
             <div style={{ display: "flex" }}>
               <Link
                 href="/"

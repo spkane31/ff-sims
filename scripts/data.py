@@ -21,7 +21,6 @@ load_dotenv(find_dotenv())
 SWID = os.environ.get("SWID")
 ESPN_S2 = os.environ.get("ESPN_S2")
 
-print(SWID, ESPN_S2)
 
 PRINT_STR = "Year: {}\tWeek: {}"
 
@@ -848,13 +847,16 @@ def get_schedule(league: League) -> None:
         schedule.append(week_matchups)
 
     write_to_file(schedule, "schedule.json")
+    write_to_file(team_id_to_owner, "team_id_to_owner.json")
+    write_to_file(team_to_id, "team_to_id.json")
 
     return None
 
 
 def get_basic_stats(league: League) -> None:
-    team_id_to_owner = {}
-    scores = {}
+    team_id_to_owner: dict[str, str] = {}
+    scores: dict[str, list[float]] = {}
+    all_scores: list[float] = []
 
     result = league.standings()
     for team in result:
@@ -871,6 +873,8 @@ def get_basic_stats(league: League) -> None:
             try:
                 scores[team_id_to_owner[matchup.home_team.team_id]].append(matchup.home_score)
                 scores[team_id_to_owner[matchup.away_team.team_id]].append(matchup.away_score)
+                all_scores.append(matchup.home_score)
+                all_scores.append(matchup.away_score)
             except KeyError:
                 pass
 
@@ -880,6 +884,11 @@ def get_basic_stats(league: League) -> None:
             "average": round(mean(score), 3),
             "std_dev": round(std_dev(score), 3),
         }
+
+    output["League"] = {
+        "average": round(mean(all_scores), 3),
+        "std_dev": round(std_dev(all_scores), 3),
+    }
 
     print(output)
 
@@ -907,7 +916,7 @@ if __name__ == "__main__":
 
     league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
-    # get_schedule(league)
+    get_schedule(league)
     get_basic_stats(league)
 
     exit(1)

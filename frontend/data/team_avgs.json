@@ -38,5 +38,9 @@
   "Connor Brand": {
     "average": 131.193,
     "std_dev": 13.16
+  },
+  "League": {
+    "average": 135.913,
+    "std_dev": 28.393
   }
 }
