@@ -91,7 +91,6 @@ class Simulator {
   step() {
     // create a map of team_id to SingleSeasonResults
     const singleSeasonResults = new SingleSeasonResults();
-    console.log("single season results: ", singleSeasonResults);
 
     this.schedule.forEach((game) => {
       // Code to print or process each game object in this.schedule
@@ -118,21 +117,34 @@ class Simulator {
           league_jitter * (Math.random() * league_std_dev + league_avg);
 
         if (home_score > away_score) {
-          this.teamWin(matchup.home_team_owner);
-          this.teamLoss(matchup.away_team_owner);
+          singleSeasonResults.teamWin(matchup.home_team_owner);
+          singleSeasonResults.teamLoss(matchup.away_team_owner);
         } else {
-          this.teamWin(matchup.away_team_owner);
-          this.teamLoss(matchup.home_team_owner);
+          singleSeasonResults.teamWin(matchup.away_team_owner);
+          singleSeasonResults.teamLoss(matchup.home_team_owner);
         }
-        this.teamPointsFor(matchup.home_team_owner, home_score);
-        this.teamPointsAgainst(matchup.home_team_owner, away_score);
-        this.teamPointsFor(matchup.away_team_owner, away_score);
-        this.teamPointsAgainst(matchup.away_team_owner, home_score);
+        singleSeasonResults.teamPointsFor(matchup.home_team_owner, home_score);
+        singleSeasonResults.teamPointsAgainst(
+          matchup.home_team_owner,
+          away_score
+        );
+        singleSeasonResults.teamPointsFor(matchup.away_team_owner, away_score);
+        singleSeasonResults.teamPointsAgainst(
+          matchup.away_team_owner,
+          home_score
+        );
       });
     });
 
+    singleSeasonResults.setFinalRankings();
+
+    // Update the results map with the singleSeasonResults
+    singleSeasonResults.results.forEach((value, key) => {
+      const currentResults = this.results.get(key);
+      currentResults.addSingleSeasonResults(value);
+    });
+
     this.simulations++;
-    console.log(`Simulations: ${this.simulations}`);
   }
 }
 
@@ -158,6 +170,37 @@ class SingleSeasonResults {
 
   teamPointsAgainst(teamName, points) {
     this.results.get(team_to_id[teamName]).pointsAgainst += points;
+  }
+
+  // sorts all the final results and marks madePlayoffs to true for teams in the top 6
+  // and lastPlace as true for the last place team
+  setFinalRankings() {
+    // 1. First convert the results to a slice
+    const resultsArray = Array.from(this.results.entries());
+
+    // 2. Sort the results by wins, then points for, then points against
+    resultsArray.sort((a, b) => {
+      const aResults = a[1];
+      const bResults = b[1];
+
+      if (aResults.wins !== bResults.wins) {
+        return bResults.wins - aResults.wins;
+      }
+
+      if (aResults.pointsFor !== bResults.pointsFor) {
+        return bResults.pointsFor - aResults.pointsFor;
+      }
+
+      return aResults.pointsAgainst - bResults.pointsAgainst;
+    });
+
+    // 3. Mark the top 6 teams as madePlayoffs
+    resultsArray.slice(0, 6).forEach((team) => {
+      team[1].madePlayoffs = true;
+    });
+
+    // 4. Mark the last place team as lastPlace
+    resultsArray[9][1].lastPlace = true;
   }
 }
 
