@@ -69,6 +69,20 @@ const MyToolbar = () => {
               >
                 Simulations
               </MenuItem>
+              <MenuItem
+                onClick={handleMenuClose}
+                component={Link}
+                href="/schedule"
+              >
+                Schedule
+              </MenuItem>
+              <MenuItem
+                onClick={handleMenuClose}
+                component={Link}
+                href="/draft"
+              >
+                Draft
+              </MenuItem>
               <MenuItem onClick={handleMenuClose} component={Link} href="/data">
                 Data
               </MenuItem>
@@ -108,6 +122,26 @@ const MyToolbar = () => {
                 }}
               >
                 Simulations
+              </Link>
+              <Link
+                href="/schedule"
+                style={{
+                  textDecoration: "none",
+                  color: "white",
+                  margin: "0 10px",
+                }}
+              >
+                Schedule
+              </Link>
+              <Link
+                href="/draft"
+                style={{
+                  textDecoration: "none",
+                  color: "white",
+                  margin: "0 10px",
+                }}
+              >
+                Draft
               </Link>
               <Link
                 href="/data"

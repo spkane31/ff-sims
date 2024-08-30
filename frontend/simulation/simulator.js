@@ -2,6 +2,7 @@ import team_to_id from "../data/team_to_id.json";
 import team_id_to_owner from "../data/team_id_to_owner.json";
 import schedule from "../data/schedule.json";
 import team_avgs from "../data/team_avgs.json";
+import { normalDistribution } from "../utils/math";
 
 class Simulator {
   constructor() {
@@ -45,6 +46,14 @@ class Simulator {
         pointsAgainst: sims === 0 ? 0.0 : value.pointsAgainst / sims,
         playoff_odds: sims === 0 ? 0.0 : value.madePlayoffs / sims,
         last_place_odds: sims === 0 ? 0.0 : value.lastPlace / sims,
+        regular_season_result:
+          sims === 0
+            ? new Array(10).fill(0)
+            : value.regularSeasonResult.map((num) => num / sims),
+        playoff_result:
+          sims === 0
+            ? new Array(10).fill(0)
+            : value.playoffResult.map((num) => num / sims),
       });
     });
     return data;
@@ -110,12 +119,13 @@ class Simulator {
 
         const home_score =
           (1 - league_jitter_home) *
-            (Math.random() * home_team_std_dev + home_team_avg) +
-          league_jitter_home * (Math.random() * league_std_dev + league_avg);
+            normalDistribution(home_team_avg, home_team_std_dev) +
+          league_jitter_home * normalDistribution(league_avg, league_std_dev);
+
         const away_score =
           (1 - league_jitter_away) *
-            (Math.random() * away_team_std_dev + away_team_avg) +
-          league_jitter_away * (Math.random() * league_std_dev + league_avg);
+            normalDistribution(away_team_avg, away_team_std_dev) +
+          league_jitter_away * normalDistribution(league_avg, league_std_dev);
 
         if (home_score > away_score) {
           singleSeasonResults.teamWin(matchup.home_team_owner);
@@ -153,7 +163,7 @@ class SingleSeasonResults {
   constructor() {
     this.results = new Map();
     Object.entries(team_to_id).forEach(([key, value]) => {
-      this.results.set(value, new SingleTeamResults());
+      this.results.set(value, new SingleTeamResults(value));
     });
   }
 
@@ -202,17 +212,119 @@ class SingleSeasonResults {
 
     // 4. Mark the last place team as lastPlace
     resultsArray[9][1].lastPlace = true;
+
+    // 5. Assign the regular season result to each team
+    resultsArray.forEach((team, index) => {
+      team[1].regularSeasonResult = index + 1;
+    });
+
+    // TODO seankane 2024.08.29: something is wrong here, the probability of someone winning does not equal 1
+
+    // 6. Simulate the playoffs with top two teams getting a bye, rest is single elimination
+    // a. simulate 3rd vs 6th place teams
+    const thirdPlaceTeam = resultsArray[2][1];
+    const sixthPlaceTeam = resultsArray[5][1];
+
+    const thirdWinnerTeam = simulateGame(thirdPlaceTeam, sixthPlaceTeam);
+    if (thirdWinnerTeam.id === thirdPlaceTeam.id) {
+      sixthPlaceTeam.playoffResult = 6;
+    } else {
+      thirdPlaceTeam.playoffResult = 6;
+    }
+
+    const fourthPlaceTeam = resultsArray[3][1];
+    const fifthPlaceTeam = resultsArray[4][1];
+
+    const fourthWinnerTeam = simulateGame(fourthPlaceTeam, fifthPlaceTeam);
+    if (fourthWinnerTeam.id === fourthPlaceTeam.id) {
+      fifthPlaceTeam.playoffResult = 5;
+    } else {
+      fourthPlaceTeam.playoffResult = 5;
+    }
+
+    const firstPlaceTeam = resultsArray[0][1];
+    const secondPlaceTeam = resultsArray[1][1];
+
+    const firstWinnerTeam = simulateGame(firstPlaceTeam, fourthWinnerTeam);
+    const secondWinnerTeam = simulateGame(secondPlaceTeam, thirdWinnerTeam);
+    const thirdConsolationWinnerTeam =
+      firstWinnerTeam.id === firstPlaceTeam.id
+        ? fourthWinnerTeam
+        : firstPlaceTeam;
+    const fourthConsolationWinnerTeam =
+      secondWinnerTeam.id === secondPlaceTeam.id
+        ? thirdWinnerTeam
+        : secondPlaceTeam;
+
+    // Simulate championship game
+    const championshipWinner = simulateGame(firstWinnerTeam, secondWinnerTeam);
+    if (championshipWinner.id === firstWinnerTeam.id) {
+      firstWinnerTeam.playoffResult = 1;
+      secondWinnerTeam.playoffResult = 2;
+    } else {
+      firstWinnerTeam.playoffResult = 2;
+      secondWinnerTeam.playoffResult = 1;
+    }
+
+    // Simulate 3rd place game
+    const thirdPlaceWinner = simulateGame(
+      thirdConsolationWinnerTeam,
+      fourthConsolationWinnerTeam
+    );
+    if (thirdPlaceWinner.id === thirdConsolationWinnerTeam.id) {
+      thirdConsolationWinnerTeam.playoffResult = 3;
+      fourthConsolationWinnerTeam.playoffResult = 4;
+    } else {
+      thirdConsolationWinnerTeam.playoffResult = 4;
+      fourthConsolationWinnerTeam.playoffResult = 3;
+    }
   }
 }
 
+// return true if the first team wins, false if the second team wins
+const simulateGame = (first, second) => {
+  // Get first team averages
+  const { average: firstAverage, std_dev: firstStdDev } =
+    team_avgs[team_id_to_owner[first.id]];
+
+  // Get second team averages
+  const { average: secondAverage, std_dev: secondStdDev } =
+    team_avgs[team_id_to_owner[second.id]];
+
+  // Get league averages
+  const { average: leagueAverage, std_dev: leagueStdDev } = team_avgs["League"];
+
+  // Random jitter between 0.05 and 0.25
+  const firstJitter = Math.random() * 0.2 + 0.05;
+  const secondJitter = Math.random() * 0.2 + 0.05;
+
+  // Jittered league averages
+  const firstLeagueJitter = normalDistribution(leagueAverage, leagueStdDev);
+  const secondLeagueJitter = normalDistribution(leagueAverage, leagueStdDev);
+
+  // Calculate scores
+  const firstScore =
+    (1 - firstJitter) * normalDistribution(firstAverage, firstStdDev) +
+    firstJitter * firstLeagueJitter;
+
+  const secondScore =
+    (1 - secondJitter) * normalDistribution(secondAverage, secondStdDev) +
+    secondJitter * secondLeagueJitter;
+
+  return firstScore > secondScore ? first : second;
+};
+
 class SingleTeamResults {
-  constructor() {
+  constructor(id) {
+    this.id = id;
     this.wins = 0;
     this.losses = 0;
     this.pointsFor = 0;
     this.pointsAgainst = 0;
     this.madePlayoffs = false;
     this.lastPlace = false;
+    this.regularSeasonResult = 0;
+    this.playoffResult = -1;
   }
 }
 
@@ -224,6 +336,8 @@ class Results {
     this.pointsAgainst = 0;
     this.madePlayoffs = 0;
     this.lastPlace = 0;
+    this.regularSeasonResult = new Array(10).fill(0);
+    this.playoffResult = new Array(10).fill(0);
   }
 
   games() {
@@ -237,6 +351,14 @@ class Results {
     this.pointsAgainst += singleSeasonResults.pointsAgainst;
     this.madePlayoffs += singleSeasonResults.madePlayoffs ? 1 : 0;
     this.lastPlace += singleSeasonResults.lastPlace ? 1 : 0;
+    this.regularSeasonResult[singleSeasonResults.regularSeasonResult - 1]++;
+    if (
+      singleSeasonResults.playoffResult === -1 &&
+      singleSeasonResults.madePlayoffs
+    ) {
+      console.log("WTF");
+    }
+    this.playoffResult[singleSeasonResults.playoffResult - 1]++;
   }
 }
 
