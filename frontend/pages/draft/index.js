@@ -3,7 +3,7 @@ import React from "react";
 const Draft = () => {
   return (
     <div>
-      <h1>Draft Coming Soon</h1>
+      <h1>I'll get here eventually</h1>
     </div>
   );
 };

@@ -59,7 +59,12 @@ export default function Home() {
         paddingRight: "5%",
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         <Button
           onClick={() => {
             const start = new Date().getTime();
@@ -85,14 +90,14 @@ export default function Home() {
           Reset
         </Button>
         <FormControl fullWidth>
-          <InputLabel id="demo-simple-select-label">Step Size</InputLabel>
+          <InputLabel>Step Size</InputLabel>
           <Select
             labelId="demo-simple-select-label"
-            id="demo-simple-select"
+            // id="demo-simple-select"
             value={steps}
             label="Step Size"
             onChange={handleChange}
-            sx={{ marginRight: "10px" }}
+            sx={{ marginRight: "10px", maxWidth: "100px" }}
           >
             <MenuItem value={5000}>5000</MenuItem>
             <MenuItem value={10000}>10000</MenuItem>
@@ -103,10 +108,11 @@ export default function Home() {
       </Box>
       <Box sx={{ marginTop: "15px" }} />
       <Typography variant="h6" sx={{ textAlign: "center" }}>
-        Total Run Time: {totalRunTime}ms (N = {steps})
+        Total Run Time: {totalRunTime}ms (N ={" "}
+        {simulator.simulations.toLocaleString()})
       </Typography>
       <Typography variant="h6" sx={{ textAlign: "center" }}>
-        Average Run Time: {totalRunTime / steps}ms
+        Average Run Time: {(totalRunTime / simulator.simulations).toFixed(3)}ms
       </Typography>
       <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />
@@ -346,8 +352,7 @@ const RegularSeasonPositions = ({ teamData }) => {
   ];
 
   const rows = Object.entries(teamData)
-    .map(([teamName, teamResults]) => {
-      console.log(teamName, teamResults);
+    .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
         teamName: teamResults.teamName,
@@ -454,8 +459,7 @@ const PlayoffPositions = ({ teamData }) => {
   ];
 
   const rows = Object.entries(teamData)
-    .map(([teamName, teamResults]) => {
-      console.log(teamName, teamResults);
+    .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
         teamName: teamResults.teamName,

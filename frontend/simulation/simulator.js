@@ -225,7 +225,7 @@ class SingleSeasonResults {
     const thirdPlaceTeam = resultsArray[2][1];
     const sixthPlaceTeam = resultsArray[5][1];
 
-    const thirdWinnerTeam = simulateTwoGames(thirdPlaceTeam, sixthPlaceTeam);
+    const thirdWinnerTeam = simulateGame(thirdPlaceTeam, sixthPlaceTeam);
     if (thirdWinnerTeam.id === thirdPlaceTeam.id) {
       sixthPlaceTeam.playoffResult = 6;
     } else {
@@ -235,7 +235,7 @@ class SingleSeasonResults {
     const fourthPlaceTeam = resultsArray[3][1];
     const fifthPlaceTeam = resultsArray[4][1];
 
-    const fourthWinnerTeam = simulateTwoGames(fourthPlaceTeam, fifthPlaceTeam);
+    const fourthWinnerTeam = simulateGame(fourthPlaceTeam, fifthPlaceTeam);
     if (fourthWinnerTeam.id === fourthPlaceTeam.id) {
       fifthPlaceTeam.playoffResult = 5;
     } else {
@@ -245,22 +245,19 @@ class SingleSeasonResults {
     const firstPlaceTeam = resultsArray[0][1];
     const secondPlaceTeam = resultsArray[1][1];
 
-    const firstWinnerTeam = simulateTwoGames(firstPlaceTeam, fourthWinnerTeam);
-    const secondWinnerTeam = simulateTwoGames(secondPlaceTeam, thirdWinnerTeam);
+    const firstWinnerTeam = simulateGame(firstPlaceTeam, fourthWinnerTeam);
+    const secondWinnerTeam = simulateGame(secondPlaceTeam, thirdWinnerTeam);
     const thirdConsolationWinnerTeam =
-      firstWinnerTeam.id == firstPlaceTeam.id
+      firstWinnerTeam.id === firstPlaceTeam.id
         ? fourthWinnerTeam
-        : firstWinnerTeam;
+        : firstPlaceTeam;
     const fourthConsolationWinnerTeam =
-      secondWinnerTeam.id == secondPlaceTeam.id
+      secondWinnerTeam.id === secondPlaceTeam.id
         ? thirdWinnerTeam
-        : secondWinnerTeam;
+        : secondPlaceTeam;
 
     // Simulate championship game
-    const championshipWinner = simulateTwoGames(
-      firstWinnerTeam,
-      secondWinnerTeam
-    );
+    const championshipWinner = simulateGame(firstWinnerTeam, secondWinnerTeam);
     if (championshipWinner.id === firstWinnerTeam.id) {
       firstWinnerTeam.playoffResult = 1;
       secondWinnerTeam.playoffResult = 2;
@@ -270,7 +267,7 @@ class SingleSeasonResults {
     }
 
     // Simulate 3rd place game
-    const thirdPlaceWinner = simulateTwoGames(
+    const thirdPlaceWinner = simulateGame(
       thirdConsolationWinnerTeam,
       fourthConsolationWinnerTeam
     );
@@ -285,7 +282,7 @@ class SingleSeasonResults {
 }
 
 // return true if the first team wins, false if the second team wins
-const simulateTwoGames = (first, second) => {
+const simulateGame = (first, second) => {
   // Get first team averages
   const { average: firstAverage, std_dev: firstStdDev } =
     team_avgs[team_id_to_owner[first.id]];
@@ -302,20 +299,16 @@ const simulateTwoGames = (first, second) => {
   const secondJitter = Math.random() * 0.2 + 0.05;
 
   // Jittered league averages
-  const firstLeagueJitter =
-    Math.random() * normalDistribution(leagueAverage, leagueStdDev);
-  const secondLeagueJitter =
-    Math.random() * normalDistribution(leagueAverage, leagueStdDev);
+  const firstLeagueJitter = normalDistribution(leagueAverage, leagueStdDev);
+  const secondLeagueJitter = normalDistribution(leagueAverage, leagueStdDev);
 
   // Calculate scores
   const firstScore =
-    (1 - firstJitter) *
-      (Math.random() * normalDistribution(firstAverage, firstStdDev)) +
+    (1 - firstJitter) * normalDistribution(firstAverage, firstStdDev) +
     firstJitter * firstLeagueJitter;
 
   const secondScore =
-    (1 - secondJitter) *
-      (Math.random() * normalDistribution(secondAverage, secondStdDev)) +
+    (1 - secondJitter) * normalDistribution(secondAverage, secondStdDev) +
     secondJitter * secondLeagueJitter;
 
   return firstScore > secondScore ? first : second;
@@ -331,7 +324,7 @@ class SingleTeamResults {
     this.madePlayoffs = false;
     this.lastPlace = false;
     this.regularSeasonResult = 0;
-    this.playoffResult = 0;
+    this.playoffResult = -1;
   }
 }
 
@@ -359,6 +352,12 @@ class Results {
     this.madePlayoffs += singleSeasonResults.madePlayoffs ? 1 : 0;
     this.lastPlace += singleSeasonResults.lastPlace ? 1 : 0;
     this.regularSeasonResult[singleSeasonResults.regularSeasonResult - 1]++;
+    if (
+      singleSeasonResults.playoffResult === -1 &&
+      singleSeasonResults.madePlayoffs
+    ) {
+      console.log("WTF");
+    }
     this.playoffResult[singleSeasonResults.playoffResult - 1]++;
   }
 }

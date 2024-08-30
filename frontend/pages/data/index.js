@@ -4,7 +4,7 @@ import React from "react";
 const Data = () => {
   return (
     <div>
-      <h1>Coming Soon</h1>
+      <h1>I'll get here eventually</h1>
     </div>
   );
 };
