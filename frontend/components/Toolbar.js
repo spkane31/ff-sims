@@ -83,6 +83,13 @@ const MyToolbar = () => {
               >
                 Draft
               </MenuItem>
+              <MenuItem
+                onClick={handleMenuClose}
+                component={Link}
+                href="/draft-grid"
+              >
+                Draft Grid
+              </MenuItem>
               <MenuItem onClick={handleMenuClose} component={Link} href="/data">
                 Data
               </MenuItem>
@@ -142,6 +149,16 @@ const MyToolbar = () => {
                 }}
               >
                 Draft
+              </Link>
+              <Link
+                href="/draft-grid"
+                style={{
+                  textDecoration: "none",
+                  color: "white",
+                  margin: "0 10px",
+                }}
+              >
+                Draft Grid
               </Link>
               <Link
                 href="/data"

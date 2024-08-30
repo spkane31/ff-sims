@@ -47,6 +47,8 @@ const DraftData = ({ draftData, teams }) => {
     return <div>Loading...</div>;
   }
 
+  console.log(draftData.length);
+
   const getTeamNameFromID = (teamID) => {
     return teams.find((team) => team.id === teamID).owner;
   };
@@ -97,13 +99,13 @@ const DraftData = ({ draftData, teams }) => {
         >
           Draft Results
         </Typography>
+        {/* DataGrid free version is capped at 100 rows, so either pay (not gonna happen) or write my own sortable table (doable) */}
         <DataGrid
           columns={columns}
           rows={rows}
           rowHeight={30}
           autosizeOnMount
           autoHeight
-          hideFooter
         />
       </Paper>
     </Box>
