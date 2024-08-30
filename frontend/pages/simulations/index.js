@@ -23,7 +23,7 @@ import Simulator from "../../simulation/simulator";
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
-  const [steps, setSteps] = React.useState(50000);
+  const [steps, setSteps] = React.useState(25000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
@@ -71,8 +71,18 @@ export default function Home() {
             setTeamData(simulator.getTeamScoringData());
           }}
           variant="contained"
+          sx={{ marginRight: "10px", width: "auto" }}
         >
-          Simulate (n={simulator.simulations})
+          Simulate
+        </Button>
+        <Button
+          onClick={() => {
+            setSimulator(new Simulator());
+          }}
+          variant="contained"
+          sx={{ marginRight: "10px" }}
+        >
+          Reset
         </Button>
         <FormControl fullWidth>
           <InputLabel id="demo-simple-select-label">Step Size</InputLabel>
@@ -82,7 +92,7 @@ export default function Home() {
             value={steps}
             label="Step Size"
             onChange={handleChange}
-            sx={{ marginLeft: "10px" }}
+            sx={{ marginRight: "10px" }}
           >
             <MenuItem value={5000}>5000</MenuItem>
             <MenuItem value={10000}>10000</MenuItem>
@@ -93,7 +103,10 @@ export default function Home() {
       </Box>
       <Box sx={{ marginTop: "15px" }} />
       <Typography variant="h6" sx={{ textAlign: "center" }}>
-        Total Run Time: {totalRunTime}ms
+        Total Run Time: {totalRunTime}ms (N = {steps})
+      </Typography>
+      <Typography variant="h6" sx={{ textAlign: "center" }}>
+        Average Run Time: {totalRunTime / steps}ms
       </Typography>
       <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />
