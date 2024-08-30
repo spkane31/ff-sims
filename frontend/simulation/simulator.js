@@ -2,6 +2,7 @@ import team_to_id from "../data/team_to_id.json";
 import team_id_to_owner from "../data/team_id_to_owner.json";
 import schedule from "../data/schedule.json";
 import team_avgs from "../data/team_avgs.json";
+import { normalDistribution } from "../utils/math";
 
 class Simulator {
   constructor() {
@@ -118,12 +119,13 @@ class Simulator {
 
         const home_score =
           (1 - league_jitter_home) *
-            (Math.random() * home_team_std_dev + home_team_avg) +
-          league_jitter_home * (Math.random() * league_std_dev + league_avg);
+            normalDistribution(home_team_avg, home_team_std_dev) +
+          league_jitter_home * normalDistribution(league_avg, league_std_dev);
+
         const away_score =
           (1 - league_jitter_away) *
-            (Math.random() * away_team_std_dev + away_team_avg) +
-          league_jitter_away * (Math.random() * league_std_dev + league_avg);
+            normalDistribution(away_team_avg, away_team_std_dev) +
+          league_jitter_away * normalDistribution(league_avg, league_std_dev);
 
         if (home_score > away_score) {
           singleSeasonResults.teamWin(matchup.home_team_owner);
@@ -217,7 +219,7 @@ class SingleSeasonResults {
     });
 
     // TODO seankane 2024.08.29: something is wrong here, the probability of someone winning does not equal 1
-    
+
     // 6. Simulate the playoffs with top two teams getting a bye, rest is single elimination
     // a. simulate 3rd vs 6th place teams
     const thirdPlaceTeam = resultsArray[2][1];
@@ -300,16 +302,20 @@ const simulateTwoGames = (first, second) => {
   const secondJitter = Math.random() * 0.2 + 0.05;
 
   // Jittered league averages
-  const firstLeagueJitter = Math.random() * leagueStdDev + leagueAverage;
-  const secondLeagueJitter = Math.random() * leagueStdDev + leagueAverage;
+  const firstLeagueJitter =
+    Math.random() * normalDistribution(leagueAverage, leagueStdDev);
+  const secondLeagueJitter =
+    Math.random() * normalDistribution(leagueAverage, leagueStdDev);
 
   // Calculate scores
   const firstScore =
-    (1 - firstJitter) * (Math.random() * firstStdDev + firstAverage) +
+    (1 - firstJitter) *
+      (Math.random() * normalDistribution(firstAverage, firstStdDev)) +
     firstJitter * firstLeagueJitter;
 
   const secondScore =
-    (1 - secondJitter) * (Math.random() * secondStdDev + secondAverage) +
+    (1 - secondJitter) *
+      (Math.random() * normalDistribution(secondAverage, secondStdDev)) +
     secondJitter * secondLeagueJitter;
 
   return firstScore > secondScore ? first : second;
