@@ -890,10 +890,26 @@ def get_basic_stats(league: League) -> None:
         "std_dev": round(std_dev(all_scores), 3),
     }
 
-    print(output)
-
     write_to_file(output, "team_avgs.json")
     return None
+
+
+def get_simple_draft(league: League) -> None:
+    # draft stuff
+    draft_data = []
+    for pick in league.draft:
+        draft_data.append(
+            {
+                "player_name": pick.playerName,
+                "player_id": pick.playerId,
+                "team_id": pick.team.team_id,
+                "team_name": pick.team.team_name.rstrip(" "),
+                "round_number": pick.round_num,
+                "round_pick": pick.round_pick,
+            }
+        )
+
+    write_to_file(draft_data, "draft_data.json")
 
 
 # TODO list:
@@ -914,10 +930,11 @@ if __name__ == "__main__":
 
     # get_historical_basic_stats()
 
-    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2024, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
+    get_simple_draft(league)
 
     exit(1)
 

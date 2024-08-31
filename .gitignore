@@ -245,3 +245,5 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+scripts/.ruff_cache

@@ -57,6 +57,7 @@ export default function Home() {
         <Button
           onClick={() => {
             setSimulator(new Simulator());
+            setTotalRunTime(0);
           }}
           variant="contained"
           sx={{ marginLeft: "10px" }}
@@ -70,7 +71,11 @@ export default function Home() {
         {simulator.simulations.toLocaleString()})
       </Typography>
       <Typography variant="h6" sx={{ textAlign: "center" }}>
-        Average Run Time: {(totalRunTime / simulator.simulations).toFixed(3)}ms
+        Average Run Time:{" "}
+        {totalRunTime === 0
+          ? "-"
+          : (totalRunTime / simulator.simulations).toFixed(3)}{" "}
+        ms
       </Typography>
       <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />
