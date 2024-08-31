@@ -1,18 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 
-// {
-//   "12": "Ethan Moran",
-//   "10": "Jack Aldridge",
-//   "3": "Nick Toth ",
-//   "7": "Josh Doepker",
-//   "1": "Kyle Burns",
-//   "6": "Sean  Kane",
-//   "9": "Mitch Lichtinger",
-//   "11": "Nick Dehaven",
-//   "5": "Kevin Dailey",
-//   "4": "Connor Brand"
-// }
-
 export default function teams(req, res) {
   res.status(200).json([
     {
