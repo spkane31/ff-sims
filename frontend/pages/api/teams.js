@@ -3,8 +3,13 @@ import { Pool } from "pg/lib";
 import { config } from "../../config";
 const pool = new Pool(config);
 
+const query = `
+SELECT
+  espn_id AS id,
+  owner
+FROM teams;`;
+
 export default async function teams(req, res) {
-  const query = `SELECT espn_id AS id, owner FROM teams;`;
   try {
     const client = await pool.connect();
     const resp = await client.query(query);
