@@ -1,46 +1,23 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
+import { Pool } from "pg/lib";
+import { config } from "../../config";
+const pool = new Pool(config);
 
-export default function teams(req, res) {
-  res.status(200).json([
-    {
-      id: 12,
-      owner: "Ethan Moran",
-    },
-    {
-      id: 10,
-      owner: "Jack Aldridge",
-    },
-    {
-      id: 3,
-      owner: "Nick Toth",
-    },
-    {
-      id: 7,
-      owner: "Josh Doepker",
-    },
-    {
-      id: 1,
-      owner: "Kyle Burns",
-    },
-    {
-      id: 6,
-      owner: "Sean  Kane",
-    },
-    {
-      id: 9,
-      owner: "Mitch Lichtinger",
-    },
-    {
-      id: 11,
-      owner: "Nick Dehaven",
-    },
-    {
-      id: 5,
-      owner: "Kevin Dailey",
-    },
-    {
-      id: 4,
-      owner: "Connor Brand",
-    },
-  ]);
+export default async function teams(req, res) {
+  const query = `SELECT espn_id AS id, owner FROM teams;`;
+  try {
+    const client = await pool.connect();
+    const resp = await client.query(query);
+    const respIDAsInt = resp.rows.map((row) => {
+      return {
+        id: parseInt(row.id),
+        owner: row.owner,
+      };
+    });
+    res.status(200).json(respIDAsInt);
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
 }

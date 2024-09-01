@@ -247,3 +247,5 @@ yarn-error.log*
 *.tsbuildinfo
 
 scripts/.ruff_cache
+
+scripts/alembic.ini
