@@ -3,6 +3,19 @@ import { DataGrid } from "@mui/x-data-grid";
 import { Box, Paper, Typography, Button } from "@mui/material";
 import Simulator from "../../simulation/simulator";
 
+const prettyPrintMilliseconds = (ms) => {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  } else if (ms < 60000) {
+    return `${(ms / 1000).toFixed(2)}s`;
+  } else {
+    // get minutes
+    const minutes = Math.floor(ms / 60000);
+    const seconds = (ms % 60000) / 1000;
+    return `${minutes}m ${seconds.toFixed(2)}s`;
+  }
+};
+
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
@@ -67,7 +80,7 @@ export default function Home() {
       </Box>
       <Box sx={{ marginTop: "15px" }} />
       <Typography variant="h6" sx={{ textAlign: "center" }}>
-        Total Run Time: {totalRunTime}ms (N ={" "}
+        Total Run Time: {prettyPrintMilliseconds(totalRunTime)} (N ={" "}
         {simulator.simulations.toLocaleString()})
       </Typography>
       <Typography variant="h6" sx={{ textAlign: "center" }}>
