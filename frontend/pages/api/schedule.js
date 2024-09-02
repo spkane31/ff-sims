@@ -55,8 +55,6 @@ export default async function hello(req, res) {
       }
     });
 
-    console.log(schedule);
-
     res.status(200).json(schedule);
   } catch (err) {
     res.status(500).json({

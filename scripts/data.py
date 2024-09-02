@@ -47,17 +47,6 @@ with conn.cursor() as cur:
     cur.close()
 
 
-if os.environ.get("DEBUG_LEVEL") != "" and False:
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
-
-
 def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
     return [
         {
@@ -850,7 +839,8 @@ def get_schedule(league: League) -> None:
         team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
 
     for week in range(1, 15):
-        weekly_schedule = league.scoreboard(week=week)
+        # weekly_schedule = league.scoreboard(week=week)
+        weekly_schedule = league.box_scores(week=week)
         week_matchups = []
         for matchup in weekly_schedule:
             home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
@@ -863,6 +853,10 @@ def get_schedule(league: League) -> None:
                     "away_team_id": away_team_id,
                     "home_team_owner": home_team_owner,
                     "away_team_owner": away_team_owner,
+                    "home_team_score": matchup.home_score,
+                    "away_team_score": matchup.away_score,
+                    "home_team_espn_projected_score": matchup.home_projected,
+                    "away_team_espn_projected_score": matchup.away_projected,
                 }
             )
 
@@ -885,12 +879,16 @@ def create_schedule(schedule: list[list[dict[str, any]]], year) -> None:
         for week, matchups in enumerate(schedule):
             for matchup in matchups:
                 cur.execute(
-                    "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM matchups WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s)",
+                    "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM matchups WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s)",
                     (
                         week + 1,
                         year,
                         matchup["home_team_id"],
                         matchup["away_team_id"],
+                        matchup["home_team_score"],
+                        matchup["away_team_score"],
+                        matchup["home_team_espn_projected_score"],
+                        matchup["away_team_espn_projected_score"],
                         week + 1,
                         year,
                         matchup["home_team_id"],
@@ -997,7 +995,7 @@ if __name__ == "__main__":
 
     # get_historical_basic_stats()
 
-    league = League(league_id=345674, year=2024, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)

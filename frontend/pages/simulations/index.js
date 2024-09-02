@@ -129,7 +129,6 @@ const TeamData = ({ teamData }) => {
 
   const rows = Object.entries(teamData)
     .map(([teamName, teamResults]) => {
-      console.log(teamName, teamResults);
       return {
         id: teamResults.id,
         teamName: teamResults.teamName,

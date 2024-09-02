@@ -352,12 +352,6 @@ class Results {
     this.madePlayoffs += singleSeasonResults.madePlayoffs ? 1 : 0;
     this.lastPlace += singleSeasonResults.lastPlace ? 1 : 0;
     this.regularSeasonResult[singleSeasonResults.regularSeasonResult - 1]++;
-    if (
-      singleSeasonResults.playoffResult === -1 &&
-      singleSeasonResults.madePlayoffs
-    ) {
-      console.log("WTF");
-    }
     this.playoffResult[singleSeasonResults.playoffResult - 1]++;
   }
 }
