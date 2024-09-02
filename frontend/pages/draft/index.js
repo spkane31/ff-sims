@@ -47,8 +47,6 @@ const DraftData = ({ draftData, teams }) => {
     return <div>Loading...</div>;
   }
 
-  console.log(draftData.length);
-
   const getTeamNameFromID = (teamID) => {
     return teams.find((team) => team.id === teamID).owner;
   };

@@ -1,3 +1,4 @@
+alembic==1.13.2
 black==23.9.1
 certifi==2023.7.22
 charset-normalizer==3.2.0
@@ -6,9 +7,12 @@ contourpy==1.1.0
 cycler==0.11.0
 espn-api==0.37.0
 fonttools==4.42.1
+greenlet==3.0.3
 idna==3.4
 importlib-resources==6.1.0
 kiwisolver==1.4.5
+Mako==1.3.5
+MarkupSafe==2.1.5
 matplotlib==3.7.2
 mypy-extensions==1.0.0
 numpy==1.25.2
@@ -17,12 +21,15 @@ pathspec==0.11.2
 Pillow==10.0.0
 platformdirs==3.11.0
 prettytable==3.8.0
+psycopg2==2.9.9
+psycopg2-binary==2.9.9
 pyparsing==3.0.9
 python-dateutil==2.8.2
 python-dotenv==1.0.0
 requests==2.31.0
 scipy==1.11.3
 six==1.16.0
+SQLAlchemy==2.0.32
 tomli==2.0.1
 typing_extensions==4.8.0
 urllib3==2.0.4

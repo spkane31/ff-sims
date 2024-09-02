@@ -9,9 +9,11 @@ from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League, BoxPlayer
 from prettytable import PrettyTable
 from scipy import stats
+import psycopg2
 
 from models.roster import Roster
 from models.activity import get_waiver_wire_activity, perform_waiver_analysis
+from database.tables import initialize
 from simulation import SeasonSimulation, SingleSeasonSimulationResults
 from utils import write_to_file, mean, std_dev, flatten_extend
 
@@ -24,16 +26,25 @@ ESPN_S2 = os.environ.get("ESPN_S2")
 
 PRINT_STR = "Year: {}\tWeek: {}"
 
+conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
 
-if os.environ.get("DEBUG_LEVEL") != "" and False:
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+with conn.cursor() as cur:
+    cur.execute("SELECT now()")
+    res = cur.fetchall()
+    conn.commit()
+    print(res)
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
+    cur.execute("SELECT count(*) FROM teams")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Number of teams: {res[0][0]}")
+
+    cur.execute("SELECT count(*) FROM matchups")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Number of matchups: {res[0][0]}")
+
+    cur.close()
 
 
 def get_lineup_dict(box_score: list[BoxPlayer]) -> list[dict[str, any]]:
@@ -828,7 +839,8 @@ def get_schedule(league: League) -> None:
         team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
 
     for week in range(1, 15):
-        weekly_schedule = league.scoreboard(week=week)
+        # weekly_schedule = league.scoreboard(week=week)
+        weekly_schedule = league.box_scores(week=week)
         week_matchups = []
         for matchup in weekly_schedule:
             home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
@@ -841,14 +853,67 @@ def get_schedule(league: League) -> None:
                     "away_team_id": away_team_id,
                     "home_team_owner": home_team_owner,
                     "away_team_owner": away_team_owner,
+                    "home_team_score": matchup.home_score,
+                    "away_team_score": matchup.away_score,
+                    "home_team_espn_projected_score": matchup.home_projected,
+                    "away_team_espn_projected_score": matchup.away_projected,
                 }
             )
 
         schedule.append(week_matchups)
 
+    create_teams(team_to_id)
+
     write_to_file(schedule, "schedule.json")
+    create_schedule(schedule, year=league.year)
     write_to_file(team_id_to_owner, "team_id_to_owner.json")
     write_to_file(team_to_id, "team_to_id.json")
+
+    return None
+
+
+def create_schedule(schedule: list[list[dict[str, any]]], year) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    with conn.cursor() as cur:
+        for week, matchups in enumerate(schedule):
+            for matchup in matchups:
+                cur.execute(
+                    "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM matchups WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s)",
+                    (
+                        week + 1,
+                        year,
+                        matchup["home_team_id"],
+                        matchup["away_team_id"],
+                        matchup["home_team_score"],
+                        matchup["away_team_score"],
+                        matchup["home_team_espn_projected_score"],
+                        matchup["away_team_espn_projected_score"],
+                        week + 1,
+                        year,
+                        matchup["home_team_id"],
+                        matchup["away_team_id"],
+                    ),
+                )
+
+        conn.commit()
+        cur.close()
+
+    return None
+
+
+def create_teams(team_to_id: dict[str, int]) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    with conn.cursor() as cur:
+        for owner, team_id in team_to_id.items():
+            cur.execute(
+                "INSERT INTO teams (owner, espn_id) SELECT %s, %s WHERE NOT EXISTS (SELECT 1 FROM teams WHERE owner = %s AND espn_id = %s)",
+                (owner, team_id, owner, team_id),
+            )
+
+        conn.commit()
+        cur.close()
 
     return None
 
@@ -930,7 +995,7 @@ if __name__ == "__main__":
 
     # get_historical_basic_stats()
 
-    league = League(league_id=345674, year=2024, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
