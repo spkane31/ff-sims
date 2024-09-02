@@ -27,6 +27,14 @@ type Team struct {
 	ESPNID uint
 }
 
+type DraftSelection struct {
+	gorm.Model
+	PlayerName                          string
+	PlayerPosition                      string
+	TeamID, PlayerID, Round, Pick, Year uint
+	OwnerESPNID                         uint
+}
+
 func main() {
 	// Using Go to generate my database because it's easier for me
 
@@ -51,6 +59,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&Matchup{},
 		&Team{},
+		&DraftSelection{},
 	); err != nil {
 		panic(err)
 	}

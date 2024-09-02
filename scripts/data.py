@@ -39,10 +39,15 @@ with conn.cursor() as cur:
     conn.commit()
     print(f"Number of teams: {res[0][0]}")
 
-    cur.execute("SELECT count(*) FROM matchups")
+    cur.execute("SELECT year, count(*) FROM matchups GROUP BY year")
     res = cur.fetchall()
     conn.commit()
-    print(f"Number of matchups: {res[0][0]}")
+    print(f"Matchups: {res}")
+
+    cur.execute("SELECT year, count(*) FROM draft_selections GROUP BY year")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Drafts: {res}")
 
     cur.close()
 
@@ -968,13 +973,41 @@ def get_simple_draft(league: League) -> None:
                 "player_name": pick.playerName,
                 "player_id": pick.playerId,
                 "team_id": pick.team.team_id,
-                "team_name": pick.team.team_name.rstrip(" "),
                 "round_number": pick.round_num,
                 "round_pick": pick.round_pick,
             }
         )
 
+    write_draft_data_to_db(draft_data, league.year)
     write_to_file(draft_data, "draft_data.json")
+
+
+def write_draft_data_to_db(draft_data: list[dict[str, str]], year: int) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    with conn.cursor() as cur:
+        for selection in draft_data:
+            cur.execute(
+                "INSERT INTO draft_selections (player_name, player_id, owner_espn_id, round, pick, year) SELECT %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s)",
+                (
+                    selection["player_name"],
+                    selection["player_id"],
+                    selection["team_id"],
+                    selection["round_number"],
+                    selection["round_pick"],
+                    year,
+                    selection["player_name"],
+                    selection["team_id"],
+                    selection["round_number"],
+                    selection["round_pick"],
+                    year,
+                ),
+            )
+
+        conn.commit()
+        cur.close()
+
+    return None
 
 
 # TODO list:
