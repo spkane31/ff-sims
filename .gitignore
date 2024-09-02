@@ -246,10 +246,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-<<<<<<< HEAD
 scripts/.ruff_cache
-
-scripts/alembic.ini
-=======
-scripts/.ruff_cache
->>>>>>> 6b54efa573a1f61976407d55dd4c1cbc4adafc79
