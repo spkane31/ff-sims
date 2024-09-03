@@ -16,10 +16,21 @@ import teamAvgs from "../../data/team_avgs.json";
 
 const Schedule = () => {
   const [simulator, setSimulator] = React.useState(null);
+  const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
 
   React.useEffect(() => {
-    setSimulator(new Simulator());
+    if (teamStats !== null && schedule !== null) {
+      setSimulator(new Simulator(teamStats, schedule));
+    }
+  }, [teamStats, schedule]);
+
+  React.useEffect(() => {
+    fetch("/api/teams")
+      .then((res) => res.json())
+      .then((data) => {
+        setTeamStats(data);
+      });
   }, []);
 
   React.useEffect(() => {

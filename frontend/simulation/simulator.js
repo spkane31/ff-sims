@@ -1,13 +1,13 @@
 import team_to_id from "../data/team_to_id.json";
 import team_id_to_owner from "../data/team_id_to_owner.json";
-import schedule from "../data/schedule.json";
+// import schedule from "../data/schedule.json";
 import team_avgs from "../data/team_avgs.json";
 import { normalDistribution } from "../utils/math";
 
 class Simulator {
   // simulator needs to take params of schedule and team_avgs
   // on the client side there needs to be an api for the data
-  constructor(teamAvgs) {
+  constructor(teamAvgs, schedule) {
     // schedule is a list of 14 weeks, each week is a list of 5 matchups
     this.schedule = schedule;
 

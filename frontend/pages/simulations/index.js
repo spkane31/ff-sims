@@ -20,20 +20,29 @@ export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
+  const [schedule, setSchedule] = React.useState(null);
   const [steps, setSteps] = React.useState(25000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
-    if (teamStats !== null) {
-      setSimulator(new Simulator(teamStats));
+    if (teamStats !== null && schedule !== null) {
+      setSimulator(new Simulator(teamStats, schedule));
     }
-  }, [teamStats]);
+  }, [teamStats, schedule]);
 
   React.useEffect(() => {
     fetch("/api/teams")
       .then((res) => res.json())
       .then((data) => {
         setTeamStats(data);
+      });
+  }, []);
+
+  React.useEffect(() => {
+    fetch("/api/schedule")
+      .then((res) => res.json())
+      .then((data) => {
+        setSchedule(data);
       });
   }, []);
 

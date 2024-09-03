@@ -1,15 +1,17 @@
 import Simulator from "./simulator";
 import team_to_id from "../data/team_to_id.json";
-import { getTeams } from "../db/db";
+import { getSchedule, getTeams } from "../db/db";
 
 describe("Simulator", () => {
   let simulator;
 
   beforeEach(async () => {
     // get the teamAvgs data
-    const res = await getTeams(2023);
+    const year = 2023;
+    const res = await getTeams(year);
+    const sched = await getSchedule(year);
 
-    simulator = new Simulator(res);
+    simulator = new Simulator(res, sched);
   });
 
   it("should be properly initialized", async () => {
