@@ -89,7 +89,7 @@ export default function Home() {
         </Button>
         <Button
           onClick={() => {
-            setSimulator(new Simulator());
+            setSimulator(new Simulator(teamStats, schedule));
             setTotalRunTime(0);
           }}
           variant="contained"

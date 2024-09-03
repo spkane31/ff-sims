@@ -8,10 +8,10 @@ describe("Simulator", () => {
   beforeEach(async () => {
     // get the teamAvgs data
     const year = 2023;
-    const res = await getTeams(year);
-    const sched = await getSchedule(year);
+    const teamStats = await getTeams(year);
+    const schedule = await getSchedule(year);
 
-    simulator = new Simulator(res, sched);
+    simulator = new Simulator(teamStats, schedule);
   });
 
   it("should be properly initialized", async () => {
