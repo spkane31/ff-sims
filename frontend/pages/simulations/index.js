@@ -19,11 +19,22 @@ const prettyPrintMilliseconds = (ms) => {
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
+  const [teamStats, setTeamStats] = React.useState(null);
   const [steps, setSteps] = React.useState(25000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
-    setSimulator(new Simulator());
+    if (teamStats !== null) {
+      setSimulator(new Simulator(teamStats));
+    }
+  }, [teamStats]);
+
+  React.useEffect(() => {
+    fetch("/api/teams")
+      .then((res) => res.json())
+      .then((data) => {
+        setTeamStats(data);
+      });
   }, []);
 
   React.useEffect(() => {
@@ -141,7 +152,7 @@ const TeamData = ({ teamData }) => {
   ];
 
   const rows = Object.entries(teamData)
-    .map(([teamName, teamResults]) => {
+    .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
         teamName: teamResults.teamName,

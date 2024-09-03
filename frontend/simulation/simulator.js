@@ -5,29 +5,37 @@ import team_avgs from "../data/team_avgs.json";
 import { normalDistribution } from "../utils/math";
 
 class Simulator {
-  constructor() {
+  // simulator needs to take params of schedule and team_avgs
+  // on the client side there needs to be an api for the data
+  constructor(teamAvgs) {
+    // schedule is a list of 14 weeks, each week is a list of 5 matchups
     this.schedule = schedule;
+
+    // number of simulations run
     this.simulations = 0;
 
+    // map of espn_id (int) -> Results()
     this.results = new Map();
     Object.entries(team_to_id).forEach(([key, value]) => {
       this.results.set(value, new Results());
     });
 
+    // map of espn_id (int) -> {average: float, std_dev: float}
     this.teamStats = new Map();
-    Object.entries(team_avgs).forEach(([key, value]) => {
-      if (key === "League") {
+    Object.entries(teamAvgs).forEach(([_key, value]) => {
+      if (value.id === -1) {
         this.leagueStats = {
-          average: value.average,
-          std_dev: value.std_dev,
+          average: value.averageScore,
+          std_dev: value.stddevScore,
         };
-        return;
+      } else {
+        this.teamStats.set(value.id, {
+          average: value.averageScore,
+          std_dev: value.stddevScore,
+        });
       }
-      this.teamStats.set(team_to_id[key], {
-        average: value.average,
-        std_dev: value.std_dev,
-      });
     });
+    // leagueStats is a {average: float, std_dev: float} object
   }
 
   // list of all teams, and projected wins, losses, points for, points against, playoff odds, last place odds
