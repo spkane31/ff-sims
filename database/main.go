@@ -35,6 +35,15 @@ type DraftSelection struct {
 	OwnerESPNID                         uint
 }
 
+type BoxScorePlayer struct {
+	gorm.Model
+	PlayerName, PlayerPosition    string
+	Status                        string
+	OwnerESPNID                   uint
+	TeamID, PlayerID, Week, Year  uint
+	ProjectedPoints, ActualPoints float64
+}
+
 func main() {
 	// Using Go to generate my database because it's easier for me
 	start := time.Now()
@@ -64,6 +73,7 @@ func main() {
 		&Matchup{},
 		&Team{},
 		&DraftSelection{},
+		&BoxScorePlayer{},
 	); err != nil {
 		panic(err)
 	}

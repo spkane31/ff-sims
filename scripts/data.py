@@ -13,7 +13,6 @@ import psycopg2
 
 from models.roster import Roster
 from models.activity import get_waiver_wire_activity, perform_waiver_analysis
-from database.tables import initialize
 from simulation import SeasonSimulation, SingleSeasonSimulationResults
 from utils import write_to_file, mean, std_dev, flatten_extend
 
@@ -48,6 +47,11 @@ with conn.cursor() as cur:
     res = cur.fetchall()
     conn.commit()
     print(f"Drafts: {res}")
+
+    cur.execute("SELECT year, count(*) FROM box_score_players GROUP BY year")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Box Score Players: {res}")
 
     cur.close()
 
@@ -836,6 +840,8 @@ def get_schedule(league: League) -> None:
     team_to_id = {}
     team_id_to_owner = {}
 
+    box_score_players = []
+
     # Get the owners names from each Team
     result = league.standings()
     for team in result:
@@ -890,6 +896,19 @@ def get_schedule(league: League) -> None:
                     }
                 )
 
+                for player in matchup.home_lineup:
+                    box_score_players.append(
+                        {
+                            "name": player.name,
+                            "id": player.playerId,
+                            "projection": player.projected_points,
+                            "actual": player.points,
+                            "position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                        }
+                    )
+
             schedule.append(week_matchups)
 
     create_teams(team_to_id)
@@ -898,6 +917,35 @@ def get_schedule(league: League) -> None:
     create_schedule(schedule, year=league.year)
     write_to_file(team_id_to_owner, "team_id_to_owner.json")
     write_to_file(team_to_id, "team_to_id.json")
+    write_box_score_players_to_db(box_score_players, league.year)
+
+    return None
+
+
+def write_box_score_players_to_db(box_score_players: list[dict[str, any]], year: int) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    with conn.cursor() as cur:
+        for player in box_score_players:
+            cur.execute(
+                "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, status, week, year) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
+                (
+                    player["name"],
+                    player["id"],
+                    player["projection"],
+                    player["actual"],
+                    player["position"],
+                    player["status"],
+                    player["week"],
+                    year,
+                    player["id"],
+                    player["week"],
+                    year,
+                ),
+            )
+
+        conn.commit()
+        cur.close()
 
     return None
 
@@ -1052,12 +1100,13 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=2017, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2022, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
     get_simple_draft(league)
 
+    print(f"Completed in {round(time.time() - start, 2)} seconds")
     exit(1)
 
     data, league = scrape_matchups()
