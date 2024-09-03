@@ -19,7 +19,7 @@ WHERE year = $1
 ORDER BY round, pick;
 `;
 
-export default async function hello(req, res) {
+export default async function draft(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query, [2024]);

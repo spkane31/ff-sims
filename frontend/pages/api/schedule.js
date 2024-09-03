@@ -21,7 +21,7 @@ JOIN teams AS t2 ON matchups.away_team_espn_id = t2.espn_id
 WHERE year = 2024
 ORDER BY week;`;
 
-export default async function hello(req, res) {
+export default async function schedule(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query);

@@ -446,7 +446,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
         print(PRINT_STR.format(year, week))
         # NOTE seankane: This might not work for current leagues, only for past leagues in which case will have to simulate in a different way.
         # If that is the case, I will be very sad
-        for box_score in league.box_scores(week):
+        for box_score in league.scoreboard(week):
             home_owner = box_score.home_team.team_name.rstrip(" ")
             away_owner = box_score.away_team.team_name.rstrip(" ")
             matchup_data[week].append(
@@ -844,28 +844,53 @@ def get_schedule(league: League) -> None:
         team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
 
     for week in range(1, 15):
-        # weekly_schedule = league.scoreboard(week=week)
-        weekly_schedule = league.box_scores(week=week)
-        week_matchups = []
-        for matchup in weekly_schedule:
-            home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
-            away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
-            home_team_owner = team_id_to_owner[home_team_id]
-            away_team_owner = team_id_to_owner[away_team_id]
-            week_matchups.append(
-                {
-                    "home_team_id": home_team_id,
-                    "away_team_id": away_team_id,
-                    "home_team_owner": home_team_owner,
-                    "away_team_owner": away_team_owner,
-                    "home_team_score": matchup.home_score,
-                    "away_team_score": matchup.away_score,
-                    "home_team_espn_projected_score": matchup.home_projected,
-                    "away_team_espn_projected_score": matchup.away_projected,
-                }
-            )
+        if league.year < 2019:
+            weekly_schedule = league.scoreboard(week=week)
+            week_matchups = []
+            for matchup in weekly_schedule:
+                if not hasattr(matchup, "away_team") or not hasattr(matchup, "home_team"):
+                    break
+                home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
+                away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
+                home_team_owner = team_id_to_owner[home_team_id]
+                away_team_owner = team_id_to_owner[away_team_id]
+                week_matchups.append(
+                    {
+                        "home_team_id": home_team_id,
+                        "away_team_id": away_team_id,
+                        "home_team_owner": home_team_owner,
+                        "away_team_owner": away_team_owner,
+                        "home_team_score": matchup.home_score,
+                        "away_team_score": matchup.away_score,
+                        "home_team_espn_projected_score": -1,
+                        "away_team_espn_projected_score": -1,
+                    }
+                )
+            schedule.append(week_matchups)
+        else:
+            weekly_schedule = league.box_scores(week=week)
+            week_matchups = []
+            for matchup in weekly_schedule:
+                if matchup.away_team == 0 or matchup.home_team == 0:
+                    break
+                home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
+                away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
+                home_team_owner = team_id_to_owner[home_team_id]
+                away_team_owner = team_id_to_owner[away_team_id]
+                week_matchups.append(
+                    {
+                        "home_team_id": home_team_id,
+                        "away_team_id": away_team_id,
+                        "home_team_owner": home_team_owner,
+                        "away_team_owner": away_team_owner,
+                        "home_team_score": matchup.home_score,
+                        "away_team_score": matchup.away_score,
+                        "home_team_espn_projected_score": matchup.home_projected,
+                        "away_team_espn_projected_score": matchup.away_projected,
+                    }
+                )
 
-        schedule.append(week_matchups)
+            schedule.append(week_matchups)
 
     create_teams(team_to_id)
 
@@ -1026,9 +1051,8 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
-    # get_historical_basic_stats()
-
-    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    # This was done manually but have to iterate through each year to load data
+    league = League(league_id=345674, year=2017, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)

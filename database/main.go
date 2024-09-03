@@ -16,7 +16,7 @@ type Matchup struct {
 	HomeTeamID, AwayTeamID                                 uint
 	HomeTeamESPNID, AwayTeamESPNID                         uint
 	HomeTeamFinalScore, AwayTeamFinalScore                 float64
-	Completed                                              bool
+	Completed, IsPlayoff                                   bool
 	HomeTeamESPNProjectedScore, AwayTeamESPNProjectedScore float64
 	Week, Year                                             uint
 }
@@ -37,9 +37,13 @@ type DraftSelection struct {
 
 func main() {
 	// Using Go to generate my database because it's easier for me
+	start := time.Now()
+	defer func() {
+		log.Printf("Database generation took %v\n", time.Since(start))
+	}()
 
 	var db *gorm.DB
-	connectionString := os.Getenv("COCKROACHDB_URL")
+	connectionString := os.Getenv("DATABASE_URL")
 
 	options := &gorm.Config{}
 	options.Logger = logger.New(

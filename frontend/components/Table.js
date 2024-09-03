@@ -11,7 +11,7 @@ const columns = [
     headerName: "Total Points",
     type: "number",
     sortable: true,
-    valueGetter: (_value, row) => `${row.total_points_for.toFixed(2)}`,
+    valueGetter: (_value, row) => `${row.total_points_for.toLocaleString()}`,
   },
   {
     field: "wins",

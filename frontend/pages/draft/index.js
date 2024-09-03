@@ -9,7 +9,6 @@ const Draft = () => {
     fetch("/api/draft")
       .then((res) => res.json())
       .then((data) => {
-        console.log(data);
         setDraft(data);
       });
   }, []);
