@@ -1,6 +1,5 @@
 import team_to_id from "../data/team_to_id.json";
 import team_id_to_owner from "../data/team_id_to_owner.json";
-// import schedule from "../data/schedule.json";
 import team_avgs from "../data/team_avgs.json";
 import { normalDistribution } from "../utils/math";
 

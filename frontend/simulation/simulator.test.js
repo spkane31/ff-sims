@@ -20,7 +20,7 @@ describe("Simulator", () => {
     expect(simulator.results).toBeDefined();
     expect(simulator.results.size).toBe(10);
     expect(simulator.leagueStats).toBeDefined();
-    expect(simulator.teamStats.size).toBe(10); // League is included here
+    expect(simulator.teamStats.size).toBe(10);
     expect(simulator.simulations).toBe(0);
     expect(simulator.getResults()).toBeDefined();
     expect(simulator.getTeamResults("Sean  Kane")).toBeDefined();
