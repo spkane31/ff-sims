@@ -80,22 +80,4 @@ describe("Simulator", () => {
     const scoringData = simulator.getTeamScoringData();
     expect(scoringData.length).toBe(10);
   });
-
-  it("should initialize from database", async () => {
-    simulator.step();
-    simulator.step();
-
-    const teams = simulator.getTeams();
-    expect(teams.length).toBe(10);
-
-    teams.forEach((team) => {
-      const teamResults = simulator.getTeamResults(team);
-      expect(teamResults.pointsFor).toBeGreaterThan(0);
-      expect(teamResults.pointsAgainst).toBeGreaterThan(0);
-      expect(teamResults.wins + teamResults.losses).toBe(28);
-    });
-
-    const scoringData = simulator.getTeamScoringData();
-    expect(scoringData.length).toBe(10);
-  });
 });

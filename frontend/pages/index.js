@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { Box } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 
 import Table from "../components/Table";
 import TitleComponent from "../components/TitleComponent";
@@ -18,9 +18,7 @@ const Container = styled("div")({
 export default function Home() {
   return (
     <Container>
-      <Head>
-        <title>The League FF</title>
-      </Head>
+      <Head>The League FF</Head>
       <Box
         sx={{
           padding: "5rem 0",
@@ -33,7 +31,8 @@ export default function Home() {
         }}
       >
         <TitleComponent>The League</TitleComponent>
-        <p>All Time Standings</p>
+        <Typography>All Time Standings</Typography>
+        <Box sx={{ paddingBottom: "15px" }} />
         <Table />
       </Box>
     </Container>

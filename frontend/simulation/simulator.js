@@ -15,9 +15,6 @@ class Simulator {
 
     // map of espn_id (int) -> Results()
     this.results = new Map();
-    Object.entries(team_to_id).forEach(([key, value]) => {
-      this.results.set(value, new Results());
-    });
 
     // map of espn_id (int) -> {average: float, std_dev: float}
     this.teamStats = new Map();
@@ -32,6 +29,7 @@ class Simulator {
           average: value.averageScore,
           std_dev: value.stddevScore,
         });
+        this.results.set(value.id, new Results());
       }
     });
     // leagueStats is a {average: float, std_dev: float} object
