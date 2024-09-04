@@ -1,8 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import { Pool } from "pg/lib";
-import { config } from "../../config";
-
-const pool = new Pool(config);
+import { pool } from "../../db/db";
 
 const query = `
 SELECT
