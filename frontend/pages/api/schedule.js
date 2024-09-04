@@ -1,8 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-
-import { Pool } from "pg/lib";
-import { config } from "../../config";
-const pool = new Pool(config);
+import { pool } from "../../db/db";
 
 const query = `
 SELECT
@@ -21,7 +18,7 @@ JOIN teams AS t2 ON matchups.away_team_espn_id = t2.espn_id
 WHERE year = 2024
 ORDER BY week;`;
 
-export default async function hello(req, res) {
+export default async function schedule(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query);

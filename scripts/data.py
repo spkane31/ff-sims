@@ -13,7 +13,6 @@ import psycopg2
 
 from models.roster import Roster
 from models.activity import get_waiver_wire_activity, perform_waiver_analysis
-from database.tables import initialize
 from simulation import SeasonSimulation, SingleSeasonSimulationResults
 from utils import write_to_file, mean, std_dev, flatten_extend
 
@@ -39,10 +38,20 @@ with conn.cursor() as cur:
     conn.commit()
     print(f"Number of teams: {res[0][0]}")
 
-    cur.execute("SELECT count(*) FROM matchups")
+    cur.execute("SELECT year, count(*) FROM matchups GROUP BY year")
     res = cur.fetchall()
     conn.commit()
-    print(f"Number of matchups: {res[0][0]}")
+    print(f"Matchups: {res}")
+
+    cur.execute("SELECT year, count(*) FROM draft_selections GROUP BY year")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Drafts: {res}")
+
+    cur.execute("SELECT year, count(*) FROM box_score_players GROUP BY year")
+    res = cur.fetchall()
+    conn.commit()
+    print(f"Box Score Players: {res}")
 
     cur.close()
 
@@ -441,7 +450,7 @@ def scrape_matchups(file_name: str = "history.json", year=2023, debug=False) -> 
         print(PRINT_STR.format(year, week))
         # NOTE seankane: This might not work for current leagues, only for past leagues in which case will have to simulate in a different way.
         # If that is the case, I will be very sad
-        for box_score in league.box_scores(week):
+        for box_score in league.scoreboard(week):
             home_owner = box_score.home_team.team_name.rstrip(" ")
             away_owner = box_score.away_team.team_name.rstrip(" ")
             matchup_data[week].append(
@@ -831,6 +840,8 @@ def get_schedule(league: League) -> None:
     team_to_id = {}
     team_id_to_owner = {}
 
+    box_score_players = []
+
     # Get the owners names from each Team
     result = league.standings()
     for team in result:
@@ -839,28 +850,88 @@ def get_schedule(league: League) -> None:
         team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
 
     for week in range(1, 15):
-        # weekly_schedule = league.scoreboard(week=week)
-        weekly_schedule = league.box_scores(week=week)
-        week_matchups = []
-        for matchup in weekly_schedule:
-            home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
-            away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
-            home_team_owner = team_id_to_owner[home_team_id]
-            away_team_owner = team_id_to_owner[away_team_id]
-            week_matchups.append(
-                {
-                    "home_team_id": home_team_id,
-                    "away_team_id": away_team_id,
-                    "home_team_owner": home_team_owner,
-                    "away_team_owner": away_team_owner,
-                    "home_team_score": matchup.home_score,
-                    "away_team_score": matchup.away_score,
-                    "home_team_espn_projected_score": matchup.home_projected,
-                    "away_team_espn_projected_score": matchup.away_projected,
-                }
-            )
+        print(f"Year: {league.year}\tWeek: {week}")
+        if league.year < 2019:
+            weekly_schedule = league.scoreboard(week=week)
+            week_matchups = []
+            for matchup in weekly_schedule:
+                if not hasattr(matchup, "away_team") or not hasattr(matchup, "home_team"):
+                    break
+                home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
+                away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
+                home_team_owner = team_id_to_owner[home_team_id]
+                away_team_owner = team_id_to_owner[away_team_id]
+                week_matchups.append(
+                    {
+                        "home_team_id": home_team_id,
+                        "away_team_id": away_team_id,
+                        "home_team_owner": home_team_owner,
+                        "away_team_owner": away_team_owner,
+                        "home_team_score": matchup.home_score,
+                        "away_team_score": matchup.away_score,
+                        "home_team_espn_projected_score": -1,
+                        "away_team_espn_projected_score": -1,
+                    }
+                )
+            schedule.append(week_matchups)
+        else:
+            weekly_schedule = league.box_scores(week=week)
+            week_matchups = []
+            for matchup in weekly_schedule:
+                if matchup.away_team == 0 or matchup.home_team == 0:
+                    break
+                home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
+                away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
+                home_team_owner = team_id_to_owner[home_team_id]
+                away_team_owner = team_id_to_owner[away_team_id]
+                week_matchups.append(
+                    {
+                        "home_team_id": home_team_id,
+                        "away_team_id": away_team_id,
+                        "home_team_owner": home_team_owner,
+                        "away_team_owner": away_team_owner,
+                        "home_team_score": matchup.home_score,
+                        "away_team_score": matchup.away_score,
+                        "home_team_espn_projected_score": matchup.home_projected,
+                        "away_team_espn_projected_score": matchup.away_projected,
+                    }
+                )
 
-        schedule.append(week_matchups)
+                for player in matchup.home_lineup:
+                    if player.projected_points == 0 or player.points == 0:
+                        if player.active_status == "ACTIVE":
+                            print(f"\t{player}")
+                    box_score_players.append(
+                        {
+                            "name": player.name,
+                            "id": player.playerId,
+                            "projection": player.projected_points,
+                            "actual": player.points,
+                            "position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                            "team_id": home_team_id,
+                        }
+                    )
+
+                for player in matchup.away_lineup:
+                    if player.projected_points == 0 or player.points == 0:
+                        if player.active_status == "ACTIVE":
+                            print(f"\t{player}")
+                    box_score_players.append(
+                        {
+                            "name": player.name,
+                            "id": player.playerId,
+                            "projection": player.projected_points,
+                            "actual": player.points,
+                            "position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                            "team_id": away_team_id,
+                        }
+                    )
+
+            schedule.append(week_matchups)
 
     create_teams(team_to_id)
 
@@ -868,6 +939,40 @@ def get_schedule(league: League) -> None:
     create_schedule(schedule, year=league.year)
     write_to_file(team_id_to_owner, "team_id_to_owner.json")
     write_to_file(team_to_id, "team_to_id.json")
+    write_box_score_players_to_db(box_score_players, league.year)
+
+    return None
+
+
+def write_box_score_players_to_db(box_score_players: list[dict[str, any]], year: int) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    counter = 0
+    with conn.cursor() as cur:
+        for player in box_score_players:
+            cur.execute(
+                "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, status, week, year) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
+                (
+                    player["name"],
+                    player["id"],
+                    player["projection"],
+                    player["actual"],
+                    player["position"],
+                    player["status"],
+                    player["week"],
+                    year,
+                    player["id"],
+                    player["week"],
+                    year,
+                ),
+            )
+            counter += 1
+
+            if counter % 100 == 0:
+                conn.commit()
+
+        conn.commit()
+        cur.close()
 
     return None
 
@@ -968,13 +1073,41 @@ def get_simple_draft(league: League) -> None:
                 "player_name": pick.playerName,
                 "player_id": pick.playerId,
                 "team_id": pick.team.team_id,
-                "team_name": pick.team.team_name.rstrip(" "),
                 "round_number": pick.round_num,
                 "round_pick": pick.round_pick,
             }
         )
 
+    write_draft_data_to_db(draft_data, league.year)
     write_to_file(draft_data, "draft_data.json")
+
+
+def write_draft_data_to_db(draft_data: list[dict[str, str]], year: int) -> None:
+    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+
+    with conn.cursor() as cur:
+        for selection in draft_data:
+            cur.execute(
+                "INSERT INTO draft_selections (player_name, player_id, owner_espn_id, round, pick, year) SELECT %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s)",
+                (
+                    selection["player_name"],
+                    selection["player_id"],
+                    selection["team_id"],
+                    selection["round_number"],
+                    selection["round_pick"],
+                    year,
+                    selection["player_name"],
+                    selection["team_id"],
+                    selection["round_number"],
+                    selection["round_pick"],
+                    year,
+                ),
+            )
+
+        conn.commit()
+        cur.close()
+
+    return None
 
 
 # TODO list:
@@ -993,14 +1126,14 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
-    # get_historical_basic_stats()
-
-    league = League(league_id=345674, year=2023, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    # This was done manually but have to iterate through each year to load data
+    league = League(league_id=345674, year=2018, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
     get_simple_draft(league)
 
+    print(f"Completed in {round(time.time() - start, 2)} seconds")
     exit(1)
 
     data, league = scrape_matchups()

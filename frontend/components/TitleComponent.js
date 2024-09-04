@@ -11,25 +11,10 @@ const TitleComponent = ({ children }) => {
       sx={{
         fontSize: "4rem",
         textAlign: "center",
+        color: "primary.main",
       }}
     >
-      <Link
-        href="/"
-        sx={{
-          textDecoration: "none",
-          "&:hover": {
-            textDecoration: "underline",
-          },
-          "&:focus": {
-            textDecoration: "underline",
-          },
-          "&:active": {
-            textDecoration: "underline",
-          },
-        }}
-      >
-        {children}
-      </Link>
+      {children}
     </Typography>
   );
 };

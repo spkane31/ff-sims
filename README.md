@@ -27,17 +27,18 @@ This will write data to a `history.json` file. The `history.json`  file acts as 
 ## Scripts
 
 * fetching data from ESPN
+* writing data to file and a database provided by `DATABASE_URL` environment vairable
+
+Formerly:
+
 * draft analysis
 * season simulations
 * playoff predictions
 
-## Simulation (work in progress)
+## Frontend
 
-I want to do the Monte Carlo simulation portion in Rust as a learning experience, maybe this year I actually will ...
+NextJS app for displaying data and allowing user interaction.
 
-## web-app
+## Database
 
-This will eventually be some sort of web page that I can easily host and easily share with friends.
-
-* write the simulation results to a database (probably use a SQLite database that I can ship directly with the docker container)
-* read from the database in the web-app
+Go script for managing database. `gorm` does the database management for me, would like to expand this portion to do the data scraping as well. Would require reverse engineering the `espn_api` library. I use a CockroachDB serverless instance for the Postgres instance. Running `go run .` will build out the database.

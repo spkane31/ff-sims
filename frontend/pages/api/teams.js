@@ -1,7 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import { Pool } from "pg/lib";
-import { config } from "../../config";
-const pool = new Pool(config);
+import { pool } from "../../db/db";
 
 const query = `SELECT
   teams.espn_id AS id,
@@ -37,23 +35,19 @@ FROM (
 export default async function teams(req, res) {
   try {
     const client = await pool.connect();
-    const teamData = await client.query(query, [2024]);
+    const teamData = await client.query(query, [2023]);
     const respIDAsInt = teamData.rows.map((row) => {
       return {
         id: parseInt(row.id),
         owner: row.owner,
         averageScore:
-          row.average_score === null
-            ? 0.0
-            : parseFloat(row.average_score).toFixed(3),
+          row.average_score === null ? 0.0 : parseFloat(row.average_score),
         stddevScore:
-          row.stddev_score === null
-            ? 0.0
-            : parseFloat(row.stddev_score).toFixed(3),
+          row.stddev_score === null ? 0.0 : parseFloat(row.stddev_score),
       };
     });
 
-    const leagueData = await client.query(queryLeague, [2024]);
+    const leagueData = await client.query(queryLeague, [2023]);
 
     respIDAsInt.push({
       id: -1,
@@ -61,11 +55,11 @@ export default async function teams(req, res) {
       averageScore:
         leagueData.rows[0].average_score === null
           ? 0.0
-          : parseFloat(leagueData.rows[0].average_score).toFixed(3),
+          : parseFloat(leagueData.rows[0].average_score),
       stddevScore:
         leagueData.rows[0].stddev_score === null
           ? 0.0
-          : parseFloat(leagueData.rows[0].stddev_score).toFixed(3),
+          : parseFloat(leagueData.rows[0].stddev_score),
     });
 
     res.status(200).json(respIDAsInt);

@@ -4,21 +4,12 @@ import { DataGrid } from "@mui/x-data-grid";
 
 const Draft = () => {
   const [draft, setDraft] = React.useState(null);
-  const [teams, setTeams] = React.useState(null);
 
   React.useEffect(() => {
     fetch("/api/draft")
       .then((res) => res.json())
       .then((data) => {
         setDraft(data);
-      });
-  }, []);
-
-  React.useEffect(() => {
-    fetch("/api/teams")
-      .then((res) => res.json())
-      .then((data) => {
-        setTeams(data);
       });
   }, []);
 
@@ -37,19 +28,15 @@ const Draft = () => {
         paddingRight: "5%",
       }}
     >
-      <DraftData draftData={draft} teams={teams} />
+      <DraftData draftData={draft} />
     </Box>
   );
 };
 
-const DraftData = ({ draftData, teams }) => {
-  if (draftData === null || teams === null) {
+const DraftData = ({ draftData }) => {
+  if (draftData === null) {
     return <div>Loading...</div>;
   }
-
-  const getTeamNameFromID = (teamID) => {
-    return teams.find((team) => team.id === teamID).owner;
-  };
 
   const columns = [
     { field: "teamName", headerName: "Owner", flex: 1, minWidth: 130 },
@@ -67,12 +54,14 @@ const DraftData = ({ draftData, teams }) => {
   const rows = Object.entries(draftData)
     .map(([_, draftSelection]) => {
       return {
-        id: draftSelection.player_id,
-        teamName: getTeamNameFromID(draftSelection.team_id),
+        id:
+          draftSelection.player_id === null
+            ? Math.random()
+            : draftSelection.player_id,
+        teamName: draftSelection.owner,
         playerName: draftSelection.player_name,
-        pickNumber:
-          10 * (draftSelection.round_number - 1) + draftSelection.round_pick,
-        roundNumber: draftSelection.round_number,
+        pickNumber: 10 * (draftSelection.round - 1) + draftSelection.pick,
+        roundNumber: draftSelection.round,
         totalPoints: 0,
       };
     })

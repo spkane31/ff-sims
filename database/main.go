@@ -16,7 +16,7 @@ type Matchup struct {
 	HomeTeamID, AwayTeamID                                 uint
 	HomeTeamESPNID, AwayTeamESPNID                         uint
 	HomeTeamFinalScore, AwayTeamFinalScore                 float64
-	Completed                                              bool
+	Completed, IsPlayoff                                   bool
 	HomeTeamESPNProjectedScore, AwayTeamESPNProjectedScore float64
 	Week, Year                                             uint
 }
@@ -27,11 +27,32 @@ type Team struct {
 	ESPNID uint
 }
 
+type DraftSelection struct {
+	gorm.Model
+	PlayerName                          string
+	PlayerPosition                      string
+	TeamID, PlayerID, Round, Pick, Year uint
+	OwnerESPNID                         uint
+}
+
+type BoxScorePlayer struct {
+	gorm.Model
+	PlayerName, PlayerPosition    string
+	Status                        string
+	OwnerESPNID                   uint
+	TeamID, PlayerID, Week, Year  uint
+	ProjectedPoints, ActualPoints float64
+}
+
 func main() {
 	// Using Go to generate my database because it's easier for me
+	start := time.Now()
+	defer func() {
+		log.Printf("Database generation took %v\n", time.Since(start))
+	}()
 
 	var db *gorm.DB
-	connectionString := os.Getenv("COCKROACHDB_URL")
+	connectionString := os.Getenv("DATABASE_URL")
 
 	options := &gorm.Config{}
 	options.Logger = logger.New(
@@ -51,6 +72,8 @@ func main() {
 	if err := db.AutoMigrate(
 		&Matchup{},
 		&Team{},
+		&DraftSelection{},
+		&BoxScorePlayer{},
 	); err != nil {
 		panic(err)
 	}

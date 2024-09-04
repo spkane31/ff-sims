@@ -30,6 +30,7 @@ requests==2.31.0
 scipy==1.11.3
 six==1.16.0
 SQLAlchemy==2.0.32
+sqlalchemy-cockroachdb==2.0.2
 tomli==2.0.1
 typing_extensions==4.8.0
 urllib3==2.0.4
