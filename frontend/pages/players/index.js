@@ -98,28 +98,16 @@ const Data = () => {
   return (
     <Box
       sx={{
-        padding: "5rem 0",
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
+        maxWidth: "100%",
         overflowX: "auto",
-        paddingLeft: "5%",
-        paddingRight: "5%",
       }}
     >
-      <Box sx={{ marginTop: "25px" }} />
-      <Typography variant="h4" sx={{ textAlign: "center" }}>
-        Player Standings
-      </Typography>
+      <Box sx={{ marginTop: "15px" }} />
+      <Typography variant="h4">Player Standings</Typography>
 
       <Paper
         sx={{
           padding: "10px",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
         }}
       >
         <Typography variant="h6">Year:</Typography>
@@ -140,9 +128,14 @@ const Data = () => {
         </Box>
       </Paper>
 
-      <Box sx={{ marginTop: "15px" }} />
       <Box sx={{ paddingBottom: "15px" }} />
-      <DataGrid rows={players} columns={columns} autosizeOnMount hideFooter />
+      <DataGrid
+        rows={players}
+        columns={columns}
+        rowHeight={40}
+        autosizeOnMount
+        hideFooter
+      />
     </Box>
   );
 };

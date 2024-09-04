@@ -44,19 +44,7 @@ const Schedule = () => {
   return simulator === null ? (
     <div>Loading...</div>
   ) : (
-    <Box
-      sx={{
-        padding: "5rem 0",
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        overflowX: "auto",
-        paddingLeft: "5%",
-        paddingRight: "5%",
-      }}
-    >
+    <>
       <Box sx={{ marginTop: "15px" }} />
       <Typography variant="h4" sx={{ textAlign: "center" }}>
         Schedule
@@ -68,7 +56,7 @@ const Schedule = () => {
         teamAvgs={teamAvgs}
       />
       <Box sx={{ marginTop: "25px" }} />
-    </Box>
+    </>
   );
 };
 
@@ -89,7 +77,7 @@ const ScheduleTable = ({ schedule, simulator }) => {
             <TableCell align="right">Score</TableCell>
             <TableCell align="right">Win Percentage</TableCell>
             <TableCell align="right">Projected Team</TableCell>
-            <TableCell align="right">Awat Team</TableCell>
+            <TableCell align="right">Away Team</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>

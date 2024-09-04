@@ -13,24 +13,7 @@ const Draft = () => {
       });
   }, []);
 
-  return draft === null ? (
-    <>Loading...</>
-  ) : (
-    <Box
-      sx={{
-        padding: "5rem 0",
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        paddingLeft: "5%",
-        paddingRight: "5%",
-      }}
-    >
-      <DraftData draftData={draft} />
-    </Box>
-  );
+  return draft === null ? <>Loading...</> : <DraftData draftData={draft} />;
 };
 
 const DraftData = ({ draftData }) => {

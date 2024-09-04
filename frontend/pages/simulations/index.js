@@ -58,20 +58,12 @@ export default function Home() {
   return simulator === null ? (
     <div>Loading...</div>
   ) : (
-    <Box
-      sx={{
-        padding: "5rem 0",
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        overflowX: "auto",
-        paddingLeft: "5%",
-        paddingRight: "5%",
-      }}
-    >
-      <Box>
+    <>
+      <Box
+        sx={{
+          paddingTop: "20px",
+        }}
+      >
         <Button
           onClick={() => {
             const start = new Date().getTime();
@@ -116,7 +108,7 @@ export default function Home() {
       <RegularSeasonPositions teamData={teamData} />
       <Box sx={{ marginTop: "25px" }} />
       <PlayoffPositions teamData={teamData} />
-    </Box>
+    </>
   );
 }
 
@@ -176,33 +168,29 @@ const TeamData = ({ teamData }) => {
     .sort((a, b) => b.projected_wins - a.projected_wins);
 
   return (
-    <Box
-      sx={{
-        maxWidth: "100%",
-        overflowX: "auto",
-      }}
-    >
-      <Paper
+    <>
+      <Box
         sx={{
-          minWidth: 750,
-          minHeight: 400,
+          maxWidth: "100%",
+          overflowX: "auto",
         }}
       >
-        <Typography
-          variant="h5"
-          sx={{ textAlign: "center", marginBottom: "10px" }}
+        <Paper
+          sx={{
+            minWidth: 750,
+            minHeight: 400,
+          }}
         >
-          Team Scoring Data
-        </Typography>
-        <DataGrid
-          columns={columns}
-          rows={rows}
-          autosizeOnMount
-          autoHeight
-          hideFooter
-        />
-      </Paper>
-    </Box>
+          <Typography
+            variant="h5"
+            sx={{ textAlign: "center", marginBottom: "10px" }}
+          >
+            Team Scoring Data
+          </Typography>
+          <DataGrid columns={columns} rows={rows} autosizeOnMount hideFooter />
+        </Paper>
+      </Box>
+    </>
   );
 };
 
