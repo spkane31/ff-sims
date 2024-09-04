@@ -142,15 +142,7 @@ const Data = () => {
 
       <Box sx={{ marginTop: "15px" }} />
       <Box sx={{ paddingBottom: "15px" }} />
-      <DataGrid
-        rows={players}
-        columns={columns}
-        autosizeOnMount
-        hideFooter
-        sx={{
-          minWidth: "500px",
-        }}
-      />
+      <DataGrid rows={players} columns={columns} autosizeOnMount hideFooter />
     </Box>
   );
 };
