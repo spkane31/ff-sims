@@ -850,6 +850,7 @@ def get_schedule(league: League) -> None:
         team_id_to_owner[team.team_id] = f"{team.owners[0]['firstName']} {team.owners[0]['lastName']}".title()
 
     for week in range(1, 15):
+        print(f"Year: {league.year}\tWeek: {week}")
         if league.year < 2019:
             weekly_schedule = league.scoreboard(week=week)
             week_matchups = []
@@ -897,6 +898,9 @@ def get_schedule(league: League) -> None:
                 )
 
                 for player in matchup.home_lineup:
+                    if player.projected_points == 0 or player.points == 0:
+                        if player.active_status == "ACTIVE":
+                            print(f"\t{player}")
                     box_score_players.append(
                         {
                             "name": player.name,
@@ -906,6 +910,24 @@ def get_schedule(league: League) -> None:
                             "position": player.position,
                             "status": player.slot_position,
                             "week": week,
+                            "team_id": home_team_id,
+                        }
+                    )
+
+                for player in matchup.away_lineup:
+                    if player.projected_points == 0 or player.points == 0:
+                        if player.active_status == "ACTIVE":
+                            print(f"\t{player}")
+                    box_score_players.append(
+                        {
+                            "name": player.name,
+                            "id": player.playerId,
+                            "projection": player.projected_points,
+                            "actual": player.points,
+                            "position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                            "team_id": away_team_id,
                         }
                     )
 
@@ -925,6 +947,7 @@ def get_schedule(league: League) -> None:
 def write_box_score_players_to_db(box_score_players: list[dict[str, any]], year: int) -> None:
     conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
 
+    counter = 0
     with conn.cursor() as cur:
         for player in box_score_players:
             cur.execute(
@@ -943,6 +966,10 @@ def write_box_score_players_to_db(box_score_players: list[dict[str, any]], year:
                     year,
                 ),
             )
+            counter += 1
+
+            if counter % 100 == 0:
+                conn.commit()
 
         conn.commit()
         cur.close()
@@ -1100,7 +1127,7 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=2022, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2018, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
