@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import random
-import sys
 import time
 
 from dotenv import find_dotenv, load_dotenv
@@ -1127,7 +1126,7 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=2018, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=2017, swid=SWID, espn_s2=ESPN_S2, debug=False)
 
     get_schedule(league)
     get_basic_stats(league)
