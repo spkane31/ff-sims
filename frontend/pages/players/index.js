@@ -1,13 +1,6 @@
 import React from "react";
 import MenuItem from "@mui/material/MenuItem";
-import {
-  Box,
-  Paper,
-  Typography,
-  InputLabel,
-  FormControl,
-  Select,
-} from "@mui/material";
+import { Box, Paper, Typography, FormControl, Select } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
 const columns = [
