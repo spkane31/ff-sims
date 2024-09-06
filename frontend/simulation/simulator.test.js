@@ -1,5 +1,4 @@
 import Simulator from "./simulator";
-import team_to_id from "../data/team_to_id.json";
 import { getSchedule, getTeams } from "../db/db";
 
 describe("Simulator", () => {
@@ -23,27 +22,24 @@ describe("Simulator", () => {
     expect(simulator.teamStats.size).toBe(10);
     expect(simulator.simulations).toBe(0);
     expect(simulator.getResults()).toBeDefined();
-    expect(simulator.getTeamResults("Sean  Kane")).toBeDefined();
-    expect(simulator.getTeamStats("Sean  Kane")).toBeDefined();
+    expect(simulator.getTeamResults(1)).toBeDefined();
+    expect(simulator.getTeamStats(1)).toBeDefined();
   });
 
   it("should increment the wins count for the specified team", async () => {
-    const teamName = "Sean  Kane";
-    const teamId = team_to_id[teamName];
+    const teamId = 1;
 
-    simulator.teamWin(teamName);
+    simulator.teamWin(teamId);
 
     expect(simulator.results.get(teamId).wins).toBe(1);
   });
 
   it("should not increment the wins count for other teams", async () => {
-    const teamName = "Sean  Kane";
-    const otherTeamName = "Connor Brand";
-    const teamId = team_to_id[teamName];
-    const otherTeamId = team_to_id[otherTeamName];
+    const teamId = 1;
+    const otherTeamId = 5;
 
-    simulator.teamWin(teamName);
-    simulator.teamWin(otherTeamName);
+    simulator.teamWin(teamId);
+    simulator.teamWin(otherTeamId);
 
     expect(simulator.results.get(teamId).wins).toBe(1);
     expect(simulator.results.get(otherTeamId).wins).toBe(1);
@@ -52,7 +48,7 @@ describe("Simulator", () => {
   it("should increase each teams points and games for each step", async () => {
     simulator.step();
 
-    const teams = simulator.getTeams();
+    const teams = simulator.getTeamIDs();
     expect(teams.length).toBe(10);
 
     teams.forEach((team) => {
@@ -67,11 +63,11 @@ describe("Simulator", () => {
     simulator.step();
     simulator.step();
 
-    const teams = simulator.getTeams();
+    const teams = simulator.getTeamIDs();
     expect(teams.length).toBe(10);
 
-    teams.forEach((team) => {
-      const teamResults = simulator.getTeamResults(team);
+    teams.forEach((teamID) => {
+      const teamResults = simulator.getTeamResults(teamID);
       expect(teamResults.pointsFor).toBeGreaterThan(0);
       expect(teamResults.pointsAgainst).toBeGreaterThan(0);
       expect(teamResults.wins + teamResults.losses).toBe(28);

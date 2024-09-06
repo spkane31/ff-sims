@@ -12,7 +12,6 @@ import {
 } from "@mui/material";
 import Simulator from "../../simulation/simulator";
 import { normalDistribution } from "../../utils/math";
-import teamAvgs from "../../data/team_avgs.json";
 
 const Schedule = () => {
   const [simulator, setSimulator] = React.useState(null);
@@ -45,22 +44,20 @@ const Schedule = () => {
     <div>Loading...</div>
   ) : (
     <>
-      <Box sx={{ marginTop: "15px" }} />
-      <Typography variant="h4" sx={{ textAlign: "center" }}>
-        Schedule
-      </Typography>
-      <Box sx={{ marginTop: "15px" }} />
+      <Box sx={{ marginTop: "25px" }} />
+      <Typography variant="h4">Schedule</Typography>
+      <Box sx={{ marginTop: "25px" }} />
       <ScheduleTable
         schedule={schedule}
         simulator={simulator}
-        teamAvgs={teamAvgs}
+        teamAvgs={teamStats}
       />
       <Box sx={{ marginTop: "25px" }} />
     </>
   );
 };
 
-const ScheduleTable = ({ schedule, simulator }) => {
+const ScheduleTable = ({ schedule, simulator, teamAvgs }) => {
   if (simulator === null || schedule === null) {
     return <div>Loading...</div>;
   }
@@ -99,17 +96,19 @@ const ScheduleTable = ({ schedule, simulator }) => {
   );
 };
 
-const TeamMatchup = ({ game, teamAvgs, numSimulations = 1000 }) => {
+const TeamMatchup = ({ game, teamAvgs, numSimulations = 5000 }) => {
   if (game === undefined || teamAvgs === undefined) {
     return <></>;
   }
 
-  const { average: home_average, std_dev: home_std_dev } =
-    teamAvgs[game.home_team_owner];
-  const { average: away_average, std_dev: away_std_dev } =
-    teamAvgs[game.away_team_owner];
-  const { average: league_average, std_dev: league_std_dev } =
-    teamAvgs["League"];
+  // fine obj with owner == game.home_team_owner in teamAvgs list
+  const homeTeam = teamAvgs.find((team) => team.owner === game.home_team_owner);
+  const awayTeam = teamAvgs.find((team) => team.owner === game.away_team_owner);
+  const league = teamAvgs.find((team) => team.owner === "League");
+
+  const { averageScore: home_average, stddevScore: home_std_dev } = homeTeam;
+  const { averageScore: away_average, stddevScore: away_std_dev } = awayTeam;
+  const { averageScore: league_average, stddevScore: league_std_dev } = league;
 
   const runMonteCarloSimulation = (
     home_average,
@@ -129,19 +128,14 @@ const TeamMatchup = ({ game, teamAvgs, numSimulations = 1000 }) => {
       const jitterPercentageHome = Math.random() * 0.2 + 0.05;
       const jitterPercentageAway = Math.random() * 0.2 + 0.05;
 
-      const leagueJitterHome =
-        jitterPercentageHome * normalDistribution(league_avg, league_std_dev);
-      const leagueJitterAway =
-        jitterPercentageHome * normalDistribution(league_avg, league_std_dev);
-
       const homeScore =
         (1 - jitterPercentageHome) *
           normalDistribution(home_average, home_std_dev) +
-        jitterPercentageHome * leagueJitterHome;
+        jitterPercentageHome * normalDistribution(league_avg, league_std_dev);
       const awayScore =
         (1 - jitterPercentageAway) *
           normalDistribution(away_average, away_std_dev) +
-        jitterPercentageAway * leagueJitterAway;
+        jitterPercentageHome * normalDistribution(league_avg, league_std_dev);
 
       if (homeScore > awayScore) {
         homeWins++;
