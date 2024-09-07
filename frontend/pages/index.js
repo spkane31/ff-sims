@@ -5,6 +5,18 @@ import Table from "../components/Table";
 import TitleComponent from "../components/TitleComponent";
 
 export default function Home() {
+  const [data, setData] = React.useState([]);
+
+  React.useEffect(() => {
+    async function fetchData() {
+      const response = await fetch("/api/historical");
+      const data = await response.json();
+      setData(data);
+    }
+
+    fetchData();
+  }, []);
+
   return (
     <>
       <Box
@@ -16,7 +28,8 @@ export default function Home() {
       <TitleComponent>The League</TitleComponent>
       <Typography variant="h6">All Time Standings</Typography>
       <Box sx={{ padding: "15px" }} />
-      <Table />
+      <Table data={data} />
+      <Box sx={{ padding: "15px" }} />
     </>
   );
 }
