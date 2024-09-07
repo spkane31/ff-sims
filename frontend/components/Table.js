@@ -1,15 +1,23 @@
 import * as React from "react";
 import { DataGrid } from "@mui/x-data-grid";
-import { Paper, Box, useTheme } from "@mui/material";
+import { Paper, Box, useTheme, Link } from "@mui/material";
 
 const columns = [
-  { field: "owner", headerName: "Owner", minWidth: 100, flex: 1 },
+  {
+    field: "owner",
+    headerName: "Owner",
+    minWidth: 100,
+    flex: 1,
+    renderCell: (param) => (
+      <Link href={`/team/${param.row.id}`}>{`${param.row.owner}`}</Link>
+    ),
+  },
   {
     field: "points",
     headerName: "Total Points",
     type: "number",
     sortable: true,
-    valueGetter: (_value, row) => `${row.points.toLocaleString()}`,
+    valueGetter: (_value, row) => `${row.points.toFixed(2).toLocaleString()}`,
   },
   {
     field: "wins",
