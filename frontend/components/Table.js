@@ -3,7 +3,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import { Paper, Box, useTheme } from "@mui/material";
 
 const columns = [
-  { field: "owner", headerName: "Owner" },
+  { field: "owner", headerName: "Owner", minWidth: 100, flex: 1 },
   {
     field: "points",
     headerName: "Total Points",
