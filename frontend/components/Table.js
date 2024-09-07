@@ -24,9 +24,12 @@ const columns = [
   },
   {
     field: "record",
-    headerName: "Record",
+    headerName: "Percentage",
     sortable: true,
     valueGetter: (_value, row) => {
+      if (row.wins === 0 && row.losses === 0) {
+        return "0.000";
+      }
       return `${(row.wins / (row.wins + row.losses)).toFixed(3)}`;
     },
   },
