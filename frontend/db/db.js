@@ -48,6 +48,7 @@ export const getTeams = async (year) => {
   ) AS scores;`;
 
   const leagueData = await client.query(queryLeague, [year]);
+  client.end();
 
   respIDAsInt.push({
     id: -1,
@@ -61,8 +62,6 @@ export const getTeams = async (year) => {
         ? 0.0
         : parseFloat(leagueData.rows[0].stddev_score),
   });
-
-  client.end();
 
   return respIDAsInt;
 };
@@ -87,6 +86,8 @@ ORDER BY week;`;
 export const getSchedule = async (year) => {
   const client = await pool.connect();
   const resp = await client.query(scheduleQuery);
+  client.end();
+
   const parsedResponse = resp.rows.map((row) => {
     return {
       year: parseInt(row.year),

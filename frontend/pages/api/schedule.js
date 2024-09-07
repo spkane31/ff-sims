@@ -22,6 +22,8 @@ export default async function schedule(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query);
+    client.end();
+
     const parsedResponse = resp.rows.map((row) => {
       return {
         year: parseInt(row.year),

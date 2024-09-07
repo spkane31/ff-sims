@@ -1,10 +1,7 @@
-import team_to_id from "../data/team_to_id.json";
-import team_id_to_owner from "../data/team_id_to_owner.json";
-import team_avgs from "../data/team_avgs.json";
 import { normalDistribution } from "../utils/math";
 
 class Simulator {
-  // simulator needs to take params of schedule and team_avgs
+  // simulator needs to take params of schedule and team averages
   // on the client side there needs to be an api for the data
   constructor(teamAvgs, schedule) {
     // schedule is a list of 14 weeks, each week is a list of 5 matchups
@@ -33,6 +30,11 @@ class Simulator {
       }
     });
     // leagueStats is a {average: float, std_dev: float} object
+
+    this.idToOwner = new Map();
+    Object.entries(teamAvgs).forEach(([key, value]) => {
+      this.idToOwner.set(parseInt(key), value.owner);
+    });
   }
 
   // list of all teams, and projected wins, losses, points for, points against, playoff odds, last place odds
@@ -42,7 +44,7 @@ class Simulator {
     this.results.forEach((value, key) => {
       data.push({
         id: key,
-        teamName: team_id_to_owner[parseInt(key)],
+        teamName: this.idToOwner.get(key),
         average: this.teamStats.get(key).average,
         std_dev: this.teamStats.get(key).std_dev,
         wins: sims === 0 ? 0.0 : value.wins / sims,
@@ -68,52 +70,53 @@ class Simulator {
     return this.schedule.length * this.simulations;
   }
 
-  getTeams() {
-    return Array.from(this.results.keys()).map((teamId) => {
-      return Object.keys(team_to_id).find((key) => team_to_id[key] === teamId);
-    });
+  getTeamIDs() {
+    return Array.from(this.results.keys());
   }
 
-  teamWin(teamName) {
-    this.results.get(team_to_id[teamName]).wins++;
+  teamWin(teamID) {
+    this.results.get(teamID).wins++;
   }
 
-  teamLoss(teamName) {
-    this.results.get(team_to_id[teamName]).losses++;
+  teamLoss(teamID) {
+    this.results.get(teamID).losses++;
   }
 
-  teamPointsFor(teamName, points) {
-    this.results.get(team_to_id[teamName]).pointsFor += points;
+  teamPointsFor(teamID, points) {
+    this.results.get(teamID).pointsFor += points;
   }
 
-  teamPointsAgainst(teamName, points) {
-    this.results.get(team_to_id[teamName]).pointsAgainst += points;
+  teamPointsAgainst(teamID, points) {
+    this.results.get(teamID).pointsAgainst += points;
   }
 
   getResults() {
     return this.results.entries();
   }
 
-  getTeamResults(teamName) {
-    return this.results.get(team_to_id[teamName]);
+  getTeamResults(teamID) {
+    return this.results.get(teamID);
   }
 
-  getTeamStats(teamName) {
-    return this.teamStats.get(team_to_id[teamName]);
+  getTeamStats(teamID) {
+    return this.teamStats.get(teamID);
   }
 
   step() {
     // create a map of team_id to SingleSeasonResults
-    const singleSeasonResults = new SingleSeasonResults();
+    const singleSeasonResults = new SingleSeasonResults({
+      teamAvgs: this.teamStats,
+      leagueStats: this.leagueStats,
+    });
 
     this.schedule.forEach((game) => {
       // Code to print or process each game object in this.schedule
       game.forEach((matchup) => {
         const { average: home_team_avg, std_dev: home_team_std_dev } =
-          this.teamStats.get(team_to_id[matchup.home_team_owner]);
+          this.teamStats.get(matchup.home_team_espn_id);
 
         const { average: away_team_avg, std_dev: away_team_std_dev } =
-          this.teamStats.get(team_to_id[matchup.away_team_owner]);
+          this.teamStats.get(matchup.away_team_espn_id);
 
         const { average: league_avg, std_dev: league_std_dev } =
           this.leagueStats;
@@ -133,20 +136,26 @@ class Simulator {
           league_jitter_away * normalDistribution(league_avg, league_std_dev);
 
         if (home_score > away_score) {
-          singleSeasonResults.teamWin(matchup.home_team_owner);
-          singleSeasonResults.teamLoss(matchup.away_team_owner);
+          singleSeasonResults.teamWin(matchup.home_team_espn_id);
+          singleSeasonResults.teamLoss(matchup.away_team_espn_id);
         } else {
-          singleSeasonResults.teamWin(matchup.away_team_owner);
-          singleSeasonResults.teamLoss(matchup.home_team_owner);
+          singleSeasonResults.teamWin(matchup.away_team_espn_id);
+          singleSeasonResults.teamLoss(matchup.home_team_espn_id);
         }
-        singleSeasonResults.teamPointsFor(matchup.home_team_owner, home_score);
+        singleSeasonResults.teamPointsFor(
+          matchup.home_team_espn_id,
+          home_score
+        );
         singleSeasonResults.teamPointsAgainst(
-          matchup.home_team_owner,
+          matchup.home_team_espn_id,
           away_score
         );
-        singleSeasonResults.teamPointsFor(matchup.away_team_owner, away_score);
+        singleSeasonResults.teamPointsFor(
+          matchup.away_team_espn_id,
+          away_score
+        );
         singleSeasonResults.teamPointsAgainst(
-          matchup.away_team_owner,
+          matchup.away_team_espn_id,
           home_score
         );
       });
@@ -165,27 +174,29 @@ class Simulator {
 }
 
 class SingleSeasonResults {
-  constructor() {
+  constructor({ teamAvgs, leagueStats }) {
     this.results = new Map();
-    Object.entries(team_to_id).forEach(([key, value]) => {
-      this.results.set(value, new SingleTeamResults(value));
-    });
+    for (let [key, _teamStats] of teamAvgs.entries()) {
+      this.results.set(key, new SingleTeamResults(key));
+    }
+    this.teamStats = teamAvgs;
+    this.leagueStats = leagueStats;
   }
 
-  teamWin(teamName) {
-    this.results.get(team_to_id[teamName]).wins++;
+  teamWin(teamID) {
+    this.results.get(teamID).wins++;
   }
 
-  teamLoss(teamName) {
-    this.results.get(team_to_id[teamName]).losses++;
+  teamLoss(teamID) {
+    this.results.get(teamID).losses++;
   }
 
-  teamPointsFor(teamName, points) {
-    this.results.get(team_to_id[teamName]).pointsFor += points;
+  teamPointsFor(teamID, points) {
+    this.results.get(teamID).pointsFor += points;
   }
 
-  teamPointsAgainst(teamName, points) {
-    this.results.get(team_to_id[teamName]).pointsAgainst += points;
+  teamPointsAgainst(teamID, points) {
+    this.results.get(teamID).pointsAgainst += points;
   }
 
   // sorts all the final results and marks madePlayoffs to true for teams in the top 6
@@ -230,7 +241,12 @@ class SingleSeasonResults {
     const thirdPlaceTeam = resultsArray[2][1];
     const sixthPlaceTeam = resultsArray[5][1];
 
-    const thirdWinnerTeam = simulateGame(thirdPlaceTeam, sixthPlaceTeam);
+    const thirdWinnerTeam = simulateGame(
+      thirdPlaceTeam,
+      sixthPlaceTeam,
+      this.teamStats,
+      this.leagueStats
+    );
     if (thirdWinnerTeam.id === thirdPlaceTeam.id) {
       sixthPlaceTeam.playoffResult = 6;
     } else {
@@ -240,7 +256,12 @@ class SingleSeasonResults {
     const fourthPlaceTeam = resultsArray[3][1];
     const fifthPlaceTeam = resultsArray[4][1];
 
-    const fourthWinnerTeam = simulateGame(fourthPlaceTeam, fifthPlaceTeam);
+    const fourthWinnerTeam = simulateGame(
+      fourthPlaceTeam,
+      fifthPlaceTeam,
+      this.teamStats,
+      this.leagueStats
+    );
     if (fourthWinnerTeam.id === fourthPlaceTeam.id) {
       fifthPlaceTeam.playoffResult = 5;
     } else {
@@ -250,8 +271,18 @@ class SingleSeasonResults {
     const firstPlaceTeam = resultsArray[0][1];
     const secondPlaceTeam = resultsArray[1][1];
 
-    const firstWinnerTeam = simulateGame(firstPlaceTeam, fourthWinnerTeam);
-    const secondWinnerTeam = simulateGame(secondPlaceTeam, thirdWinnerTeam);
+    const firstWinnerTeam = simulateGame(
+      firstPlaceTeam,
+      fourthWinnerTeam,
+      this.teamStats,
+      this.leagueStats
+    );
+    const secondWinnerTeam = simulateGame(
+      secondPlaceTeam,
+      thirdWinnerTeam,
+      this.teamStats,
+      this.leagueStats
+    );
     const thirdConsolationWinnerTeam =
       firstWinnerTeam.id === firstPlaceTeam.id
         ? fourthWinnerTeam
@@ -262,7 +293,12 @@ class SingleSeasonResults {
         : secondPlaceTeam;
 
     // Simulate championship game
-    const championshipWinner = simulateGame(firstWinnerTeam, secondWinnerTeam);
+    const championshipWinner = simulateGame(
+      firstWinnerTeam,
+      secondWinnerTeam,
+      this.teamStats,
+      this.leagueStats
+    );
     if (championshipWinner.id === firstWinnerTeam.id) {
       firstWinnerTeam.playoffResult = 1;
       secondWinnerTeam.playoffResult = 2;
@@ -274,7 +310,9 @@ class SingleSeasonResults {
     // Simulate 3rd place game
     const thirdPlaceWinner = simulateGame(
       thirdConsolationWinnerTeam,
-      fourthConsolationWinnerTeam
+      fourthConsolationWinnerTeam,
+      this.teamStats,
+      this.leagueStats
     );
     if (thirdPlaceWinner.id === thirdConsolationWinnerTeam.id) {
       thirdConsolationWinnerTeam.playoffResult = 3;
@@ -287,17 +325,22 @@ class SingleSeasonResults {
 }
 
 // return true if the first team wins, false if the second team wins
-const simulateGame = (first, second) => {
+const simulateGame = (first, second, teamAvgs, leagueStats) => {
   // Get first team averages
-  const { average: firstAverage, std_dev: firstStdDev } =
-    team_avgs[team_id_to_owner[first.id]];
+  console.log(first);
+  console.log(teamAvgs);
+  console.log(teamAvgs.get(first.id));
+  const { average: firstAverage, std_dev: firstStdDev } = teamAvgs.get(
+    first.id
+  );
 
   // Get second team averages
-  const { average: secondAverage, std_dev: secondStdDev } =
-    team_avgs[team_id_to_owner[second.id]];
+  const { average: secondAverage, std_dev: secondStdDev } = teamAvgs.get(
+    second.id
+  );
 
   // Get league averages
-  const { average: leagueAverage, std_dev: leagueStdDev } = team_avgs["League"];
+  const { average: leagueAverage, std_dev: leagueStdDev } = leagueStats;
 
   // Random jitter between 0.05 and 0.25
   const firstJitter = Math.random() * 0.2 + 0.05;

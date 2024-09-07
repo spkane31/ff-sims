@@ -48,6 +48,7 @@ export default async function teams(req, res) {
     });
 
     const leagueData = await client.query(queryLeague, [2023]);
+    client.end();
 
     respIDAsInt.push({
       id: -1,

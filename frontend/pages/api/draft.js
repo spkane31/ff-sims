@@ -20,6 +20,7 @@ export default async function draft(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query, [2024]);
+    client.end();
 
     const parsedResp = resp.rows.map((row) => {
       return {

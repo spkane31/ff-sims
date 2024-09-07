@@ -1,17 +1,15 @@
 import * as React from "react";
 import { DataGrid } from "@mui/x-data-grid";
-import { Paper, Box, useMediaQuery, useTheme } from "@mui/material";
-
-import historical from "../data/historical.json";
+import { Paper, Box, useTheme } from "@mui/material";
 
 const columns = [
   { field: "owner", headerName: "Owner" },
   {
-    field: "total_points_for",
+    field: "points",
     headerName: "Total Points",
     type: "number",
     sortable: true,
-    valueGetter: (_value, row) => `${row.total_points_for.toLocaleString()}`,
+    valueGetter: (_value, row) => `${row.points.toLocaleString()}`,
   },
   {
     field: "wins",
@@ -29,14 +27,13 @@ const columns = [
     headerName: "Record",
     sortable: true,
     valueGetter: (_value, row) => {
-      return `${row.record.toFixed(3)}`;
+      return `${(row.wins / (row.wins + row.losses)).toFixed(3)}`;
     },
   },
 ];
 
-export default function Table() {
+export default function Table({ data }) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   return (
     <Box
@@ -51,12 +48,7 @@ export default function Table() {
           minHeight: 400,
         }}
       >
-        <DataGrid
-          rows={historical}
-          columns={columns}
-          autosizeOnMount
-          hideFooter
-        />
+        <DataGrid rows={data} columns={columns} autosizeOnMount hideFooter />
       </Paper>
     </Box>
   );
