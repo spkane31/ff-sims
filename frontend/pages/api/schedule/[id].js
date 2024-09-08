@@ -34,25 +34,20 @@ export default async function schedule(req, res) {
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
     client.end();
 
-    const parsedResp = resp.rows
-      .map((row) => {
-        if (row.team_id === "2" || row.team_id === "8") {
-          return;
-        }
-        return {
-          team_id: parseInt(id),
-          owner: teams.rows.find((team) => team.espn_id === id).owner,
-          team_score: parseFloat(row.team_score),
-          opponent: parseInt(row.opponent),
-          opponent_score: parseFloat(row.opponent_score),
-          opponent_owner: teams.rows.find(
-            (team) => team.espn_id === row.opponent
-          ).owner,
-          week: parseInt(row.week),
-          year: parseInt(row.year),
-        };
-      })
-      .filter((row) => row !== undefined);
+    const parsedResp = resp.rows.map((row) => {
+      return {
+        team_id: parseInt(id),
+        owner: teams.rows.find((team) => team.espn_id === id).owner,
+        team_score: parseFloat(row.team_score),
+        opponent: parseInt(row.opponent),
+        opponent_score: parseFloat(row.opponent_score),
+        opponent_owner: teams.rows.find((team) => team.espn_id === row.opponent)
+          .owner,
+        opponent_id: parseInt(row.opponent),
+        week: parseInt(row.week),
+        year: parseInt(row.year),
+      };
+    });
 
     res.status(200).json(parsedResp);
   } catch (err) {

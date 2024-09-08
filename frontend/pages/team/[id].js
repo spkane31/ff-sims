@@ -10,6 +10,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  Link,
 } from "@mui/material";
 
 import TitleComponent from "../../components/TitleComponent";
@@ -20,6 +21,7 @@ export default function Team() {
   const router = useRouter();
   const [data, setData] = React.useState([]);
   const [schedule, setSchedule] = React.useState([]);
+  const [groupedByTeam, setGroupedByTeam] = React.useState([]);
   const { id } = router.query;
 
   React.useEffect(() => {
@@ -45,10 +47,50 @@ export default function Team() {
       const data = await response.json();
       setSchedule(data);
       console.log(data);
+      convertScheduleToGroup(data);
     }
 
     fetchData();
   }, [id]);
+
+  const convertScheduleToGroup = (schedule) => {
+    const groupedByTeam = new Map();
+    schedule.forEach((match) => {
+      if (!groupedByTeam.has(match.opponent_id)) {
+        groupedByTeam.set(match.opponent_id, {
+          opponent_id: match.opponent_id,
+          opponent_owner: match.opponent_owner,
+          team_score: match.team_score,
+          opponent_score: match.opponent_score,
+          wins: match.team_score > match.opponent_score ? 1 : 0,
+          losses: match.team_score < match.opponent_score ? 1 : 0,
+          draws: match.team_score === match.opponent_score ? 1 : 0,
+        });
+      } else {
+        groupedByTeam.get(match.opponent_id).team_score += match.team_score;
+        groupedByTeam.get(match.opponent_id).opponent_score +=
+          match.opponent_score;
+        groupedByTeam.get(match.opponent_id).wins +=
+          match.team_score > match.opponent_score ? 1 : 0;
+        groupedByTeam.get(match.opponent_id).losses +=
+          match.team_score < match.opponent_score ? 1 : 0;
+        groupedByTeam.get(match.opponent_id).draws +=
+          match.team_score === match.opponent_score ? 1 : 0;
+      }
+    });
+
+    setGroupedByTeam(
+      Array.from(groupedByTeam.values())
+        .filter((row) => {
+          return row.opponent_id !== 2 && row.opponent_id !== 8;
+        })
+        .sort((a, b) => {
+          return (
+            b.team_score - b.opponent_score - (a.team_score - a.opponent_score)
+          );
+        })
+    );
+  };
 
   if (data.length === 0) {
     return <></>;
@@ -66,7 +108,7 @@ export default function Team() {
       <Box sx={{ padding: paddingAmount }} />
       <Historical data={data} />
       <Box sx={{ padding: paddingAmount }} />
-      <ByTeam data={data.opponents} />
+      <ByTeam data={groupedByTeam} />
       <Box sx={{ padding: paddingAmount }} />
       <Schedule schedule={schedule} />
       <Box sx={{ padding: paddingAmount }} />
@@ -94,6 +136,7 @@ const Historical = ({ data }) => {
               <TableCell>Losses</TableCell>
               <TableCell>Points For</TableCell>
               <TableCell>Points Against</TableCell>
+              <TableCell>Differential</TableCell>
               <TableCell>Record</TableCell>
             </TableRow>
           </TableHead>
@@ -104,6 +147,11 @@ const Historical = ({ data }) => {
               <TableCell>{data.historical.points.toLocaleString()}</TableCell>
               <TableCell>
                 {data.historical.opp_points.toLocaleString()}
+              </TableCell>
+              <TableCell>
+                {(
+                  data.historical.points - data.historical.opp_points
+                ).toLocaleString()}
               </TableCell>
               <TableCell>
                 {data.historical.wins === 0 && data.historical.losses === 0
@@ -154,7 +202,7 @@ const Schedule = ({ schedule }) => {
                   backgroundColor:
                     game.team_score > game.opponent_score
                       ? "lightgreen"
-                      : "red",
+                      : "lightcoral",
                 }}
               >
                 <TableCell>{game.year}</TableCell>
@@ -194,6 +242,7 @@ const ByTeam = ({ data }) => {
               <TableCell>Losses</TableCell>
               <TableCell>Team Score</TableCell>
               <TableCell>Opponent Score</TableCell>
+              <TableCell>Diff</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -202,14 +251,31 @@ const ByTeam = ({ data }) => {
                 key={opponent.opponent_id}
                 sx={{
                   backgroundColor:
-                    opponent.wins > opponent.losses ? "lightgreen" : "red",
+                    opponent.wins > opponent.losses
+                      ? "lightgreen"
+                      : opponent.wins < opponent.losses
+                      ? "lightcoral"
+                      : "",
                 }}
               >
-                <TableCell>{opponent.opponent_owner}</TableCell>
+                <TableCell>
+                  <Link href={`/team/${opponent.opponent_id}`}>
+                    {opponent.opponent_owner}
+                  </Link>
+                </TableCell>
                 <TableCell>{opponent.wins}</TableCell>
                 <TableCell>{opponent.losses}</TableCell>
-                <TableCell>{opponent.team_score}</TableCell>
-                <TableCell>{opponent.opponent_score}</TableCell>
+                <TableCell>
+                  {opponent.team_score.toFixed(2).toLocaleString()}
+                </TableCell>
+                <TableCell>
+                  {opponent.opponent_score.toFixed(2).toLocaleString()}
+                </TableCell>
+                <TableCell>
+                  {(opponent.team_score - opponent.opponent_score)
+                    .toFixed(2)
+                    .toLocaleString()}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

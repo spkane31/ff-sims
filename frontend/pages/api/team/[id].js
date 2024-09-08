@@ -32,28 +32,6 @@ FROM (
 GROUP BY team_id;
 `;
 
-const opponentQuery = `
-SELECT
-  *
-FROM (
-  SELECT
-    home_team_espn_id AS team_id,
-    away_team_espn_id AS opponent_id,
-    home_team_final_score AS team_score,
-    away_team_final_score AS opponent_score
-  FROM matchups
-  WHERE home_team_espn_id = $1
-  UNION ALL
-  SELECT
-    home_team_espn_id AS opponent_id,
-    away_team_espn_id AS team_id,
-    home_team_final_score AS opponent_score,
-    away_team_final_score AS team_score
-  FROM matchups
-  WHERE away_team_espn_id = $1
-) AS records;
-`;
-
 export default async function schedule(req, res) {
   try {
     // Get ID from path
@@ -80,70 +58,11 @@ export default async function schedule(req, res) {
       };
     });
 
-    console.log("teams: ", parsedTeams);
-
-    const opponentResp = await client.query(opponentQuery, [id]);
-
     client.end();
-
-    const opponents = opponentResp.rows.map((row) => {
-      return {
-        team_id: parseInt(row.team_id),
-        owner: parsedTeams.find((team) => team.id === parseInt(row.team_id))
-          .owner,
-        opponent_id: parseInt(row.opponent_id),
-        opponent_owner: parsedTeams.find(
-          (team) => team.id === parseInt(row.opponent_id)
-        ).owner,
-        team_score: parseFloat(row.team_score),
-        opponent_score: parseFloat(row.opponent_score),
-      };
-    });
-
-    console.log("OPPONENTS: ", opponents);
-
-    const groupedByTeam = new Map();
-    opponents.forEach((match) => {
-      if (!groupedByTeam.has(match.opponent_id)) {
-        groupedByTeam.set(match.opponent_id, {
-          opponent_id: match.opponent_id,
-          opponent_owner: match.opponent_owner,
-          team_score: match.team_score,
-          opponent_score: match.opponent_score,
-          wins: match.team_score > match.opponent_score ? 1 : 0,
-          losses: match.team_score < match.opponent_score ? 1 : 0,
-          draws: match.team_score === match.opponent_score ? 1 : 0,
-        });
-      } else {
-        groupedByTeam.get(match.opponent_id).team_score += match.team_score;
-        groupedByTeam.get(match.opponent_id).opponent_score +=
-          match.opponent_score;
-        groupedByTeam.get(match.opponent_id).wins +=
-          match.team_score > match.opponent_score ? 1 : 0;
-        groupedByTeam.get(match.opponent_id).losses +=
-          match.team_score < match.opponent_score ? 1 : 0;
-        groupedByTeam.get(match.opponent_id).draws +=
-          match.team_score === match.opponent_score ? 1 : 0;
-      }
-    });
-
-    console.log("GROUPED BY TEAM: ", groupedByTeam);
-
-    const opponentsArr = Array.from(groupedByTeam.values())
-      .sort((a, b) => {
-        return b.wins - b.losses - (a.wins - a.losses);
-      })
-      .filter(
-        (opponent) =>
-          opponent.opponent_id !== 8 &&
-          opponent.opponent_id !== 2 &&
-          opponent.opponent_id !== id
-      );
 
     res.status(200).json({
       historical: parsedResp[0],
       owner: parsedTeams.find((team) => team.id === parseInt(id)).owner,
-      opponents: opponentsArr,
     });
   } catch (err) {
     res.status(500).json({
