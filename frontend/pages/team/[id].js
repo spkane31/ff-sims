@@ -66,6 +66,8 @@ export default function Team() {
       <Box sx={{ padding: paddingAmount }} />
       <Historical data={data} />
       <Box sx={{ padding: paddingAmount }} />
+      <ByTeam data={data.opponents} />
+      <Box sx={{ padding: paddingAmount }} />
       <Schedule schedule={schedule} />
       <Box sx={{ padding: paddingAmount }} />
     </>
@@ -101,7 +103,7 @@ const Historical = ({ data }) => {
               <TableCell>{data.historical.losses}</TableCell>
               <TableCell>{data.historical.points.toLocaleString()}</TableCell>
               <TableCell>
-                {data.historical.points_against.toLocaleString()}
+                {data.historical.opp_points.toLocaleString()}
               </TableCell>
               <TableCell>
                 {data.historical.wins === 0 && data.historical.losses === 0
@@ -161,6 +163,53 @@ const Schedule = ({ schedule }) => {
                 <TableCell>{game.team_score}</TableCell>
                 <TableCell>{game.opponent_score}</TableCell>
                 <TableCell>{game.opponent_owner}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Paper>
+    </Box>
+  );
+};
+
+const ByTeam = ({ data }) => {
+  return (
+    <Box
+      sx={{
+        maxWidth: "100%",
+        overflowX: "auto",
+      }}
+    >
+      <Paper
+        sx={{
+          minWidth: 500,
+          minHeight: 400,
+        }}
+      >
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Opponent</TableCell>
+              <TableCell>Wins</TableCell>
+              <TableCell>Losses</TableCell>
+              <TableCell>Team Score</TableCell>
+              <TableCell>Opponent Score</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.map((opponent) => (
+              <TableRow
+                key={opponent.opponent_id}
+                sx={{
+                  backgroundColor:
+                    opponent.wins > opponent.losses ? "lightgreen" : "red",
+                }}
+              >
+                <TableCell>{opponent.opponent_owner}</TableCell>
+                <TableCell>{opponent.wins}</TableCell>
+                <TableCell>{opponent.losses}</TableCell>
+                <TableCell>{opponent.team_score}</TableCell>
+                <TableCell>{opponent.opponent_score}</TableCell>
               </TableRow>
             ))}
           </TableBody>
