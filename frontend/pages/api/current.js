@@ -14,7 +14,7 @@ FROM (
          COUNT(*) FILTER (WHERE home_team_final_score = away_team_final_score) AS draws,
          SUM(home_team_final_score) AS points
   FROM matchups
-  WHERE year = $1
+  WHERE year = $1 AND completed = true
   GROUP BY home_team_espn_id
   UNION ALL
   SELECT away_team_espn_id AS team_id,
@@ -23,7 +23,7 @@ FROM (
          COUNT(*) FILTER (WHERE away_team_final_score = home_team_final_score) AS draws,
          SUM(away_team_final_score) AS points
   FROM matchups
-  WHERE year = $1
+  WHERE year = $1 AND completed = true
   GROUP BY away_team_espn_id
 ) AS records
 GROUP BY team_id;
