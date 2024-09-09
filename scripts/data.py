@@ -938,6 +938,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                     matchup.away_score,
                     -1,
                     -1,
+                    True,
                 )
         else:
             # box_scores func only works for the current year
@@ -955,7 +956,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                     matchup.away_score,
                     matchup.home_projected,
                     matchup.away_projected,
-                    False,
+                    league.current_week > week,
                 )
 
                 home_team_id = matchup.home_team.team_id
