@@ -32,13 +32,16 @@ FROM (
 GROUP BY team_id;
 `;
 
-export default async function schedule(req, res) {
+export default async function team(req, res) {
   try {
     // Get ID from path
     const id = req.query.id;
 
     const client = await pool.connect();
     const resp = await client.query(query, [id]);
+    console.log(
+      `[INFO] received ${resp.rows.length} rows from team ${id} query`
+    );
     const parsedResp = resp.rows.map((row) => {
       return {
         id: parseInt(row.team_id),

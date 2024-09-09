@@ -35,8 +35,12 @@ export default async function current(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query, [2024]);
+    console.log(
+      `[INFO] received ${resp.rows.length} rows from standings 2024 query`
+    );
 
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
+    console.log(`[INFO] received ${teams.rows.length} rows from teams query`);
     client.end();
 
     const parsedResp = resp.rows

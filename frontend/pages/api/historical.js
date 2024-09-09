@@ -31,8 +31,10 @@ export default async function historical(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query);
+    console.log(`[INFO] received ${resp.rows.length} rows from hisorical query`);
 
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
+    console.log(`[INFO] received ${teams.rows.length} rows from teams query`);
     client.end();
 
     const parsedResp = resp.rows

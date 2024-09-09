@@ -33,9 +33,13 @@ FROM (
 ) AS scores;`;
 
 export default async function teams(req, res) {
+  const year = 2024;
   try {
     const client = await pool.connect();
-    const teamData = await client.query(query, [2023]);
+    const teamData = await client.query(query, [year]);
+    console.log(
+      `[INFO] received ${teamData.rows.length} rows from teams ${year} query`
+    );
     const respIDAsInt = teamData.rows.map((row) => {
       return {
         id: parseInt(row.id),
@@ -47,7 +51,10 @@ export default async function teams(req, res) {
       };
     });
 
-    const leagueData = await client.query(queryLeague, [2023]);
+    const leagueData = await client.query(queryLeague, [year]);
+    console.log(
+      `[INFO] received ${leagueData.rows.length} rows from league ${year} query`
+    );
     client.end();
 
     respIDAsInt.push({

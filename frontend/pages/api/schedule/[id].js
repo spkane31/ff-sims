@@ -30,8 +30,14 @@ export default async function schedule(req, res) {
 
     const client = await pool.connect();
     const resp = await client.query(query, [id]);
+    console.log(
+      `[INFO] received ${resp.rows.length} rows from schedule ${id} query`
+    );
 
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
+    console.log(
+      `[INFO] received ${teams.rows.length} rows from schedule query`
+    );
     client.end();
 
     const parsedResp = resp.rows.map((row) => {
