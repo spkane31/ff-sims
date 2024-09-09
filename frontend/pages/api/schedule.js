@@ -25,7 +25,7 @@ export default async function schedule(req, res) {
     const client = await pool.connect();
     const resp = await client.query(query);
     console.log(`[INFO] received ${resp.rows.length} rows from schedule query`);
-    client.end();
+    client.release();
 
     const parsedResponse = resp.rows.map((row) => {
       return {

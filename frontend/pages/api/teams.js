@@ -55,7 +55,7 @@ export default async function teams(req, res) {
     console.log(
       `[INFO] received ${leagueData.rows.length} rows from league ${year} query`
     );
-    client.end();
+    client.release();
 
     respIDAsInt.push({
       id: -1,

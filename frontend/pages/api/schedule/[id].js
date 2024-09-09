@@ -38,7 +38,7 @@ export default async function schedule(req, res) {
     console.log(
       `[INFO] received ${teams.rows.length} rows from schedule query`
     );
-    client.end();
+    client.release();
 
     const parsedResp = resp.rows.map((row) => {
       return {

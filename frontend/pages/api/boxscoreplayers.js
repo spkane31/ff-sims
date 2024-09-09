@@ -37,14 +37,14 @@ async function runQuery(year) {
     console.log(
       `[INFO] received ${resp.rows.length} rows from box score players query`
     );
-    client.end();
+    client.release();
     return resp;
   }
   const resp = await client.query(query, [year]);
   console.log(
     `[INFO] received ${resp.rows.length} rows from box score players ${year} query`
   );
-  client.end();
+  client.release();
   return resp;
 }
 
