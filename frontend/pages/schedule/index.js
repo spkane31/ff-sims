@@ -26,7 +26,12 @@ const Schedule = () => {
 
   React.useEffect(() => {
     fetch("/api/teams")
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 304) {
+          alert("304 Not Modified");
+        }
+        return res.json();
+      })
       .then((data) => {
         setTeamStats(data);
       });
@@ -72,8 +77,8 @@ const ScheduleTable = ({ schedule, simulator, teamAvgs }) => {
             <TableCell>Projected Score</TableCell>
             <TableCell>Score</TableCell>
             <TableCell align="right">Score</TableCell>
+            <TableCell align="right">Projected Score</TableCell>
             <TableCell align="right">Win Percentage</TableCell>
-            <TableCell align="right">Projected Team</TableCell>
             <TableCell align="right">Away Team</TableCell>
           </TableRow>
         </TableHead>
@@ -164,13 +169,13 @@ const TeamMatchup = ({ game, teamAvgs, numSimulations = 5000 }) => {
   const homeWinPercentage = homeWins / (homeWins + awayWins);
 
   return (
-    <TableRow>
+    <TableRow style={{ height: "20px" }}>
       <TableCell>{game.home_team_owner}</TableCell>
       <TableCell>{(100 * homeWinPercentage).toFixed(2)}%</TableCell>
+      <TableCell>{game.home_team_espn_projected_score}</TableCell>
       <TableCell>{homePoints.toFixed(2)}</TableCell>
-      <TableCell></TableCell>
-      <TableCell></TableCell>
       <TableCell align="right">{awayPoints.toFixed(2)}</TableCell>
+      <TableCell>{game.away_team_espn_projected_score}</TableCell>
       <TableCell align="right">
         {(100 * awayWinPercentage).toFixed(2)}%
       </TableCell>

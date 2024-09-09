@@ -825,6 +825,7 @@ def upsert_matchup(
     away_team_score: float,
     home_team_projected_score: float,
     away_team_projected_score: float,
+    completed: bool,
 ) -> None:
     with conn.cursor() as cur:
         # Check if the matchup already exists
@@ -834,12 +835,13 @@ def upsert_matchup(
         )
         if cur.fetchone():
             cur.execute(
-                "UPDATE matchups SET home_team_final_score = %s, away_team_final_score = %s, home_team_espn_projected_score = %s, away_team_espn_projected_score = %s WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s",
+                "UPDATE matchups SET home_team_final_score = %s, away_team_final_score = %s, home_team_espn_projected_score = %s, away_team_espn_projected_score = %s, completed = %s WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s",
                 (
                     home_team_score,
                     away_team_score,
                     home_team_projected_score,
                     away_team_projected_score,
+                    completed,
                     week,
                     year,
                     home_team,
@@ -848,7 +850,7 @@ def upsert_matchup(
             )
         else:
             cur.execute(
-                "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score, completed) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     week,
                     year,
@@ -858,6 +860,7 @@ def upsert_matchup(
                     away_team_score,
                     home_team_projected_score,
                     away_team_projected_score,
+                    completed,
                 ),
             )
         conn.commit()
@@ -885,7 +888,7 @@ def upsert_player_boxscore(
         )
         if cur.fetchone():
             cur.execute(
-                "UPDATE box_score_players SET name = %s, projected_points = %s, actual_points = %s, position = %s, status = %s WHERE player_id = %s AND week = %s AND year = %s AND team_id = %s",
+                "UPDATE box_score_players SET player_name = %s, projected_points = %s, actual_points = %s, player_position = %s, status = %s WHERE player_id = %s AND week = %s AND year = %s AND team_id = %s",
                 (name, projected_points, actual_points, position, status, player_id, week, year, team_id),
             )
         else:
@@ -898,21 +901,30 @@ def upsert_player_boxscore(
 
 
 def get_schedule(league: League, conn: "psycopg2.connection") -> None:
-    # schedule = []
-
-    # team_to_id = {}
-    # team_id_to_owner = {}
-
-    # box_score_players = []
-
     for team in league.teams:
         upsert_team(conn, team.team_id, " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]]))
 
+    print(f"Creating matchups based on {league.year}")
+    for week in range(1, 15):
+        for matchup in league.scoreboard(week=week):
+            upsert_matchup(
+                conn,
+                week,
+                league.year,
+                matchup.home_team.team_id,
+                matchup.away_team.team_id,
+                0,
+                0,
+                -1,
+                -1,
+                False,
+            )
+
     for week in range(1, 15):
         print(f"Year: {league.year}\tWeek: {week}")
+        if week > league.current_week:
+            break
         if league.year < 2019:
-            # weekly_schedule = league.scoreboard(week=week)
-            # week_matchups = []
             for matchup in league.scoreboard(week=week):
                 if not hasattr(matchup, "away_team") or not hasattr(matchup, "home_team"):
                     break
@@ -927,27 +939,10 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                     -1,
                     -1,
                 )
-                # home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
-                # away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
-                # home_team_owner = team_id_to_owner[home_team_id]
-                # away_team_owner = team_id_to_owner[away_team_id]
-                # week_matchups.append(
-                #     {
-                #         "home_team_id": home_team_id,
-                #         "away_team_id": away_team_id,
-                #         "home_team_owner": home_team_owner,
-                #         "away_team_owner": away_team_owner,
-                #         "home_team_score": matchup.home_score,
-                #         "away_team_score": matchup.away_score,
-                #         "home_team_espn_projected_score": -1,
-                #         "away_team_espn_projected_score": -1,
-                #     }
-                # )
-            # schedule.append(week_matchups)
         else:
-            # weekly_schedule = league.box_scores(week=week)
-            # week_matchups = []
+            # box_scores func only works for the current year
             for matchup in league.box_scores(week=week):
+                print(matchup)
                 if matchup.away_team == 0 or matchup.home_team == 0:
                     break
                 upsert_matchup(
@@ -960,27 +955,11 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                     matchup.away_score,
                     matchup.home_projected,
                     matchup.away_projected,
+                    False,
                 )
 
                 home_team_id = matchup.home_team.team_id
                 away_team_id = matchup.away_team.team_id
-
-                # home_team_id = team_to_id[team_id_to_owner[matchup.home_team.team_id]]
-                # away_team_id = team_to_id[team_id_to_owner[matchup.away_team.team_id]]
-                # home_team_owner = team_id_to_owner[home_team_id]
-                # away_team_owner = team_id_to_owner[away_team_id]
-                # week_matchups.append(
-                #     {
-                #         "home_team_id": home_team_id,
-                #         "away_team_id": away_team_id,
-                #         "home_team_owner": home_team_owner,
-                #         "away_team_owner": away_team_owner,
-                #         "home_team_score": matchup.home_score,
-                #         "away_team_score": matchup.away_score,
-                #         "home_team_espn_projected_score": matchup.home_projected,
-                #         "away_team_espn_projected_score": matchup.away_projected,
-                #     }
-                # )
 
                 pass
 
@@ -997,18 +976,6 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                         league.year,
                         home_team_id,
                     )
-                    # box_score_players.append(
-                    #     {
-                    #         "name": player.name,
-                    #         "id": player.playerId,
-                    #         "projection": player.projected_points,
-                    #         "actual": player.points,
-                    #         "position": player.position,
-                    #         "status": player.slot_position,
-                    #         "week": week,
-                    #         "team_id": home_team_id,
-                    #     }
-                    # )
 
                 for player in matchup.away_lineup:
                     upsert_player_boxscore(
@@ -1023,24 +990,6 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                         league.year,
                         away_team_id,
                     )
-                    # box_score_players.append(
-                    #     {
-                    #         "name": player.name,
-                    #         "id": player.playerId,
-                    #         "projection": player.projected_points,
-                    #         "actual": player.points,
-                    #         "position": player.position,
-                    #         "status": player.slot_position,
-                    #         "week": week,
-                    #         "team_id": away_team_id,
-                    #     }
-                    # )
-
-            # schedule.append(week_matchups)
-
-    # create_teams(team_to_id)
-    # create_schedule(schedule, year=league.year)
-    # write_box_score_players_to_db(box_score_players, league.year)
 
     return None
 
@@ -1163,7 +1112,7 @@ def get_basic_stats(league: League) -> None:
     return None
 
 
-def get_simple_draft(league: League) -> None:
+def get_simple_draft(league: League, conn: "psycopg2.connection") -> None:
     # draft stuff
     draft_data = []
     for pick in league.draft:
@@ -1177,13 +1126,10 @@ def get_simple_draft(league: League) -> None:
             }
         )
 
-    write_draft_data_to_db(draft_data, league.year)
-    write_to_file(draft_data, "draft_data.json")
+    write_draft_data_to_db(draft_data, league.year, conn)
 
 
-def write_draft_data_to_db(draft_data: list[dict[str, str]], year: int) -> None:
-    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
-
+def write_draft_data_to_db(draft_data: list[dict[str, str]], year: int, conn: "psycopg2.connection") -> None:
     with conn.cursor() as cur:
         for selection in draft_data:
             cur.execute(
@@ -1216,17 +1162,17 @@ def get_db_counts(conn: "psycopg2.connection") -> None:
         conn.commit()
         print(f"Number of teams: {res[0][0]}")
 
-        cur.execute("SELECT year, count(*) FROM matchups GROUP BY year")
+        cur.execute("SELECT year, count(*) FROM matchups GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
         print(f"Matchups: {res}")
 
-        cur.execute("SELECT year, count(*) FROM draft_selections GROUP BY year")
+        cur.execute("SELECT year, count(*) FROM draft_selections GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
         print(f"Drafts: {res}")
 
-        cur.execute("SELECT year, count(*) FROM box_score_players GROUP BY year")
+        cur.execute("SELECT year, count(*) FROM box_score_players GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
         print(f"Box Score Players: {res}")
@@ -1247,7 +1193,7 @@ if __name__ == "__main__":
 
     get_schedule(league, conn)
     # get_basic_stats(league, conn)
-    get_simple_draft(league, conn)
+    # get_simple_draft(league, conn)
 
     print(f"Completed in {round(time.time() - start, 2)} seconds")
     exit(1)

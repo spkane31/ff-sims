@@ -70,6 +70,10 @@ export default async function teams(req, res) {
           : parseFloat(leagueData.rows[0].stddev_score),
     });
 
+    console.log(
+      `[INFO] parsed ${respIDAsInt.length} rows from parsedResponse map func`
+    );
+
     res.status(200).json(respIDAsInt);
   } catch (err) {
     res.status(500).json({

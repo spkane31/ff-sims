@@ -7,7 +7,12 @@ const Draft = () => {
 
   React.useEffect(() => {
     fetch("/api/draft")
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 304) {
+          alert("304 Not Modified");
+        }
+        return res.json();
+      })
       .then((data) => {
         setDraft(data);
       });
@@ -55,6 +60,7 @@ const DraftData = ({ draftData }) => {
       sx={{
         maxWidth: "100%",
         overflowX: "auto",
+        paddingTop: "25px",
       }}
     >
       <Paper

@@ -63,7 +63,9 @@ const Data = () => {
             return {
               ...player,
               id: index,
-              diff: player.total_actual_points - player.total_projected_points,
+              diff: (
+                player.total_actual_points - player.total_projected_points
+              ).toFixed(2),
             };
           })
           .sort((a, b) => b.total_actual_points - a.total_actual_points);
