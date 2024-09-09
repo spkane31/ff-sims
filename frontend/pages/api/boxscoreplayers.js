@@ -34,10 +34,16 @@ async function runQuery(year) {
   const client = await pool.connect();
   if (year === undefined) {
     const resp = await client.query(queryAll);
+    console.log(
+      `[INFO] received ${resp.rows.length} rows from box score players query`
+    );
     client.end();
     return resp;
   }
   const resp = await client.query(query, [year]);
+  console.log(
+    `[INFO] received ${resp.rows.length} rows from box score players ${year} query`
+  );
   client.end();
   return resp;
 }

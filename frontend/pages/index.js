@@ -24,7 +24,15 @@ export default function Home() {
     async function fetchData() {
       const response = await fetch("/api/current");
       const data = await response.json();
-      setCurrent(data);
+      setCurrent(
+        data.sort((a, b) => {
+          if (b.wins === a.wins) {
+            return b.points - a.points;
+            f;
+          }
+          return b.wins - a.wins;
+        })
+      );
     }
 
     fetchData();
