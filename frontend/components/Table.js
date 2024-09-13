@@ -36,6 +36,17 @@ const columns = [
     type: "number",
   },
   {
+    field: "diff",
+    headerName: "Difference",
+    type: "number",
+    valueGetter: (_value, row) => {
+      if (row.expectedWins === undefined) {
+        return "0.00";
+      }
+      return (row.wins - row.expectedWins).toFixed(2);
+    },
+  },
+  {
     field: "record",
     headerName: "Percentage",
     sortable: true,

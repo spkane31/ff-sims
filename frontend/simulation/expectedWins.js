@@ -13,14 +13,14 @@ class ExpectedWins {
     // map of espn_id (int) -> Results()
     this.results = new Map();
 
-    // map of espn_id (int) -> {average: float, std_dev: float}
-    this.teamStats = new Map();
+    Object.entries(schedule[0]).forEach(([_key, value]) => {
+      // console.log(value);
+      this.results.set(value.home_team_espn_id, 0);
+      this.results.set(value.away_team_espn_id, 0);
+    });
+
     Object.entries(teamAvgs).forEach(([_key, value]) => {
       if (value.id !== -1) {
-        this.teamStats.set(value.id, {
-          average: value.averageScore,
-          std_dev: value.stddevScore,
-        });
         this.results.set(value.id, 0);
       }
     });
