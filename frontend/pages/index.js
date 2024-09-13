@@ -12,16 +12,15 @@ export default function Home() {
   const [current, setCurrent] = React.useState([]);
   const [schedule, setSchedule] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
+  const [allTimeSchedule, setAllTimeSchedule] = React.useState(null);
 
   React.useEffect(() => {
-    if (teamStats !== null && schedule !== null) {
-      let sim = new ExpectedWins(teamStats, schedule);
+    if (schedule !== null) {
+      let sim = new ExpectedWins(schedule);
       let xWins = sim.expectedWins();
       // combine the expected wins with the current standings
       let currentStandings = current
         .map((team) => {
-          console.log(team);
-          let expectedWins = xWins[team.name];
           return {
             ...team,
             expectedWins: xWins.find((x) => x.id === team.id).wins,
@@ -32,7 +31,26 @@ export default function Home() {
         });
       setCurrent(currentStandings);
     }
-  }, [teamStats, schedule]);
+  }, [schedule]);
+
+  React.useEffect(() => {
+    if (allTimeSchedule !== null) {
+      let sim = new ExpectedWins(allTimeSchedule);
+      let xWins = sim.expectedWins();
+      // combine the expected wins with the current standings
+      let currentStandings = historicalData
+        .map((team) => {
+          return {
+            ...team,
+            expectedWins: xWins.find((x) => x.id === team.id).wins.toFixed(2),
+          };
+        })
+        .sort((a, b) => {
+          return b.expectedWins - a.expectedWins;
+        });
+      setHistoricalData(currentStandings);
+    }
+  }, [allTimeSchedule]);
 
   React.useEffect(() => {
     fetch("/api/teams")
@@ -47,6 +65,16 @@ export default function Home() {
       const response = await fetch("/api/historical");
       const data = await response.json();
       setHistoricalData(data);
+    }
+
+    fetchData();
+  }, []);
+
+  React.useEffect(() => {
+    async function fetchData() {
+      const response = await fetch("/api/schedule?year=all");
+      const data = await response.json();
+      setAllTimeSchedule(data);
     }
 
     fetchData();
