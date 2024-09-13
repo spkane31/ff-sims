@@ -61,7 +61,7 @@ export default async function team(req, res) {
       };
     });
 
-    client.end();
+    client.release();
 
     res.status(200).json({
       historical: parsedResp[0],

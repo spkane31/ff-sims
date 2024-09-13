@@ -17,15 +17,15 @@ SELECT
 FROM matchups
 JOIN teams AS t ON matchups.home_team_espn_id = t.espn_id
 JOIN teams AS t2 ON matchups.away_team_espn_id = t2.espn_id
-WHERE year = 2024
+WHERE year = $1
 ORDER BY week;`;
 
 export default async function schedule(req, res) {
   try {
     const client = await pool.connect();
-    const resp = await client.query(query);
+    const resp = await client.query(query, [2024]);
     console.log(`[INFO] received ${resp.rows.length} rows from schedule query`);
-    client.end();
+    client.release();
 
     const parsedResponse = resp.rows.map((row) => {
       return {
@@ -75,7 +75,6 @@ export default async function schedule(req, res) {
     console.log(
       `[INFO] parsed ${schedule.length} week(s) from schedule map func`
     );
-
     res.status(200).json(schedule);
   } catch (err) {
     res.status(500).json({

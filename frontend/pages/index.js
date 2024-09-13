@@ -7,14 +7,14 @@ import TitleComponent from "../components/TitleComponent";
 const paddingAmount = "15px";
 
 export default function Home() {
-  const [data, setData] = React.useState([]);
+  const [historicalData, setHistoricalData] = React.useState([]);
   const [current, setCurrent] = React.useState([]);
 
   React.useEffect(() => {
     async function fetchData() {
       const response = await fetch("/api/historical");
       const data = await response.json();
-      setData(data);
+      setHistoricalData(data);
     }
 
     fetchData();
@@ -53,7 +53,7 @@ export default function Home() {
       <Box sx={{ padding: paddingAmount }} />
       <Typography variant="h6">All Time Standings</Typography>
       <Box sx={{ padding: paddingAmount }} />
-      <Table data={data} />
+      <Table data={historicalData} />
       <Box sx={{ padding: paddingAmount }} />
     </>
   );

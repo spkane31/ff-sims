@@ -41,7 +41,7 @@ export default async function current(req, res) {
 
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
     console.log(`[INFO] received ${teams.rows.length} rows from teams query`);
-    client.end();
+    client.release();
 
     const parsedResp = resp.rows
       .map((row) => {

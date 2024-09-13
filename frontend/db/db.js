@@ -52,7 +52,7 @@ export const getTeams = async (year) => {
   console.log(
     `[INFO] received ${leagueData.rows.length} rows from league data query`
   );
-  client.end();
+  client.release();
 
   respIDAsInt.push({
     id: -1,
@@ -91,7 +91,7 @@ export const getSchedule = async (year) => {
   const client = await pool.connect();
   const resp = await client.query(scheduleQuery);
   console.log(`[INFO] received ${resp.rows.length} rows from schedule query`);
-  client.end();
+  client.release();
 
   const parsedResponse = resp.rows.map((row) => {
     return {
