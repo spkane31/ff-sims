@@ -1,8 +1,10 @@
+import argparse
 import json
 import logging
 import os
 import random
 import time
+from datetime import datetime
 
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League, BoxPlayer
@@ -907,6 +909,9 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
     print(f"Creating matchups based on {league.year}")
     for week in range(1, 15):
         for matchup in league.scoreboard(week=week):
+            if matchup.matchup_type != "NONE":
+                continue
+
             upsert_matchup(
                 conn,
                 week,
@@ -915,8 +920,8 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                 matchup.away_team.team_id,
                 0,
                 0,
-                -1,
-                -1,
+                0,
+                0,
                 False,
             )
 
@@ -943,7 +948,6 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
         else:
             # box_scores func only works for the current year
             for matchup in league.box_scores(week=week):
-                print(matchup)
                 if matchup.away_team == 0 or matchup.home_team == 0:
                     break
                 upsert_matchup(
@@ -962,35 +966,34 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                 home_team_id = matchup.home_team.team_id
                 away_team_id = matchup.away_team.team_id
 
-                pass
+                if league.year == datetime.now().year and week <= league.current_week:
+                    for player in matchup.home_lineup:
+                        upsert_player_boxscore(
+                            conn,
+                            player.name,
+                            player.playerId,
+                            player.projected_points,
+                            player.points,
+                            player.position,
+                            player.slot_position,
+                            week,
+                            league.year,
+                            home_team_id,
+                        )
 
-                for player in matchup.home_lineup:
-                    upsert_player_boxscore(
-                        conn,
-                        player.name,
-                        player.playerId,
-                        player.projected_points,
-                        player.points,
-                        player.position,
-                        player.slot_position,
-                        week,
-                        league.year,
-                        home_team_id,
-                    )
-
-                for player in matchup.away_lineup:
-                    upsert_player_boxscore(
-                        conn,
-                        player.name,
-                        player.playerId,
-                        player.projected_points,
-                        player.points,
-                        player.position,
-                        player.slot_position,
-                        week,
-                        league.year,
-                        away_team_id,
-                    )
+                    for player in matchup.away_lineup:
+                        upsert_player_boxscore(
+                            conn,
+                            player.name,
+                            player.playerId,
+                            player.projected_points,
+                            player.points,
+                            player.position,
+                            player.slot_position,
+                            week,
+                            league.year,
+                            away_team_id,
+                        )
 
     return None
 
@@ -1021,50 +1024,6 @@ def write_box_score_players_to_db(
 
             if counter % 100 == 0:
                 conn.commit()
-
-        conn.commit()
-        cur.close()
-
-    return None
-
-
-def create_schedule(schedule: list[list[dict[str, any]]], year, conn: "psycopg2.connection") -> None:
-    with conn.cursor() as cur:
-        for week, matchups in enumerate(schedule):
-            for matchup in matchups:
-                cur.execute(
-                    "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM matchups WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s)",
-                    (
-                        week + 1,
-                        year,
-                        matchup["home_team_id"],
-                        matchup["away_team_id"],
-                        matchup["home_team_score"],
-                        matchup["away_team_score"],
-                        matchup["home_team_espn_projected_score"],
-                        matchup["away_team_espn_projected_score"],
-                        week + 1,
-                        year,
-                        matchup["home_team_id"],
-                        matchup["away_team_id"],
-                    ),
-                )
-
-        conn.commit()
-        cur.close()
-
-    return None
-
-
-def create_teams(team_to_id: dict[str, int]) -> None:
-    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
-
-    with conn.cursor() as cur:
-        for owner, team_id in team_to_id.items():
-            cur.execute(
-                "INSERT INTO teams (owner, espn_id) SELECT %s, %s WHERE NOT EXISTS (SELECT 1 FROM teams WHERE owner = %s AND espn_id = %s)",
-                (owner, team_id, owner, team_id),
-            )
 
         conn.commit()
         cur.close()
@@ -1185,8 +1144,13 @@ if __name__ == "__main__":
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, default=2024)
+    args = parser.parse_args()
+
     # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=2024, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    print(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
     conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
 

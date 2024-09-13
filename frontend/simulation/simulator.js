@@ -32,8 +32,8 @@ class Simulator {
     // leagueStats is a {average: float, std_dev: float} object
 
     this.idToOwner = new Map();
-    Object.entries(teamAvgs).forEach(([key, value]) => {
-      this.idToOwner.set(parseInt(key), value.owner);
+    Object.entries(teamAvgs).forEach(([_key, value]) => {
+      this.idToOwner.set(value.id, value.owner);
     });
   }
 
@@ -63,7 +63,16 @@ class Simulator {
             : value.playoffResult.map((num) => num / sims),
       });
     });
-    return data;
+    return data.sort((a, b) => {
+      if (a.playoff_odds !== b.playoff_odds) {
+        return b.playoff_odds - a.playoff_odds;
+      } else if (a.last_place_odds !== b.last_place_odds) {
+        return b.last_place_odds - a.last_place_odds;
+      } else if (a.wins !== b.wins) {
+        return b.wins - a.wins;
+      }
+      return b.average - a.average;
+    });
   }
 
   totalGames() {
@@ -112,52 +121,81 @@ class Simulator {
     this.schedule.forEach((game) => {
       // Code to print or process each game object in this.schedule
       game.forEach((matchup) => {
-        const { average: home_team_avg, std_dev: home_team_std_dev } =
-          this.teamStats.get(matchup.home_team_espn_id);
+        if (!matchup.completed) {
+          const { average: home_team_avg, std_dev: home_team_std_dev } =
+            this.teamStats.get(matchup.home_team_espn_id);
 
-        const { average: away_team_avg, std_dev: away_team_std_dev } =
-          this.teamStats.get(matchup.away_team_espn_id);
+          const { average: away_team_avg, std_dev: away_team_std_dev } =
+            this.teamStats.get(matchup.away_team_espn_id);
 
-        const { average: league_avg, std_dev: league_std_dev } =
-          this.leagueStats;
+          const { average: league_avg, std_dev: league_std_dev } =
+            this.leagueStats;
 
-        // random number between 0.05 and 0.25
-        const league_jitter_home = Math.random() * 0.2 + 0.05;
-        const league_jitter_away = Math.random() * 0.2 + 0.05;
+          // random number between 0.05 and 0.25
+          const league_jitter_home = Math.random() * 0.2 + 0.05;
+          const league_jitter_away = Math.random() * 0.2 + 0.05;
 
-        const home_score =
-          (1 - league_jitter_home) *
-            normalDistribution(home_team_avg, home_team_std_dev) +
-          league_jitter_home * normalDistribution(league_avg, league_std_dev);
+          const home_score =
+            (1 - league_jitter_home) *
+              normalDistribution(home_team_avg, home_team_std_dev) +
+            league_jitter_home * normalDistribution(league_avg, league_std_dev);
 
-        const away_score =
-          (1 - league_jitter_away) *
-            normalDistribution(away_team_avg, away_team_std_dev) +
-          league_jitter_away * normalDistribution(league_avg, league_std_dev);
+          const away_score =
+            (1 - league_jitter_away) *
+              normalDistribution(away_team_avg, away_team_std_dev) +
+            league_jitter_away * normalDistribution(league_avg, league_std_dev);
 
-        if (home_score > away_score) {
-          singleSeasonResults.teamWin(matchup.home_team_espn_id);
-          singleSeasonResults.teamLoss(matchup.away_team_espn_id);
+          if (home_score > away_score) {
+            singleSeasonResults.teamWin(matchup.home_team_espn_id);
+            singleSeasonResults.teamLoss(matchup.away_team_espn_id);
+          } else {
+            singleSeasonResults.teamWin(matchup.away_team_espn_id);
+            singleSeasonResults.teamLoss(matchup.home_team_espn_id);
+          }
+          singleSeasonResults.teamPointsFor(
+            matchup.home_team_espn_id,
+            home_score
+          );
+          singleSeasonResults.teamPointsAgainst(
+            matchup.home_team_espn_id,
+            away_score
+          );
+          singleSeasonResults.teamPointsFor(
+            matchup.away_team_espn_id,
+            away_score
+          );
+          singleSeasonResults.teamPointsAgainst(
+            matchup.away_team_espn_id,
+            home_score
+          );
         } else {
-          singleSeasonResults.teamWin(matchup.away_team_espn_id);
-          singleSeasonResults.teamLoss(matchup.home_team_espn_id);
+          // In the case where the game is completed, just load in the stats
+          const home_score = parseFloat(matchup.home_team_final_score);
+          const away_score = parseFloat(matchup.away_team_final_score);
+          if (home_score > away_score) {
+            singleSeasonResults.teamWin(matchup.home_team_espn_id);
+            singleSeasonResults.teamLoss(matchup.away_team_espn_id);
+          } else {
+            singleSeasonResults.teamWin(matchup.away_team_espn_id);
+            singleSeasonResults.teamLoss(matchup.home_team_espn_id);
+          }
+          singleSeasonResults.teamPointsFor(
+            matchup.home_team_espn_id,
+            home_score
+          );
+          singleSeasonResults.teamPointsAgainst(
+            matchup.home_team_espn_id,
+            away_score
+          );
+          singleSeasonResults.teamPointsFor(
+            matchup.away_team_espn_id,
+            away_score
+          );
+          singleSeasonResults.teamPointsAgainst(
+            matchup.away_team_espn_id,
+            home_score
+          );
         }
-        singleSeasonResults.teamPointsFor(
-          matchup.home_team_espn_id,
-          home_score
-        );
-        singleSeasonResults.teamPointsAgainst(
-          matchup.home_team_espn_id,
-          away_score
-        );
-        singleSeasonResults.teamPointsFor(
-          matchup.away_team_espn_id,
-          away_score
-        );
-        singleSeasonResults.teamPointsAgainst(
-          matchup.away_team_espn_id,
-          home_score
-        );
       });
     });
 
@@ -327,9 +365,6 @@ class SingleSeasonResults {
 // return true if the first team wins, false if the second team wins
 const simulateGame = (first, second, teamAvgs, leagueStats) => {
   // Get first team averages
-  console.log(first);
-  console.log(teamAvgs);
-  console.log(teamAvgs.get(first.id));
   const { average: firstAverage, std_dev: firstStdDev } = teamAvgs.get(
     first.id
   );

@@ -7,9 +7,7 @@ const columns = [
   {
     field: "year",
     headerName: "Year",
-    type: "number",
     sortable: true,
-    valueGetter: (row) => `${row}`,
   },
   {
     field: "player_name",
@@ -68,7 +66,7 @@ const Data = () => {
               ).toFixed(2),
             };
           })
-          .sort((a, b) => b.total_actual_points - a.total_actual_points);
+          .sort((a, b) => b.diff - a.diff);
 
         setPlayers(dataWithID);
       });
@@ -124,13 +122,7 @@ const Data = () => {
       </Paper>
 
       <Box sx={{ paddingBottom: "15px" }} />
-      <DataGrid
-        rows={players}
-        columns={columns}
-        rowHeight={40}
-        autosizeOnMount
-        hideFooter
-      />
+      <DataGrid rows={players} columns={columns} rowHeight={40} hideFooter />
     </Box>
   );
 };

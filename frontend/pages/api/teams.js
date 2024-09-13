@@ -9,11 +9,11 @@ const query = `SELECT
 FROM (
   SELECT home_team_espn_id AS team_espn_id, home_team_final_score AS score
   FROM matchups
-  WHERE year = $1
+  WHERE year = $1 AND completed = true
   UNION ALL
   SELECT away_team_espn_id AS team_espn_id, away_team_final_score AS score
   FROM matchups
-  WHERE year = $1
+  WHERE year = $1 AND completed = true
 ) AS scores
 JOIN teams
 ON scores.team_espn_id = teams.espn_id

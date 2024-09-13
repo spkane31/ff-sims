@@ -14,6 +14,7 @@ FROM (
          COUNT(*) FILTER (WHERE home_team_final_score = away_team_final_score) AS draws,
          SUM(home_team_final_score) AS points
   FROM matchups
+  WHERE completed = true
   GROUP BY home_team_espn_id
   UNION ALL
   SELECT away_team_espn_id AS team_id,
@@ -22,6 +23,7 @@ FROM (
          COUNT(*) FILTER (WHERE away_team_final_score = home_team_final_score) AS draws,
          SUM(away_team_final_score) AS points
   FROM matchups
+  WHERE completed = true
   GROUP BY away_team_espn_id
 ) AS records
 GROUP BY team_id;
@@ -31,12 +33,7 @@ export default async function historical(req, res) {
   try {
     const client = await pool.connect();
     const resp = await client.query(query);
-    console.log(
-      `[INFO] received ${resp.rows.length} rows from hisorical query`
-    );
-
     const teams = await client.query(`SELECT espn_id, owner FROM teams;`);
-    console.log(`[INFO] received ${teams.rows.length} rows from teams query`);
     client.release();
 
     const parsedResp = resp.rows

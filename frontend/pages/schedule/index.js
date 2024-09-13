@@ -71,7 +71,7 @@ const ScheduleTable = ({ schedule, simulator, teamAvgs }) => {
     <TableContainer component={Paper}>
       <Table stickyHeader size="small">
         <TableHead>
-          <TableRow rowHeight={25}>
+          <TableRow sx={{ height: "25px" }}>
             <TableCell>Home Team</TableCell>
             <TableCell>Win Percentage</TableCell>
             <TableCell>Projected Score</TableCell>
@@ -103,6 +103,7 @@ const ScheduleTable = ({ schedule, simulator, teamAvgs }) => {
 
 const TeamMatchup = ({ game, teamAvgs, numSimulations = 5000 }) => {
   if (game === undefined || teamAvgs === undefined) {
+    console.log(`game ${game} or teamAvgs ${teamAvgs} is undefined`);
     return <></>;
   }
 
@@ -110,6 +111,17 @@ const TeamMatchup = ({ game, teamAvgs, numSimulations = 5000 }) => {
   const homeTeam = teamAvgs.find((team) => team.owner === game.home_team_owner);
   const awayTeam = teamAvgs.find((team) => team.owner === game.away_team_owner);
   const league = teamAvgs.find((team) => team.owner === "League");
+
+  if (
+    homeTeam === undefined ||
+    awayTeam === undefined ||
+    league === undefined
+  ) {
+    console.log(
+      `homeTeam ${homeTeam} or awayTeam ${awayTeam} or league ${league} is undefined`
+    );
+    return <></>;
+  }
 
   const { averageScore: home_average, stddevScore: home_std_dev } = homeTeam;
   const { averageScore: away_average, stddevScore: away_std_dev } = awayTeam;
@@ -172,10 +184,10 @@ const TeamMatchup = ({ game, teamAvgs, numSimulations = 5000 }) => {
     <TableRow style={{ height: "20px" }}>
       <TableCell>{game.home_team_owner}</TableCell>
       <TableCell>{(100 * homeWinPercentage).toFixed(2)}%</TableCell>
-      <TableCell>{game.home_team_espn_projected_score}</TableCell>
+      <TableCell>{game.home_team_espn_projected_score.toFixed(2)}</TableCell>
       <TableCell>{homePoints.toFixed(2)}</TableCell>
       <TableCell align="right">{awayPoints.toFixed(2)}</TableCell>
-      <TableCell>{game.away_team_espn_projected_score}</TableCell>
+      <TableCell>{game.away_team_espn_projected_score.toFixed(2)}</TableCell>
       <TableCell align="right">
         {(100 * awayWinPercentage).toFixed(2)}%
       </TableCell>

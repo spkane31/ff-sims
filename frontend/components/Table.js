@@ -31,6 +31,11 @@ const columns = [
     type: "number",
   },
   {
+    field: "expectedWins",
+    headerName: "Expected Wins",
+    type: "number",
+  },
+  {
     field: "record",
     headerName: "Percentage",
     sortable: true,
