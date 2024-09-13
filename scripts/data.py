@@ -968,7 +968,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                 home_team_id = matchup.home_team.team_id
                 away_team_id = matchup.away_team.team_id
 
-                if league.year == datetime.now().year:
+                if league.year == datetime.now().year and week <= league.current_week:
                     for player in matchup.home_lineup:
                         upsert_player_boxscore(
                             conn,

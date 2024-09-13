@@ -21,11 +21,12 @@ export default function Home() {
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
-  const [steps, setSteps] = React.useState(25000);
+  const [steps, setSteps] = React.useState(1000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
     if (teamStats !== null && schedule !== null) {
+      console.log("schedule", schedule);
       setSimulator(new Simulator(teamStats, schedule));
     }
   }, [teamStats, schedule]);
@@ -77,7 +78,7 @@ export default function Home() {
           variant="contained"
           sx={{ marginRight: "10px" }}
         >
-          Simulate (25,000)
+          Simulate ({steps})
         </Button>
         <Button
           onClick={() => {
@@ -122,10 +123,12 @@ const TeamData = ({ teamData }) => {
     { field: "average", headerName: "Average", flex: 1, type: "number" },
     {
       field: "std_dev",
-      headerName: "Standard Deviation",
+      headerName: "Std. Dev.",
       flex: 1,
       type: "number",
     },
+    { field: "wins", headerName: "Wins", flex: 1, type: "number" },
+    { field: "losses", headerName: "Losses", flex: 1, type: "number" },
     {
       field: "projected_wins",
       headerName: "Projected Wins",
@@ -159,6 +162,8 @@ const TeamData = ({ teamData }) => {
         teamName: teamResults.teamName,
         average: teamResults.average.toFixed(2),
         std_dev: teamResults.std_dev.toFixed(2),
+        wins: teamResults.wins.toFixed(2),
+        losses: teamResults.losses.toFixed(2),
         projected_wins: teamResults.wins.toFixed(2),
         projected_losses: teamResults.losses.toFixed(2),
         playoff_odds: (100 * teamResults.playoff_odds).toFixed(2),
