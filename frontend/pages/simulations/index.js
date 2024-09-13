@@ -21,7 +21,7 @@ export default function Home() {
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
-  const [steps, setSteps] = React.useState(1000);
+  const [steps, setSteps] = React.useState(5000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {

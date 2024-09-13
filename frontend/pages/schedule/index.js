@@ -42,7 +42,6 @@ const Schedule = () => {
       .then((res) => res.json())
       .then((data) => {
         setSchedule(data);
-        console.log(data);
       });
   }, []);
 

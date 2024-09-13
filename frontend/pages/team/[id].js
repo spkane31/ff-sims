@@ -32,7 +32,6 @@ export default function Team() {
       const response = await fetch("/api/team/" + router.query.id);
       const data = await response.json();
       setData(data);
-      console.log(data);
     }
 
     fetchData();
@@ -46,7 +45,6 @@ export default function Team() {
       const response = await fetch("/api/schedule/" + router.query.id);
       const data = await response.json();
       setSchedule(data);
-      console.log(data);
       convertScheduleToGroup(data);
     }
 

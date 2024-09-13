@@ -1,4 +1,4 @@
-import { normalDistribution, shuffle } from "../utils/math";
+import { normalDistribution } from "../utils/math";
 
 class Simulator {
   // simulator needs to take params of schedule and team averages
@@ -208,61 +208,6 @@ class Simulator {
     });
 
     this.simulations++;
-  }
-
-  // expectedWins finds the number of wins a team would expect to have scoring
-  // the average points they scored in a game against a random schedule up to that point
-  // in the season
-  expectedWins(totalSims = 5000) {
-    let totalWins = new Map();
-    this.results.forEach((value, key) => {
-      totalWins.set(key, 0);
-    });
-
-    for (let step = 0; step < totalSims; step++) {
-      // iterate over the entire schedule
-      this.schedule.forEach((week) => {
-        // console.log(week);
-        if (!week[0].completed) {
-          // skip matchups that are not completed
-          return;
-        }
-
-        // Get all performances in the week in a list
-        let performances = [];
-        week.forEach((matchup) => {
-          performances.push({
-            team_id: matchup.home_team_espn_id,
-            score: parseFloat(matchup.home_team_final_score),
-          });
-          performances.push({
-            team_id: matchup.away_team_espn_id,
-            score: parseFloat(matchup.away_team_final_score),
-          });
-        });
-
-        shuffle(performances);
-
-        // compare 0 to 1, 2 to 3, etc.
-        for (let i = 0; i < performances.length; i += 2) {
-          const home_team_id = performances[i].team_id;
-          const away_team_id = performances[i + 1].team_id;
-          const home_score = performances[i].score;
-          const away_score = performances[i + 1].score;
-
-          if (home_score > away_score) {
-            totalWins.set(home_team_id, totalWins.get(home_team_id) + 1);
-          } else {
-            totalWins.set(away_team_id, totalWins.get(away_team_id) + 1);
-          }
-        }
-      });
-    }
-    let ret = [];
-    totalWins.forEach((value, key) => {
-      ret.push({ id: key, wins: value / totalSims });
-    });
-    return ret;
   }
 }
 

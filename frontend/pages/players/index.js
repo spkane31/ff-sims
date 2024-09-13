@@ -7,9 +7,7 @@ const columns = [
   {
     field: "year",
     headerName: "Year",
-    // type: "number",
     sortable: true,
-    // valueGetter: (row) => `${row}`,
   },
   {
     field: "player_name",

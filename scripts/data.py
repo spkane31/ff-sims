@@ -910,8 +910,6 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
     for week in range(1, 15):
         for matchup in league.scoreboard(week=week):
             if matchup.matchup_type != "NONE":
-                print("skipping non regular season matchup")
-                print(matchup.__dict__)
                 continue
 
             upsert_matchup(
@@ -1031,50 +1029,6 @@ def write_box_score_players_to_db(
         cur.close()
 
     return None
-
-
-# def create_schedule(schedule: list[list[dict[str, any]]], year, conn: "psycopg2.connection") -> None:
-#     with conn.cursor() as cur:
-#         for week, matchups in enumerate(schedule):
-#             for matchup in matchups:
-#                 cur.execute(
-#                     "INSERT INTO matchups (week, year, home_team_espn_id, away_team_espn_id, home_team_final_score, away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score) SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM matchups WHERE week = %s AND year = %s AND home_team_espn_id = %s AND away_team_espn_id = %s)",
-#                     (
-#                         week + 1,
-#                         year,
-#                         matchup["home_team_id"],
-#                         matchup["away_team_id"],
-#                         matchup["home_team_score"],
-#                         matchup["away_team_score"],
-#                         matchup["home_team_espn_projected_score"],
-#                         matchup["away_team_espn_projected_score"],
-#                         week + 1,
-#                         year,
-#                         matchup["home_team_id"],
-#                         matchup["away_team_id"],
-#                     ),
-#                 )
-
-#         conn.commit()
-#         cur.close()
-
-#     return None
-
-
-# def create_teams(team_to_id: dict[str, int]) -> None:
-#     conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
-
-#     with conn.cursor() as cur:
-#         for owner, team_id in team_to_id.items():
-#             cur.execute(
-#                 "INSERT INTO teams (owner, espn_id) SELECT %s, %s WHERE NOT EXISTS (SELECT 1 FROM teams WHERE owner = %s AND espn_id = %s)",
-#                 (owner, team_id, owner, team_id),
-#             )
-
-#         conn.commit()
-#         cur.close()
-
-#     return None
 
 
 def get_basic_stats(league: League) -> None:
