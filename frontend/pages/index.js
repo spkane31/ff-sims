@@ -15,8 +15,8 @@ export default function Home() {
   const [allTimeSchedule, setAllTimeSchedule] = React.useState(null);
 
   React.useEffect(() => {
-    if (teamStats !== null && schedule !== null) {
-      let sim = new ExpectedWins(teamStats, schedule);
+    if (schedule !== null) {
+      let sim = new ExpectedWins(schedule);
       let xWins = sim.expectedWins();
       // combine the expected wins with the current standings
       let currentStandings = current
@@ -31,11 +31,11 @@ export default function Home() {
         });
       setCurrent(currentStandings);
     }
-  }, [teamStats, schedule]);
+  }, [schedule]);
 
   React.useEffect(() => {
-    if (teamStats !== null && allTimeSchedule !== null) {
-      let sim = new ExpectedWins(teamStats, allTimeSchedule);
+    if (allTimeSchedule !== null) {
+      let sim = new ExpectedWins(allTimeSchedule);
       let xWins = sim.expectedWins();
       // combine the expected wins with the current standings
       let currentStandings = historicalData
@@ -50,7 +50,7 @@ export default function Home() {
         });
       setHistoricalData(currentStandings);
     }
-  }, [teamStats, allTimeSchedule]);
+  }, [allTimeSchedule]);
 
   React.useEffect(() => {
     fetch("/api/teams")

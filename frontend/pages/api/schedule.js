@@ -23,7 +23,6 @@ ORDER BY week;`;
 export default async function schedule(req, res) {
   try {
     const { year } = req.query;
-    console.log(year);
 
     if (year === "all") {
       await allTimeSchedule(req, res);
