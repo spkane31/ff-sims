@@ -42,6 +42,7 @@ type BoxScorePlayer struct {
 	OwnerESPNID                   uint
 	TeamID, PlayerID, Week, Year  uint
 	ProjectedPoints, ActualPoints float64
+	Completed                     bool
 }
 
 func main() {

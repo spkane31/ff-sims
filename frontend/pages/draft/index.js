@@ -8,9 +8,6 @@ const Draft = () => {
   React.useEffect(() => {
     fetch("/api/draft")
       .then((res) => {
-        if (res.status === 304) {
-          alert("304 Not Modified");
-        }
         return res.json();
       })
       .then((data) => {
@@ -33,7 +30,19 @@ const DraftData = ({ draftData }) => {
     { field: "pickNumber", headerName: "Pick Number", flex: 1, type: "number" },
     {
       field: "totalPoints",
-      headerName: "Total Points",
+      headerName: "Points",
+      flex: 1,
+      type: "number",
+    },
+    {
+      field: "projectedPoints",
+      headerName: "xPoints",
+      flex: 1,
+      type: "number",
+    },
+    {
+      field: "diff",
+      headerName: "Diff",
       flex: 1,
       type: "number",
     },
@@ -50,10 +59,44 @@ const DraftData = ({ draftData }) => {
         playerName: draftSelection.player_name,
         pickNumber: 10 * (draftSelection.round - 1) + draftSelection.pick,
         roundNumber: draftSelection.round,
-        totalPoints: 0,
+        totalPoints: draftSelection.total_points,
+        projectedPoints: draftSelection.total_projected_points,
+        diff:
+          draftSelection.total_points - draftSelection.total_projected_points,
       };
     })
-    .sort((a, b) => b.projected_wins - a.projected_wins);
+    .sort((a, b) => a.pickNumber - b.pickNumber);
+
+  const totalPerTeam = rows.reduce((acc, row) => {
+    if (acc[row.teamName] === undefined) {
+      acc[row.teamName] = {
+        totalPoints: 0,
+        projectedPoints: 0,
+      };
+    }
+
+    acc[row.teamName].totalPoints += row.totalPoints;
+    acc[row.teamName].projectedPoints += row.projectedPoints;
+    return acc;
+  });
+
+  const filtered = Object.entries(totalPerTeam)
+    .map(([team, stats]) => {
+      if (
+        stats.totalPoints === undefined ||
+        stats.projectedPoints === undefined
+      ) {
+        return null;
+      }
+      return {
+        id: Math.random(),
+        team,
+        totalPoints: stats.totalPoints,
+        projectedPoints: stats.projectedPoints,
+        diff: stats.totalPoints - stats.projectedPoints,
+      };
+    })
+    .filter((team) => team !== null);
 
   return (
     <Box
@@ -69,6 +112,46 @@ const DraftData = ({ draftData }) => {
           minHeight: 400,
         }}
       >
+        <Typography
+          variant="h5"
+          sx={{ textAlign: "center", marginBottom: "15px" }}
+        >
+          Draft Results by Team
+        </Typography>
+        {/* DataGrid free version is capped at 100 rows, so either pay (not gonna happen) or write my own sortable table (doable) */}
+        <DataGrid
+          columns={[
+            {
+              field: "team",
+              headerName: "Owner",
+              flex: 1,
+            },
+            {
+              field: "totalPoints",
+              headerName: "Total Points",
+              flex: 1,
+              type: "number",
+            },
+            {
+              field: "projectedPoints",
+              headerName: "Projected Points",
+              flex: 1,
+              type: "number",
+            },
+            {
+              field: "diff",
+              headerName: "Difference",
+              flex: 1,
+              type: "number",
+            },
+          ]}
+          rows={filtered}
+          rowHeight={30}
+          autosizeOnMount
+          autoHeight
+          hideFooter
+        />
+        <Box sx={{ marginTop: "25px" }} />
         <Typography
           variant="h5"
           sx={{ textAlign: "center", marginBottom: "15px" }}

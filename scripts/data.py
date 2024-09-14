@@ -927,7 +927,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
 
     for week in range(1, 15):
         print(f"Year: {league.year}\tWeek: {week}")
-        if week > league.current_week:
+        if week > league.current_week and datetime.now().year == league.year:
             break
         if league.year < 2019:
             for matchup in league.scoreboard(week=week):
@@ -966,7 +966,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
                 home_team_id = matchup.home_team.team_id
                 away_team_id = matchup.away_team.team_id
 
-                if league.year == datetime.now().year and week <= league.current_week:
+                if league.year == datetime.now().year and week < league.current_week:
                     for player in matchup.home_lineup:
                         upsert_player_boxscore(
                             conn,
