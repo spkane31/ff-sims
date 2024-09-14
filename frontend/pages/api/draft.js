@@ -16,6 +16,17 @@ WHERE year = $1
 ORDER BY round, pick;
 `;
 
+const totalPointsPerPlayer = `
+SELECT
+  player_id,
+  SUM(projected_points) AS total_projected_points,
+  SUM(actual_points) AS total_points,
+  COUNT(*) AS num_games
+FROM box_score_players
+WHERE year = $1
+GROUP BY player_id;
+`;
+
 export default async function draft(req, res) {
   try {
     const client = await pool.connect();
@@ -23,7 +34,10 @@ export default async function draft(req, res) {
     console.log(
       `[INFO] received ${resp.rows.length} rows from draft 2024 query`
     );
+    const playerPoints = await client.query(totalPointsPerPlayer, [2024]);
     client.release();
+
+    console.log(playerPoints.rows);
 
     const parsedResp = resp.rows.map((row) => {
       return {
@@ -32,6 +46,21 @@ export default async function draft(req, res) {
         player_name: row.player_name,
         player_id: parseInt(row.player_id),
         team_id: parseInt(row.team_id),
+        total_points: parseFloat(
+          playerPoints.rows.find(
+            (player) => parseInt(player.player_id) === parseInt(row.player_id)
+          )?.total_points || 0
+        ),
+        total_projected_points: parseFloat(
+          playerPoints.rows.find(
+            (player) => parseInt(player.player_id) === parseInt(row.player_id)
+          )?.total_projected_points || 0
+        ),
+        count: parseInt(
+          playerPoints.rows.find(
+            (player) => parseInt(player.player_id) === parseInt(row.player_id)
+          )?.num_games || 0
+        ),
         owner: row.owner,
       };
     });
