@@ -26,7 +26,6 @@ export default function Home() {
 
   React.useEffect(() => {
     if (teamStats !== null && schedule !== null) {
-      console.log("schedule", schedule);
       setSimulator(new Simulator(teamStats, schedule));
     }
   }, [teamStats, schedule]);

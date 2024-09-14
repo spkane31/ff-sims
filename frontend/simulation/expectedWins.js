@@ -22,7 +22,6 @@ class ExpectedWins {
   step() {
     // iterate over the entire schedule
     this.schedule.forEach((week) => {
-      // console.log(week);
       if (!week[0].completed) {
         // skip matchups that are not completed
         return;
