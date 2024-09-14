@@ -890,12 +890,12 @@ def upsert_player_boxscore(
         )
         if cur.fetchone():
             cur.execute(
-                "UPDATE box_score_players SET player_name = %s, projected_points = %s, actual_points = %s, player_position = %s, status = %s WHERE player_id = %s AND week = %s AND year = %s AND team_id = %s",
+                "UPDATE box_score_players SET player_name = %s, projected_points = %s, actual_points = %s, player_position = %s, status = %s WHERE player_id = %s AND week = %s AND year = %s AND owner_espn_id = %s",
                 (name, projected_points, actual_points, position, status, player_id, week, year, team_id),
             )
         else:
             cur.execute(
-                "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, status, week, year, team_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, status, week, year, owner_espn_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (name, player_id, projected_points, actual_points, position, status, week, year, team_id),
             )
         conn.commit()
