@@ -37,8 +37,6 @@ export default async function draft(req, res) {
     const playerPoints = await client.query(totalPointsPerPlayer, [2024]);
     client.release();
 
-    console.log(playerPoints.rows);
-
     const parsedResp = resp.rows.map((row) => {
       return {
         round: parseInt(row.round),
