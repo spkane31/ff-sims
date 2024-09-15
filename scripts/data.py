@@ -20,9 +20,6 @@ from utils import write_to_file, mean, std_dev, flatten_extend
 
 load_dotenv(find_dotenv())
 
-SWID = os.environ.get("SWID")
-ESPN_S2 = os.environ.get("ESPN_S2")
-
 
 PRINT_STR = "Year: {}\tWeek: {}"
 
@@ -1148,21 +1145,25 @@ if __name__ == "__main__":
     parser.add_argument("--year", type=int, default=2024)
     args = parser.parse_args()
 
-    if os.environ.get("SWID") is None or os.environ.get("ESPN_S2") is None or os.environ.get("DATABASE_URL") is None:
-        logging.error("Environment variables not set")
-        if os.environ.get("SWID") is None:
-            logging.error("SWID not set")
-        if os.environ.get("ESPN_S2") is None:
-            logging.error("ESPN_S2 not set")
-        if os.environ.get("DATABASE_URL") is None:
-            logging.error("DATABASE_URL not set")
+    SWID = os.environ.get("SWID")
+    ESPN_S2 = os.environ.get("ESPN_S2")
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+
+    if SWID is None or SWID == "":
+        logging.error("SWID not set")
+        exit(1)
+    if ESPN_S2 is None or ESPN_S2 == "":
+        logging.error("ESPN_S2 not set")
+        exit(1)
+    if DATABASE_URL is None or DATABASE_URL == "":
+        logging.error("DATABASE_URL not set")
         exit(1)
 
     # This was done manually but have to iterate through each year to load data
     league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
     print(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(DATABASE_URL)
 
     get_db_counts(conn)
 
@@ -1171,7 +1172,7 @@ if __name__ == "__main__":
     # get_simple_draft(league, conn)
 
     print(f"Completed in {round(time.time() - start, 2)} seconds")
-    exit(1)
+    exit(0)
 
     data, league = scrape_matchups()
 
