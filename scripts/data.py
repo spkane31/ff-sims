@@ -1158,8 +1158,6 @@ if __name__ == "__main__":
             logging.error("DATABASE_URL not set")
         exit(1)
 
-    exit(0)
-
     # This was done manually but have to iterate through each year to load data
     league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
     print(f"Year: {league.year}\tCurrent Week: {league.current_week}")
@@ -1173,7 +1171,7 @@ if __name__ == "__main__":
     # get_simple_draft(league, conn)
 
     print(f"Completed in {round(time.time() - start, 2)} seconds")
-    exit(1)
+    exit(0)
 
     data, league = scrape_matchups()
 
