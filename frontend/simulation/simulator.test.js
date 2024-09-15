@@ -24,6 +24,8 @@ describe("Simulator", () => {
     expect(simulator.getResults()).toBeDefined();
     expect(simulator.getTeamResults(1)).toBeDefined();
     expect(simulator.getTeamStats(1)).toBeDefined();
+    expect(simulator.weeks).toBe(14);
+    expect(simulator.weeksCompleted).toBe(1);
   });
 
   it("should increment the wins count for the specified team", async () => {

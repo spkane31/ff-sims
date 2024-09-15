@@ -7,6 +7,12 @@ class Simulator {
     // schedule is a list of 14 weeks, each week is a list of 5 matchups
     this.schedule = schedule;
 
+    // jitter is determined by weeks 1 - completed / weeks
+    this.weeks = schedule.length;
+    this.weeksCompleted = schedule.filter((week) =>
+      week.every((matchup) => matchup.completed)
+    ).length;
+
     // number of simulations run
     this.simulations = 0;
 
@@ -132,8 +138,10 @@ class Simulator {
             this.leagueStats;
 
           // random number between 0.05 and 0.25
-          const league_jitter_home = Math.random() * 0.2 + 0.05;
-          const league_jitter_away = Math.random() * 0.2 + 0.05;
+          const league_jitter_home =
+            Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
+          const league_jitter_away =
+            Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
 
           const home_score =
             (1 - league_jitter_home) *
