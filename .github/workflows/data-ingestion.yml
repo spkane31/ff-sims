@@ -27,7 +27,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run script
-        run: cd scripts && python data.py
+        run: |
+          cd scripts
+          
+          python data.py
         env:
           SWID: ${{ secrets.SWID }}
           ESPN_S2: ${{ secrets.ESPN_S2 }}
