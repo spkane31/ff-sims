@@ -7,7 +7,7 @@ on:
     branches: [main, spk/*]
 
 jobs:
-  myJob:
+  data-ingestion:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -29,6 +29,6 @@ jobs:
       - name: Run script
         run: cd scripts && python data.py
         env:
-          SWID: ${{ secrets.swid }}
-          ESPN_S2: ${{ secrets.espn_s2 }}
-          DATABASE_URL: ${{ secrets.database_url }}
+          SWID: ${{ secrets.SWID }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
