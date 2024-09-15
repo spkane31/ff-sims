@@ -4,8 +4,6 @@ on:
   schedule:
     # Runs at 11:00 UTC (6 AM EST) every Tuesday
     - cron: "0 11 * * 2"
-  pull_request:
-    branches: [main, spk/*]
 
 jobs:
   data-ingestion:
@@ -13,8 +11,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Run a one-line script
-        run: echo Hello, world!
 
       - name: Set up Python
         uses: actions/setup-python@v2
