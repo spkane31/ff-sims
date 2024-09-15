@@ -1149,13 +1149,14 @@ if __name__ == "__main__":
     ESPN_S2 = os.environ.get("ESPN_S2")
     DATABASE_URL = os.environ.get("DATABASE_URL")
 
-    if SWID is None or ESPN_S2 is None or DATABASE_URL is None:
-        if SWID is None:
-            logging.error("SWID not set")
-        if ESPN_S2 is None:
-            logging.error("ESPN_S2 not set")
-        if DATABASE_URL is None:
-            logging.error("DATABASE_URL not set")
+    if SWID is None or SWID == "":
+        logging.error("SWID not set")
+        exit(1)
+    if ESPN_S2 is None or ESPN_S2 == "":
+        logging.error("ESPN_S2 not set")
+        exit(1)
+    if DATABASE_URL is None or DATABASE_URL == "":
+        logging.error("DATABASE_URL not set")
         exit(1)
 
     # This was done manually but have to iterate through each year to load data

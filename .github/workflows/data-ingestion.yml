@@ -1,4 +1,5 @@
 name: Get data from ESPN
+
 on:
   schedule:
     # Runs at 11:00 UTC (6 AM EST) every Tuesday
@@ -29,7 +30,6 @@ jobs:
       - name: Run script
         run: |
           cd scripts
-          
           python data.py
         env:
           SWID: ${{ secrets.SWID }}
