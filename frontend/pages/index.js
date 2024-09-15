@@ -10,9 +10,10 @@ const paddingAmount = "15px";
 export default function Home() {
   const [historicalData, setHistoricalData] = React.useState([]);
   const [current, setCurrent] = React.useState([]);
+  const [currentWithXWins, setCurrentWithXWins] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
-  const [teamStats, setTeamStats] = React.useState(null);
   const [allTimeSchedule, setAllTimeSchedule] = React.useState(null);
+  const [allTimeWithXWins, setAllTimeWithXWins] = React.useState(null);
 
   React.useEffect(() => {
     if (schedule !== null) {
@@ -29,9 +30,9 @@ export default function Home() {
         .sort((a, b) => {
           return b.expectedWins - a.expectedWins;
         });
-      setCurrent(currentStandings);
+      setCurrentWithXWins(currentStandings);
     }
-  }, [schedule]);
+  }, [current]);
 
   React.useEffect(() => {
     if (allTimeSchedule !== null) {
@@ -48,17 +49,9 @@ export default function Home() {
         .sort((a, b) => {
           return b.expectedWins - a.expectedWins;
         });
-      setHistoricalData(currentStandings);
+      setAllTimeWithXWins(currentStandings);
     }
-  }, [allTimeSchedule]);
-
-  React.useEffect(() => {
-    fetch("/api/teams")
-      .then((res) => res.json())
-      .then((data) => {
-        setTeamStats(data);
-      });
-  }, []);
+  }, [allTimeSchedule, historicalData]);
 
   React.useEffect(() => {
     async function fetchData() {
@@ -119,11 +112,11 @@ export default function Home() {
       <TitleComponent>The League</TitleComponent>
       <Typography variant="h6">Current Standings</Typography>
       <Box sx={{ padding: paddingAmount }} />
-      <Table data={current} />
+      <Table data={currentWithXWins} />
       <Box sx={{ padding: paddingAmount }} />
       <Typography variant="h6">All Time Standings</Typography>
       <Box sx={{ padding: paddingAmount }} />
-      <Table data={historicalData} />
+      <Table data={allTimeWithXWins} />
       <Box sx={{ padding: paddingAmount }} />
     </>
   );
