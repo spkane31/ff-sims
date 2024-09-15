@@ -1,0 +1,32 @@
+name: Get data from ESPN
+on:
+  schedule:
+    # Runs at 11:00 UTC (6 AM EST) every Tuesday
+    - cron: "0 11 * * 2"
+
+jobs:
+  myJob:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Run a one-line script
+        run: echo Hello, world!
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run script
+        run: python data.py
+        env:
+          SWID: ${{ secrets.swid }}
+          ESPN_S2: ${{ secrets.espn_s2 }}
+          DATABASE_URL: ${{ secrets.database_url }}

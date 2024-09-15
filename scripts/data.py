@@ -1148,11 +1148,21 @@ if __name__ == "__main__":
     parser.add_argument("--year", type=int, default=2024)
     args = parser.parse_args()
 
+    if os.environ.get("SWID") is None or os.environ.get("ESPN_S2") is None or os.environ.get("DATABASE_URL") is None:
+        logging.error("Environment variables not set")
+        if os.environ.get("SWID") is None:
+            logging.error("SWID not set")
+        if os.environ.get("ESPN_S2") is None:
+            logging.error("ESPN_S2 not set")
+        if os.environ.get("DATABASE_URL") is None:
+            logging.error("DATABASE_URL not set")
+        exit(1)
+
     # This was done manually but have to iterate through each year to load data
     league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
     print(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
-    conn = psycopg2.connect(os.environ["COCKROACHDB_URL"])
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
 
     get_db_counts(conn)
 

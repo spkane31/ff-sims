@@ -21,12 +21,11 @@ export default function Home() {
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
-  const [steps, setSteps] = React.useState(5000);
+  const [steps, setSteps] = React.useState(10000);
   const [totalRunTime, setTotalRunTime] = React.useState(0);
 
   React.useEffect(() => {
     if (teamStats !== null && schedule !== null) {
-      console.log("schedule", schedule);
       setSimulator(new Simulator(teamStats, schedule));
     }
   }, [teamStats, schedule]);
@@ -78,7 +77,7 @@ export default function Home() {
           variant="contained"
           sx={{ marginRight: "10px" }}
         >
-          Simulate ({steps})
+          Simulate ({steps.toLocaleString()} steps)
         </Button>
         <Button
           onClick={() => {
