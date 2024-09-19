@@ -51,6 +51,8 @@ type Request struct {
 	UserAgent              string
 	RuntimeMS              float64
 	StatusCode             int
+	IsFrontend             bool `gorm:"default:false"`
+	Timestamp              time.Time
 }
 
 func main() {

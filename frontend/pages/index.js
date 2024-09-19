@@ -32,7 +32,7 @@ export default function Home() {
         });
       setCurrentWithXWins(currentStandings);
     }
-  }, [current]);
+  }, [current, schedule]);
 
   React.useEffect(() => {
     if (allTimeSchedule !== null) {
