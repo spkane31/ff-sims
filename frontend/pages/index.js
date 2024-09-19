@@ -47,7 +47,10 @@ export default function Home() {
           };
         })
         .sort((a, b) => {
-          return b.expectedWins - a.expectedWins;
+          if (b.wins !== a.wins) {
+            return b.wins - a.wins;
+          }
+          return b.totalPoints - a.totalPoints;
         });
       setAllTimeWithXWins(currentStandings);
     }
