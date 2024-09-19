@@ -16,6 +16,12 @@ const prettyPrintMilliseconds = (ms) => {
   }
 };
 
+function convertToScientificNotation(num) {
+  if (num < 0.0001) {
+    return num.toExponential(5);
+  }
+  return num.toFixed(5);
+}
 export default function Home() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
@@ -101,6 +107,9 @@ export default function Home() {
           ? "-"
           : (totalRunTime / simulator.simulations).toFixed(3)}{" "}
         ms
+      </Typography>
+      <Typography variant="h6" sx={{ textAlign: "center" }}>
+        ε (error): {convertToScientificNotation(simulator.epsilon)}
       </Typography>
       <Box sx={{ marginTop: "15px" }} />
       <TeamData teamData={teamData} />

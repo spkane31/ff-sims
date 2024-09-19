@@ -41,6 +41,9 @@ class Simulator {
     Object.entries(teamAvgs).forEach(([_key, value]) => {
       this.idToOwner.set(value.id, value.owner);
     });
+
+    this.epsilon = 0;
+    this.previousStepFinalStandings = null;
   }
 
   // list of all teams, and projected wins, losses, points for, points against, playoff odds, last place odds
@@ -123,6 +126,10 @@ class Simulator {
       teamAvgs: this.teamStats,
       leagueStats: this.leagueStats,
     });
+
+    if (this.simulations > 0) {
+      this.previousStepFinalStandings = this.getTeamScoringData();
+    }
 
     this.schedule.forEach((game) => {
       // Code to print or process each game object in this.schedule
@@ -216,6 +223,25 @@ class Simulator {
     });
 
     this.simulations++;
+    this.updateEpsilon();
+  }
+
+  // updateEpsilon looks at the difference between the current simulations playoff odds per team
+  // and the previous simulations playoff odds per team and does a sum of the value squared
+  updateEpsilon() {
+    if (this.simulations === 1) {
+      this.epsilon = 0;
+      return;
+    }
+
+    const currentStandings = this.getTeamScoringData();
+    let sum = 0;
+    for (let i = 0; i < currentStandings.length; i++) {
+      const currentTeam = currentStandings[i];
+      const previousTeam = this.previousStepFinalStandings[i];
+      sum += Math.pow(currentTeam.wins - previousTeam.wins, 2);
+    }
+    this.epsilon = Math.sqrt(sum);
   }
 }
 
