@@ -15,6 +15,21 @@ const Container = styled("div")({
 });
 
 function MyApp({ Component, pageProps }) {
+  // Log the frontend request
+  React.useEffect(() => {
+    console.log("Logging request for ", window.location.href);
+    fetch("/api/log", {
+      method: "POST",
+      body: JSON.stringify({
+        endpoint: window.location.href,
+        method: "GET",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <Box
