@@ -1,5 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import { pool } from "../../db/db";
+import { logRequest, pool } from "../../db/db";
 
 const query = `SELECT
   teams.espn_id AS id,
@@ -33,6 +33,7 @@ FROM (
 ) AS scores;`;
 
 export default async function teams(req, res) {
+  const start = new Date();
   const year = 2024;
   try {
     const client = await pool.connect();
@@ -80,4 +81,5 @@ export default async function teams(req, res) {
       message: err.message,
     });
   }
+  logRequest(req, res, start);
 }

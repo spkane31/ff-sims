@@ -1,5 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import { pool } from "../../db/db";
+import { logRequest, pool } from "../../db/db";
 
 const query = `
 SELECT
@@ -28,6 +28,7 @@ GROUP BY player_id;
 `;
 
 export default async function draft(req, res) {
+  const start = new Date();
   try {
     const client = await pool.connect();
     const resp = await client.query(query, [2024]);
@@ -69,4 +70,5 @@ export default async function draft(req, res) {
       message: err.message,
     });
   }
+  logRequest(req, res, start);
 }
