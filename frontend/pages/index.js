@@ -15,6 +15,20 @@ export default function Home() {
   const [allTimeSchedule, setAllTimeSchedule] = React.useState(null);
   const [allTimeWithXWins, setAllTimeWithXWins] = React.useState(null);
 
+  // Log the frontend request
+  React.useEffect(() => {
+    fetch("/api/log", {
+      method: "POST",
+      body: JSON.stringify({
+        endpoint: "/",
+        method: "GET",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }, []);
+
   React.useEffect(() => {
     if (schedule !== null) {
       let sim = new ExpectedWins(schedule);
@@ -32,7 +46,7 @@ export default function Home() {
         });
       setCurrentWithXWins(currentStandings);
     }
-  }, [current]);
+  }, [current, schedule]);
 
   React.useEffect(() => {
     if (allTimeSchedule !== null) {

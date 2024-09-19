@@ -146,13 +146,14 @@ export const logRequest = async (req, res, start) => {
   try {
     const client = await pool.connect();
 
-    const query = `INSERT INTO requests (endpoint, method, user_agent, runtime_ms, status_code) VALUES ($1, $2, $3, $4, $5);`;
+    const query = `INSERT INTO requests (endpoint, method, user_agent, runtime_ms, status_code, timestamp) VALUES ($1, $2, $3, $4, $5, $6);`;
     const values = [
       req.url,
       req.method,
       req.headers["user-agent"],
       new Date() - start,
       res.statusCode,
+      new Date(),
     ];
     await client.query(query, values);
     client.release();

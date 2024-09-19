@@ -63,6 +63,7 @@ export default async function current(req, res) {
 
     res.status(200).json(parsedResp);
   } catch (err) {
+    console.log("[ERROR] /api/current", err.message);
     res.status(500).json({
       message: err.message,
     });
