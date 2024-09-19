@@ -137,8 +137,10 @@ export const getSchedule = async (year) => {
  */
 export const logRequest = async (req, res, start) => {
   // if the environment variable NODE_ENV is not prod, don't log the request
-  if (process.env.NODE_ENV !== "prod") {
-    console.log(`[INFO] NODE_ENV is not prod, skipping request logging`);
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      `[INFO] NODE_ENV is not production (${process.env.NODE_ENV}), skipping request logging`
+    );
     return;
   }
   try {
