@@ -13,7 +13,7 @@ export default async function log(req, res) {
     const client = await pool.connect();
     // insert endpoint, method, and timestamp into log table, parsing the first two from the body of the req
     const query = `
-      INSERT INTO log (endpoint, method, timestamp, is_frontend)
+      INSERT INTO requests (endpoint, method, timestamp, is_frontend)
       VALUES ($1, $2, $3, true)
       RETURNING id;
     `;
