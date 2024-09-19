@@ -125,3 +125,36 @@ export const getSchedule = async (year) => {
   schedule.push(currentWeekGames);
   return schedule;
 };
+
+/**
+ * Logs a request by inserting the endpoint, method, body, and user agent into the requests table.
+ * @param {Object} req - The request object containing information about the request.
+ * @param {string} req.url - The URL of the request.
+ * @param {string} req.method - The HTTP method of the request.
+ * @param {Object} req.body - The body of the request.
+ * @param {string} req.headers.user-agent - The user agent of the request.
+ * @returns {Promise<void>} - A Promise that resolves when the request is logged.
+ */
+export const logRequest = async (req, res, start) => {
+  // if the environment variable NODE_ENV is not prod, don't log the request
+  if (process.env.NODE_ENV !== "prod") {
+    console.log(`[INFO] NODE_ENV is not prod, skipping request logging`);
+    return;
+  }
+  try {
+    const client = await pool.connect();
+
+    const query = `INSERT INTO requests (endpoint, method, user_agent, runtime_ms, status_code) VALUES ($1, $2, $3, $4, $5);`;
+    const values = [
+      req.url,
+      req.method,
+      req.headers["user-agent"],
+      new Date() - start,
+      res.statusCode,
+    ];
+    await client.query(query, values);
+    client.release();
+  } catch (err) {
+    console.error(`[ERROR] ${err}`);
+  }
+};

@@ -1,5 +1,5 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
-import { pool } from "../../db/db";
+import { logRequest, pool } from "../../db/db";
 
 const query = `
 SELECT
@@ -48,7 +48,8 @@ async function runQuery(year) {
   return resp;
 }
 
-export default async function draft(req, res) {
+export default async function box_score_players(req, res) {
+  start = new Date();
   try {
     // get year from query param and default to current year if not present
     const resp = await runQuery(req.query.year);
@@ -70,4 +71,5 @@ export default async function draft(req, res) {
       message: err.message,
     });
   }
+  logRequest(req, res, start);
 }

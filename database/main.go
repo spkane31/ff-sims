@@ -44,6 +44,15 @@ type BoxScorePlayer struct {
 	ProjectedPoints, ActualPoints float64
 }
 
+type Request struct {
+	gorm.Model
+	Endpoint, Method, Body string
+	Completed              bool
+	UserAgent              string
+	RuntimeMS              float64
+	StatusCode             int
+}
+
 func main() {
 	// Using Go to generate my database because it's easier for me
 	start := time.Now()
@@ -74,6 +83,7 @@ func main() {
 		&Team{},
 		&DraftSelection{},
 		&BoxScorePlayer{},
+		&Request{},
 	); err != nil {
 		panic(err)
 	}
