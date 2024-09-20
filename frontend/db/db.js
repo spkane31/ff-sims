@@ -23,7 +23,7 @@ export const getTeams = async (year) => {
 
   const client = await pool.connect();
   const teamData = await client.query(query, [year]);
-  console.log(`[INFO] received ${teamData.rows.length} rows from teams query`);
+  console.log(`[INFO] received ${teamData.rows.length} rows from getTeams query`);
   const respIDAsInt = teamData.rows.map((row) => {
     return {
       id: parseInt(row.id),
