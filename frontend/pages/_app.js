@@ -4,16 +4,6 @@ import Footer from "../components/Footer";
 import { ThemeProvider, Box } from "@mui/material";
 import theme from "../components/theme";
 
-import { styled } from "@mui/system";
-
-const Container = styled("div")({
-  minHeight: "100vh",
-  padding: "0 0.5rem",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-});
-
 function MyApp({ Component, pageProps }) {
   // Log the frontend request
   React.useEffect(() => {
@@ -23,6 +13,7 @@ function MyApp({ Component, pageProps }) {
       body: JSON.stringify({
         endpoint: window.location.href,
         method: "GET",
+        userAgent: window.navigator.userAgent,
       }),
       headers: {
         "Content-Type": "application/json",
