@@ -49,7 +49,7 @@ async function runQuery(year) {
 }
 
 export default async function box_score_players(req, res) {
-  start = new Date();
+  const start = new Date();
   try {
     // get year from query param and default to current year if not present
     const resp = await runQuery(req.query.year);
