@@ -138,18 +138,6 @@ const TeamData = ({ teamData }) => {
     { field: "wins", headerName: "Wins", flex: 1, type: "number" },
     { field: "losses", headerName: "Losses", flex: 1, type: "number" },
     {
-      field: "projected_wins",
-      headerName: "Projected Wins",
-      flex: 1,
-      type: "number",
-    },
-    {
-      field: "projected_losses",
-      headerName: "Projected Losses",
-      flex: 1,
-      type: "number",
-    },
-    {
       field: "playoff_odds",
       headerName: "Playoff Odds",
       flex: 1,
@@ -172,8 +160,6 @@ const TeamData = ({ teamData }) => {
         std_dev: teamResults.std_dev.toFixed(2),
         wins: teamResults.wins.toFixed(2),
         losses: teamResults.losses.toFixed(2),
-        projected_wins: teamResults.wins.toFixed(2),
-        projected_losses: teamResults.losses.toFixed(2),
         playoff_odds: (100 * teamResults.playoff_odds).toFixed(2),
         last_place_odds: (100 * teamResults.last_place_odds).toFixed(2),
       };
