@@ -1,6 +1,11 @@
 import React from "react";
-import { DataGrid } from "@mui/x-data-grid";
 import { Box, Paper, Typography, Button } from "@mui/material";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import Simulator from "../../simulation/simulator";
 
 const prettyPrintMilliseconds = (ms) => {
@@ -22,7 +27,8 @@ function convertToScientificNotation(num) {
   }
   return num.toFixed(5);
 }
-export default function Home() {
+
+export default function Simulations() {
   const [simulator, setSimulator] = React.useState(null);
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
@@ -127,7 +133,7 @@ const TeamData = ({ teamData }) => {
   }
 
   const columns = [
-    { field: "teamName", headerName: "Team", flex: 1, minWidth: 130 },
+    { field: "teamName", headerName: "", flex: 1, minWidth: 130 },
     { field: "average", headerName: "Average", flex: 1, type: "number" },
     {
       field: "std_dev",
@@ -155,13 +161,13 @@ const TeamData = ({ teamData }) => {
     .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
-        teamName: teamResults.teamName,
+        owner: teamResults.teamName,
         average: teamResults.average.toFixed(2),
-        std_dev: teamResults.std_dev.toFixed(2),
+        stdDev: teamResults.std_dev.toFixed(2),
         wins: teamResults.wins.toFixed(2),
         losses: teamResults.losses.toFixed(2),
-        playoff_odds: (100 * teamResults.playoff_odds).toFixed(2),
-        last_place_odds: (100 * teamResults.last_place_odds).toFixed(2),
+        playoffOdds: (100 * teamResults.playoff_odds).toFixed(2),
+        lastPlaceOdds: (100 * teamResults.last_place_odds).toFixed(2),
       };
     })
     .sort((a, b) => b.projected_wins - a.projected_wins);
@@ -171,13 +177,14 @@ const TeamData = ({ teamData }) => {
       <Box
         sx={{
           maxWidth: "100%",
-          overflowX: "auto",
+          // overflowX: "auto",
         }}
       >
         <Paper
           sx={{
-            minWidth: 750,
-            minHeight: 400,
+            // minWidth: 750,
+            // minHeight: 400,
+            paddingTop: "10px",
           }}
         >
           <Typography
@@ -186,7 +193,37 @@ const TeamData = ({ teamData }) => {
           >
             Team Scoring Data
           </Typography>
-          <DataGrid columns={columns} rows={rows} autosizeOnMount hideFooter />
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  {columns.map((column) => (
+                    <TableCell key={column.field} align="right">
+                      {column.headerName}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                  >
+                    <TableCell component="th" scope="row">
+                      {row.owner}
+                    </TableCell>
+                    <TableCell align="right">{row.average}</TableCell>
+                    <TableCell align="right">{row.stdDev}</TableCell>
+                    <TableCell align="right">{row.wins}</TableCell>
+                    <TableCell align="right">{row.losses}</TableCell>
+                    <TableCell align="right">{row.playoffOdds}</TableCell>
+                    <TableCell align="right">{row.lastPlaceOdds}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Paper>
       </Box>
     </>
@@ -199,7 +236,7 @@ const RegularSeasonPositions = ({ teamData }) => {
   }
 
   const columns = [
-    { field: "teamName", headerName: "Team", flex: 1, minWidth: 130 },
+    { field: "teamName", headerName: "", flex: 1, minWidth: 130 },
     { field: "firstPlace", headerName: "1st", flex: 1, type: "number" },
     {
       field: "secondPlace",
@@ -236,7 +273,7 @@ const RegularSeasonPositions = ({ teamData }) => {
     .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
-        teamName: teamResults.teamName,
+        owner: teamResults.teamName,
         firstPlace: teamResults.regular_season_result[0],
         secondPlace: teamResults.regular_season_result[1],
         thirdPlace: teamResults.regular_season_result[2],
@@ -287,13 +324,13 @@ const RegularSeasonPositions = ({ teamData }) => {
     <Box
       sx={{
         maxWidth: "100%",
-        overflowX: "auto",
+        // overflowX: "auto",
       }}
     >
       <Paper
         sx={{
           minWidth: 750,
-          minHeight: 400,
+          // minHeight: 400,
         }}
       >
         <Typography
@@ -302,13 +339,61 @@ const RegularSeasonPositions = ({ teamData }) => {
         >
           Regular Season Projections
         </Typography>
-        <DataGrid
-          columns={columns}
-          rows={rows}
-          autosizeOnMount
-          autoHeight
-          hideFooter
-        />
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                {columns.map((column) => (
+                  <TableCell key={column.field} align="right">
+                    {column.headerName}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                >
+                  <TableCell component="th" scope="row">
+                    {row.owner}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.firstPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.secondPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.thirdPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.fourthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.fifthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.sixthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.seventhPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.eighthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.ninthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.tenthPlace.toFixed(3)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
     </Box>
   );
@@ -320,7 +405,7 @@ const PlayoffPositions = ({ teamData }) => {
   }
 
   const columns = [
-    { field: "teamName", headerName: "Team", flex: 1, minWidth: 130 },
+    { field: "teamName", headerName: "", flex: 1, minWidth: 130 },
     { field: "firstPlace", headerName: "1st", flex: 1, type: "number" },
     {
       field: "secondPlace",
@@ -343,7 +428,7 @@ const PlayoffPositions = ({ teamData }) => {
     .map(([_teamName, teamResults]) => {
       return {
         id: teamResults.id,
-        teamName: teamResults.teamName,
+        owner: teamResults.teamName,
         firstPlace: teamResults.playoff_result[0],
         secondPlace: teamResults.playoff_result[1],
         thirdPlace: teamResults.playoff_result[2],
@@ -393,13 +478,50 @@ const PlayoffPositions = ({ teamData }) => {
         >
           Playoff Projections
         </Typography>
-        <DataGrid
-          columns={columns}
-          rows={rows}
-          autosizeOnMount
-          autoHeight
-          hideFooter
-        />
+
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                {columns.map((column) => (
+                  <TableCell key={column.field} align="right">
+                    {column.headerName}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                >
+                  <TableCell component="th" scope="row">
+                    {row.owner}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.firstPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.secondPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.thirdPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.fourthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.fifthPlace.toFixed(3)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.sixthPlace.toFixed(3)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
     </Box>
   );

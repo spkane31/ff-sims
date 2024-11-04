@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from typing import List, Dict
 
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League
@@ -206,7 +207,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
 
 
 def write_box_score_players_to_db(
-    box_score_players: list[dict[str, any]], year: int, conn: "psycopg2.connection"
+    box_score_players: List[Dict[str, any]], year: int, conn: "psycopg2.connection"
 ) -> None:
     counter = 0
     with conn.cursor() as cur:
@@ -241,11 +242,38 @@ def write_box_score_players_to_db(
 def get_simple_draft(league: League, conn: "psycopg2.connection") -> None:
     with conn.cursor() as cur:
         for pick in league.draft:
+            player_info = league.player_info(playerId=pick.playerId)
+            # If the selection exists, add the position (which does not exist as of 2024.11.03)
             cur.execute(
-                "INSERT INTO draft_selections (player_name, player_id, owner_espn_id, round, pick, year) SELECT %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s)",
+                "SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
+                (
+                    pick.playerName,
+                    pick.team.team_id,
+                    pick.round_num,
+                    pick.round_pick,
+                    league.year,
+                ),
+            )
+            res = cur.fetchone()
+            if res[0] == 1:
+                cur.execute(
+                    "UPDATE draft_selections SET player_position = %s WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
+                    (
+                        player_info.position,
+                        pick.playerName,
+                        pick.team.team_id,
+                        pick.round_num,
+                        pick.round_pick,
+                        league.year,
+                    ),
+                )
+
+            cur.execute(
+                "INSERT INTO draft_selections (player_name, player_id, player_position, owner_espn_id, round, pick, year) SELECT %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s)",
                 (
                     pick.playerName,
                     pick.playerId,
+                    player_info.position,
                     pick.team.team_id,
                     pick.round_num,
                     pick.round_pick,
