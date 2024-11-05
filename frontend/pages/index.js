@@ -112,11 +112,6 @@ export default function Home() {
 
   return (
     <>
-      <Box
-        sx={{
-          padding: paddingAmount,
-        }}
-      />
       <Head>The League FF</Head>
       <TitleComponent>The League</TitleComponent>
       {currentWithXWins && currentWithXWins.length > 0 && (
@@ -133,7 +128,6 @@ export default function Home() {
           defaultSort="wins"
         />
       )}
-      {/* <Box sx={{ padding: paddingAmount }} /> */}
     </>
   );
 }
