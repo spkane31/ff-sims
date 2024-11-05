@@ -1,5 +1,5 @@
 import React from "react";
-import { Paper, Box, Grid } from "@mui/material";
+import { Paper, Box, Grid, Switch } from "@mui/material";
 import { styled } from "@mui/material/styles";
 
 const Item = styled(Paper)(({ theme }) => ({
@@ -12,6 +12,41 @@ const Item = styled(Paper)(({ theme }) => ({
     backgroundColor: "#1A2027",
   }),
 }));
+
+const colorScale = [
+  "#006400", // DarkGreen
+  "#228B22", // ForestGreen
+  "#32CD32", // LimeGreen
+  "#7FFF00", // Chartreuse
+  "#ADFF2F", // GreenYellow
+  "#FFFF00", // Yellow
+  "#FFD700", // Gold
+  "#FFA500", // Orange
+  "#FF4500", // OrangeRed
+  "#8B0000", // DarkRed
+];
+
+const extendedColorScale = (() => {
+  const startColor = [50, 205, 50]; // LimeGreen
+  const endColor = [255, 69, 0]; // OrangeRed
+  const steps = 160;
+  const scale = [];
+
+  for (let i = 0; i < steps; i++) {
+    const r = Math.round(
+      startColor[0] + ((endColor[0] - startColor[0]) * i) / (steps - 1)
+    );
+    const g = Math.round(
+      startColor[1] + ((endColor[1] - startColor[1]) * i) / (steps - 1)
+    );
+    const b = Math.round(
+      startColor[2] + ((endColor[2] - startColor[2]) * i) / (steps - 1)
+    );
+    scale.push(`rgb(${r},${g},${b})`);
+  }
+
+  return scale;
+})();
 
 const DraftGrid = () => {
   const [draft, setDraft] = React.useState(null);
@@ -62,16 +97,41 @@ const DraftData = ({ draftData, teams }) => {
     return teams.find((team) => team.id === teamID).owner;
   };
 
+  // TODO(2024.11.03): I want to color scale from green -> red for each draft round
+  // the best pick to the worst pick. I think I can do this by sorting by round and then total points
+  // and then assigning a color based on the index of the row in the sorted array.
+
+  const pointsPerRound = draftData.reduce((acc, curr) => {
+    if (acc[curr.round_number] === undefined) {
+      acc[curr.round_number] = [];
+    }
+    acc[curr.round_number].push(curr.total_points);
+    return acc;
+  }, {});
+
+  const groupedPointsPerRound = Object.values(pointsPerRound)
+    .map((roundPoints) => {
+      const grouped = [];
+      for (let i = 0; i < roundPoints.length; i += 10) {
+        grouped.push(roundPoints.slice(i, i + 10).sort((a, b) => b - a));
+      }
+      return grouped;
+    })
+    .flat();
+
   const rows = Object.entries(draftData)
     .map(([_, draftSelection]) => {
+      console.log(draftSelection);
       return {
         id: draftSelection.player_id,
         teamName: getTeamNameFromID(draftSelection.team_id),
         playerName: draftSelection.player_name,
-        pickNumber:
-          10 * (draftSelection.round_number - 1) + draftSelection.round_pick,
-        roundNumber: draftSelection.round_number,
-        totalPoints: 0,
+        pickNumber: 10 * (draftSelection.round - 1) + draftSelection.pick,
+        roundNumber: draftSelection.round,
+        totalPoints: draftSelection.total_points,
+        roundRanking: groupedPointsPerRound[draftSelection.round - 1].findIndex(
+          (points) => points === draftSelection.total_points
+        ),
       };
     })
     .sort((a, b) => b.projected_wins - a.projected_wins);
@@ -91,44 +151,34 @@ const DraftData = ({ draftData, teams }) => {
     return row.teamName;
   });
 
+  const [useOverallColor, setUseOverallColor] = React.useState(false);
+
+  const handleColorSwitch = () => {
+    setUseOverallColor((prev) => !prev);
+  };
+
+  const overallRanking = draftData
+    .map((selection) => selection.total_points)
+    .sort((a, b) => b - a);
+
+  console.log("overall: ", overallRanking);
+  console.log("color scale: ", colorScale);
+
   return (
-    <Grid container spacing={2}>
-      <Grid item xs={12 / 11} key={"blank space"} />
-      {headers.map((row) => (
-        <Grid item xs={12 / 11} key={row}>
-          <Item
-            sx={{
-              minWidth: "90px",
-              maxWidth: "90px",
-              minHeight: "40px",
-              maxHeight: "40px",
-              alignContent: "center",
-              fontSize: "14px",
-            }}
-          >
-            {row}
-          </Item>
-        </Grid>
-      ))}
-      {newRows.map((row, index) => (
-        <>
-          {index % 10 === 0 && (
-            <Grid item xs={12 / 11} key={`Round-${index}`}>
-              <Item
-                sx={{
-                  minWidth: "90px",
-                  maxWidth: "90px",
-                  minHeight: "40px",
-                  maxHeight: "40px",
-                  alignContent: "center",
-                  fontSize: "14px",
-                }}
-              >
-                Round {Math.ceil((index + 1) / 10)}
-              </Item>
-            </Grid>
-          )}
-          <Grid item xs={12 / 11} key={row.id}>
+    <>
+      <Box
+        sx={{ display: "flex", justifyContent: "center", marginBottom: "1rem" }}
+      >
+        <label>
+          By Round
+          <Switch checked={useOverallColor} onChange={handleColorSwitch} />
+          Overall
+        </label>
+      </Box>
+      <Grid container spacing={2}>
+        <Grid item xs={12 / 11} key={"blank space"} />
+        {headers.map((row) => (
+          <Grid item xs={12 / 11} key={row}>
             <Item
               sx={{
                 minWidth: "90px",
@@ -137,14 +187,59 @@ const DraftData = ({ draftData, teams }) => {
                 maxHeight: "40px",
                 alignContent: "center",
                 fontSize: "14px",
+                color: "#000",
               }}
             >
-              {row.playerName}
+              {row}
             </Item>
           </Grid>
-        </>
-      ))}
-    </Grid>
+        ))}
+        {newRows.map((row, index) => (
+          <>
+            {index % 10 === 0 && (
+              <Grid item xs={12 / 11} key={index}>
+                <Item
+                  sx={{
+                    minWidth: "90px",
+                    maxWidth: "90px",
+                    minHeight: "60px",
+                    maxHeight: "60px",
+                    alignContent: "center",
+                    fontSize: "14px",
+                    color: "#000",
+                  }}
+                >
+                  Round {Math.ceil((index + 1) / 10)}
+                </Item>
+              </Grid>
+            )}
+            <Grid item xs={12 / 11} key={row.playerName}>
+              <Item
+                sx={{
+                  minWidth: "90px",
+                  maxWidth: "90px",
+                  minHeight: "60px",
+                  maxHeight: "60px",
+                  alignContent: "center",
+                  fontSize: "14px",
+                  backgroundColor: useOverallColor
+                    ? extendedColorScale[
+                        overallRanking.indexOf(row.totalPoints)
+                      ]
+                    : colorScale[row.roundRanking],
+                  color: "#000",
+                  fontWeight: "bold",
+                }}
+              >
+                {row.playerName}
+                <br />
+                {row.totalPoints}
+              </Item>
+            </Grid>
+          </>
+        ))}
+      </Grid>
+    </>
   );
 };
 

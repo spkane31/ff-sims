@@ -12,6 +12,8 @@ const TitleComponent = ({ children }) => {
         fontSize: "4rem",
         textAlign: "center",
         color: "primary.main",
+        paddingBottom: "15px",
+        paddingTop: "15px",
       }}
     >
       {children}

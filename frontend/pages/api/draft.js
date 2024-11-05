@@ -6,6 +6,7 @@ SELECT
   round,
   pick,
   player_name,
+  player_position,
   player_id,
   draft_selections.owner_espn_id AS team_id,
   teams.owner AS owner
@@ -44,6 +45,7 @@ export default async function draft(req, res) {
         pick: parseInt(row.pick),
         player_name: row.player_name,
         player_id: parseInt(row.player_id),
+        player_position: row.player_position,
         team_id: parseInt(row.team_id),
         total_points: parseFloat(
           playerPoints.rows.find(
