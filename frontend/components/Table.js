@@ -65,7 +65,6 @@ const columns = [
 ];
 
 export default function DenseTable({ data }) {
-  console.log(data);
   if (data === null || data === undefined) {
     return;
   }

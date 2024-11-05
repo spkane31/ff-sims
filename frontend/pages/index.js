@@ -1,9 +1,9 @@
 import React from "react";
 import Head from "next/head";
-import { Box, Typography } from "@mui/material";
-import Table from "../components/Table";
+import { Box } from "@mui/material";
 import TitleComponent from "../components/TitleComponent";
 import ExpectedWins from "../simulation/expectedWins";
+import EnhancedTable from "../ui/components/SortableTable";
 
 const paddingAmount = "15px";
 
@@ -25,6 +25,8 @@ export default function Home() {
           return {
             ...team,
             expectedWins: xWins.find((x) => x.id === team.id).wins,
+            diff: team.wins - xWins.find((x) => x.id === team.id).wins,
+            percentage: team.wins / (team.wins + team.losses),
           };
         })
         .sort((a, b) => {
@@ -43,7 +45,9 @@ export default function Home() {
         .map((team) => {
           return {
             ...team,
-            expectedWins: xWins.find((x) => x.id === team.id).wins.toFixed(2),
+            expectedWins: xWins.find((x) => x.id === team.id).wins,
+            diff: team.wins - xWins.find((x) => x.id === team.id).wins,
+            percentage: team.wins / (team.wins + team.losses),
           };
         })
         .sort((a, b) => {
@@ -104,6 +108,8 @@ export default function Home() {
     fetchData();
   }, []);
 
+  console.log("currentWithXWins", currentWithXWins);
+
   return (
     <>
       <Box
@@ -113,14 +119,21 @@ export default function Home() {
       />
       <Head>The League FF</Head>
       <TitleComponent>The League</TitleComponent>
-      <Typography variant="h6">Current Standings</Typography>
-      <Box sx={{ padding: paddingAmount }} />
-      <Table data={currentWithXWins} />
-      <Box sx={{ padding: paddingAmount }} />
-      <Typography variant="h6">All Time Standings</Typography>
-      <Box sx={{ padding: paddingAmount }} />
-      <Table data={allTimeWithXWins} />
-      <Box sx={{ padding: paddingAmount }} />
+      {currentWithXWins && currentWithXWins.length > 0 && (
+        <EnhancedTable
+          rows={currentWithXWins}
+          title="Current Standings"
+          defaultSort="wins"
+        />
+      )}
+      {allTimeWithXWins && allTimeWithXWins.length > 0 && (
+        <EnhancedTable
+          rows={allTimeWithXWins}
+          title="All Time Standings"
+          defaultSort="wins"
+        />
+      )}
+      {/* <Box sx={{ padding: paddingAmount }} /> */}
     </>
   );
 }
