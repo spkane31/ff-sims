@@ -16,35 +16,55 @@ const columns = [
     field: "year",
     headerName: "Year",
     sortable: true,
+    description: "The year of the player's performance",
   },
   {
     field: "player_name",
     headerName: "Player",
     sortable: true,
     width: 200,
+    description: "The name of the player",
   },
   {
     field: "player_position",
     headerName: "Position",
     sortable: true,
+    description: "The position the player plays",
   },
   {
     field: "total_actual_points",
     headerName: "Points",
     type: "number",
     sortable: true,
+    description: "The total actual points scored by the player",
   },
   {
     field: "total_projected_points",
     headerName: "Projected Points",
     type: "number",
     sortable: true,
+    description: "The total projected points for the player",
   },
   {
     field: "diff",
     headerName: "Difference",
     type: "number",
     sortable: true,
+    description: "The difference between actual and projected points",
+  },
+  {
+    field: "position_rank",
+    headerName: "Position Rank",
+    type: "number",
+    sortable: true,
+    description: "The rank of the player within their position",
+  },
+  {
+    field: "vorp",
+    headerName: "VORP",
+    type: "number",
+    sortable: true,
+    description: "Value Over Replacement Player",
   },
 ];
 
@@ -62,6 +82,15 @@ const Data = () => {
     "D/ST",
   ]);
 
+  const vorpByPosition = {
+    QB: 20,
+    RB: 20,
+    WR: 20,
+    TE: 10,
+    K: 10,
+    "D/ST": 10,
+  };
+
   const getURL = (year) => {
     if (year === "All" || year === "") {
       return `/api/boxscoreplayers`;
@@ -78,11 +107,42 @@ const Data = () => {
             return {
               ...player,
               id: index,
+              position_rank:
+                data.data
+                  .filter((p) => p.player_position === player.player_position)
+                  .sort((a, b) => b.total_actual_points - a.total_actual_points)
+                  .findIndex((p) => p.player_name === player.player_name) + 1,
+              vorp: 0,
             };
           })
           .sort((a, b) => b.diff - a.diff);
 
-        setPlayers(dataWithID);
+        const vorpValue = dataWithID.reduce((acc, player) => {
+          const position = player.player_position;
+          if (!acc[position]) {
+            acc[position] = [];
+          }
+          acc[position].push(player.total_actual_points);
+          return acc;
+        }, {});
+
+        Object.keys(vorpValue).forEach((position) => {
+          vorpValue[position].sort((a, b) => b - a);
+        });
+
+        const dataWithVORP = dataWithID
+          .map((player) => {
+            const position = player.player_position;
+            const rank = vorpByPosition[position];
+            const thresholdPoints = vorpValue[position][rank - 1] || 0;
+            return {
+              ...player,
+              vorp: player.total_actual_points - thresholdPoints,
+            };
+          })
+          .sort((a, b) => b.vorp - a.vorp);
+
+        setPlayers(dataWithVORP);
         setPlayersCount(data.count);
       });
   }, []); // TODO seankane: add years after 2024
@@ -112,7 +172,7 @@ const Data = () => {
     .filter((player) => {
       return positions.includes(player.player_position);
     })
-    .sort((a, b) => b.diff - a.diff);
+    .sort((a, b) => b.vorp - a.vorp);
 
   return (
     <Box
@@ -122,9 +182,7 @@ const Data = () => {
       }}
     >
       <Box sx={{ marginTop: "15px" }} />
-      <Typography variant="h4">
-        Player Standings ({playersCount} total)
-      </Typography>
+      <Typography variant="h4">Player Standings</Typography>
 
       <Paper
         sx={{
@@ -135,6 +193,7 @@ const Data = () => {
         <Box
           sx={{
             padding: "10px",
+            marginTop: "15px",
           }}
         >
           <FormControl component="fieldset">
@@ -165,7 +224,6 @@ const Data = () => {
           marginTop: "15px",
         }}
       >
-        <Typography variant="h6">Position:</Typography>
         <Box sx={{ padding: "10px" }}>
           <FormControl component="fieldset">
             <FormGroup aria-label="year" row>

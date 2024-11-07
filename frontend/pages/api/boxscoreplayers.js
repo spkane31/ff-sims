@@ -13,8 +13,7 @@ SELECT
 FROM box_score_players
 WHERE year = $1
 GROUP BY player_id, year, player_name, player_position
-ORDER BY total_actual_points DESC
-LIMIT 250;
+ORDER BY total_actual_points DESC;
 `;
 
 const queryAll = `
@@ -28,8 +27,7 @@ SELECT
   sum(actual_points) - sum(projected_points) AS diff
 FROM box_score_players
 GROUP BY player_id, year, player_name, player_position
-ORDER BY total_actual_points DESC
-LIMIT 250;
+ORDER BY total_actual_points DESC;
 `;
 
 const countQuery = `
