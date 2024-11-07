@@ -51,38 +51,41 @@ const columns = [
 // Create a functional component for the page
 const Data = () => {
   const [players, setPlayers] = React.useState(null);
-  const [year, setYear] = React.useState("All");
-  const [position, setPosition] = React.useState(["QB"]);
+  const [playersCount, setPlayersCount] = React.useState(0);
+  const [years, setYear] = React.useState(["2024"]);
+  const [positions, setPositions] = React.useState([
+    "QB",
+    "RB",
+    "WR",
+    "TE",
+    "K",
+    "D/ST",
+  ]);
 
   const getURL = (year) => {
-    if (year === "All") {
+    if (year === "All" || year === "") {
       return `/api/boxscoreplayers`;
     }
     return `/api/boxscoreplayers?year=${year}`;
   };
 
   React.useEffect(() => {
-    fetch(getURL(year))
+    fetch(getURL(years.join(",")))
       .then((res) => res.json())
       .then((data) => {
-        const dataWithID = data
+        const dataWithID = data.data
           .map((player, index) => {
             return {
               ...player,
               id: index,
-              diff: (
-                player.total_actual_points - player.total_projected_points
-              ).toFixed(2),
             };
           })
           .sort((a, b) => b.diff - a.diff);
 
         setPlayers(dataWithID);
+        setPlayersCount(data.count);
       });
-  }, [year]);
-
-  // TODO 2024.11.06 - Remove hardcoded years and fetch all data
-  const years = ["2024"];
+  }, []); // TODO seankane: add years after 2024
 
   if (players === null) {
     return <div>Loading...</div>;
@@ -90,16 +93,24 @@ const Data = () => {
 
   const handlePositionChange = (event) => {
     if (event.target.checked) {
-      setPosition([...position, event.target.value]);
+      setPositions([...positions, event.target.value]);
     } else {
-      setPosition(position.filter((pos) => pos !== event.target.value));
+      setPositions(positions.filter((pos) => pos !== event.target.value));
     }
-    // setPosition(event.target.value);
+  };
+
+  const handleYearChange = (event) => {
+    // return;
+    if (event.target.checked) {
+      setYear([...years, event.target.value]);
+    } else {
+      setYear(years.filter((yr) => yr !== event.target.value));
+    }
   };
 
   const filteredPlayers = players
     .filter((player) => {
-      return position.includes(player.player_position);
+      return positions.includes(player.player_position);
     })
     .sort((a, b) => b.diff - a.diff);
 
@@ -111,7 +122,9 @@ const Data = () => {
       }}
     >
       <Box sx={{ marginTop: "15px" }} />
-      <Typography variant="h4">Player Standings</Typography>
+      <Typography variant="h4">
+        Player Standings ({playersCount} total)
+      </Typography>
 
       <Paper
         sx={{
@@ -126,11 +139,17 @@ const Data = () => {
         >
           <FormControl component="fieldset">
             <FormGroup aria-label="year" row>
-              {years.map((year) => (
+              {["2024"].map((year) => (
                 <FormControlLabel
                   key={year}
                   value={year}
-                  control={<Checkbox />}
+                  control={
+                    <Checkbox
+                      checked={years.includes(year)}
+                      onChange={handleYearChange}
+                      value="2024"
+                    />
+                  }
                   label={year}
                   labelPlacement="bottom"
                 />
@@ -150,13 +169,13 @@ const Data = () => {
         <Box sx={{ padding: "10px" }}>
           <FormControl component="fieldset">
             <FormGroup aria-label="year" row>
-              {["QB", "RB", "WR", "TE", "K", "DEF"].map((pos) => (
+              {["QB", "RB", "WR", "TE", "K", "D/ST"].map((pos) => (
                 <FormControlLabel
                   key={pos}
-                  value={year}
+                  value={years}
                   control={
                     <Checkbox
-                      checked={position.includes(pos)}
+                      checked={positions.includes(pos)}
                       onChange={handlePositionChange}
                       value={pos}
                     />
