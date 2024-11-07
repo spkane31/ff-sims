@@ -1,6 +1,14 @@
 import React from "react";
-import MenuItem from "@mui/material/MenuItem";
-import { Box, Paper, Typography, FormControl, Select } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Typography,
+  FormControl,
+  FormControlLabel,
+  Checkbox,
+  FormLabel,
+  FormGroup,
+} from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
 const columns = [
@@ -44,6 +52,7 @@ const columns = [
 const Data = () => {
   const [players, setPlayers] = React.useState(null);
   const [year, setYear] = React.useState("All");
+  const [position, setPosition] = React.useState(["QB"]);
 
   const getURL = (year) => {
     if (year === "All") {
@@ -72,21 +81,27 @@ const Data = () => {
       });
   }, [year]);
 
-  const handleChange = (event) => {
-    setYear(event.target.value);
-  };
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from(
-    { length: currentYear - 2017 + 1 },
-    (_, index) => 2017 + index
-  ).reverse();
-
-  years.unshift("All");
+  // TODO 2024.11.06 - Remove hardcoded years and fetch all data
+  const years = ["2024"];
 
   if (players === null) {
     return <div>Loading...</div>;
   }
+
+  const handlePositionChange = (event) => {
+    if (event.target.checked) {
+      setPosition([...position, event.target.value]);
+    } else {
+      setPosition(position.filter((pos) => pos !== event.target.value));
+    }
+    // setPosition(event.target.value);
+  };
+
+  const filteredPlayers = players
+    .filter((player) => {
+      return position.includes(player.player_position);
+    })
+    .sort((a, b) => b.diff - a.diff);
 
   return (
     <Box
@@ -109,20 +124,59 @@ const Data = () => {
             padding: "10px",
           }}
         >
-          <FormControl fullWidth>
-            <Select value={year} onChange={handleChange}>
+          <FormControl component="fieldset">
+            <FormGroup aria-label="year" row>
               {years.map((year) => (
-                <MenuItem key={year} value={year}>
-                  {year}
-                </MenuItem>
+                <FormControlLabel
+                  key={year}
+                  value={year}
+                  control={<Checkbox />}
+                  label={year}
+                  labelPlacement="bottom"
+                />
               ))}
-            </Select>
+            </FormGroup>
+          </FormControl>
+        </Box>
+      </Paper>
+
+      <Paper
+        sx={{
+          padding: "10px",
+          marginTop: "15px",
+        }}
+      >
+        <Typography variant="h6">Position:</Typography>
+        <Box sx={{ padding: "10px" }}>
+          <FormControl component="fieldset">
+            <FormGroup aria-label="year" row>
+              {["QB", "RB", "WR", "TE", "K", "DEF"].map((pos) => (
+                <FormControlLabel
+                  key={pos}
+                  value={year}
+                  control={
+                    <Checkbox
+                      checked={position.includes(pos)}
+                      onChange={handlePositionChange}
+                      value={pos}
+                    />
+                  }
+                  label={pos}
+                  labelPlacement="bottom"
+                />
+              ))}
+            </FormGroup>
           </FormControl>
         </Box>
       </Paper>
 
       <Box sx={{ paddingBottom: "15px" }} />
-      <DataGrid rows={players} columns={columns} rowHeight={40} hideFooter />
+      <DataGrid
+        rows={filteredPlayers}
+        columns={columns}
+        rowHeight={40}
+        hideFooter
+      />
     </Box>
   );
 };
