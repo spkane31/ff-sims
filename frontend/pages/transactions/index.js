@@ -6,15 +6,9 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import TableSortLabel from "@mui/material/TableSortLabel";
-import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
-import IconButton from "@mui/material/IconButton";
-import Tooltip from "@mui/material/Tooltip";
-import FilterListIcon from "@mui/icons-material/FilterList";
-import { visuallyHidden } from "@mui/utils";
-import { DataGrid } from "@mui/x-data-grid";
+import { FormControl, Select, MenuItem } from "@mui/material";
 
 const columns = [
   {
@@ -56,6 +50,9 @@ const columns = [
 // Create a functional component for the page
 const Data = () => {
   const [transactions, setTransactions] = React.useState(null);
+  const [selected, setSelected] = React.useState([]);
+
+  const OPTIONS = ["FA ADDED", "TRADED", "WAIVER ADDED", "DROPPED"];
 
   React.useEffect(() => {
     fetch("/api/transactions")
@@ -77,6 +74,15 @@ const Data = () => {
       <Typography variant="h4" align="center" sx={{ padding: "15px 0" }}>
         Transactions
       </Typography>
+      <FormControl fullWidth>
+        <Select value={selected} onChange={handleChange}>
+          {OPTIONS.map((year) => (
+            <MenuItem key={year} value={year}>
+              {year}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
       <TableContainer component={Paper}>
         <Table aira-labelledby="tableTitle" size="small">
           <TableHead>

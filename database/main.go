@@ -46,17 +46,10 @@ type BoxScorePlayer struct {
 
 type Transaction struct {
 	gorm.Model
-	Date time.Time
-	// Transactions []SingleTransaction
+	Date             time.Time
 	TeamID, PlayerID uint
 	TransactionType  string
 }
-
-// type SingleTransaction struct {
-// 	gorm.Model
-// 	TeamID, PlayerID, TransactionID uint
-// 	TransactionType                 string
-// }
 
 type Request struct {
 	gorm.Model
@@ -94,10 +87,6 @@ func main() {
 		panic(err)
 	}
 
-	// if err := db.Migrator().DropTable(&Transaction{}, &SingleTransaction{}); err != nil {
-	// 	panic(err)
-	// }
-
 	if err := db.AutoMigrate(
 		&Matchup{},
 		&Team{},
@@ -105,7 +94,6 @@ func main() {
 		&BoxScorePlayer{},
 		&Request{},
 		&Transaction{},
-		// &SingleTransaction{},
 	); err != nil {
 		panic(err)
 	}
