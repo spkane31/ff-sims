@@ -12,7 +12,7 @@ FROM transactions t
 JOIN teams ON t.team_id = teams.espn_id
 JOIN box_score_players AS players ON t.player_id = players.player_id
 ORDER BY t.date DESC
-LIMIT 100;
+LIMIT 1000;
 `;
 
 export default async function transactions(req, res) {

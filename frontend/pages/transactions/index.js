@@ -8,7 +8,12 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
-import { FormControl, Select, MenuItem } from "@mui/material";
+import {
+  FormControl,
+  FormGroup,
+  Checkbox,
+  FormControlLabel,
+} from "@mui/material";
 
 const columns = [
   {
@@ -50,7 +55,7 @@ const columns = [
 // Create a functional component for the page
 const Data = () => {
   const [transactions, setTransactions] = React.useState(null);
-  const [selected, setSelected] = React.useState([]);
+  const [options, setOptions] = React.useState(["TRADED"]);
 
   const OPTIONS = ["FA ADDED", "TRADED", "WAIVER ADDED", "DROPPED"];
 
@@ -65,24 +70,47 @@ const Data = () => {
       });
   }, []);
 
+  const handlePositionChange = (event) => {
+    if (event.target.checked) {
+      setOptions([...options, event.target.value]);
+    } else {
+      setOptions(options.filter((pos) => pos !== event.target.value));
+    }
+  };
+
   if (transactions === null) {
     return <div>Loading...</div>;
   }
+
+  const filteredTransactions = transactions.filter((transaction) =>
+    options.includes(transaction.transactions[0].transaction_type)
+  );
 
   return (
     <Box sx={{ flexGrow: 1, padding: "15px" }}>
       <Typography variant="h4" align="center" sx={{ padding: "15px 0" }}>
         Transactions
       </Typography>
-      <FormControl fullWidth>
-        <Select value={selected} onChange={handleChange}>
-          {OPTIONS.map((year) => (
-            <MenuItem key={year} value={year}>
-              {year}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+      <Box sx={{ padding: "10px" }} align="center">
+        <FormControl component="fieldset">
+          <FormGroup aria-label="year" row>
+            {["FA ADDED", "TRADED", "WAIVER ADDED", "DROPPED"].map((option) => (
+              <FormControlLabel
+                key={option}
+                control={
+                  <Checkbox
+                    checked={options.includes(option)}
+                    onChange={handlePositionChange}
+                    value={option}
+                  />
+                }
+                label={option}
+                labelPlacement="bottom"
+              />
+            ))}
+          </FormGroup>
+        </FormControl>
+      </Box>
       <TableContainer component={Paper}>
         <Table aira-labelledby="tableTitle" size="small">
           <TableHead>
@@ -94,7 +122,7 @@ const Data = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {transactions.map((row, index) => {
+            {filteredTransactions.map((row, index) => {
               const extraRows = row.transactions
                 .slice(1)
                 .map((transaction, idx) => (
