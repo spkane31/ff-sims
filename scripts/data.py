@@ -359,37 +359,52 @@ def get_all_transactions(league: League, conn: "psycopg2.connection") -> None:
             if len(txs) == 0:
                 conn.commit()
                 return None
+            logging.info(f"Number of transactions: {len(txs)}")
             for tx in txs:
-                logging.info(f"Transaction: {tx}")
                 tx_date = datetime.fromtimestamp(tx.date / 1000)
-                cur.execute(
-                    "INSERT INTO transactions (date) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE date = %s) RETURNING id",
-                    (tx_date, tx_date),
-                )
-                result = cur.fetchone()
-                if result is None:
-                    continue
-                transaction_id = result[0]
-                logging.info(tx_date)
+                # cur.execute(
+                #     "INSERT INTO transactions (date) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE date = %s) RETURNING id",
+                #     (tx_date, tx_date),
+                # )
+                # result = cur.fetchone()
+                # if result is None:
+                #     logging.info("Transaction already exists")
+                #     continue
+                # transaction_id = result[0]
                 for action in tx.actions:
-                    logging.info(f"\tAction: {action}, {len(action)}")
                     team = action[0]
                     transaction_type = action[1]
                     player = action[2]
                     _bid_amount = action[3]  # My league does not use bids so this is always 0
+                    logging.info(f"Team: {team.team_id}\tPlayer: {player.name}\tType: {transaction_type}")
+
                     cur.execute(
-                        "INSERT INTO single_transactions (team_id, player_id, transaction_id, transaction_type) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM single_transactions WHERE team_id = %s AND player_id = %s AND transaction_id = %s AND transaction_type = %s)",
+                        "INSERT INTO transactions (team_id, player_id, transaction_type, date) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
                         (
                             team.team_id,
                             player.playerId,
-                            transaction_id,
                             transaction_type,
+                            tx_date,
                             team.team_id,
                             player.playerId,
-                            transaction_id,
                             transaction_type,
+                            tx_date,
                         ),
                     )
+
+                    # cur.execute(
+                    #     "INSERT INTO single_transactions (team_id, player_id, transaction_id, transaction_type) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM single_transactions WHERE team_id = %s AND player_id = %s AND transaction_id = %s AND transaction_type = %s)",
+                    #     (
+                    #         team.team_id,
+                    #         player.playerId,
+                    #         transaction_id,
+                    #         transaction_type,
+                    #         team.team_id,
+                    #         player.playerId,
+                    #         transaction_id,
+                    #         transaction_type,
+                    #     ),
+                    # )
 
 
 def get_db_counts(conn: "psycopg2.connection") -> None:
