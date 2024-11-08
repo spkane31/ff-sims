@@ -25,6 +25,10 @@ const pages = [
     href: "/schedule",
   },
   {
+    name: "Teams",
+    href: "/teams",
+  },
+  {
     name: "Draft",
     href: "/draft",
   },
@@ -35,6 +39,10 @@ const pages = [
   {
     name: "Players",
     href: "/players",
+  },
+  {
+    name: "Transactions",
+    href: "/transactions",
   },
   {
     name: "Data",
