@@ -13,6 +13,7 @@ import {
   FormGroup,
   Checkbox,
   FormControlLabel,
+  Link,
 } from "@mui/material";
 
 const columns = [
@@ -56,8 +57,6 @@ const columns = [
 const Data = () => {
   const [transactions, setTransactions] = React.useState(null);
   const [options, setOptions] = React.useState(["TRADED"]);
-
-  const OPTIONS = ["FA ADDED", "TRADED", "WAIVER ADDED", "DROPPED"];
 
   React.useEffect(() => {
     fetch("/api/transactions")
@@ -128,7 +127,11 @@ const Data = () => {
                 .map((transaction, idx) => (
                   <TableRow key={`${index}-${idx}`}>
                     <TableCell></TableCell>
-                    <TableCell>{transaction.owner}</TableCell>
+                    <TableCell>
+                      <Link href={`/team/${transaction.owner_id}`}>
+                        {transaction.owner}
+                      </Link>
+                    </TableCell>
                     <TableCell>{transaction.transaction_type}</TableCell>
                     <TableCell>{transaction.player_name}</TableCell>
                   </TableRow>
@@ -137,7 +140,11 @@ const Data = () => {
                 <>
                   <TableRow key={index}>
                     <TableCell>{row.date}</TableCell>
-                    <TableCell>{row.transactions[0].owner}</TableCell>
+                    <TableCell>
+                      <Link href={`/team/${row.transactions[0].owner_id}`}>
+                        {row.transactions[0].owner}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       {row.transactions[0].transaction_type}
                     </TableCell>

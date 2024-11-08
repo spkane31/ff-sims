@@ -7,6 +7,7 @@ SELECT DISTINCT
   t.id AS id,
   t.transaction_type AS transaction_type,
   teams.owner AS owner,
+  teams.espn_id AS team_id,
   players.player_name AS player_name
 FROM transactions t
 JOIN teams ON t.team_id = teams.espn_id
@@ -31,6 +32,7 @@ export default async function transactions(req, res) {
             {
               transaction_type: tx.transaction_type,
               owner: tx.owner,
+              owner_id: parseInt(tx.team_id),
               player_name: tx.player_name,
             },
           ],
@@ -39,6 +41,7 @@ export default async function transactions(req, res) {
         txs[tx.date].transactions.push({
           transaction_type: tx.transaction_type,
           owner: tx.owner,
+          owner_id: parseInt(tx.team_id),
           player_name: tx.player_name,
         });
       }
