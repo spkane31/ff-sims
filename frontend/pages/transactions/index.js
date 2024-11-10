@@ -128,7 +128,7 @@ const Data = () => {
                   <TableRow key={`${index}-${idx}`}>
                     <TableCell></TableCell>
                     <TableCell>
-                      <Link href={`/team/${transaction.owner_id}`}>
+                      <Link href={`/teams/${transaction.owner_id}`}>
                         {transaction.owner}
                       </Link>
                     </TableCell>
@@ -141,7 +141,7 @@ const Data = () => {
                   <TableRow key={index}>
                     <TableCell>{row.date}</TableCell>
                     <TableCell>
-                      <Link href={`/team/${row.transactions[0].owner_id}`}>
+                      <Link href={`/teams/${row.transactions[0].owner_id}`}>
                         {row.transactions[0].owner}
                       </Link>
                     </TableCell>
