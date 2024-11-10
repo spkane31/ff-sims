@@ -120,7 +120,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
     for team in league.teams:
         upsert_team(conn, team.team_id, " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]]))
 
-    print(f"Creating matchups based on {league.year}")
+    logging.info(f"Creating matchups based on {league.year}")
     for week in range(1, 15):
         for matchup in league.scoreboard(week=week):
             if matchup.matchup_type != "NONE":
@@ -140,7 +140,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
             )
 
     for week in range(1, 15):
-        print(f"Year: {league.year}\tWeek: {week}")
+        logging.info(f"Year: {league.year}\tWeek: {week}")
         if week > league.current_week and datetime.now().year == league.year:
             break
         if league.year < 2019:
@@ -338,11 +338,11 @@ def get_all_players(league: League, conn: "psycopg2.connection") -> None:
                             ),
                         )
                         conn.commit()
-                        print(f"\tinserted week {week}")
+                        logging.info(f"\tinserted week {week}")
 
                         break
             except Exception as e:
-                print(f"\tError: {e}")
+                logging.error(f"\tError: {e}")
                 continue
 
     return None
@@ -448,4 +448,4 @@ if __name__ == "__main__":
     get_all_players(league, conn)
     get_all_transactions(league, conn)
 
-    print(f"Completed in {round(time.time() - start, 2)} seconds")
+    logging.info(f"Completed in {round(time.time() - start, 2)} seconds")
