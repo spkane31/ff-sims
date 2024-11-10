@@ -1,5 +1,4 @@
 import argparse
-from calendar import c
 import logging
 import os
 import time
