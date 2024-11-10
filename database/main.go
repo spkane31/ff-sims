@@ -44,6 +44,13 @@ type BoxScorePlayer struct {
 	ProjectedPoints, ActualPoints float64
 }
 
+type Transaction struct {
+	gorm.Model
+	Date             time.Time
+	TeamID, PlayerID uint
+	TransactionType  string
+}
+
 type Request struct {
 	gorm.Model
 	Endpoint, Method, Body string
@@ -86,6 +93,7 @@ func main() {
 		&DraftSelection{},
 		&BoxScorePlayer{},
 		&Request{},
+		&Transaction{},
 	); err != nil {
 		panic(err)
 	}

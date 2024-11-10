@@ -3,6 +3,7 @@ import MyToolbar from "../components/Toolbar";
 import Footer from "../components/Footer";
 import { ThemeProvider, Box } from "@mui/material";
 import theme from "../components/theme";
+import "./global.css";
 
 function MyApp({ Component, pageProps }) {
   // Log the frontend request

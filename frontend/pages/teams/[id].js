@@ -29,7 +29,7 @@ export default function Team() {
       return;
     }
     async function fetchData() {
-      const response = await fetch("/api/team/" + router.query.id);
+      const response = await fetch("/api/teams/" + router.query.id);
       const data = await response.json();
       setData(data);
     }
@@ -257,7 +257,7 @@ const ByTeam = ({ data }) => {
                 }}
               >
                 <TableCell>
-                  <Link href={`/team/${opponent.opponent_id}`}>
+                  <Link href={`/teams/${opponent.opponent_id}`}>
                     {opponent.opponent_owner}
                   </Link>
                 </TableCell>

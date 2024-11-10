@@ -12,6 +12,12 @@ import psycopg2
 
 load_dotenv(find_dotenv())
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 
 def upsert_team(conn: "psycopg2.connection", espn_id: int, owner: str) -> None:
     with conn.cursor() as cur:
@@ -114,7 +120,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
     for team in league.teams:
         upsert_team(conn, team.team_id, " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]]))
 
-    print(f"Creating matchups based on {league.year}")
+    logging.info(f"Creating matchups based on {league.year}")
     for week in range(1, 15):
         for matchup in league.scoreboard(week=week):
             if matchup.matchup_type != "NONE":
@@ -134,7 +140,7 @@ def get_schedule(league: League, conn: "psycopg2.connection") -> None:
             )
 
     for week in range(1, 15):
-        print(f"Year: {league.year}\tWeek: {week}")
+        logging.info(f"Year: {league.year}\tWeek: {week}")
         if week > league.current_week and datetime.now().year == league.year:
             break
         if league.year < 2019:
@@ -292,27 +298,117 @@ def get_simple_draft(league: League, conn: "psycopg2.connection") -> None:
     return None
 
 
+def get_all_players(league: League, conn: "psycopg2.connection") -> None:
+    """get_all_players will get the scores for all players from a given year"""
+
+    # Query all players
+    with conn.cursor() as cur:
+        cur.execute("SELECT player_id FROM box_score_players WHERE year = %s", (league.year,))
+        all_players = cur.fetchall()
+        logging.info(f"Number of players: {len(all_players)}")
+
+        for player in all_players:
+            try:
+                player_info = league.player_info(playerId=player[0])
+
+                logging.info(f"Player: {player_info.name}")
+
+                cur.execute(
+                    "SELECT week FROM box_score_players WHERE player_id = %s AND year = %s",
+                    (player[0], league.year),
+                )
+                weeks = cur.fetchall()
+                set_of_weeks = set([week[0] for week in weeks])
+
+                for week, stats in player_info.stats.items():
+                    if week not in set_of_weeks and week != 0:
+                        cur.execute(
+                            "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, week, year) SELECT %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
+                            (
+                                player_info.name,
+                                player_info.playerId,
+                                stats.get("projected_points", 0),
+                                stats.get("actual_points", 0),
+                                player_info.position,
+                                week,
+                                league.year,
+                                player_info.playerId,
+                                week,
+                                league.year,
+                            ),
+                        )
+                        conn.commit()
+                        logging.info(f"\tinserted week {week}")
+
+                        break
+            except Exception as e:
+                logging.error(f"\tError: {e}")
+                continue
+
+    return None
+
+
+def get_all_transactions(league: League, conn: "psycopg2.connection") -> None:
+    offset = 0
+    with conn.cursor() as cur:
+        while True:
+            logging.info(f"Offset: {offset}")
+            txs = league.recent_activity(offset=offset)
+            offset += 25
+            if len(txs) == 0:
+                conn.commit()
+                return None
+            logging.info(f"Number of transactions: {len(txs)}")
+            for tx in txs:
+                tx_date = datetime.fromtimestamp(tx.date / 1000)
+                for action in tx.actions:
+                    team = action[0]
+                    transaction_type = action[1]
+                    player = action[2]
+                    _bid_amount = action[3]  # My league does not use bids so this is always 0
+                    logging.info(f"Team: {team.team_id}\tPlayer: {player.name}\tType: {transaction_type}")
+
+                    cur.execute(
+                        "INSERT INTO transactions (team_id, player_id, transaction_type, date) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
+                        (
+                            team.team_id,
+                            player.playerId,
+                            transaction_type,
+                            tx_date,
+                            team.team_id,
+                            player.playerId,
+                            transaction_type,
+                            tx_date,
+                        ),
+                    )
+
+
 def get_db_counts(conn: "psycopg2.connection") -> None:
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM teams")
         res = cur.fetchall()
         conn.commit()
-        print(f"Number of teams: {res[0][0]}")
+        logging.info(f"Number of teams: {res[0][0]}")
 
         cur.execute("SELECT year, count(*) FROM matchups GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
-        print(f"Matchups: {res}")
+        logging.info(f"Matchups: {res}")
 
         cur.execute("SELECT year, count(*) FROM draft_selections GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
-        print(f"Drafts: {res}")
+        logging.info(f"Drafts: {res}")
 
         cur.execute("SELECT year, count(*) FROM box_score_players GROUP BY year ORDER BY year DESC")
         res = cur.fetchall()
         conn.commit()
-        print(f"Box Score Players: {res}")
+        logging.info(f"Box Score Players: {res}")
+
+        cur.execute("SELECT count(*) FROM transactions")
+        res = cur.fetchall()
+        conn.commit()
+        logging.info(f"Transactions: {res}")
 
         cur.close()
 
@@ -341,7 +437,7 @@ if __name__ == "__main__":
 
     # This was done manually but have to iterate through each year to load data
     league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
-    print(f"Year: {league.year}\tCurrent Week: {league.current_week}")
+    logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
     conn = psycopg2.connect(DATABASE_URL)
 
@@ -349,5 +445,7 @@ if __name__ == "__main__":
 
     get_schedule(league, conn)
     get_simple_draft(league, conn)
+    get_all_players(league, conn)
+    get_all_transactions(league, conn)
 
-    print(f"Completed in {round(time.time() - start, 2)} seconds")
+    logging.info(f"Completed in {round(time.time() - start, 2)} seconds")

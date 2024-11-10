@@ -14,7 +14,7 @@ const columns = [
     minWidth: 100,
     flex: 1,
     renderCell: (param) => (
-      <Link href={`/team/${param.row.id}`}>{`${param.row.owner}`}</Link>
+      <Link href={`/teams/${param.row.id}`}>{`${param.row.owner}`}</Link>
     ),
   },
   {

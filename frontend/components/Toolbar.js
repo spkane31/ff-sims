@@ -11,6 +11,45 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 
+const pages = [
+  {
+    name: "Home",
+    href: "/",
+  },
+  {
+    name: "Simulations",
+    href: "/simulations",
+  },
+  {
+    name: "Schedule",
+    href: "/schedule",
+  },
+  {
+    name: "Teams",
+    href: "/teams",
+  },
+  {
+    name: "Draft",
+    href: "/draft",
+  },
+  {
+    name: "Draft Board",
+    href: "/draft-grid",
+  },
+  {
+    name: "Players",
+    href: "/players",
+  },
+  {
+    name: "Transactions",
+    href: "/transactions",
+  },
+  {
+    name: "Data",
+    href: "/data",
+  },
+];
+
 const MyToolbar = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const theme = useTheme();
@@ -59,47 +98,16 @@ const MyToolbar = () => {
                 },
               }}
             >
-              <MenuItem onClick={handleMenuClose} component={Link} href="/">
-                Home
-              </MenuItem>
-              <MenuItem
-                onClick={handleMenuClose}
-                component={Link}
-                href="/simulations"
-              >
-                Simulations
-              </MenuItem>
-              <MenuItem
-                onClick={handleMenuClose}
-                component={Link}
-                href="/schedule"
-              >
-                Schedule
-              </MenuItem>
-              <MenuItem
-                onClick={handleMenuClose}
-                component={Link}
-                href="/draft"
-              >
-                Draft
-              </MenuItem>
-              <MenuItem
-                onClick={handleMenuClose}
-                component={Link}
-                href="/draft-grid"
-              >
-                Draft Board
-              </MenuItem>
-              <MenuItem
-                onClick={handleMenuClose}
-                component={Link}
-                href="/players"
-              >
-                Players
-              </MenuItem>
-              <MenuItem onClick={handleMenuClose} component={Link} href="/data">
-                Data
-              </MenuItem>
+              {pages.map((page) => (
+                <MenuItem
+                  key={page.name}
+                  onClick={handleMenuClose}
+                  component={Link}
+                  href={page.href}
+                >
+                  {page.name}
+                </MenuItem>
+              ))}
             </Menu>
           </>
         ) : (
@@ -117,76 +125,19 @@ const MyToolbar = () => {
               The League
             </Link>
             <div style={{ display: "flex" }}>
-              <Link
-                href="/"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Home
-              </Link>
-              <Link
-                href="/simulations"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Simulations
-              </Link>
-              <Link
-                href="/schedule"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Schedule
-              </Link>
-              <Link
-                href="/draft"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Draft
-              </Link>
-              <Link
-                href="/draft-grid"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Draft Board
-              </Link>
-              <Link
-                href="/players"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Players
-              </Link>
-              <Link
-                href="/data"
-                style={{
-                  textDecoration: "none",
-                  color: "white",
-                  margin: "0 10px",
-                }}
-              >
-                Data
-              </Link>
+              {pages.map((page) => (
+                <Link
+                  key={page.name}
+                  href={page.href}
+                  style={{
+                    textDecoration: "none",
+                    color: "white",
+                    margin: "0 10px",
+                  }}
+                >
+                  {page.name}
+                </Link>
+              ))}
             </div>
           </>
         )}
