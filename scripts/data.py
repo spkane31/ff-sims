@@ -361,15 +361,6 @@ def get_all_transactions(league: League, conn: "psycopg2.connection") -> None:
             logging.info(f"Number of transactions: {len(txs)}")
             for tx in txs:
                 tx_date = datetime.fromtimestamp(tx.date / 1000)
-                # cur.execute(
-                #     "INSERT INTO transactions (date) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE date = %s) RETURNING id",
-                #     (tx_date, tx_date),
-                # )
-                # result = cur.fetchone()
-                # if result is None:
-                #     logging.info("Transaction already exists")
-                #     continue
-                # transaction_id = result[0]
                 for action in tx.actions:
                     team = action[0]
                     transaction_type = action[1]
@@ -390,20 +381,6 @@ def get_all_transactions(league: League, conn: "psycopg2.connection") -> None:
                             tx_date,
                         ),
                     )
-
-                    # cur.execute(
-                    #     "INSERT INTO single_transactions (team_id, player_id, transaction_id, transaction_type) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM single_transactions WHERE team_id = %s AND player_id = %s AND transaction_id = %s AND transaction_type = %s)",
-                    #     (
-                    #         team.team_id,
-                    #         player.playerId,
-                    #         transaction_id,
-                    #         transaction_type,
-                    #         team.team_id,
-                    #         player.playerId,
-                    #         transaction_id,
-                    #         transaction_type,
-                    #     ),
-                    # )
 
 
 def get_db_counts(conn: "psycopg2.connection") -> None:
@@ -466,9 +443,9 @@ if __name__ == "__main__":
 
     get_db_counts(conn)
 
-    # get_schedule(league, conn)
-    # get_simple_draft(league, conn)
-    # get_all_players(league, conn)
+    get_schedule(league, conn)
+    get_simple_draft(league, conn)
+    get_all_players(league, conn)
     get_all_transactions(league, conn)
 
     print(f"Completed in {round(time.time() - start, 2)} seconds")
