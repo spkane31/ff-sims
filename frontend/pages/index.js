@@ -21,6 +21,7 @@ import {
   alpha,
   getContrastRatio,
 } from "@mui/material/styles";
+import Simulator from "../simulation/simulator";
 
 export default function Home() {
   const [historicalData, setHistoricalData] = React.useState([]);
@@ -188,19 +189,38 @@ export default function Home() {
 }
 
 function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
-  const [variant, setVariant] = React.useState("contained");
+  const [simulator, setSimulator] = React.useState(null);
+  const [teamData, setTeamData] = React.useState(null);
+  const [teamStats, setTeamStats] = React.useState(null);
+  const [schedule, setSchedule] = React.useState(null);
+
+  React.useEffect(() => {
+    if (teamStats !== null && schedule !== null) {
+      setSimulator(new Simulator(teamStats, schedule));
+    }
+  }, [teamStats, schedule]);
+
+  React.useEffect(() => {
+    fetch("/api/teams")
+      .then((res) => res.json())
+      .then((data) => {
+        setTeamStats(data);
+      });
+  }, []);
+
+  React.useEffect(() => {
+    fetch("/api/schedule")
+      .then((res) => res.json())
+      .then((data) => {
+        setSchedule(data);
+      });
+  }, []);
 
   const teams = [];
   remainingGames[0].forEach((game) => {
     teams.push({ name: game.home_team_owner, id: game.home_team_espn_id });
     teams.push({ name: game.away_team_owner, id: game.away_team_espn_id });
   });
-
-  const handleButtonClick = () => {
-    setVariant((prevVariant) =>
-      prevVariant === "contained" ? "outlined" : "contained"
-    );
-  };
 
   const getOpponent = (teamId, index) => {
     let oppName = "";
@@ -233,8 +253,62 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
     return "NOT FOUND";
   };
 
+  const getOpponentId = (teamId, index) => {
+    for (let i = 0; i < remainingGames[index].length; i++) {
+      if (remainingGames[index][i].home_team_espn_id === teamId) {
+        return remainingGames[index][i].away_team_espn_id;
+      } else if (remainingGames[index][i].away_team_espn_id === teamId) {
+        return remainingGames[index][i].home_team_espn_id;
+      }
+    }
+    return -1;
+  };
+
+  const [cellColors, setCellColors] = React.useState(
+    Array(teams.length).fill(Array(remainingGames.length).fill("none"))
+  );
+
+  const handleCellClick = (teamId, weekIndex) => {
+    const opponentId = getOpponentId(teamId, weekIndex);
+    setCellColors((prevColors) => {
+      const withTeamIdColors = prevColors.map((row, i) =>
+        row.map((color, j) => {
+          if (teams[i].id === teamId && j === weekIndex) {
+            if (color === "none") return "lightgreen";
+            if (color === "lightgreen") return "red";
+            return "none";
+          }
+          return color;
+        })
+      );
+      const finalizedColors = withTeamIdColors.map((row, i) =>
+        row.map((color, j) => {
+          if (teams[i].id === opponentId && j === weekIndex) {
+            if (color === "none") return "red";
+            if (color === "red") return "lightgreen";
+            return "none";
+          }
+          return color;
+        })
+      );
+      return finalizedColors;
+    });
+  };
+
+  if (simulator === null) {
+    return <div>Loading...</div>;
+  }
+
   return (
-    <Box>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "15px",
+      }}
+    >
       <Typography
         variant="h5"
         sx={{ paddingTop: "15px", paddingBottom: "15px" }}
@@ -242,41 +316,69 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
         Choose Your Destiny
       </Typography>
       <Typography
-        variant="p"
+        variant="body1"
         sx={{ paddingTop: "15px", paddingBottom: "15px" }}
       >
         There are {remainingGames.length} week
         {remainingGames.length > 1 ? "s" : ""} to be played. Here are the
         matchups that will determine the final standings.
       </Typography>
+      <Button
+        onClick={() => {
+          const start = new Date().getTime();
+          for (let i = 0; i < 50000; i++) {
+            simulator.step();
+          }
+          const end = new Date().getTime();
+          setTeamData(simulator.getTeamScoringData());
+        }}
+        variant="contained"
+        sx={{ marginRight: "10px" }}
+      >
+        Start
+      </Button>
       <TableContainer sx={{ paddingTop: "15px", paddingBottom: "15px" }}>
         <Table size="small">
           <TableHead>
             <TableRow>
               <TableCell align="right" />
+              <TableCell align="right">Playoffs</TableCell>
+              <TableCell align="right">Last Place</TableCell>
               {Array.from({ length: remainingGames.length }, (_, index) => (
                 <TableCell key={index} align="right">
                   Week {currentWeek + index - remainingGames.length + 1}
                 </TableCell>
               ))}
-              <TableCell align="right">Playoffs</TableCell>
-              <TableCell align="right">Last Place</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {teams.map((team, index) => (
-              <TableRow key={index}>
+            {teams.map((team, teamIndex) => (
+              <TableRow key={teamIndex}>
                 <TableCell align="right">{team.name}</TableCell>
-                {remainingGames.map((week) => {
-                  console.log(week);
-                })}
-                {Array.from({ length: 5 }, (_, index) => (
-                  <TableCell key={index} align="right">
-                    <SwapButton text={`vs ${getOpponent(team.id, index)}`} />
+                <TableCell align="right">
+                  {(
+                    simulator.getPlayoffOdds({ teamId: team.id }) * 100
+                  ).toFixed(2)}
+                  %
+                </TableCell>
+                <TableCell align="right">
+                  {(
+                    simulator.getLastPlaceOdds({ teamId: team.id }) * 100
+                  ).toFixed(2)}
+                  %
+                </TableCell>
+                {remainingGames.map((week, weekIndex) => (
+                  <TableCell
+                    key={weekIndex}
+                    align="right"
+                    sx={{ backgroundColor: cellColors[teamIndex][weekIndex] }}
+                    onClick={() => {
+                      handleCellClick(team.id, weekIndex);
+                    }}
+                  >
+                    {getOpponent(team.id, weekIndex)}
                   </TableCell>
                 ))}
-                <TableCell align="right">Playoffs</TableCell>
-                <TableCell align="right">Last Place</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -285,66 +387,3 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
     </Box>
   );
 }
-
-function SwapButton({ text }) {
-  // const [color, setColor] = React.useState("white");
-  // const [textColor, setTextColor] = React.useState("black");
-  const [buttonState, setButtonState] = React.useState(0);
-  const [theme, setTheme] = React.useState(neutralTheme);
-
-  // const colors = ["white", "green", "red"];
-  // const textColors = ["black", "white", "white"];
-  const themes = [neutralTheme, winTheme, loseTheme];
-
-  const handleButtonClick = () => {
-    // setColor(colors[buttonState]);
-    // setTextColor(textColors[buttonState]);
-    setButtonState((prevState) => (prevState + 1) % themes.length);
-    setTheme(themes[buttonState]);
-  };
-
-  return (
-    <ThemeProvider theme={theme}>
-      <Button
-        // style={{ backgroundColor: color, color: textColor }}
-        onClick={handleButtonClick}
-        variant="contained"
-      >
-        {text}
-      </Button>
-    </ThemeProvider>
-  );
-}
-const greenBase = "#00FF00";
-const greenMain = alpha(greenBase, 0.7);
-const winTheme = createTheme({
-  palette: {
-    green: {
-      main: greenMain,
-      light: alpha(greenBase, 0.5),
-      dark: alpha(greenBase, 0.9),
-      contrastText: getContrastRatio(greenMain, "#fff") > 4.5 ? "#fff" : "#111",
-    },
-  },
-});
-
-const redBase = "#FF0000";
-const redMain = alpha(redBase, 0.7);
-const loseTheme = createTheme({
-  palette: {
-    red: {
-      main: redMain,
-      light: alpha(redBase, 0.5),
-      dark: alpha(redBase, 0.9),
-      contrastText: getContrastRatio(redMain, "#fff") > 4.5 ? "#fff" : "#111",
-    },
-  },
-});
-
-const neutralTheme = createTheme({
-  palette: {
-    common: {
-      white: "#FFFFFF",
-    },
-  },
-});

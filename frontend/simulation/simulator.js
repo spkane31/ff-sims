@@ -35,7 +35,6 @@ class Simulator {
         this.results.set(value.id, new Results());
       }
     });
-    // leagueStats is a {average: float, std_dev: float} object
 
     this.idToOwner = new Map();
     Object.entries(teamAvgs).forEach(([_key, value]) => {
@@ -118,6 +117,22 @@ class Simulator {
 
   getTeamStats(teamID) {
     return this.teamStats.get(teamID);
+  }
+
+  getPlayoffOdds({ teamId }) {
+    const teamResults = this.results.get(teamId);
+    if (this.simulations === 0) {
+      return 0;
+    }
+    return teamResults.madePlayoffs / this.simulations;
+  }
+
+  getLastPlaceOdds({ teamId }) {
+    const teamResults = this.results.get(teamId);
+    if (this.simulations === 0) {
+      return 0;
+    }
+    return teamResults.lastPlace / this.simulations;
   }
 
   step() {
