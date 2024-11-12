@@ -325,11 +325,9 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
       </Typography>
       <Button
         onClick={() => {
-          const start = new Date().getTime();
           for (let i = 0; i < 50000; i++) {
             simulator.step();
           }
-          const end = new Date().getTime();
           setTeamData(simulator.getTeamScoringData());
         }}
         variant="contained"
