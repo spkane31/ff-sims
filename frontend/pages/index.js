@@ -22,6 +22,7 @@ import {
   getContrastRatio,
 } from "@mui/material/styles";
 import Simulator from "../simulation/simulator";
+import SimulatorV2 from "../simulation/simulatorV2";
 
 export default function Home() {
   const [historicalData, setHistoricalData] = React.useState([]);
