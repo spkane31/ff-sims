@@ -7,7 +7,8 @@ import {
   SimulationResult,
   filterMatches,
 } from "../simulation/simulatorv2";
-import { getSchedule, getTeams } from "../db/dbts";
+// TODO seankane: hard code a real-ish schedule so that this can be tested consistently
+import { getSchedule } from "../db/dbts";
 
 describe("TeamStats", () => {
   it("should be calculated properly", () => {
@@ -52,7 +53,6 @@ describe("SimulatorV2", () => {
 
   beforeEach(async () => {
     const year = 2024;
-    // const teamStats = await getTeams(year);
     const schedule = await getSchedule(year);
 
     let games: Game[] = [];
@@ -190,86 +190,59 @@ describe("SimulatorV2", () => {
     simulator.removeFilter(3, loser);
     expect(simulator.filteredResults.length).toBe(filteredFirst);
   });
-});
 
-/*
-describe("Simulator", () => {
-  let simulator: SimulatorV2;
+  it("should handle real data", () => {
+    simulator.simulate();
+    expect(simulator.simulationResults.length).toBe(1000);
+    expect(simulator.filteredResults.length).toBe(1000);
 
-  beforeEach(async () => {
-    // get the teamAvgs data
-    const year = 2023;
-    const teamStats = await getTeams(year);
-    const schedule = await getSchedule(year);
+    let week = 0;
+    let winnerId = 0;
+    for (let i = 0; i < simulator.simulationResults[0].games.length; i++) {
+      if (!simulator.simulationResults[0].games[i].completed) {
+        continue;
+      }
 
-    simulator = new Simulator(teamStats, schedule);
+      week = simulator.simulationResults[0].games[i].week;
+      winnerId = simulator.simulationResults[0].games[i].home_team_id;
+      simulator.addFilter(week, winnerId);
+
+      break;
+    }
+
+    expect(simulator.filteredResults.length).toBeLessThan(1000);
+
+    simulator.removeFilter(week, winnerId);
+
+    expect(simulator.filteredResults.length).toBe(1000);
+
+    // Validate that all teams have a greater than 0 chance of making the playoffs
+    const teams = new Set<number>();
+    simulator.filteredResults.forEach((result) => {
+      result.games.forEach((game) => {
+        if (game.completed) {
+          teams.add(game.home_team_id);
+          teams.add(game.away_team_id);
+        }
+      });
+    });
+
+    expect(teams.size).toBe(10);
+
+    let totalLastPlace = 0;
+    let totalPlayoffs = 0;
+    teams.forEach((team) => {
+      const odds = simulator.playoffOdds(team);
+      expect(odds).toBeGreaterThanOrEqual(0);
+      expect(odds).toBeLessThanOrEqual(1);
+      totalPlayoffs += odds;
+
+      const lastPlaceOdds = simulator.lastPlaceOdds(team);
+      expect(lastPlaceOdds).toBeGreaterThanOrEqual(0);
+      expect(lastPlaceOdds).toBeLessThanOrEqual(1);
+      totalLastPlace += lastPlaceOdds;
+    });
+    expect(totalLastPlace).toBe(1);
+    expect(totalPlayoffs).toBe(6);
   });
-
-  it("should be properly initialized", async () => {
-    expect(simulator.schedule).toBeDefined();
-    expect(simulator.schedule.length).toBe(14);
-    expect(simulator.results).toBeDefined();
-    expect(simulator.results.size).toBe(10);
-    expect(simulator.leagueStats).toBeDefined();
-    expect(simulator.teamStats.size).toBe(10);
-    expect(simulator.simulations).toBe(0);
-    expect(simulator.getResults()).toBeDefined();
-    expect(simulator.getTeamResults(1)).toBeDefined();
-    expect(simulator.getTeamStats(1)).toBeDefined();
-    expect(simulator.weeks).toBe(14);
-    expect(simulator.weeksCompleted).toBe(1);
-  });
-
-  // it("should increment the wins count for the specified team", async () => {
-  //   const teamId = 1;
-
-  //   simulator.teamWin(teamId);
-
-  //   expect(simulator.results.get(teamId).wins).toBe(1);
-  // });
-
-  // it("should not increment the wins count for other teams", async () => {
-  //   const teamId = 1;
-  //   const otherTeamId = 5;
-
-  //   simulator.teamWin(teamId);
-  //   simulator.teamWin(otherTeamId);
-
-  //   expect(simulator.results.get(teamId).wins).toBe(1);
-  //   expect(simulator.results.get(otherTeamId).wins).toBe(1);
-  // });
-
-  // it("should increase each teams points and games for each step", async () => {
-  //   simulator.step();
-
-  //   const teams = simulator.getTeamIDs();
-  //   expect(teams.length).toBe(10);
-
-  //   teams.forEach((team) => {
-  //     const teamResults = simulator.getTeamResults(team);
-  //     expect(teamResults.pointsFor).toBeGreaterThan(0);
-  //     expect(teamResults.pointsAgainst).toBeGreaterThan(0);
-  //     expect(teamResults.wins + teamResults.losses).toBe(14);
-  //   });
-  // });
-
-  // it("should increase each teams points and games for each step, two steps", async () => {
-  //   simulator.step();
-  //   simulator.step();
-
-  //   const teams = simulator.getTeamIDs();
-  //   expect(teams.length).toBe(10);
-
-  //   teams.forEach((teamID) => {
-  //     const teamResults = simulator.getTeamResults(teamID);
-  //     expect(teamResults.pointsFor).toBeGreaterThan(0);
-  //     expect(teamResults.pointsAgainst).toBeGreaterThan(0);
-  //     expect(teamResults.wins + teamResults.losses).toBe(28);
-  //   });
-
-  //   const scoringData = simulator.getTeamScoringData();
-  //   expect(scoringData.length).toBe(10);
-  // });
 });
-
-*/

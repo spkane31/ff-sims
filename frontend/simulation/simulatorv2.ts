@@ -119,7 +119,6 @@ export class SimulatorV2 {
   }
 
   filter(): void {
-    // let filteredResults: SimulationResult[] = this.simulationResults;
     let endResults: SimulationResult[] = [];
 
     for (let sr = 0; sr < this.simulationResults.length; sr++) {
@@ -135,48 +134,27 @@ export class SimulatorV2 {
       }
     }
     this.filteredResults = endResults;
-
-    // for (let i = 0; i < this.filters.length; i++) {
-    //   for (let j = 0; j < filteredResults.length; j++) {
-    //     if (filterMatches(this.filters[i], filteredResults[j])) {
-    //       filteredResults.splice(j, 1);
-    //       j--;
-    //     }
-    //   }
-    // }
-    // this.filteredResults = filteredResults;
   }
 
-  // this.filters.forEach((filter) => {
-  //   this.filteredResults = this.filterResults(filter.week, filter.winnerId);
-  // });
-  // this.filters.map((filter) => {
-  //   return (this.filteredResults = this.filterResults(
-  //     filter.week,
-  //     filter.winnerId
-  //   ));
-  // });
-  // }
+  playoffOdds(teamId: number): number {
+    let count: number = 0;
+    for (let i = 0; i < this.filteredResults.length; i++) {
+      if (this.filteredResults[i].makesPlayoffs(teamId)) {
+        count++;
+      }
+    }
+    return this.numSimulations > 0 ? count / this.numSimulations : 0.0;
+  }
 
-  // filterResults(week: number, winnerId: number): SimulationResult[] {
-  //   return this.filteredResults.filter((result) => {
-  //     for (let i: number = 0; i < result.games.length; i++) {
-  //       if (result.games[i].week === week) {
-  //         if (
-  //           result.games[i].home_team_id === winnerId &&
-  //           result.games[i].home_team_score > result.games[i].away_team_score
-  //         ) {
-  //           return true;
-  //         } else if (
-  //           result.games[i].away_team_id === winnerId &&
-  //           result.games[i].away_team_score > result.games[i].home_team_score
-  //         ) {
-  //           return true;
-  //         }
-  //       }
-  //     }
-  //   });
-  // }
+  lastPlaceOdds(teamId: number): number {
+    let count: number = 0;
+    for (let i = 0; i < this.filteredResults.length; i++) {
+      if (this.filteredResults[i].isLast(teamId)) {
+        count++;
+      }
+    }
+    return this.numSimulations > 0 ? count / this.numSimulations : 0.0;
+  }
 }
 
 export interface SimulatorV2 {
@@ -279,6 +257,112 @@ export class SimulationResult {
       game.completed = true;
     });
   }
+
+  calculateStandings(): Map<number, FinalStanding> {
+    const standings = new Map<number, FinalStanding>();
+    this.games.forEach((game) => {
+      if (game.completed) {
+        if (!standings.has(game.home_team_id)) {
+          standings.set(
+            game.home_team_id,
+            new FinalStanding(game.home_team_id, 0, 0)
+          );
+        }
+        if (!standings.has(game.away_team_id)) {
+          standings.set(
+            game.away_team_id,
+            new FinalStanding(game.away_team_id, 0, 0)
+          );
+        }
+
+        const homeTeam = standings.get(game.home_team_id);
+        const awayTeam = standings.get(game.away_team_id);
+
+        if (game.homeWins()) {
+          if (homeTeam !== undefined) {
+            homeTeam.wins++;
+          }
+        } else if (game.awayWins()) {
+          if (awayTeam !== undefined) {
+            awayTeam.wins++;
+          }
+        }
+        if (homeTeam !== undefined) {
+          homeTeam.pointsScored += game.home_team_score;
+        }
+        if (awayTeam !== undefined) {
+          awayTeam.pointsScored += game.away_team_score;
+        }
+      }
+    });
+    return standings;
+  }
+
+  makesPlayoffs(teamId: number): boolean {
+    // Need to rank the teams based on wins and points scored. If the team id is in the top 6 return true, else false
+    const standings = this.calculateStandings();
+
+    // Convert the values in the map to a list of FinalStanding objects
+    const finalStandings: FinalStanding[] = [];
+    standings.forEach((value) => {
+      finalStandings.push(value);
+    });
+
+    // Sort the list of FinalStanding objects based on wins and points scored
+    finalStandings.sort((a, b) => {
+      if (a.wins !== b.wins) {
+        return b.wins - a.wins;
+      }
+      return b.pointsScored - a.pointsScored;
+    });
+
+    // Check if the team id is in the top 6
+    for (let i = 0; i < 6; i++) {
+      if (finalStandings[i].teamId === teamId) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  isLast(teamId: number): boolean {
+    // Need to rank the teams based on wins and points scored. If the team id is last return true, else false
+    const standings = this.calculateStandings();
+
+    // Convert the values in the map to a list of FinalStanding objects
+    const finalStandings: FinalStanding[] = [];
+    standings.forEach((value) => {
+      finalStandings.push(value);
+    });
+
+    // Sort the list of FinalStanding objects based on wins and points scored
+    finalStandings.sort((a, b) => {
+      if (a.wins !== b.wins) {
+        return b.wins - a.wins;
+      }
+      return b.pointsScored - a.pointsScored;
+    });
+
+    // Check if the team id is last
+    return finalStandings[finalStandings.length - 1].teamId === teamId;
+  }
+}
+
+class FinalStanding {
+  teamId: number;
+  wins: number;
+  pointsScored: number;
+  constructor(teamId: number, wins: number, pointsScored: number) {
+    this.teamId = teamId;
+    this.wins = wins;
+    this.pointsScored = pointsScored;
+  }
+}
+
+interface FinalStanding {
+  wins: number;
+  pointsScored: number;
 }
 
 export interface SimulationResult {
