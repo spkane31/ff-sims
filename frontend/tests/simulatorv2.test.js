@@ -1,5 +1,4 @@
-import {
-  SimulatorV2,
+import SimulatorV2, {
   TeamStats,
   Game,
   Schedule,
@@ -108,14 +107,12 @@ describe("SimulatorV2", () => {
       new Game(1, 2, 25, 20, true, 2),
       new Game(1, 2, 0, 0, false, 3),
     ];
-
-    const n = 2;
     const schedule = new Schedule(games);
-    const simulator = new SimulatorV2(schedule, n);
+    const simulator = new SimulatorV2(schedule, 1000);
 
     simulator.simulate();
 
-    expect(simulator.simulationResults.length).toBe(2);
+    expect(simulator.simulationResults.length).toBe(1000);
     expect(
       simulator.simulationResults[0].games[2].home_team_score
     ).toBeGreaterThan(0);
@@ -148,7 +145,7 @@ describe("SimulatorV2", () => {
 
     simulator.addFilter(3, loserId);
 
-    expect(simulator.filteredResults.length).toBeLessThan(n);
+    expect(simulator.filteredResults.length).toBeLessThan(1000);
   });
 
   it("should calculate team data with sample data", () => {

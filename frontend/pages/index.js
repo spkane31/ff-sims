@@ -22,7 +22,8 @@ import {
   getContrastRatio,
 } from "@mui/material/styles";
 import Simulator from "../simulation/simulator";
-import SimulatorV2 from "../simulation/simulatorV2";
+import SimulatorV2 from "../simulation/simulator2";
+import { Schedule } from "../simulation/simulator2";
 
 export default function Home() {
   const [historicalData, setHistoricalData] = React.useState([]);
@@ -33,6 +34,7 @@ export default function Home() {
   const [allTimeWithXWins, setAllTimeWithXWins] = React.useState(null);
   const [remainingGames, setRemainingGames] = React.useState(null);
   const [currentWeek, setCurrentWeek] = React.useState(null);
+  // const [simulatorv2, setSimulatorV2] = React.useState(null);
 
   React.useEffect(() => {
     if (schedule !== null) {
@@ -99,15 +101,16 @@ export default function Home() {
     fetchData();
   }, []);
 
-  React.useEffect(() => {
-    async function fetchData() {
-      const response = await fetch("/api/schedule");
-      const data = await response.json();
-      setSchedule(data);
-    }
+  // React.useEffect(() => {
+  //   async function fetchData() {
+  //     const response = await fetch("/api/schedule");
+  //     const data = await response.json();
+  //     setSchedule(data);
+  //     setSimulatorV2(new SimulatorV2(data));
+  //   }
 
-    fetchData();
-  }, []);
+  //   fetchData();
+  // }, []);
 
   React.useEffect(() => {
     async function fetchData() {
@@ -148,7 +151,11 @@ export default function Home() {
         data.forEach((week, index) => {
           let set = false;
           week.forEach((game) => {
-            if (game.completed === false) {
+            if (
+              game.home_team_final_score > 0 &&
+              game.away_team_final_score > 0 &&
+              !set
+            ) {
               setCurrentWeek(index + 1);
               set = true;
               return;
@@ -165,12 +172,10 @@ export default function Home() {
     <>
       <Head>The League FF</Head>
       <TitleComponent>The League</TitleComponent>
-      {remainingGames && remainingGames.length > 0 && currentWeek && (
-        <ChooseYourDestinyTable
-          remainingGames={remainingGames}
-          currentWeek={currentWeek}
-        />
-      )}
+      <ChooseYourDestinyTable
+        remainingGames={remainingGames}
+        currentWeek={currentWeek}
+      />
       {currentWithXWins && currentWithXWins.length > 0 && (
         <EnhancedTable
           rows={currentWithXWins}
@@ -194,10 +199,13 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
   const [teamData, setTeamData] = React.useState(null);
   const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
+  const [cellColors, setCellColors] = React.useState(
+    Array(10).fill(Array(4).fill("none")) // TODO seankane: the 4 is number of weeks remaining, which is hardcoded for now
+  );
 
   React.useEffect(() => {
     if (teamStats !== null && schedule !== null) {
-      setSimulator(new Simulator(teamStats, schedule));
+      setSimulator(new SimulatorV2(new Schedule(schedule)));
     }
   }, [teamStats, schedule]);
 
@@ -216,6 +224,14 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
         setSchedule(data);
       });
   }, []);
+
+  if (
+    remainingGames === null ||
+    remainingGames.length === 0 ||
+    simulator === null
+  ) {
+    return <div>Loading...</div>;
+  }
 
   const teams = [];
   remainingGames[0].forEach((game) => {
@@ -265,11 +281,13 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
     return -1;
   };
 
-  const [cellColors, setCellColors] = React.useState(
-    Array(teams.length).fill(Array(remainingGames.length).fill("none"))
-  );
-
   const handleCellClick = (teamId, weekIndex) => {
+    console.log(
+      "Adding filter for teamId: ",
+      teamId,
+      "weekIndex: ",
+      weekIndex + currentWeek + 1
+    );
     const opponentId = getOpponentId(teamId, weekIndex);
     setCellColors((prevColors) => {
       const withTeamIdColors = prevColors.map((row, i) =>
@@ -300,6 +318,30 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
     return <div>Loading...</div>;
   }
 
+  const lastPlaceByID = (id) => {
+    if (teamData === null || teamData === undefined) {
+      return 0;
+    }
+    for (let i = 0; i < teamData.length; i++) {
+      if (teamData[i].teamId === id) {
+        return teamData[i].lastPlaceOdds;
+      }
+    }
+    return 0.0;
+  };
+
+  const playoffOddsById = (id) => {
+    if (teamData === null || teamData === undefined) {
+      return 0;
+    }
+    for (let i = 0; i < teamData.length; i++) {
+      if (teamData[i].teamId === id) {
+        return teamData[i].playoffOdds;
+      }
+    }
+    return 0.0;
+  };
+
   return (
     <Box
       sx={{
@@ -326,10 +368,9 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
       </Typography>
       <Button
         onClick={() => {
-          for (let i = 0; i < 50000; i++) {
-            simulator.step();
-          }
-          setTeamData(simulator.getTeamScoringData());
+          simulator.simulate();
+          setTeamData(simulator.getTeamData());
+          console.log("simulator.getTeamData(): ", simulator.getTeamData());
         }}
         variant="contained"
         sx={{ marginRight: "10px" }}
@@ -345,7 +386,7 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
               <TableCell align="right">Last Place</TableCell>
               {Array.from({ length: remainingGames.length }, (_, index) => (
                 <TableCell key={index} align="right">
-                  Week {currentWeek + index - remainingGames.length + 1}
+                  Week {currentWeek + index + 1}
                 </TableCell>
               ))}
             </TableRow>
@@ -355,16 +396,10 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
               <TableRow key={teamIndex}>
                 <TableCell align="right">{team.name}</TableCell>
                 <TableCell align="right">
-                  {(
-                    simulator.getPlayoffOdds({ teamId: team.id }) * 100
-                  ).toFixed(2)}
-                  %
+                  {(100 * playoffOddsById(team.id)).toFixed(2)} %
                 </TableCell>
                 <TableCell align="right">
-                  {(
-                    simulator.getLastPlaceOdds({ teamId: team.id }) * 100
-                  ).toFixed(2)}
-                  %
+                  {(100 * lastPlaceByID(team.id)).toFixed(2)} %
                 </TableCell>
                 {remainingGames.map((week, weekIndex) => (
                   <TableCell

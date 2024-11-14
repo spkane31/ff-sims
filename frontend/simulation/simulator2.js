@@ -32,42 +32,64 @@ export const shuffle = (array) => {
   }
 };
 
-export class SimulatorV2 {
-  constructor(schedule, numSimulations, simulationResults) {
+export default class SimulatorV2 {
+  constructor(schedule) {
     this.schedule = schedule;
-    this.numSimulations = numSimulations === undefined ? 1000 : numSimulations;
-    this.simulationResults =
-      simulationResults === undefined ? [] : simulationResults;
+    this.numSimulations = 1000;
+    this.simulationResults = [];
     this.filteredResults = [];
     this.teamStats = new Map();
     this.leagueStats = new TeamStats([]);
     this.filters = [];
+    this.completed = false;
+    // this.currentWeek = 0;
 
-    this.generateTeamStats();
+    // console.log(this.schedule);
+    // for (let i = 0; i < this.schedule.games.length; i++) {
+    //   for (let j = 0; j < this.schedule.games[i].length; j++) {
+    //     if (!this.schedule.games[i][j].completed) {
+    //       this.currentWeek = i;
+    //       break;
+    //     }
+    //   }
+    //   if (this.currentWeek !== 0) {
+    //     break;
+    //   }
+    // }
+
+    // console.log("Current week: " + this.currentWeek);
+
+    // this.generateTeamStats();
   }
 
-  generateTeamStats() {
-    this.schedule.games.map((game) => {
-      if (!this.teamStats.has(game.home_team_id)) {
-        this.teamStats.set(game.home_team_id, new TeamStats([]));
-      }
-      if (!this.teamStats.has(game.away_team_id)) {
-        this.teamStats.set(game.away_team_id, new TeamStats([]));
-      }
+  // generateTeamStats() {
+  //   if (this.schedule === undefined || this.schedule.games === undefined) {
+  //     return;
+  //   }
+  //   this.schedule.games.map((game) => {
+  //     if (!this.teamStats.has(game.home_team_id)) {
+  //       this.teamStats.set(game.home_team_id, new TeamStats([]));
+  //     }
+  //     if (!this.teamStats.has(game.away_team_id)) {
+  //       this.teamStats.set(game.away_team_id, new TeamStats([]));
+  //     }
 
-      this.teamStats
-        .get(game.home_team_id)
-        ?.pointsScored.push(game.home_team_score);
-      this.teamStats
-        .get(game.away_team_id)
-        ?.pointsScored.push(game.away_team_score);
+  //     this.teamStats
+  //       .get(game.home_team_id)
+  //       ?.pointsScored.push(game.home_team_score);
+  //     this.teamStats
+  //       .get(game.away_team_id)
+  //       ?.pointsScored.push(game.away_team_score);
 
-      this.leagueStats.pointsScored.push(game.home_team_score);
-      this.leagueStats.pointsScored.push(game.away_team_score);
-    });
-  }
+  //     this.leagueStats.pointsScored.push(game.home_team_score);
+  //     this.leagueStats.pointsScored.push(game.away_team_score);
+  //   });
+  // }
 
   simulate(steps) {
+    if (this.completed) {
+      return;
+    }
     let n = steps === undefined ? this.numSimulations : steps;
     for (let i = 0; i < n; i++) {
       let results = new SimulationResult(this.schedule.games);
@@ -75,6 +97,43 @@ export class SimulatorV2 {
       this.simulationResults.push(results);
     }
     this.filteredResults = this.simulationResults;
+    this.completed = true;
+  }
+
+  // Returns a list of objects with fields {teamId, lastPlaceOdds, playoffOdds}
+  getTeamData() {
+    let teamData = new Map();
+
+    this.schedule.games.forEach((week) => {
+      week.forEach((game) => {
+        if (!teamData.has(game.home_team_espn_id)) {
+          teamData.set(game.home_team_espn_id, {
+            teamId: game.home_team_espn_id,
+            lastPlaceOdds: 0,
+            playoffOdds: 0,
+          });
+        }
+        if (!teamData.has(game.away_team_espn_id)) {
+          teamData.set(game.away_team_espn_id, {
+            teamId: game.away_team_espn_id,
+            lastPlaceOdds: 0,
+            playoffOdds: 0,
+          });
+        }
+      });
+    });
+
+    teamData.forEach((_val, id) => {
+      const lastPlace = this.lastPlaceOdds(id);
+      const playoffs = this.playoffOdds(id);
+      teamData.set(id, {
+        teamId: id,
+        lastPlaceOdds: lastPlace,
+        playoffOdds: playoffs,
+      });
+    });
+
+    return Array.from(teamData.values());
   }
 
   addFilter(week, winnerId) {
@@ -132,7 +191,7 @@ export class SimulatorV2 {
   lastPlaceOdds(teamId) {
     let count = 0;
     for (let i = 0; i < this.filteredResults.length; i++) {
-      if (this.filteredResults[i].isLast(teamId)) {
+      if (this.filteredResults[i].getLastPlaceOdds(teamId)) {
         count++;
       }
     }
@@ -169,19 +228,21 @@ export class TeamStats {
 }
 
 export class SimulationResult {
-  constructor(games) {
+  constructor(weeks) {
     this.games = [];
-    games.forEach((game) => {
-      this.games.push(
-        new Game(
-          game.home_team_id,
-          game.away_team_id,
-          game.home_team_score,
-          game.away_team_score,
-          game.completed,
-          game.week
-        )
-      );
+    weeks.forEach((games) => {
+      games.forEach((game) => {
+        this.games.push(
+          new Game(
+            game.home_team_espn_id,
+            game.away_team_espn_id,
+            game.home_team_final_score,
+            game.away_team_final_score,
+            game.completed,
+            game.week
+          )
+        );
+      });
     });
 
     this.teamStats = new Map();
@@ -288,7 +349,7 @@ export class SimulationResult {
     return false;
   }
 
-  isLast(teamId) {
+  getLastPlaceOdds(teamId) {
     const standings = this.calculateStandings();
 
     const finalStandings = [];
