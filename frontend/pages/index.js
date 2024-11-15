@@ -94,6 +94,16 @@ export default function Home() {
 
   React.useEffect(() => {
     async function fetchData() {
+      const response = await fetch("/api/schedule");
+      const data = await response.json();
+      setSchedule(data);
+    }
+
+    fetchData();
+  }, []);
+
+  React.useEffect(() => {
+    async function fetchData() {
       const response = await fetch("/api/current");
       const data = await response.json();
       setCurrent(
@@ -180,12 +190,17 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
   const [teamStats, setTeamStats] = React.useState(null);
   const [schedule, setSchedule] = React.useState(null);
   const [cellColors, setCellColors] = React.useState(
-    Array(10).fill(Array(4).fill("none")) // TODO seankane: the 4 is number of weeks remaining, which is hardcoded for now
+    Array(10).fill(Array(4).fill("none"))
   );
 
   React.useEffect(() => {
     if (teamStats !== null && schedule !== null) {
-      setSimulator(new SimulatorV2(new Schedule(schedule)));
+      const start = new Date().getTime();
+      const sim = new SimulatorV2(new Schedule(schedule));
+      sim.simulate();
+      setTeamData(sim.getTeamData());
+      setSimulator(sim);
+      console.log("Simulation took " + (new Date().getTime() - start) + " ms");
     }
   }, [teamStats, schedule]);
 
@@ -364,17 +379,6 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
           padding: "15px",
         }}
       >
-        <Button
-          onClick={() => {
-            simulator.simulate();
-            setTeamData(simulator.getTeamData());
-            console.log("simulator.getTeamData(): ", simulator.getTeamData());
-          }}
-          variant="contained"
-          sx={{ marginRight: "10px" }}
-        >
-          Start
-        </Button>
         <Button
           onClick={() => {
             simulator.removeAllFilters();
