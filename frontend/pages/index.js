@@ -14,14 +14,6 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
-
-import {
-  createTheme,
-  ThemeProvider,
-  alpha,
-  getContrastRatio,
-} from "@mui/material/styles";
-import Simulator from "../simulation/simulator";
 import SimulatorV2 from "../simulation/simulator2";
 import { Schedule } from "../simulation/simulator2";
 
@@ -34,7 +26,6 @@ export default function Home() {
   const [allTimeWithXWins, setAllTimeWithXWins] = React.useState(null);
   const [remainingGames, setRemainingGames] = React.useState(null);
   const [currentWeek, setCurrentWeek] = React.useState(null);
-  // const [simulatorv2, setSimulatorV2] = React.useState(null);
 
   React.useEffect(() => {
     if (schedule !== null) {
@@ -100,17 +91,6 @@ export default function Home() {
 
     fetchData();
   }, []);
-
-  // React.useEffect(() => {
-  //   async function fetchData() {
-  //     const response = await fetch("/api/schedule");
-  //     const data = await response.json();
-  //     setSchedule(data);
-  //     setSimulatorV2(new SimulatorV2(data));
-  //   }
-
-  //   fetchData();
-  // }, []);
 
   React.useEffect(() => {
     async function fetchData() {
@@ -282,19 +262,24 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
   };
 
   const handleCellClick = (teamId, weekIndex) => {
-    console.log(
-      "Adding filter for teamId: ",
-      teamId,
-      "weekIndex: ",
-      weekIndex + currentWeek + 1
-    );
     const opponentId = getOpponentId(teamId, weekIndex);
     setCellColors((prevColors) => {
       const withTeamIdColors = prevColors.map((row, i) =>
         row.map((color, j) => {
           if (teams[i].id === teamId && j === weekIndex) {
-            if (color === "none") return "lightgreen";
-            if (color === "lightgreen") return "red";
+            if (color === "none") {
+              simulator.addFilter(weekIndex + currentWeek + 1, teamId);
+              setTeamData(simulator.getTeamData());
+              return "lightgreen";
+            }
+            if (color === "lightgreen") {
+              simulator.removeFilter(weekIndex + currentWeek + 1, teamId);
+              simulator.addFilter(weekIndex + currentWeek + 1, opponentId);
+              setTeamData(simulator.getTeamData());
+              return "red";
+            }
+            simulator.removeFilter(weekIndex + currentWeek + 1, opponentId);
+            setTeamData(simulator.getTeamData());
             return "none";
           }
           return color;
@@ -303,8 +288,12 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
       const finalizedColors = withTeamIdColors.map((row, i) =>
         row.map((color, j) => {
           if (teams[i].id === opponentId && j === weekIndex) {
-            if (color === "none") return "red";
-            if (color === "red") return "lightgreen";
+            if (color === "none") {
+              return "red";
+            }
+            if (color === "red") {
+              return "lightgreen";
+            }
             return "none";
           }
           return color;
@@ -366,17 +355,41 @@ function ChooseYourDestinyTable({ remainingGames, currentWeek }) {
         {remainingGames.length > 1 ? "s" : ""} to be played. Here are the
         matchups that will determine the final standings.
       </Typography>
-      <Button
-        onClick={() => {
-          simulator.simulate();
-          setTeamData(simulator.getTeamData());
-          console.log("simulator.getTeamData(): ", simulator.getTeamData());
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "15px",
         }}
-        variant="contained"
-        sx={{ marginRight: "10px" }}
       >
-        Start
-      </Button>
+        <Button
+          onClick={() => {
+            simulator.simulate();
+            setTeamData(simulator.getTeamData());
+            console.log("simulator.getTeamData(): ", simulator.getTeamData());
+          }}
+          variant="contained"
+          sx={{ marginRight: "10px" }}
+        >
+          Start
+        </Button>
+        <Button
+          onClick={() => {
+            simulator.removeAllFilters();
+            setTeamData(simulator.getTeamData());
+            setCellColors(Array(10).fill(Array(4).fill("none")));
+          }}
+          variant="contained"
+          sx={{ marginRight: "10px" }}
+        >
+          Reset
+        </Button>
+        <Typography variant="body1">
+          (Sample Size: {simulator.filteredResults.length})
+        </Typography>
+      </Box>
       <TableContainer sx={{ paddingTop: "15px", paddingBottom: "15px" }}>
         <Table size="small">
           <TableHead>

@@ -35,56 +35,14 @@ export const shuffle = (array) => {
 export default class SimulatorV2 {
   constructor(schedule) {
     this.schedule = schedule;
-    this.numSimulations = 1000;
+    this.numSimulations = 10000;
     this.simulationResults = [];
     this.filteredResults = [];
     this.teamStats = new Map();
     this.leagueStats = new TeamStats([]);
     this.filters = [];
     this.completed = false;
-    // this.currentWeek = 0;
-
-    // console.log(this.schedule);
-    // for (let i = 0; i < this.schedule.games.length; i++) {
-    //   for (let j = 0; j < this.schedule.games[i].length; j++) {
-    //     if (!this.schedule.games[i][j].completed) {
-    //       this.currentWeek = i;
-    //       break;
-    //     }
-    //   }
-    //   if (this.currentWeek !== 0) {
-    //     break;
-    //   }
-    // }
-
-    // console.log("Current week: " + this.currentWeek);
-
-    // this.generateTeamStats();
   }
-
-  // generateTeamStats() {
-  //   if (this.schedule === undefined || this.schedule.games === undefined) {
-  //     return;
-  //   }
-  //   this.schedule.games.map((game) => {
-  //     if (!this.teamStats.has(game.home_team_id)) {
-  //       this.teamStats.set(game.home_team_id, new TeamStats([]));
-  //     }
-  //     if (!this.teamStats.has(game.away_team_id)) {
-  //       this.teamStats.set(game.away_team_id, new TeamStats([]));
-  //     }
-
-  //     this.teamStats
-  //       .get(game.home_team_id)
-  //       ?.pointsScored.push(game.home_team_score);
-  //     this.teamStats
-  //       .get(game.away_team_id)
-  //       ?.pointsScored.push(game.away_team_score);
-
-  //     this.leagueStats.pointsScored.push(game.home_team_score);
-  //     this.leagueStats.pointsScored.push(game.away_team_score);
-  //   });
-  // }
 
   simulate(steps) {
     if (this.completed) {
@@ -156,6 +114,11 @@ export default class SimulatorV2 {
     this.filter();
   }
 
+  removeAllFilters() {
+    this.filters = [];
+    this.filter();
+  }
+
   clearFilters() {
     this.filters = [];
     this.filteredResults = this.simulationResults;
@@ -185,7 +148,7 @@ export default class SimulatorV2 {
         count++;
       }
     }
-    return this.numSimulations > 0 ? count / this.numSimulations : 0.0;
+    return this.numSimulations > 0 ? count / this.filteredResults.length : 0.0;
   }
 
   lastPlaceOdds(teamId) {
@@ -195,7 +158,7 @@ export default class SimulatorV2 {
         count++;
       }
     }
-    return this.numSimulations > 0 ? count / this.numSimulations : 0.0;
+    return this.numSimulations > 0 ? count / this.filteredResults.length : 0.0;
   }
 }
 
