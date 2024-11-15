@@ -4,7 +4,6 @@ import { useRouter } from "next/router";
 import {
   Box,
   Paper,
-  Typography,
   Table,
   TableHead,
   TableRow,

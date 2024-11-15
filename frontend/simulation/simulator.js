@@ -35,7 +35,6 @@ class Simulator {
         this.results.set(value.id, new Results());
       }
     });
-    // leagueStats is a {average: float, std_dev: float} object
 
     this.idToOwner = new Map();
     Object.entries(teamAvgs).forEach(([_key, value]) => {
