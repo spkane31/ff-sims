@@ -119,22 +119,6 @@ class Simulator {
     return this.teamStats.get(teamID);
   }
 
-  getPlayoffOdds({ teamId }) {
-    const teamResults = this.results.get(teamId);
-    if (this.simulations === 0) {
-      return 0;
-    }
-    return teamResults.madePlayoffs / this.simulations;
-  }
-
-  getLastPlaceOdds({ teamId }) {
-    const teamResults = this.results.get(teamId);
-    if (this.simulations === 0) {
-      return 0;
-    }
-    return teamResults.lastPlace / this.simulations;
-  }
-
   step() {
     // create a map of team_id to SingleSeasonResults
     const singleSeasonResults = new SingleSeasonResults({
