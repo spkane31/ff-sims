@@ -1,0 +1,159 @@
+import { useState } from "react";
+import Layout from "../../components/Layout";
+
+export default function Schedule() {
+  const [selectedWeek, setSelectedWeek] = useState("all");
+
+  // Sample schedule data
+  const scheduleData = [
+    { week: 1, homeTeam: "Team A", awayTeam: "Team B", homeScore: 120, awayScore: 105, completed: true },
+    { week: 1, homeTeam: "Team C", awayTeam: "Team D", homeScore: 95, awayScore: 115, completed: true },
+    { week: 2, homeTeam: "Team B", awayTeam: "Team C", homeScore: 110, awayScore: 85, completed: true },
+    { week: 2, homeTeam: "Team D", awayTeam: "Team A", homeScore: 130, awayScore: 125, completed: true },
+    { week: 3, homeTeam: "Team A", awayTeam: "Team C", homeScore: 140, awayScore: 90, completed: true },
+    { week: 3, homeTeam: "Team B", awayTeam: "Team D", homeScore: 105, awayScore: 100, completed: true },
+    { week: 10, homeTeam: "Team A", awayTeam: "Team D", homeScore: null, awayScore: null, completed: false },
+    { week: 10, homeTeam: "Team B", awayTeam: "Team C", homeScore: null, awayScore: null, completed: false },
+    { week: 11, homeTeam: "Team C", awayTeam: "Team A", homeScore: null, awayScore: null, completed: false },
+    { week: 11, homeTeam: "Team D", awayTeam: "Team B", homeScore: null, awayScore: null, completed: false },
+  ];
+
+  const weeks = Array.from(new Set(scheduleData.map(game => game.week))).sort((a, b) => a - b);
+
+  const filteredGames = selectedWeek === "all"
+    ? scheduleData
+    : scheduleData.filter(game => game.week === parseInt(selectedWeek));
+
+  return (
+    <Layout>
+      <div className="space-y-8">
+        <section>
+          <h1 className="text-3xl md:text-4xl font-bold text-blue-600 mb-6">
+            League Schedule
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-300 mb-8 max-w-3xl">
+            View upcoming matchups and past results for all teams in your league.
+          </p>
+
+          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+              <h2 className="text-xl font-semibold mb-3 md:mb-0">Matchups</h2>
+
+              <div className="w-full md:w-auto">
+                <label htmlFor="weekFilter" className="block text-sm font-medium mb-1 md:hidden">
+                  Select Week
+                </label>
+                <select
+                  id="weekFilter"
+                  value={selectedWeek}
+                  onChange={(e) => setSelectedWeek(e.target.value)}
+                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="all">All Weeks</option>
+                  {weeks.map(week => (
+                    <option key={week} value={week}>Week {week}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-800">
+                  <tr>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Week</th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Matchup</th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Score</th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {filteredGames.map((game, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700"}>
+                      <td className="py-4 px-4 whitespace-nowrap">Week {game.week}</td>
+                      <td className="py-4 px-4">
+                        <div className="flex flex-col md:flex-row md:items-center">
+                          <span className={`font-medium ${game.completed && game.homeScore > game.awayScore ? "text-green-600" : ""}`}>
+                            {game.homeTeam}
+                          </span>
+                          <span className="hidden md:inline mx-2">vs</span>
+                          <span className="md:hidden">@</span>
+                          <span className={`font-medium ${game.completed && game.awayScore > game.homeScore ? "text-green-600" : ""}`}>
+                            {game.awayTeam}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        {game.completed ? (
+                          <span>
+                            {game.homeScore} - {game.awayScore}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 dark:text-gray-400">Upcoming</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        {game.completed ? (
+                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                            Final
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100">
+                            Upcoming
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg">
+          <h2 className="text-xl font-semibold mb-4">Strength of Schedule</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="text-lg font-medium mb-3">Remaining</h3>
+              <div className="space-y-3">
+                {["Team A", "Team B", "Team C", "Team D"].map((team, i) => (
+                  <div key={team} className="flex items-center">
+                    <span className="w-20 text-sm">{team}</span>
+                    <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${i % 2 === 0 ? "bg-red-500" : "bg-green-500"}`}
+                        style={{ width: `${80 - i * 15}%` }}
+                      ></div>
+                    </div>
+                    <span className="w-14 text-right text-sm">{i % 2 === 0 ? "Hard" : "Easy"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-medium mb-3">Season Overall</h3>
+              <div className="space-y-3">
+                {["Team A", "Team B", "Team C", "Team D"].map((team, i) => (
+                  <div key={team} className="flex items-center">
+                    <span className="w-20 text-sm">{team}</span>
+                    <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${i % 3 === 0 ? "bg-red-500" : i % 3 === 1 ? "bg-yellow-500" : "bg-green-500"}`}
+                        style={{ width: `${70 - i * 10}%` }}
+                      ></div>
+                    </div>
+                    <span className="w-14 text-right text-sm">
+                      {i % 3 === 0 ? "Hard" : i % 3 === 1 ? "Med" : "Easy"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </Layout>
+  );
+}
