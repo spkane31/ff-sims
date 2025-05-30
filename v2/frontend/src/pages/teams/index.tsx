@@ -7,13 +7,9 @@ type SortField = "rank" | "name" | "wins" | "losses" | "pf" | "pa" | "playoffs";
 type SortDirection = "asc" | "desc";
 
 export default function Teams() {
-  const { teams, isLoading, error, refetch } = useTeams();
+  const { teams, isLoading, error } = useTeams();
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-
-  console.log("Teams data:", teams);
-  console.log("Is loading:", isLoading);
-  console.log("Error:", error);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {

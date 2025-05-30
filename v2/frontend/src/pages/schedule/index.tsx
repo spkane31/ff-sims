@@ -1,5 +1,7 @@
 import { useState } from "react";
 import Layout from "../../components/Layout";
+import { useSchedule } from "../../hooks/useSchedule";
+import { Game as ApiGame, GetScheduleResponse, Matchup } from "../../services/scheduleService";
 
 // Type definitions
 interface Game {
@@ -23,28 +25,29 @@ interface ScheduleProps {
 
 export default function Schedule({}: ScheduleProps) {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
+  const { schedule, isLoading, error } = useSchedule();
 
-  // Sample schedule data
-  const scheduleData: Game[] = [
-    { week: 1, homeTeam: "Team A", awayTeam: "Team B", homeScore: 120, awayScore: 105, completed: true },
-    { week: 1, homeTeam: "Team C", awayTeam: "Team D", homeScore: 95, awayScore: 115, completed: true },
-    { week: 2, homeTeam: "Team B", awayTeam: "Team C", homeScore: 110, awayScore: 85, completed: true },
-    { week: 2, homeTeam: "Team D", awayTeam: "Team A", homeScore: 130, awayScore: 125, completed: true },
-    { week: 3, homeTeam: "Team A", awayTeam: "Team C", homeScore: 140, awayScore: 90, completed: true },
-    { week: 3, homeTeam: "Team B", awayTeam: "Team D", homeScore: 105, awayScore: 100, completed: true },
-    { week: 10, homeTeam: "Team A", awayTeam: "Team D", homeScore: 0, awayScore: 0, completed: false },
-    { week: 10, homeTeam: "Team B", awayTeam: "Team C", homeScore: 0, awayScore: 0, completed: false },
-    { week: 11, homeTeam: "Team C", awayTeam: "Team A", homeScore: 0, awayScore: 0, completed: false },
-    { week: 11, homeTeam: "Team D", awayTeam: "Team B", homeScore: 0, awayScore: 0, completed: false },
-  ];
+  // Transform API data to our Game format
+  const scheduleData: Game[] = !isLoading && schedule ?
+    schedule.data.matchups.flat().map(game => ({
+      week: game.week,
+      homeTeam: game.homeTeamName,
+      awayTeam: game.awayTeamName,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+      completed: game.homeScore > 0 || game.awayScore > 0 // Assume completed if scores exist
+    })) : [];
 
-  const weeks: number[] = Array.from(new Set(scheduleData.map(game => game.week))).sort((a, b) => a - b);
+  const weeks: number[] = Array.from(
+    new Set(scheduleData.map(game => game.week))
+  ).sort((a, b) => a - b);
 
   const filteredGames: Game[] = selectedWeek === "all"
     ? scheduleData
     : scheduleData.filter(game => game.week === parseInt(selectedWeek));
 
   // Strength of schedule data
+  // This would ideally be calculated based on actual team data
   const remainingStrength: TeamStrength[] = [
     { team: "Team A", difficulty: "Hard", strengthPercentage: 80 },
     { team: "Team B", difficulty: "Easy", strengthPercentage: 65 },
@@ -93,6 +96,7 @@ export default function Schedule({}: ScheduleProps) {
                   value={selectedWeek}
                   onChange={(e) => setSelectedWeek(e.target.value)}
                   className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  disabled={isLoading}
                 >
                   <option value="all">All Weeks</option>
                   {weeks.map(week => (
@@ -102,57 +106,69 @@ export default function Schedule({}: ScheduleProps) {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-800">
-                  <tr>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Week</th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Matchup</th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Score</th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredGames.map((game, i) => (
-                    <tr key={i} className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700"}>
-                      <td className="py-4 px-4 whitespace-nowrap">Week {game.week}</td>
-                      <td className="py-4 px-4">
-                        <div className="flex flex-col md:flex-row md:items-center">
-                          <span className={`font-medium ${game.completed && game.homeScore > game.awayScore ? "text-green-600" : ""}`}>
-                            {game.homeTeam}
-                          </span>
-                          <span className="hidden md:inline mx-2">vs</span>
-                          <span className="md:hidden">@</span>
-                          <span className={`font-medium ${game.completed && game.awayScore > game.homeScore ? "text-green-600" : ""}`}>
-                            {game.awayTeam}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.completed ? (
-                          <span>
-                            {game.homeScore} - {game.awayScore}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">Upcoming</span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.completed ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
-                            Final
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100">
-                            Upcoming
-                          </span>
-                        )}
-                      </td>
+            {isLoading ? (
+              <div className="flex items-center justify-center h-40">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="ml-2">Loading schedule data...</span>
+              </div>
+            ) : error ? (
+              <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
+                <h3 className="text-lg font-semibold">Error loading schedule</h3>
+                <p>{error.message}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Week</th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Matchup</th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Score</th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {filteredGames.map((game, i) => (
+                      <tr key={i} className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700"}>
+                        <td className="py-4 px-4 whitespace-nowrap">Week {game.week}</td>
+                        <td className="py-4 px-4">
+                          <div className="flex flex-col md:flex-row md:items-center">
+                            <span className={`font-medium ${game.completed && game.homeScore > game.awayScore ? "text-green-600" : ""}`}>
+                              {game.homeTeam}
+                            </span>
+                            <span className="hidden md:inline mx-2">vs</span>
+                            <span className="md:hidden">@</span>
+                            <span className={`font-medium ${game.completed && game.awayScore > game.homeScore ? "text-green-600" : ""}`}>
+                              {game.awayTeam}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          {game.completed ? (
+                            <span>
+                              {game.homeScore} - {game.awayScore}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 dark:text-gray-400">Upcoming</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          {game.completed ? (
+                            <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                              Final
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100">
+                              Upcoming
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </section>
 

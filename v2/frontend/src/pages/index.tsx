@@ -3,19 +3,19 @@ import Layout from "../components/Layout";
 import Link from "next/link";
 
 export default function Home() {
-  const [teamsData, setTeamsData] = useState<string | null>(null);
+  const [apiHealth, setAPIHealth] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchTeamsData() {
       try {
         setIsLoading(true);
-        const response = await fetch("http://localhost:8080/api/teams");
+        const response = await fetch("http://localhost:8080/api/health");
         const data = await response.text();
-        setTeamsData(data);
+        setAPIHealth(data);
       } catch (error) {
-        console.error("Error fetching teams data:", error);
-        setTeamsData("Failed to fetch teams data.");
+        console.error("Error fetching health data:", error);
+        setAPIHealth("Failed to fetch health data.");
       } finally {
         setIsLoading(false);
       }
@@ -105,10 +105,10 @@ export default function Home() {
           ) : (
             <div>
               <p className="text-gray-600 dark:text-gray-300 mb-2">
-                Teams API Response:
+                Health API Response:
               </p>
               <pre className="bg-gray-200 dark:bg-gray-800 p-4 rounded-md overflow-x-auto text-sm">
-                {teamsData}
+                {apiHealth}
               </pre>
             </div>
           )}

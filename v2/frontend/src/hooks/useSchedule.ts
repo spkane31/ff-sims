@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Game, scheduleService } from '../services/scheduleService';
+import { Game, GetScheduleResponse, scheduleService } from '../services/scheduleService';
 
 /**
  * Hook for fetching the full schedule
  */
 export function useSchedule() {
-  const [schedule, setSchedule] = useState<Game[][]>([]);
+  const [schedule, setSchedule] = useState<GetScheduleResponse>({ data: { matchups: [] } });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 

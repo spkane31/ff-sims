@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"backend/pkg/version"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 // GetPlayers returns all players with optional filtering
 func HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"ping": "pong",
+		"GitSHA":    version.GitSHA,
+		"BuildTime": version.BuildTime,
 	})
 }

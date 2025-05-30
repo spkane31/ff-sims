@@ -4,6 +4,7 @@ import (
 	"backend/internal/api"
 	"backend/internal/config"
 	"backend/internal/database"
+	"backend/pkg/version"
 	"embed"
 	"io/fs"
 	"log"
@@ -45,7 +46,7 @@ func main() {
 		http.FileServer(staticFS).ServeHTTP(c.Writer, c.Request)
 	})
 
-	log.Println("Server starting on :8080")
+	log.Printf("Server starting on :8080, version: %s, build time: %s", version.GitSHA, version.BuildTime)
 	log.Fatal(r.Run(":8080"))
 }
 
