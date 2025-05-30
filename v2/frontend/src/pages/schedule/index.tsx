@@ -1,28 +1,73 @@
 import { useState } from "react";
 import Layout from "../../components/Layout";
 
-export default function Schedule() {
-  const [selectedWeek, setSelectedWeek] = useState("all");
+// Type definitions
+interface Game {
+  week: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  completed: boolean;
+}
+
+interface TeamStrength {
+  team: string;
+  difficulty: 'Easy' | 'Med' | 'Hard';
+  strengthPercentage: number;
+}
+
+interface ScheduleProps {
+  // Add props if needed in the future
+}
+
+export default function Schedule({}: ScheduleProps) {
+  const [selectedWeek, setSelectedWeek] = useState<string>("all");
 
   // Sample schedule data
-  const scheduleData = [
+  const scheduleData: Game[] = [
     { week: 1, homeTeam: "Team A", awayTeam: "Team B", homeScore: 120, awayScore: 105, completed: true },
     { week: 1, homeTeam: "Team C", awayTeam: "Team D", homeScore: 95, awayScore: 115, completed: true },
     { week: 2, homeTeam: "Team B", awayTeam: "Team C", homeScore: 110, awayScore: 85, completed: true },
     { week: 2, homeTeam: "Team D", awayTeam: "Team A", homeScore: 130, awayScore: 125, completed: true },
     { week: 3, homeTeam: "Team A", awayTeam: "Team C", homeScore: 140, awayScore: 90, completed: true },
     { week: 3, homeTeam: "Team B", awayTeam: "Team D", homeScore: 105, awayScore: 100, completed: true },
-    { week: 10, homeTeam: "Team A", awayTeam: "Team D", homeScore: null, awayScore: null, completed: false },
-    { week: 10, homeTeam: "Team B", awayTeam: "Team C", homeScore: null, awayScore: null, completed: false },
-    { week: 11, homeTeam: "Team C", awayTeam: "Team A", homeScore: null, awayScore: null, completed: false },
-    { week: 11, homeTeam: "Team D", awayTeam: "Team B", homeScore: null, awayScore: null, completed: false },
+    { week: 10, homeTeam: "Team A", awayTeam: "Team D", homeScore: 0, awayScore: 0, completed: false },
+    { week: 10, homeTeam: "Team B", awayTeam: "Team C", homeScore: 0, awayScore: 0, completed: false },
+    { week: 11, homeTeam: "Team C", awayTeam: "Team A", homeScore: 0, awayScore: 0, completed: false },
+    { week: 11, homeTeam: "Team D", awayTeam: "Team B", homeScore: 0, awayScore: 0, completed: false },
   ];
 
-  const weeks = Array.from(new Set(scheduleData.map(game => game.week))).sort((a, b) => a - b);
+  const weeks: number[] = Array.from(new Set(scheduleData.map(game => game.week))).sort((a, b) => a - b);
 
-  const filteredGames = selectedWeek === "all"
+  const filteredGames: Game[] = selectedWeek === "all"
     ? scheduleData
     : scheduleData.filter(game => game.week === parseInt(selectedWeek));
+
+  // Strength of schedule data
+  const remainingStrength: TeamStrength[] = [
+    { team: "Team A", difficulty: "Hard", strengthPercentage: 80 },
+    { team: "Team B", difficulty: "Easy", strengthPercentage: 65 },
+    { team: "Team C", difficulty: "Hard", strengthPercentage: 50 },
+    { team: "Team D", difficulty: "Easy", strengthPercentage: 35 },
+  ];
+
+  const overallStrength: TeamStrength[] = [
+    { team: "Team A", difficulty: "Hard", strengthPercentage: 70 },
+    { team: "Team B", difficulty: "Med", strengthPercentage: 60 },
+    { team: "Team C", difficulty: "Easy", strengthPercentage: 50 },
+    { team: "Team D", difficulty: "Hard", strengthPercentage: 40 },
+  ];
+
+  // Helper function to get color based on difficulty
+  const getDifficultyColor = (difficulty: TeamStrength['difficulty']): string => {
+    switch (difficulty) {
+      case "Hard": return "bg-red-500";
+      case "Med": return "bg-yellow-500";
+      case "Easy": return "bg-green-500";
+      default: return "bg-gray-500";
+    }
+  };
 
   return (
     <Layout>
@@ -117,16 +162,16 @@ export default function Schedule() {
             <div>
               <h3 className="text-lg font-medium mb-3">Remaining</h3>
               <div className="space-y-3">
-                {["Team A", "Team B", "Team C", "Team D"].map((team, i) => (
+                {remainingStrength.map(({ team, difficulty, strengthPercentage }) => (
                   <div key={team} className="flex items-center">
                     <span className="w-20 text-sm">{team}</span>
                     <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${i % 2 === 0 ? "bg-red-500" : "bg-green-500"}`}
-                        style={{ width: `${80 - i * 15}%` }}
+                        className={`h-full ${getDifficultyColor(difficulty)}`}
+                        style={{ width: `${strengthPercentage}%` }}
                       ></div>
                     </div>
-                    <span className="w-14 text-right text-sm">{i % 2 === 0 ? "Hard" : "Easy"}</span>
+                    <span className="w-14 text-right text-sm">{difficulty}</span>
                   </div>
                 ))}
               </div>
@@ -135,17 +180,17 @@ export default function Schedule() {
             <div>
               <h3 className="text-lg font-medium mb-3">Season Overall</h3>
               <div className="space-y-3">
-                {["Team A", "Team B", "Team C", "Team D"].map((team, i) => (
+                {overallStrength.map(({ team, difficulty, strengthPercentage }) => (
                   <div key={team} className="flex items-center">
                     <span className="w-20 text-sm">{team}</span>
                     <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${i % 3 === 0 ? "bg-red-500" : i % 3 === 1 ? "bg-yellow-500" : "bg-green-500"}`}
-                        style={{ width: `${70 - i * 10}%` }}
+                        className={`h-full ${getDifficultyColor(difficulty)}`}
+                        style={{ width: `${strengthPercentage}%` }}
                       ></div>
                     </div>
                     <span className="w-14 text-right text-sm">
-                      {i % 3 === 0 ? "Hard" : i % 3 === 1 ? "Med" : "Easy"}
+                      {difficulty}
                     </span>
                   </div>
                 ))}

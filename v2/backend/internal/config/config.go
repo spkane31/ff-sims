@@ -21,11 +21,7 @@ type ServerConfig struct {
 
 // DBConfig contains database-specific configuration
 type DBConfig struct {
-	Host     string
-	Port     int
-	Name     string
-	User     string
-	Password string
+	ConnectionString string
 }
 
 // Load reads the configuration from environment variables
@@ -39,11 +35,7 @@ func Load() (*Config, error) {
 			Env:  getEnv("ENV", "development"),
 		},
 		DB: DBConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnvAsInt("DB_PORT", 5432),
-			Name:     getEnv("DB_NAME", "ffsims"),
-			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", "postgres"),
+			ConnectionString: getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims"),
 		},
 	}
 

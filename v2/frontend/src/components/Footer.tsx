@@ -12,11 +12,8 @@ const Footer = () => {
             <Link href="/about" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
               About
             </Link>
-            <Link href="/contact" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
+            <Link href="https://github.com/spkane31/ff-sims" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
               Contact
-            </Link>
-            <Link href="/privacy" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
-              Privacy
             </Link>
           </div>
         </div>

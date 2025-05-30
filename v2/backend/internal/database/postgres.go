@@ -17,11 +17,8 @@ var DB *gorm.DB
 
 // Initialize sets up the database connection
 func Initialize(cfg *config.Config) error {
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
-		cfg.DB.Host, cfg.DB.User, cfg.DB.Password, cfg.DB.Name, cfg.DB.Port)
-
 	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {

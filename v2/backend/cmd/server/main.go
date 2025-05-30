@@ -2,6 +2,8 @@ package main
 
 import (
 	"backend/internal/api"
+	"backend/internal/config"
+	"backend/internal/database"
 	"embed"
 	"io/fs"
 	"log"
@@ -16,6 +18,12 @@ import (
 var staticFiles embed.FS
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Error loading configuration: %v", err)
+	}
+	database.Initialize(cfg)
+
 	// Create a gin router with default middleware
 	r := gin.Default()
 	r.Use(cors.Default())
@@ -61,17 +69,4 @@ func getStaticFS() http.FileSystem {
 	})
 
 	return http.FS(sub)
-}
-
-// Example API handlers converted to use gin.Context
-func healthHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status": "ok",
-	})
-}
-
-func getUsersHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"users": []string{"user1", "user2"},
-	})
 }

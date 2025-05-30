@@ -460,7 +460,11 @@ def export_games_to_csv(connection_string, output_file):
         # 4. Highest points in a loss
 
         # filtered_rows = [row for row in rows if row[1] != 0 and row[3] != 0]
-        filtered_rows = [row for row in rows if row[1] != 0 and row[3] != 0 and row[0] != "Trevor Landry" and row[2] != "Trevor Landry"]
+        filtered_rows = [
+            row
+            for row in rows
+            if row[1] != 0 and row[3] != 0 and row[0] != "Trevor Landry" and row[2] != "Trevor Landry"
+        ]
 
         bottom_5_winning_scores = sorted(filtered_rows, key=lambda x: x[1])[:5]
         print("Bottom 5 winning scores")
