@@ -1,6 +1,7 @@
 package main
 
 import (
+	"backend/internal/api"
 	"embed"
 	"io/fs"
 	"log"
@@ -19,11 +20,7 @@ func main() {
 	r := gin.Default()
 	r.Use(cors.Default())
 
-	// API routes
-	api := r.Group("/api")
-	api.GET("/health", healthHandler)
-	api.GET("/users", getUsersHandler)
-	// Add more API routes here...
+	api.SetupRouter(r)
 
 	// Serve static files
 	staticFS := getStaticFS()

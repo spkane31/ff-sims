@@ -413,7 +413,96 @@ def get_db_counts(conn: "psycopg2.connection") -> None:
         cur.close()
 
 
+import csv
+
+
+def export_games_to_csv(connection_string, output_file):
+    try:
+        # Connect to the CockroachDB database
+        conn = psycopg2.connect(connection_string)
+        cursor = conn.cursor()
+
+        # Define the query to retrieve games data
+        query = """
+        SELECT
+            CASE WHEN m.home_team_final_score > m.away_team_final_score THEN t1.owner ELSE t2.owner END AS winner,
+            GREATEST(m.home_team_final_score, m.away_team_final_score) AS winning_score,
+            CASE WHEN m.home_team_final_score < m.away_team_final_score THEN t1.owner ELSE t2.owner END AS loser,
+            LEAST(m.home_team_final_score, m.away_team_final_score) AS losing_score,
+            m.week,
+            m.year
+        FROM matchups m
+        JOIN teams t1 ON m.home_team_espn_id = t1.espn_id
+        JOIN teams t2 ON m.away_team_espn_id = t2.espn_id
+        WHERE m.home_team_final_score IS NOT NULL AND m.away_team_final_score IS NOT NULL
+        """
+
+        # Execute the query
+        cursor.execute(query)
+
+        # Fetch all rows from the executed query
+        rows = cursor.fetchall()
+
+        # Define the column headers
+        headers = [desc[0] for desc in cursor.description]
+
+        # Write the results to a CSV file
+        with open(output_file, "w", newline="") as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(headers)  # Write the headers
+            csvwriter.writerows(rows)  # Write the data rows
+
+        print(f"Data successfully exported to {output_file}")
+
+        # 1. Lowest points to win
+        # 2. Lowest points all time
+        # 3. Highest points all time
+        # 4. Highest points in a loss
+
+        # filtered_rows = [row for row in rows if row[1] != 0 and row[3] != 0]
+        filtered_rows = [row for row in rows if row[1] != 0 and row[3] != 0 and row[0] != "Trevor Landry" and row[2] != "Trevor Landry"]
+
+        bottom_5_winning_scores = sorted(filtered_rows, key=lambda x: x[1])[:5]
+        print("Bottom 5 winning scores")
+        for score in bottom_5_winning_scores:
+            print_game(score)
+
+        bottom_5_scores = sorted(filtered_rows, key=lambda x: x[3])[:5]
+        print("Bottom 5 scorers")
+        for score in bottom_5_scores:
+            print_game(score)
+
+        # Need to remove the championship games so remove 2017 week 14
+        filtered_rows = [row for row in rows if row[4] != 14 and row[5] != 2017]
+
+        top_5_scores = sorted(filtered_rows, key=lambda x: x[1], reverse=True)[:5]
+        print("Top 5 scores")
+        for score in top_5_scores:
+            print_game(score)
+
+        top_5_losses = sorted(filtered_rows, key=lambda x: x[3], reverse=True)[:5]
+        print("Top 5 losses")
+        for score in top_5_losses:
+            print_game(score)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        # Close the cursor and connection
+        cursor.close()
+        conn.close()
+
+
+def print_game(game_tuple) -> None:
+    print(
+        f"Year: {game_tuple[5]}\tWeek: {game_tuple[4]} \tWinner: {game_tuple[0]}\tWinning Score: {game_tuple[1]}\tLoser: {game_tuple[2]}\tLosing Score: {game_tuple[3]}"
+    )
+
+
 if __name__ == "__main__":
+    export_games_to_csv(os.environ.get("DATABASE_URL"), "games.csv")
+    exit(0)
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 

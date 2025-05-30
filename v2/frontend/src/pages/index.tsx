@@ -2,21 +2,21 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 
 export default function Home() {
-  const [healthData, setHealthData] = useState<string | null>(null);
+  const [teamsData, setTeamsData] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchHealthData() {
+    async function fetchTeamsData() {
       try {
-        const response = await fetch("http://localhost:8080/api/health");
+        const response = await fetch("http://localhost:8080/api/teams");
         const data = await response.text();
-        setHealthData(data);
+        setTeamsData(data);
       } catch (error) {
         console.error("Error fetching health data:", error);
-        setHealthData("Failed to fetch health data.");
+        setTeamsData("Failed to fetch health data.");
       }
     }
 
-    fetchHealthData();
+    fetchTeamsData();
   }, []);
 
   return (
@@ -32,7 +32,7 @@ export default function Home() {
         />
         <div className="text-center text-sm text-gray-600 dark:text-gray-400">
           <p>API Health Status:</p>
-          <pre>{healthData}</pre>
+          <pre>{teamsData}</pre>
         </div>
         <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
           <li className="mb-2 tracking-[-.01em]">
