@@ -1,0 +1,63 @@
+package database
+
+import (
+	"fmt"
+	"log"
+
+	"backend/internal/config"
+	"backend/internal/models"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+// DB is the global database instance
+var DB *gorm.DB
+
+// Initialize sets up the database connection
+func Initialize(cfg *config.Config) error {
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
+		cfg.DB.Host, cfg.DB.User, cfg.DB.Password, cfg.DB.Name, cfg.DB.Port)
+
+	var err error
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	log.Println("Connected to database successfully")
+
+	// Run migrations
+	err = runMigrations()
+	if err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return nil
+}
+
+// runMigrations automatically creates or updates database tables
+func runMigrations() error {
+	log.Println("Running database migrations...")
+
+	err := DB.AutoMigrate(
+		&models.Team{},
+		&models.Player{},
+		&models.PlayerGameStats{},
+		&models.League{},
+		&models.Matchup{},
+		&models.Simulation{},
+		&models.SimResult{},
+		&models.SimTeamResult{},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	log.Println("Migrations completed successfully")
+	return nil
+}
