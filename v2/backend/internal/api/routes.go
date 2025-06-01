@@ -37,6 +37,11 @@ func SetupRouter(r *gin.Engine) {
 			schedules.GET("", handlers.GetSchedules)
 		}
 
+		transactions := api.Group("/transactions")
+		{
+			transactions.GET("", handlers.GetTransactions)
+		}
+
 		// // Leagues endpoints
 		// leagues := api.Group("/leagues")
 		// {
