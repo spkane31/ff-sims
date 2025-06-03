@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 
+	"backend/internal/database"
 	"backend/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/exp/slices"
 )
 
 type GetTeamsResponse struct {
@@ -14,7 +18,8 @@ type GetTeamsResponse struct {
 }
 
 type TeamResponse struct {
-	ID            int        `json:"id"`
+	ID            string     `json:"id"`
+	ESPNID        string     `json:"espnId"`
 	Name          string     `json:"name"`
 	OwnerName     string     `json:"owner"`
 	TeamRecord    TeamRecord `json:"record"`
@@ -36,20 +41,118 @@ type TeamPoints struct {
 
 // GetTeams returns all teams
 func GetTeams(c *gin.Context) {
-	c.JSON(http.StatusOK, GetTeamsResponse{
-		Teams: []TeamResponse{
-			{ID: 1, Name: "Tua Deez Nuts", OwnerName: "Kyle Burns", Rank: 1, TeamRecord: TeamRecord{Wins: 10, Losses: 3}, PlayoffChance: 100 * 0.95, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 2, Name: "Christian Mingle", OwnerName: "Nick Toth", Rank: 2, TeamRecord: TeamRecord{Wins: 9, Losses: 4}, PlayoffChance: 100 * 0.90, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 3, Name: "Bake Show", OwnerName: "Connor Brand", Rank: 3, TeamRecord: TeamRecord{Wins: 8, Losses: 5}, PlayoffChance: 100 * 0.85, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 4, Name: "Omaha Audibles", OwnerName: "Kevin Dailey", Rank: 4, TeamRecord: TeamRecord{Wins: 7, Losses: 6}, PlayoffChance: 100 * 0.80, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 5, Name: "The Nut Dumper", OwnerName: "Sean Kane", Rank: 5, TeamRecord: TeamRecord{Wins: 6, Losses: 7}, PlayoffChance: 100 * 0.75, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 6, Name: "Daddy Doepker", OwnerName: "Josh Doepker", Rank: 6, TeamRecord: TeamRecord{Wins: 5, Losses: 8}, PlayoffChance: 100 * 0.70, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 7, Name: "Chef Hans", OwnerName: "Mitch Lichtinger", Rank: 7, TeamRecord: TeamRecord{Wins: 4, Losses: 9}, PlayoffChance: 100 * 0.65, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 8, Name: "Walker Texas Nutter", OwnerName: "Jack Aldridge", Rank: 8, TeamRecord: TeamRecord{Wins: 3, Losses: 10}, PlayoffChance: 100 * 0.60, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 9, Name: "BbwBearcats", OwnerName: "Nick DeHaven", Rank: 9, TeamRecord: TeamRecord{Wins: 2, Losses: 11}, PlayoffChance: 100 * 0.55, Points: TeamPoints{Scored: 135, Against: 120}},
-			{ID: 10, Name: "Brock'd Up", OwnerName: "Ethan Moran", Rank: 10, TeamRecord: TeamRecord{Wins: 1, Losses: 12}, PlayoffChance: 100 * 0.50, Points: TeamPoints{Scored: 135, Against: 120}},
-		},
+	allTeams, teamsErr := []models.Team{}, error(nil)
+	fullSchedule, scheduleErr := []models.Matchup{}, error(nil)
+
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if teamsErr = database.DB.Model(&models.Team{}).Find(&allTeams).Error; teamsErr != nil {
+			slog.Error("Failed to fetch teams from database", "error", teamsErr)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if scheduleErr = database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&fullSchedule).Error; scheduleErr != nil {
+			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
+		}
+	}()
+
+	wg.Wait()
+
+	if teamsErr != nil {
+		slog.Error("Error fetching teams", "error", teamsErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
+		return
+	}
+	if scheduleErr != nil {
+		slog.Error("Error fetching full schedule", "error", scheduleErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch full schedule"})
+		return
+	}
+
+	slog.Info("Fetched teams from database", "count", len(allTeams))
+	slog.Info("Fetched full schedule from database", "count", len(fullSchedule))
+
+	resp := GetTeamsResponse{}
+
+	for _, team := range allTeams {
+		resp.Teams = append(resp.Teams, TeamResponse{
+			ID:        fmt.Sprintf("%d", team.ID),
+			ESPNID:    fmt.Sprintf("%d", team.ESPNID),
+			Name:      team.Name,
+			OwnerName: team.Owner,
+			TeamRecord: TeamRecord{
+				Wins:   team.Wins,
+				Losses: team.Losses,
+				Ties:   team.Ties,
+			},
+		})
+	}
+
+	for idx, matchup := range fullSchedule {
+		_ = idx
+		// if idx > 1 {
+		// 	break
+		// }
+		// slog.Info("Processing matchup", "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
+		// Add to resp
+		for i, team := range resp.Teams {
+			// slog.Info("Checking team against matchup", "team_id", team.ESPNID, "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
+			// Add total points scored and against
+			if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+				resp.Teams[i].Points.Scored += matchup.HomeTeamFinalScore
+				resp.Teams[i].Points.Against += matchup.AwayTeamFinalScore
+			} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+				resp.Teams[i].Points.Scored += matchup.AwayTeamFinalScore
+				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
+			}
+
+			// Add the wins and losses
+			if matchup.Completed {
+				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+					if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+						resp.Teams[i].TeamRecord.Wins++
+					} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+						resp.Teams[i].TeamRecord.Losses++
+					}
+				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+					if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+						resp.Teams[i].TeamRecord.Wins++
+					} else if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+						resp.Teams[i].TeamRecord.Losses++
+					}
+				} else {
+					resp.Teams[i].TeamRecord.Ties++
+				}
+			}
+		}
+	}
+
+	// Sort teams by wins, then by points scored
+	slices.SortStableFunc(resp.Teams, func(a, b TeamResponse) int {
+		if a.TeamRecord.Wins != b.TeamRecord.Wins {
+			return b.TeamRecord.Wins - a.TeamRecord.Wins // Sort by wins descending
+		}
+		if a.Points.Scored != b.Points.Scored {
+			if a.Points.Scored < b.Points.Scored {
+				return 1 // Sort by points scored descending
+			}
+			return -1
+		}
+		return 0 // Equal, maintain order
 	})
+
+	// Assign ranks based on sorted order
+	for i := range resp.Teams {
+		resp.Teams[i].Rank = i + 1 // Rank starts from 1
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // GetTeamByID returns a team by its ID
@@ -59,11 +162,11 @@ func GetTeamByID(c *gin.Context) {
 	slog.Info("Fetching team by ID", "id", id)
 
 	team := models.Team{
-		ID:        1,
-		Name:      "Touchdown Terrors",
-		OwnerName: "John Doe",
-		Wins:      8,
-		Losses:    3,
+		ID:     1,
+		Name:   "Touchdown Terrors",
+		Owner:  "John Doe",
+		Wins:   8,
+		Losses: 3,
 	}
 
 	c.JSON(http.StatusOK, team)

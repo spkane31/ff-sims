@@ -171,7 +171,8 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col">
-                            <span className="font-medium">{team.name}</span>
+                            <span className="font-medium">{team.owner}</span>
+                            {/* TODO 2025-06-03: replace team.owner with team.name once names are added to the database */}
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {team.owner}
                             </span>
@@ -184,10 +185,10 @@ export default function Teams() {
                           {team.record.losses}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.scored}
+                            {team.points.scored.toFixed(2)}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.against}
+                          {team.points.against.toFixed(2)}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
@@ -210,7 +211,7 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           <Link
-                            href={`/teams/${team.id}`}
+                            href={`/teams/${team.espnId}`}
                             className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
                           >
                             View Details

@@ -13,15 +13,21 @@ type Matchup struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	LeagueID   uint    `json:"league_id"`
-	Week       int     `json:"week"`
-	Season     int     `json:"season"`
-	HomeTeamID uint    `json:"home_team_id"`
-	AwayTeamID uint    `json:"away_team_id"`
-	HomeScore  float64 `json:"home_score"`
-	AwayScore  float64 `json:"away_score"`
-	Completed  bool    `json:"completed" gorm:"default:false"`
-	IsPlayoff  bool    `json:"is_playoff" gorm:"default:false"`
+	LeagueID                   uint    `json:"league_id"`
+	Week                       int     `json:"week"`
+	Year                       uint    `json:"year"`
+	Season                     int     `json:"season"`
+	HomeTeamID                 uint    `json:"home_team_id"`
+	AwayTeamID                 uint    `json:"away_team_id"`
+	HomeTeamESPNID             uint    `json:"home_team_espn_id"`
+	AwayTeamESPNID             uint    `json:"away_team_espn_id"`
+	HomeTeamFinalScore         float64 `json:"home_score"`
+	AwayTeamFinalScore         float64 `json:"away_score"`
+	HomeTeamESPNProjectedScore float64 `json:"home_projected_score"`
+	AwayTeamESPNProjectedScore float64 `json:"away_projected_score"`
+
+	Completed bool `json:"completed" gorm:"default:false"`
+	IsPlayoff bool `json:"is_playoff" gorm:"default:false"`
 
 	// Relationships
 	League     *League     `json:"-"`

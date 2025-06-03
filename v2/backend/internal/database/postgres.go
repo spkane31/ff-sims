@@ -3,9 +3,9 @@ package database
 import (
 	"fmt"
 	"log"
+	"log/slog"
 
 	"backend/internal/config"
-	"backend/internal/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,6 +18,7 @@ var DB *gorm.DB
 // Initialize sets up the database connection
 func Initialize(cfg *config.Config) error {
 	var err error
+	slog.Info("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
 	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
@@ -38,23 +39,23 @@ func Initialize(cfg *config.Config) error {
 
 // runMigrations automatically creates or updates database tables
 func runMigrations() error {
-	log.Println("Running database migrations...")
+	// log.Println("Running database migrations...")
 
-	err := DB.AutoMigrate(
-		&models.Team{},
-		&models.Player{},
-		&models.PlayerGameStats{},
-		&models.League{},
-		&models.Matchup{},
-		&models.Simulation{},
-		&models.SimResult{},
-		&models.SimTeamResult{},
-	)
+	// err := DB.AutoMigrate(
+	// 	&models.Team{},
+	// 	&models.Player{},
+	// 	&models.PlayerGameStats{},
+	// 	&models.League{},
+	// 	&models.Matchup{},
+	// 	&models.Simulation{},
+	// 	&models.SimResult{},
+	// 	&models.SimTeamResult{},
+	// )
 
-	if err != nil {
-		return err
-	}
+	// if err != nil {
+	// 	return err
+	// }
 
-	log.Println("Migrations completed successfully")
+	// log.Println("Migrations completed successfully")
 	return nil
 }

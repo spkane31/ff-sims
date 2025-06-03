@@ -13,7 +13,8 @@ export interface TeamPoints {
 }
 
 export interface Team {
-  id: number;
+  id: string;
+  espnId: string;
   name: string;
   owner: string;
   record: TeamRecord;
