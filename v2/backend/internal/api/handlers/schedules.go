@@ -1,8 +1,13 @@
 package handlers
 
 import (
-	"log"
+	"backend/internal/database"
+	"backend/internal/models"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"slices"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,38 +21,103 @@ type Schedule struct {
 }
 
 type Matchup struct {
-	Year               int    `json:"year"`
-	Week               int    `json:"week"`
-	HomeTeamID         string `json:"homeTeamId"`
-	AwayTeamID         string `json:"awayTeamId"`
-	HomeTeamName       string `json:"homeTeamName"`
-	AwayTeamName       string `json:"awayTeamName"`
-	HomeScore          int    `json:"homeScore"`
-	AwayScore          int    `json:"awayScore"`
-	HomeProjectedScore int    `json:"homeProjectedScore"`
-	AwayProjectedScore int    `json:"awayProjectedScore"`
+	ID                 string  `json:"id"`
+	Year               uint    `json:"year"`
+	Week               uint    `json:"week"`
+	HomeTeamESPNID     uint    `json:"homeTeamESPNId"`
+	AwayTeamESPNID     uint    `json:"awayTeamESPNId"`
+	HomeTeamName       string  `json:"homeTeamName"`
+	AwayTeamName       string  `json:"awayTeamName"`
+	HomeScore          float64 `json:"homeScore"`
+	AwayScore          float64 `json:"awayScore"`
+	HomeProjectedScore float64 `json:"homeProjectedScore"`
+	AwayProjectedScore float64 `json:"awayProjectedScore"`
 }
 
 // GetPlayers returns all players with optional filtering
 func GetSchedules(c *gin.Context) {
 	year := c.Query("year")
 
-	log.Printf("GetSchedules called with year: %s\n", year)
+	slog.Info("Fetching schedules", "year", year)
 
-	c.JSON(http.StatusOK, GetSchedulesResponse{
-		Data: Schedule{
-			Matchups: []Matchup{
-				{Year: 2024, Week: 1, HomeTeamID: "team1", AwayTeamID: "team2", HomeTeamName: "Team A", AwayTeamName: "Team B", HomeScore: 24, AwayScore: 17, HomeProjectedScore: 25, AwayProjectedScore: 20},
-				{Year: 2024, Week: 1, HomeTeamID: "team3", AwayTeamID: "team4", HomeTeamName: "Team C", AwayTeamName: "Team D", HomeScore: 30, AwayScore: 21, HomeProjectedScore: 28, AwayProjectedScore: 22},
-				{Year: 2024, Week: 1, HomeTeamID: "team5", AwayTeamID: "team6", HomeTeamName: "Team E", AwayTeamName: "Team F", HomeScore: 14, AwayScore: 28, HomeProjectedScore: 18, AwayProjectedScore: 26},
-				{Year: 2024, Week: 1, HomeTeamID: "team7", AwayTeamID: "team8", HomeTeamName: "Team G", AwayTeamName: "Team H", HomeScore: 21, AwayScore: 24, HomeProjectedScore: 22, AwayProjectedScore: 23},
-				{Year: 2024, Week: 1, HomeTeamID: "team9", AwayTeamID: "team10", HomeTeamName: "Team I", AwayTeamName: "Team J", HomeScore: 27, AwayScore: 30, HomeProjectedScore: 26, AwayProjectedScore: 29},
-				{Year: 2024, Week: 2, HomeTeamID: "team1", AwayTeamID: "team3", HomeTeamName: "Team A", AwayTeamName: "Team C", HomeScore: 20, AwayScore: 24, HomeProjectedScore: 22, AwayProjectedScore: 25},
-				{Year: 2024, Week: 2, HomeTeamID: "team2", AwayTeamID: "team4", HomeTeamName: "Team B", AwayTeamName: "Team D", HomeScore: 17, AwayScore: 21, HomeProjectedScore: 19, AwayProjectedScore: 23},
-				{Year: 2024, Week: 2, HomeTeamID: "team5", AwayTeamID: "team7", HomeTeamName: "Team E", AwayTeamName: "Team G", HomeScore: 30, AwayScore: 28, HomeProjectedScore: 29, AwayProjectedScore: 27},
-				{Year: 2024, Week: 2, HomeTeamID: "team6", AwayTeamID: "team8", HomeTeamName: "Team F", AwayTeamName: "Team H", HomeScore: 21, AwayScore: 30, HomeProjectedScore: 20, AwayProjectedScore: 31},
-				{Year: 2024, Week: 2, HomeTeamID: "team9", AwayTeamID: "team10", HomeTeamName: "Team I", AwayTeamName: "Team J", HomeScore: 24, AwayScore: 27, HomeProjectedScore: 25, AwayProjectedScore: 26},
-			},
-		},
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	schedule, scheduleErr := []models.Matchup{}, error(nil)
+	go func() {
+		defer wg.Done()
+		if year == "" {
+			if scheduleErr := database.DB.Model(&models.Matchup{}).Find(&schedule).Error; scheduleErr != nil {
+				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
+				return
+			}
+		} else {
+			if scheduleErr := database.DB.Model(&models.Matchup{}).Where("year = ?", year).Find(&schedule).Error; scheduleErr != nil {
+				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
+				return
+			}
+		}
+	}()
+
+	teams, teamsErr := []models.Team{}, error(nil)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if teamsErr = database.DB.Model(&models.Team{}).Select("espn_id, owner").Find(&teams).Error; teamsErr != nil {
+			slog.Error("Failed to fetch teams from database", "error", teamsErr)
+			return
+		}
+		slog.Info("Fetched teams from database", "count", len(teams))
+		for _, team := range teams {
+			slog.Info("Team", "espn_id", team.ESPNID, "owner", team.Owner)
+		}
+	}()
+
+	wg.Wait()
+
+	if teamsErr != nil {
+		slog.Error("Error fetching teams", "error", teamsErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
+		return
+	}
+	if scheduleErr != nil {
+		slog.Error("Error fetching schedules", "error", scheduleErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schedules"})
+		return
+	}
+
+	resp := GetSchedulesResponse{}
+	resp.Data.Matchups = make([]Matchup, len(schedule))
+	for i, matchup := range schedule {
+		resp.Data.Matchups[i] = Matchup{
+			ID:                 fmt.Sprintf("%d", matchup.ID),
+			Year:               matchup.Year,
+			Week:               matchup.Week,
+			HomeTeamESPNID:     matchup.HomeTeamESPNID,
+			AwayTeamESPNID:     matchup.AwayTeamESPNID,
+			HomeScore:          matchup.HomeTeamFinalScore,
+			AwayScore:          matchup.AwayTeamFinalScore,
+			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
+			AwayProjectedScore: matchup.AwayTeamESPNProjectedScore,
+		}
+
+		for _, team := range teams {
+			if team.ESPNID == matchup.HomeTeamESPNID {
+				resp.Data.Matchups[i].HomeTeamName = team.Owner
+			}
+			if team.ESPNID == matchup.AwayTeamESPNID {
+				resp.Data.Matchups[i].AwayTeamName = team.Owner
+			}
+		}
+	}
+
+	// Sort in reverse order by year and week
+	slices.SortStableFunc(resp.Data.Matchups, func(a, b Matchup) int {
+		if a.Year != b.Year {
+			return int(b.Year - a.Year) // Reverse order by year
+		}
+		return int(b.Week - a.Week) // Reverse order by week
 	})
+
+	c.JSON(http.StatusOK, resp)
 }

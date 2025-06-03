@@ -2,14 +2,19 @@ import { useState } from "react";
 import Layout from "../../components/Layout";
 import { useSchedule } from "../../hooks/useSchedule";
 import { Game as ApiGame, GetScheduleResponse, Matchup } from "../../services/scheduleService";
+import Link from "next/link";
 
 // Type definitions
 interface Game {
+  id: string;
+  year: number;
   week: number;
   homeTeam: string;
   awayTeam: string;
   homeScore: number;
   awayScore: number;
+  homeProjectedScore: number;
+  awayProjectedScore: number;
   completed: boolean;
 }
 
@@ -25,16 +30,21 @@ interface ScheduleProps {
 
 export default function Schedule({}: ScheduleProps) {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
+  const [selectedYear, setSelectedYear] = useState<string>("all");
   const { schedule, isLoading, error } = useSchedule();
 
   // Transform API data to our Game format
   const scheduleData: Game[] = !isLoading && schedule ?
     schedule.data.matchups.flat().map(game => ({
+      id: game.id,
+      year: game.year,
       week: game.week,
       homeTeam: game.homeTeamName,
       awayTeam: game.awayTeamName,
       homeScore: game.homeScore,
       awayScore: game.awayScore,
+      homeProjectedScore: game.homeProjectedScore,
+      awayProjectedScore: game.awayProjectedScore,
       completed: game.homeScore > 0 || game.awayScore > 0 // Assume completed if scores exist
     })) : [];
 
@@ -42,9 +52,17 @@ export default function Schedule({}: ScheduleProps) {
     new Set(scheduleData.map(game => game.week))
   ).sort((a, b) => a - b);
 
-  const filteredGames: Game[] = selectedWeek === "all"
-    ? scheduleData
-    : scheduleData.filter(game => game.week === parseInt(selectedWeek));
+  const years: number[] = Array.from(
+    new Set(scheduleData.map(game => game.year))
+  ).sort((a, b) => b-a);
+
+  const filteredGames: Game[] = scheduleData.filter(game =>{
+    if (selectedYear === "all" && selectedWeek === "all") return true; // Show all games
+    if (selectedYear !== "all" && selectedWeek === "all") return game.year.toString() === selectedYear;
+    if (selectedYear === "all" && selectedWeek !== "all") return game.week.toString() === selectedWeek;
+    return game.year.toString() === selectedYear && game.week.toString() === selectedWeek;
+  }
+  );
 
   // Strength of schedule data
   // This would ideally be calculated based on actual team data
@@ -88,6 +106,21 @@ export default function Schedule({}: ScheduleProps) {
               <h2 className="text-xl font-semibold mb-3 md:mb-0">Matchups</h2>
 
               <div className="w-full md:w-auto">
+                <label htmlFor="yearFilter" className="block text-sm font-medium mb-1 md:hidden">
+                  Select Year
+                </label>
+                <select
+                  id="yearFilter"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  disabled={isLoading}
+                >
+                  <option value="all">All Years</option>
+                  {years.map(year => (
+                    <option key={year} value={year}>Year {year}</option>
+                  ))}
+                </select>
                 <label htmlFor="weekFilter" className="block text-sm font-medium mb-1 md:hidden">
                   Select Week
                 </label>
@@ -121,15 +154,19 @@ export default function Schedule({}: ScheduleProps) {
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-800">
                     <tr>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Year</th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Week</th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Matchup</th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Score</th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Projected Score</th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Details</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {filteredGames.map((game, i) => (
                       <tr key={i} className={i % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700"}>
+                        <td className="py-4 px-4 whitespace-nowrap">{game.year}</td>
                         <td className="py-4 px-4 whitespace-nowrap">Week {game.week}</td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">
@@ -146,7 +183,16 @@ export default function Schedule({}: ScheduleProps) {
                         <td className="py-4 px-4 whitespace-nowrap">
                           {game.completed ? (
                             <span>
-                              {game.homeScore} - {game.awayScore}
+                              {game.homeScore.toFixed(2)} - {game.awayScore.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 dark:text-gray-400">Upcoming</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          {game.completed ? (
+                            <span>
+                              ({game.homeProjectedScore.toFixed(2)} - {game.awayProjectedScore.toFixed(2)})
                             </span>
                           ) : (
                             <span className="text-gray-500 dark:text-gray-400">Upcoming</span>
@@ -162,6 +208,15 @@ export default function Schedule({}: ScheduleProps) {
                               Upcoming
                             </span>
                           )}
+                        </td>
+
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          <Link
+                            href={`/schedule/${game.id}`}
+                            className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
+                          >
+                            View Details
+                          </Link>
                         </td>
                       </tr>
                     ))}

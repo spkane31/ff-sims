@@ -14,7 +14,7 @@ type Matchup struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	LeagueID                   uint    `json:"league_id"`
-	Week                       int     `json:"week"`
+	Week                       uint    `json:"week"`
 	Year                       uint    `json:"year"`
 	Season                     int     `json:"season"`
 	HomeTeamID                 uint    `json:"home_team_id"`

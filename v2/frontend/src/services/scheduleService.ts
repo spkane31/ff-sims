@@ -25,6 +25,7 @@ export interface Schedule {
 }
 
 export interface Matchup {
+  id: string;
   year: number;
   week: number;
   homeTeamId: number;
