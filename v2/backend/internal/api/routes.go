@@ -35,6 +35,7 @@ func SetupRouter(r *gin.Engine) {
 		schedules := api.Group("/schedules")
 		{
 			schedules.GET("", handlers.GetSchedules)
+			schedules.GET("/:id", handlers.GetMatchup)
 		}
 
 		transactions := api.Group("/transactions")

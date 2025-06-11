@@ -12,13 +12,20 @@ import (
 
 type Matchup struct {
 	gorm.Model
-	HomeTeam, AwayTeam                                     Team
-	HomeTeamID, AwayTeamID                                 uint
-	HomeTeamESPNID, AwayTeamESPNID                         uint
-	HomeTeamFinalScore, AwayTeamFinalScore                 float64
-	Completed, IsPlayoff                                   bool
-	HomeTeamESPNProjectedScore, AwayTeamESPNProjectedScore float64
-	Week, Year                                             uint
+	HomeTeam                   Team
+	AwayTeam                   Team
+	HomeTeamID                 uint
+	AwayTeamID                 uint
+	HomeTeamESPNID             uint
+	AwayTeamESPNID             uint
+	HomeTeamFinalScore         float64
+	AwayTeamFinalScore         float64
+	Completed                  bool
+	IsPlayoff                  bool
+	HomeTeamESPNProjectedScore float64
+	AwayTeamESPNProjectedScore float64
+	Week                       uint
+	Year                       uint
 }
 
 type Team struct {
@@ -29,37 +36,49 @@ type Team struct {
 
 type DraftSelection struct {
 	gorm.Model
-	PlayerName                          string
-	PlayerPosition                      string
-	TeamID, PlayerID, Round, Pick, Year uint
-	OwnerESPNID                         uint
+	PlayerName     string
+	PlayerPosition string
+	TeamID         uint
+	PlayerID       uint
+	Round          uint
+	Pick           uint
+	Year           uint
+	OwnerESPNID    uint
 }
 
 type BoxScorePlayer struct {
 	gorm.Model
-	PlayerName, PlayerPosition    string
-	Status                        string
-	OwnerESPNID                   uint
-	TeamID, PlayerID, Week, Year  uint
-	ProjectedPoints, ActualPoints float64
+	PlayerName      string
+	PlayerPosition  string
+	Status          string
+	OwnerESPNID     uint
+	TeamID          uint
+	PlayerID        uint
+	Week            uint
+	Year            uint
+	ProjectedPoints float64
+	ActualPoints    float64
 }
 
 type Transaction struct {
 	gorm.Model
-	Date             time.Time
-	TeamID, PlayerID uint
-	TransactionType  string
+	Date            time.Time
+	TeamID          uint
+	PlayerID        uint
+	TransactionType string
 }
 
 type Request struct {
 	gorm.Model
-	Endpoint, Method, Body string
-	Completed              bool
-	UserAgent              string
-	RuntimeMS              float64
-	StatusCode             int
-	IsFrontend             bool `gorm:"default:false"`
-	Timestamp              time.Time
+	Endpoint   string
+	Method     string
+	Body       string
+	Completed  bool
+	UserAgent  string
+	RuntimeMS  float64
+	StatusCode int
+	IsFrontend bool `gorm:"default:false"`
+	Timestamp  time.Time
 }
 
 func main() {

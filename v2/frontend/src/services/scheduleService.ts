@@ -1,6 +1,11 @@
-import { apiClient } from './apiClient';
+import { apiClient } from "./apiClient";
+import {
+  Matchup,
+  GetMatchupsResponse,
+  GetMatchupResponse,
+} from "../types/models";
 
-// Define interfaces for schedule data
+// Legacy interfaces for backward compatibility
 export interface Game {
   id: number;
   year: number;
@@ -24,18 +29,53 @@ export interface Schedule {
   matchups: Matchup[];
 }
 
-export interface Matchup {
+export interface Player {
+  id: string;
+  playerName: string;
+  playerPosition: string;
+  status: string;
+  team: string;
+  projectedPoints: number;
+  points: number;
+  isStarter: boolean;
+}
+
+export interface MatchupDetail {
   id: string;
   year: number;
   week: number;
-  homeTeamId: number;
-  awayTeamId: number;
-  homeTeamName: string;
-  awayTeamName: string;
-  homeScore: number;
-  awayScore: number;
-  homeProjectedScore: number;
-  awayProjectedScore: number;
+  homeTeam: {
+    id: number;
+    name: string;
+    score: number;
+    projectedScore: number;
+    players: Player[];
+  };
+  awayTeam: {
+    id: number;
+    name: string;
+    score: number;
+    projectedScore: number;
+    players: Player[];
+  };
+  matchupStatistics: {
+    pointDifferential: number;
+    accuracyPercentage: number;
+    playoffImplications: string;
+    winProbability: number;
+  };
+}
+
+export interface BoxScorePlayer {
+  playerName: string;
+  playerPosition: string;
+  status: string;
+  actualPoints: number;
+  projectedPoints: number;
+}
+
+export interface GetMatchupDetailResponse {
+  data: MatchupDetail;
 }
 
 /**
@@ -45,8 +85,8 @@ export const scheduleService = {
   /**
    * Get the full schedule
    */
-  getFullSchedule: async (): Promise<GetScheduleResponse> => {
-    return apiClient.get<GetScheduleResponse>('/schedules');
+  getFullSchedule: async (): Promise<GetMatchupsResponse> => {
+    return apiClient.get<GetMatchupsResponse>("/schedules");
   },
 
   /**
@@ -60,7 +100,7 @@ export const scheduleService = {
    * Get all completed games
    */
   getCompletedGames: async (): Promise<Game[]> => {
-    return apiClient.get<Game[]>('/schedules/completed');
+    return apiClient.get<Game[]>("/schedules/completed");
   },
 
   /**
@@ -68,5 +108,14 @@ export const scheduleService = {
    */
   getTeamSchedule: async (teamId: number): Promise<Game[]> => {
     return apiClient.get<Game[]>(`/schedules/team/${teamId}`);
-  }
+  },
+
+  /**
+   * Get details for a specific matchup
+   */
+  getMatchupById: async (
+    matchupId: string
+  ): Promise<GetMatchupDetailResponse> => {
+    return apiClient.get<GetMatchupDetailResponse>(`/schedules/${matchupId}`);
+  },
 };
