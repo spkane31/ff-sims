@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -155,21 +156,248 @@ func GetTeams(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// GetTeamByID returns a team by its ID
+// GetTeamByID returns detailed information about a team including schedule, players, draft, and transactions
 func GetTeamByID(c *gin.Context) {
 	id := c.Param("id")
 
 	slog.Info("Fetching team by ID", "id", id)
 
-	team := models.Team{
-		ID:     1,
-		Name:   "Touchdown Terrors",
-		Owner:  "John Doe",
-		Wins:   8,
-		Losses: 3,
+	teamMap, err := database.GetTeamsIDMap()
+	if err != nil {
+		slog.Error("Failed to fetch teams ID map", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch team data"})
+		return
 	}
 
-	c.JSON(http.StatusOK, team)
+	// Fetch the team
+	var team models.Team
+	if err := database.DB.Where("espn_id = ?", id).First(&team).Error; err != nil {
+		slog.Error("Failed to fetch team from database", "error", err, "id", id)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
+		return
+	}
+
+	// Fetch team's schedule (all matchups for this team)
+	var schedule []models.Matchup
+	if err := database.DB.Where("home_team_espn_id = ? OR away_team_espn_id = ?", id, id).
+		Order("year desc, week asc").Find(&schedule).Error; err != nil {
+		slog.Error("Failed to fetch team schedule", "error", err, "team_id", id)
+	}
+
+	// Fetch team's draft picks from DraftSelection table
+	var draftSelections []models.DraftSelection
+	if err := database.DB.Where("owner_espn_id = ?", id).
+		Order("year desc, round asc, pick asc").Find(&draftSelections).Error; err != nil {
+		slog.Error("Failed to fetch team draft picks", "error", err, "team_id", id)
+	}
+
+	// TODO: Fetch current and past players once team-player relationships are implemented
+	// This would require a join table or foreign keys between teams and players
+	currentPlayers := []PlayerResponse{
+		{
+			ID:            "1",
+			Name:          "Patrick Mahomes",
+			Position:      "QB",
+			Team:          "KC",
+			Status:        "Active",
+			FantasyPoints: 287.5,
+			Stats: PlayerStatsResponse{
+				PassingYards: 4183,
+				PassingTDs:   27,
+				RushingTDs:   1,
+			},
+		},
+		{
+			ID:            "2",
+			Name:          "Travis Kelce",
+			Position:      "TE",
+			Team:          "KC",
+			Status:        "Active",
+			FantasyPoints: 201.3,
+			Stats: PlayerStatsResponse{
+				Receptions:     93,
+				ReceivingYards: 984,
+				ReceivingTDs:   5,
+			},
+		},
+	}
+
+	// Transform draft picks data
+	var draftPicks []DraftPickResponse
+	for _, selection := range draftSelections {
+		draftPicks = append(draftPicks, DraftPickResponse{
+			Round:    int(selection.Round),
+			Pick:     int(selection.Pick),
+			Player:   selection.PlayerName,
+			Position: selection.PlayerPosition,
+			Team:     "", // TODO: Add NFL team field to DraftSelection model
+			Year:     int(selection.Year),
+		})
+
+		log.Printf("Draft Pick: Round %d, Pick %d, Player %s, Position %s, Year %d",
+			selection.Round, selection.Pick, selection.PlayerName, selection.PlayerPosition, selection.Year)
+	}
+
+	// TODO: Fetch transactions once transaction data is stored in database
+	// This would require a Transaction model with trade/waiver/free agent data
+	transactions := []TransactionResponse{
+		{
+			ID:            "1",
+			Type:          "Trade",
+			Date:          "2024-10-15",
+			Description:   "Traded DeAndre Hopkins for DJ Moore",
+			PlayersGained: []string{"DJ Moore"},
+			PlayersLost:   []string{"DeAndre Hopkins"},
+			Week:          7,
+		},
+		{
+			ID:            "2",
+			Type:          "Waiver",
+			Date:          "2024-11-01",
+			Description:   "Claimed Jayden Reed off waivers",
+			PlayersGained: []string{"Jayden Reed"},
+			PlayersLost:   []string{},
+			Week:          9,
+		},
+	}
+
+	// Transform schedule data
+	scheduleResponse := make([]ScheduleGameResponse, len(schedule))
+	for i, matchup := range schedule {
+		var opponent string
+		var teamScore, opponentScore float64
+		var isHome bool
+
+		if fmt.Sprintf("%d", matchup.HomeTeamESPNID) == id {
+			// This team is home
+			isHome = true
+			teamScore = matchup.HomeTeamFinalScore
+			opponentScore = matchup.AwayTeamFinalScore
+			opponent = teamMap[matchup.AwayTeamESPNID].Owner
+		} else {
+			// This team is away
+			isHome = false
+			teamScore = matchup.AwayTeamFinalScore
+			opponentScore = matchup.HomeTeamFinalScore
+			opponent = teamMap[matchup.HomeTeamESPNID].Owner
+		}
+
+		var result string
+		if matchup.Completed {
+			if teamScore > opponentScore {
+				result = "W"
+			} else if teamScore < opponentScore {
+				result = "L"
+			} else {
+				result = "T"
+			}
+		} else {
+			result = "Upcoming"
+		}
+
+		scheduleResponse[i] = ScheduleGameResponse{
+			Week:          int(matchup.Week),
+			Year:          int(matchup.Year),
+			Opponent:      opponent,
+			IsHome:        isHome,
+			TeamScore:     teamScore,
+			OpponentScore: opponentScore,
+			Result:        result,
+			Completed:     matchup.Completed,
+			IsPlayoff:     matchup.IsPlayoff,
+		}
+	}
+
+	response := TeamDetailResponse{
+		ID:     fmt.Sprintf("%d", team.ID),
+		ESPNID: fmt.Sprintf("%d", team.ESPNID),
+		Name:   team.Name,
+		Owner:  team.Owner,
+		Record: TeamRecord{
+			Wins:   team.Wins,
+			Losses: team.Losses,
+			Ties:   team.Ties,
+		},
+		Points: TeamPoints{
+			Scored:  team.Points, // TODO: Calculate from actual matchup data
+			Against: 0.0,         // TODO: Calculate from actual matchup data
+		},
+		Schedule:       scheduleResponse,
+		CurrentPlayers: currentPlayers,
+		DraftPicks:     draftPicks,
+		Transactions:   transactions,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// Response types for detailed team information
+type TeamDetailResponse struct {
+	ID             string                 `json:"id"`
+	ESPNID         string                 `json:"espnId"`
+	Name           string                 `json:"name"`
+	Owner          string                 `json:"owner"`
+	Record         TeamRecord             `json:"record"`
+	Points         TeamPoints             `json:"points"`
+	Schedule       []ScheduleGameResponse `json:"schedule"`
+	CurrentPlayers []PlayerResponse       `json:"currentPlayers"`
+	DraftPicks     []DraftPickResponse    `json:"draftPicks"`
+	Transactions   []TransactionResponse  `json:"transactions"`
+}
+
+type ScheduleGameResponse struct {
+	Week          int     `json:"week"`
+	Year          int     `json:"year"`
+	Opponent      string  `json:"opponent"`
+	IsHome        bool    `json:"isHome"`
+	TeamScore     float64 `json:"teamScore"`
+	OpponentScore float64 `json:"opponentScore"`
+	Result        string  `json:"result"` // "W", "L", "T", or "Upcoming"
+	Completed     bool    `json:"completed"`
+	IsPlayoff     bool    `json:"isPlayoff"`
+}
+
+type PlayerResponse struct {
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	Position      string              `json:"position"`
+	Team          string              `json:"team"`
+	Status        string              `json:"status"`
+	FantasyPoints float64             `json:"fantasyPoints"`
+	Stats         PlayerStatsResponse `json:"stats"`
+}
+
+type PlayerStatsResponse struct {
+	PassingYards   int `json:"passingYards"`
+	PassingTDs     int `json:"passingTDs"`
+	Interceptions  int `json:"interceptions"`
+	RushingYards   int `json:"rushingYards"`
+	RushingTDs     int `json:"rushingTDs"`
+	Receptions     int `json:"receptions"`
+	ReceivingYards int `json:"receivingYards"`
+	ReceivingTDs   int `json:"receivingTDs"`
+	Fumbles        int `json:"fumbles"`
+	FieldGoals     int `json:"fieldGoals"`
+	ExtraPoints    int `json:"extraPoints"`
+}
+
+type DraftPickResponse struct {
+	Round    int    `json:"round"`
+	Pick     int    `json:"pick"`
+	Player   string `json:"player"`
+	Position string `json:"position"`
+	Team     string `json:"team"`
+	Year     int    `json:"year"`
+}
+
+type TransactionResponse struct {
+	ID            string   `json:"id"`
+	Type          string   `json:"type"` // "Trade", "Waiver", "Free Agent"
+	Date          string   `json:"date"`
+	Description   string   `json:"description"`
+	PlayersGained []string `json:"playersGained"`
+	PlayersLost   []string `json:"playersLost"`
+	Week          int      `json:"week"`
 }
 
 // CreateTeam creates a new team

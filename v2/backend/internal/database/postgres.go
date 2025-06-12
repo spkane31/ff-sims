@@ -50,6 +50,7 @@ func runMigrations() error {
 	// 	&models.Simulation{},
 	// 	&models.SimResult{},
 	// 	&models.SimTeamResult{},
+	//  &models.DraftSelection{},
 	// )
 
 	// if err != nil {

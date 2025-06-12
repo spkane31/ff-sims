@@ -49,10 +49,10 @@ export default function Schedule({}: ScheduleProps) {
           season: game.year,
           year: game.year,
           week: game.week,
-          home_team_id: game.home_team?.id || 0,
-          away_team_id: game.away_team?.id || 0,
-          home_team_espn_id: game.home_team?.espn_id || 0,
-          away_team_espn_id: game.away_team?.espn_id || 0,
+          home_team_id: game.home_team_id || 0,
+          away_team_id: game.away_team_id || 0,
+          home_team_espn_id: game.home_team_espn_id || 0,
+          away_team_espn_id: game.away_team_espn_id || 0,
           home_team_name: game.home_team_name,
           away_team_name: game.away_team_name,
           home_score: game.home_score,
@@ -236,8 +236,9 @@ export default function Schedule({}: ScheduleProps) {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">
-                            <span
-                              className={`font-medium ${
+                            <Link
+                              href={`/teams/${game.home_team_espn_id}`}
+                              className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.home_score > game.away_score
                                   ? "text-green-600"
@@ -245,11 +246,13 @@ export default function Schedule({}: ScheduleProps) {
                               }`}
                             >
                               {game.home_team_name}
-                            </span>
+                            </Link>
                             <span className="hidden md:inline mx-2">vs</span>
                             <span className="md:hidden">@</span>
-                            <span
-                              className={`font-medium ${
+
+                            <Link
+                              href={`/teams/${game.away_team_espn_id}`}
+                              className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.away_score > game.home_score
                                   ? "text-green-600"
@@ -257,7 +260,7 @@ export default function Schedule({}: ScheduleProps) {
                               }`}
                             >
                               {game.away_team_name}
-                            </span>
+                            </Link>
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">

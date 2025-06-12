@@ -57,3 +57,4 @@ type PlayerGameStats struct {
 	// Relationships
 	Player *Player `json:"-"`
 }
+
