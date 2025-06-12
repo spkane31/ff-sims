@@ -281,7 +281,12 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col">
-                            <span className="font-medium">{team.owner}</span>
+                            <Link
+                              href={`/teams/${team.espnId}`}
+                              className="font-medium hover:text-blue-600"
+                            >
+                              {team.owner}
+                            </Link>
                             {/* TODO 2025-06-03: replace team.owner with team.name once names are added to the database */}
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {team.owner}
@@ -295,10 +300,16 @@ export default function Teams() {
                           {team.record.losses}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.scored.toFixed(2)}
+                          {team.points.scored.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.against.toFixed(2)}
+                          {team.points.against.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
@@ -361,9 +372,18 @@ export default function Teams() {
                           key={`pf-${team.id}`}
                           className="flex justify-between items-center py-2"
                         >
-                          <span className="font-medium">{team.owner}</span>
+                          <Link
+                            href={`/teams/${team.espnId}`}
+                            className="font-medium hover:text-blue-600"
+                          >
+                            {team.owner}
+                          </Link>
                           <span className="text-blue-600">
-                            {team.points.scored.toFixed(1)} pts
+                            {team.points.scored.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}{" "}
+                            pts
                           </span>
                         </div>
                       ))
@@ -396,9 +416,18 @@ export default function Teams() {
                           key={`pa-${team.id}`}
                           className="flex justify-between items-center py-2"
                         >
-                          <span className="font-medium">{team.owner}</span>
+                          <Link
+                            href={`/teams/${team.espnId}`}
+                            className="font-medium hover:text-blue-600"
+                          >
+                            {team.owner}
+                          </Link>
                           <span className="text-red-600">
-                            {team.points.against.toFixed(1)} pts
+                            {team.points.against.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}{" "}
+                            pts
                           </span>
                         </div>
                       ))
