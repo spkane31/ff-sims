@@ -53,8 +53,8 @@ export default function Schedule({}: ScheduleProps) {
           away_team_id: game.away_team?.id || 0,
           home_team_espn_id: game.home_team?.espn_id || 0,
           away_team_espn_id: game.away_team?.espn_id || 0,
-          // homeTeam: game.home_team?.name || "Some Unknown Team",
-          // awayTeam: game.away_team?.name || "Some Unknown Team",
+          home_team_name: game.home_team_name,
+          away_team_name: game.away_team_name,
           home_score: game.home_score,
           away_score: game.away_score,
           home_projected_score: game.home_projected_score,
@@ -244,7 +244,7 @@ export default function Schedule({}: ScheduleProps) {
                                   : ""
                               }`}
                             >
-                              {game.home_team?.name}
+                              {game.home_team_name}
                             </span>
                             <span className="hidden md:inline mx-2">vs</span>
                             <span className="md:hidden">@</span>
@@ -256,7 +256,7 @@ export default function Schedule({}: ScheduleProps) {
                                   : ""
                               }`}
                             >
-                              {game.away_team?.name}
+                              {game.away_team_name}
                             </span>
                           </div>
                         </td>

@@ -18,6 +18,8 @@ export interface Matchup extends BaseModel {
   season: number;
   home_team_id: number;
   away_team_id: number;
+  home_team_name: string;
+  away_team_name: string;
   home_team_espn_id: number;
   away_team_espn_id: number;
   home_score: number;
