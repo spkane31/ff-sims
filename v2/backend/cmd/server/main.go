@@ -23,7 +23,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
-	database.Initialize(cfg)
+	if err := database.Initialize(cfg); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
 
 	// Create a gin router with default middleware
 	r := gin.Default()

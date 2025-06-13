@@ -39,10 +39,12 @@ func Initialize(cfg *config.Config) error {
 
 // runMigrations automatically creates or updates database tables
 func runMigrations() error {
-	// log.Println("Running database migrations...")
+	log.Println("Running database migrations...")
 
+	// Run the migrations
 	// err := DB.AutoMigrate(
 	// 	&models.Team{},
+	// 	&models.TeamNameHistory{},
 	// 	&models.Player{},
 	// 	&models.PlayerGameStats{},
 	// 	&models.League{},
@@ -50,13 +52,13 @@ func runMigrations() error {
 	// 	&models.Simulation{},
 	// 	&models.SimResult{},
 	// 	&models.SimTeamResult{},
-	//  &models.DraftSelection{},
+	// 	&models.DraftSelection{},
 	// )
 
 	// if err != nil {
 	// 	return err
 	// }
 
-	// log.Println("Migrations completed successfully")
+	log.Println("Migrations completed successfully")
 	return nil
 }

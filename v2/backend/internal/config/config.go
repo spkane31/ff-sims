@@ -8,6 +8,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func init() {
+	godotenv.Load()
+}
+
 // Config contains all configuration for the application
 type Config struct {
 	Server ServerConfig

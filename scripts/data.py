@@ -48,13 +48,26 @@ def upsert_team(
 def upsert_teams(
     teams: List[Dict[str, any]],
     conn: "psycopg2.connection" = None,
-    file_name: str = "teams.json",
+    file_name: str = None,
+    year: int = datetime.now().year,
 ) -> None:
+    """Save team data to database and/or file"""
+    logging.info(f"Upserting teams to {'database' if conn else 'file'}")
+
+    # Create formatted team data for file output
+    team_data = [
+        {
+            "espn_id": team.team_id,
+            "owner": " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]]),
+            "team_name": team.team_name,
+            "year": year,
+        }
+        for team in teams
+    ]
+
+    # Update database if connection provided
     if conn is not None:
         for team in teams:
-            logging.info(
-                f"Upserting team: {team.team_id} - {team.owner} (file: {file_name}) (conn: {conn is not None})"
-            )
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM teams WHERE espn_id = %s", (team.team_id,))
                 if cur.fetchone():
@@ -63,13 +76,11 @@ def upsert_teams(
                     cur.execute("INSERT INTO teams (owner, espn_id) VALUES (%s, %s)", (team.owner, team.team_id))
                 conn.commit()
 
+    # Write to file if filename provided
     if file_name is not None:
-        data = [
-            {"espn_id": team.team_id, "owner": " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]])}
-            for team in teams
-        ]
-        with open(file_name, "a") as f:
-            json.dump(data, f)
+        logging.info(f"Writing {len(team_data)} teams to {file_name}")
+        with open(file_name, "w") as f:
+            json.dump(team_data, f, indent=2)
 
     return None
 
@@ -226,30 +237,14 @@ def upsert_player_boxscore(
     return None
 
 
-def get_schedule(league: League, conn: "psycopg2.connection" = None) -> None:
+def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: str = None) -> None:
     logging.info(f"Upserting teams for {league.year}")
-    upsert_teams(league.teams, conn=conn)
+    teams_file = file_name.replace("matchups", "teams") if file_name else None
+    upsert_teams(league.teams, conn=conn, file_name=teams_file, year=league.year)
 
     logging.info(f"Creating matchups based on {league.year}")
-    upsert_matchups(league, conn=conn)
-
-    # for week in range(1, 15):
-    #     for matchup in league.scoreboard(week=week):
-    #         if matchup.matchup_type != "NONE":
-    #             continue
-
-    #         upsert_matchup(
-    #             conn,
-    #             week,
-    #             league.year,
-    #             matchup.home_team.team_id,
-    #             matchup.away_team.team_id,
-    #             0,
-    #             0,
-    #             0,
-    #             0,
-    #             False,
-    #         )
+    matchups_data = []
+    box_score_data = []
 
     for week in range(1, 15):
         logging.info(f"Year: {league.year}\tWeek: {week}")
@@ -259,67 +254,195 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None) -> None:
             for matchup in league.scoreboard(week=week):
                 if not hasattr(matchup, "away_team") or not hasattr(matchup, "home_team"):
                     break
-                upsert_matchup(
-                    week,
-                    league.year,
-                    matchup.home_team.team_id,
-                    matchup.away_team.team_id,
-                    matchup.home_score,
-                    matchup.away_score,
-                    -1,
-                    -1,
-                    True,
-                    conn=conn,
-                )
+
+                matchup_info = {
+                    "week": week,
+                    "year": league.year,
+                    "home_team_espn_id": matchup.home_team.team_id,
+                    "away_team_espn_id": matchup.away_team.team_id,
+                    "home_team_final_score": matchup.home_score,
+                    "away_team_final_score": matchup.away_score,
+                    "home_team_espn_projected_score": -1,
+                    "away_team_espn_projected_score": -1,
+                    "completed": True,
+                }
+
+                matchups_data.append(matchup_info)
+
+                # Also update database if needed
+                if conn is not None:
+                    upsert_matchup(
+                        week,
+                        league.year,
+                        matchup.home_team.team_id,
+                        matchup.away_team.team_id,
+                        matchup.home_score,
+                        matchup.away_score,
+                        -1,
+                        -1,
+                        True,
+                        conn=conn,
+                    )
         else:
             # box_scores func only works for the current year
             for matchup in league.box_scores(week=week):
                 if matchup.away_team == 0 or matchup.home_team == 0:
                     break
-                upsert_matchup(
-                    week,
-                    league.year,
-                    matchup.home_team.team_id,
-                    matchup.away_team.team_id,
-                    matchup.home_score,
-                    matchup.away_score,
-                    matchup.home_projected,
-                    matchup.away_projected,
-                    league.current_week > week,
-                    conn=conn,
-                )
+
+                matchup_info = {
+                    "week": week,
+                    "year": league.year,
+                    "home_team_espn_id": matchup.home_team.team_id,
+                    "away_team_espn_id": matchup.away_team.team_id,
+                    "home_team_final_score": matchup.home_score,
+                    "away_team_final_score": matchup.away_score,
+                    "home_team_espn_projected_score": matchup.home_projected,
+                    "away_team_espn_projected_score": matchup.away_projected,
+                    "completed": league.current_week > week,
+                    "home_team_lineup": [
+                        {
+                            "slot_position": player.slot_position,
+                            "points": player.points,
+                            "projected_points": player.projected_points,
+                            "pro_opponent": player.pro_opponent,
+                            "pro_pos_rank": player.pro_pos_rank,
+                            "game_played": player.game_played,
+                            "game_date": player.game_date.strftime("%Y-%m-%d %H:%M:%S")
+                            if hasattr(player, "game_date")
+                            else None,
+                            "on_bye_week": player.on_bye_week,
+                            "active_status": player.active_status,
+                            "player_id": player.playerId,
+                            "name": player.name,
+                            "eligible_slots": player.eligibleSlots,
+                            "pro_team": player.proTeam,
+                            "on_team_id": player.onTeamId,
+                            "injured": player.injured,
+                            "injury_status": player.injuryStatus,
+                            "percent_owned": player.percent_owned,
+                            "percent_started": player.percent_started,
+                            "stats": player.stats,
+                        }
+                        for player in matchup.home_lineup
+                    ],
+                    "away_team_lineup": [
+                        {
+                            "slot_position": player.slot_position,
+                            "points": player.points,
+                            "projected_points": player.projected_points,
+                            "pro_opponent": player.pro_opponent,
+                            "pro_pos_rank": player.pro_pos_rank,
+                            "game_played": player.game_played,
+                            "game_date": player.game_date.strftime("%Y-%m-%d %H:%M:%S")
+                            if hasattr(player, "game_date")
+                            else None,
+                            "on_bye_week": player.on_bye_week,
+                            "active_status": player.active_status,
+                            "player_id": player.playerId,
+                            "name": player.name,
+                            "eligible_slots": player.eligibleSlots,
+                            "pro_team": player.proTeam,
+                            "on_team_id": player.onTeamId,
+                            "injured": player.injured,
+                            "injury_status": player.injuryStatus,
+                            "percent_owned": player.percent_owned,
+                            "percent_started": player.percent_started,
+                            "stats": player.stats,
+                        }
+                        for player in matchup.away_lineup
+                    ],
+                }
+
+                matchups_data.append(matchup_info)
+
+                # Also update database if needed
+                if conn is not None:
+                    upsert_matchup(
+                        week,
+                        league.year,
+                        matchup.home_team.team_id,
+                        matchup.away_team.team_id,
+                        matchup.home_score,
+                        matchup.away_score,
+                        matchup.home_projected,
+                        matchup.away_projected,
+                        league.current_week > week,
+                        conn=conn,
+                    )
 
                 home_team_id = matchup.home_team.team_id
                 away_team_id = matchup.away_team.team_id
 
                 if league.year == datetime.now().year and week < league.current_week:
+                    # Collect box score data for players
                     for player in matchup.home_lineup:
-                        upsert_player_boxscore(
-                            conn,
-                            player.name,
-                            player.playerId,
-                            player.projected_points,
-                            player.points,
-                            player.position,
-                            player.slot_position,
-                            week,
-                            league.year,
-                            home_team_id,
-                        )
+                        player_info = {
+                            "player_name": player.name,
+                            "player_id": player.playerId,
+                            "projected_points": player.projected_points,
+                            "actual_points": player.points,
+                            "player_position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                            "year": league.year,
+                            "owner_espn_id": home_team_id,
+                        }
+                        box_score_data.append(player_info)
+
+                        # Update database if needed
+                        if conn is not None:
+                            upsert_player_boxscore(
+                                conn,
+                                player.name,
+                                player.playerId,
+                                player.projected_points,
+                                player.points,
+                                player.position,
+                                player.slot_position,
+                                week,
+                                league.year,
+                                home_team_id,
+                            )
 
                     for player in matchup.away_lineup:
-                        upsert_player_boxscore(
-                            conn,
-                            player.name,
-                            player.playerId,
-                            player.projected_points,
-                            player.points,
-                            player.position,
-                            player.slot_position,
-                            week,
-                            league.year,
-                            away_team_id,
-                        )
+                        player_info = {
+                            "player_name": player.name,
+                            "player_id": player.playerId,
+                            "projected_points": player.projected_points,
+                            "actual_points": player.points,
+                            "player_position": player.position,
+                            "status": player.slot_position,
+                            "week": week,
+                            "year": league.year,
+                            "owner_espn_id": away_team_id,
+                        }
+                        box_score_data.append(player_info)
+
+                        # Update database if needed
+                        if conn is not None:
+                            upsert_player_boxscore(
+                                conn,
+                                player.name,
+                                player.playerId,
+                                player.projected_points,
+                                player.points,
+                                player.position,
+                                player.slot_position,
+                                week,
+                                league.year,
+                                away_team_id,
+                            )
+
+    # Write matchup data to file if filename provided
+    if file_name is not None:
+        with open(file_name, "w") as f:
+            json.dump(matchups_data, f, indent=2)
+
+        # Write box score data to a separate file
+        if box_score_data:
+            box_score_file = file_name.replace("matchups", "box_score_players")
+            with open(box_score_file, "w") as f:
+                json.dump(box_score_data, f, indent=2)
 
     return None
 
@@ -368,29 +491,39 @@ def write_box_score_players_to_db(
 def get_simple_draft(
     league: League,
     conn: "psycopg2.connection" = None,
-    file_name: str = "draft_selections.json",
+    file_name: str = None,
 ) -> None:
-    if conn is not None:
-        with conn.cursor() as cur:
-            for pick in league.draft:
-                player_info = league.player_info(playerId=pick.playerId)
-                # If the selection exists, add the position (which does not exist as of 2024.11.03)
-                cur.execute(
-                    "SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
-                    (
-                        pick.playerName,
-                        pick.team.team_id,
-                        pick.round_num,
-                        pick.round_pick,
-                        league.year,
-                    ),
-                )
-                res = cur.fetchone()
-                if res[0] == 1:
+    """Get draft data and write to database and/or file"""
+    logging.info(f"Getting draft data for {league.year}")
+
+    draft_selections = []
+
+    for pick in league.draft:
+        try:
+            logging.info(f"Processing draft pick: {pick.playerName} (ID: {pick.playerId})")
+
+            player_info = league.player_info(playerId=pick.playerId)
+
+            # Create draft selection record
+            draft_data = {
+                "player_name": pick.playerName,
+                "player_id": pick.playerId,
+                "player_position": player_info.position if player_info else "Unknown",
+                "owner_espn_id": pick.team.team_id,
+                "round": pick.round_num,
+                "pick": pick.round_pick,
+                "year": league.year,
+            }
+
+            draft_selections.append(draft_data)
+
+            # Update database if connection provided
+            if conn is not None:
+                with conn.cursor() as cur:
+                    # Check if selection exists
                     cur.execute(
-                        "UPDATE draft_selections SET player_position = %s WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
+                        "SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
                         (
-                            player_info.position,
                             pick.playerName,
                             pick.team.team_id,
                             pick.round_num,
@@ -399,42 +532,49 @@ def get_simple_draft(
                         ),
                     )
 
-                cur.execute(
-                    "INSERT INTO draft_selections (player_name, player_id, player_position, owner_espn_id, round, pick, year) SELECT %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM draft_selections WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s)",
-                    (
-                        pick.playerName,
-                        pick.playerId,
-                        player_info.position,
-                        pick.team.team_id,
-                        pick.round_num,
-                        pick.round_pick,
-                        league.year,
-                        pick.playerName,
-                        pick.team.team_id,
-                        pick.round_num,
-                        pick.round_pick,
-                        league.year,
-                    ),
-                )
+                    res = cur.fetchone()
+                    if res and res[0] == 1:
+                        # Update position if record exists
+                        cur.execute(
+                            "UPDATE draft_selections SET player_position = %s WHERE player_name = %s AND owner_espn_id = %s AND round = %s AND pick = %s AND year = %s",
+                            (
+                                player_info.position if player_info else "Unknown",
+                                pick.playerName,
+                                pick.team.team_id,
+                                pick.round_num,
+                                pick.round_pick,
+                                league.year,
+                            ),
+                        )
+                    else:
+                        # Insert new record
+                        cur.execute(
+                            "INSERT INTO draft_selections (player_name, player_id, player_position, owner_espn_id, round, pick, year) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                            (
+                                pick.playerName,
+                                pick.playerId,
+                                player_info.position if player_info else "Unknown",
+                                pick.team.team_id,
+                                pick.round_num,
+                                pick.round_pick,
+                                league.year,
+                            ),
+                        )
 
-            conn.commit()
-            cur.close()
+                conn.commit()
 
-    if file_name is not None:
-        draft_selections = [
-            {
-                "player_name": pick.playerName,
-                "player_id": pick.playerId,
-                "player_position": league.player_info(playerId=pick.playerId).position,
-                "owner_espn_id": pick.team.team_id,
-                "round": pick.round_num,
-                "pick": pick.round_pick,
-                "year": league.year,
-            }
-            for pick in league.draft
-        ]
-        with open(file_name, "a") as f:
-            json.dump(draft_selections, f)
+            # Avoid rate limiting when fetching player info
+            time.sleep(0.1)
+
+        except Exception as e:
+            logging.error(f"Error processing draft pick {pick.playerName}: {e}")
+            continue
+
+    # Write draft data to file if filename provided
+    if file_name is not None and draft_selections:
+        logging.info(f"Writing {len(draft_selections)} draft selections to {file_name}")
+        with open(file_name, "w") as f:
+            json.dump(draft_selections, f, indent=2)
 
     return None
 
@@ -442,96 +582,81 @@ def get_simple_draft(
 def get_all_players(
     league: League,
     conn: "psycopg2.connection" = None,
-    file_name: str = "box_score_players.json",
+    file_name: str = None,
 ) -> None:
     """get_all_players will get the scores for all players from a given year"""
+    logging.info(f"Getting all players for {league.year}")
 
-    if conn is not None:
-        # Query all players
-        with conn.cursor() as cur:
-            cur.execute("SELECT player_id FROM box_score_players WHERE year = %s", (league.year,))
-            all_players = cur.fetchall()
-            logging.info(f"Number of players: {len(all_players)}")
+    player_data = []
 
-            for player in all_players:
-                try:
-                    player_info = league.player_info(playerId=player[0])
+    # First fetch all player data
+    league._fetch_players()
 
-                    logging.info(f"Player: {player_info.name}")
+    for _, player_info in enumerate(league.espn_request.get_pro_players()):
+        try:
+            player_id = player_info["id"]
+            player_name = player_info["fullName"]
 
-                    cur.execute(
-                        "SELECT week FROM box_score_players WHERE player_id = %s AND year = %s",
-                        (player[0], league.year),
-                    )
-                    weeks = cur.fetchall()
-                    set_of_weeks = set([week[0] for week in weeks])
+            logging.info(f"Processing player: {player_name} ({player_id})")
 
-                    for week, stats in player_info.stats.items():
-                        if week not in set_of_weeks and week != 0:
-                            cur.execute(
-                                "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, week, year) SELECT %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
-                                (
-                                    player_info.name,
-                                    player_info.playerId,
-                                    stats.get("projected_points", 0),
-                                    stats.get("actual_points", 0),
-                                    player_info.position,
-                                    week,
-                                    league.year,
-                                    player_info.playerId,
-                                    week,
-                                    league.year,
-                                ),
-                            )
-                            conn.commit()
-                            logging.info(f"\tinserted week {week}")
+            # Get detailed player info
+            p = league.player_info(playerId=player_id)
 
-                            break
-                except Exception as e:
-                    logging.error(f"\tError: {e}")
+            if p is None:
+                logging.error(f"Player {player_id} ({player_name}) not found")
+                continue
+
+            # Process weekly stats
+            for week, stats in p.stats.items():
+                if week == 0:  # Skip season total stats
                     continue
 
-    if file_name is not None:
-        # Write all players to a file
-        with open(file_name, "a") as f:
-            league._fetch_players()
+                player_week_data = {
+                    "player_name": p.name,
+                    "player_id": p.playerId,
+                    "projected_points": stats.get("projected_points", 0),
+                    "actual_points": stats.get("actual_points", 0),
+                    "player_position": p.position,
+                    "week": week,
+                    "year": league.year,
+                }
 
-            all_players = []
+                player_data.append(player_week_data)
 
-            for _, v in enumerate(league.espn_request.get_pro_players()):
-                logging.info(f"Player: {v['fullName']} ({v['id']})")
-                all_players.append(
-                    {
-                        "name": v["fullName"],
-                        "id": v["id"],
-                    }
-                )
+                # Also update database if needed
+                if conn is not None:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, week, year) "
+                            "SELECT %s, %s, %s, %s, %s, %s, %s "
+                            "WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
+                            (
+                                p.name,
+                                p.playerId,
+                                stats.get("projected_points", 0),
+                                stats.get("actual_points", 0),
+                                p.position,
+                                week,
+                                league.year,
+                                p.playerId,
+                                week,
+                                league.year,
+                            ),
+                        )
+                        conn.commit()
 
-            logging.info(f"Number of players: {len(all_players)}")
+            # Avoid rate limiting
+            time.sleep(0.1)
 
-            player_data = []
+        except Exception as e:
+            logging.error(f"Error processing player {player_info.get('fullName', 'unknown')}: {e}")
+            continue
 
-            for player in all_players:
-                p = league.player_info(playerId=player["id"])
-
-                if p is None:
-                    logging.error(f"Player {player['id']} ({player['name']}) not found")
-                    continue
-
-                player_data.append(
-                    {
-                        "name": p.name,
-                        "espn_id": p.playerId,
-                        "position": p.position,
-                        "stats": p.stats,
-                        "projected_points": p.projected_total_points,
-                        "actual_points": p.total_points,
-                    }
-                )
-
-                json.dump(player_data, f)
-
-                time.sleep(0.1)
+    # Write player data to file if filename provided
+    if file_name is not None and player_data:
+        logging.info(f"Writing {len(player_data)} player records to {file_name}")
+        with open(file_name, "w") as f:
+            json.dump(player_data, f, indent=2)
 
     return None
 
@@ -539,31 +664,49 @@ def get_all_players(
 def get_all_transactions(
     league: League,
     conn: "psycopg2.connection" = None,
-    file_name: str = "transactions.json",
+    file_name: str = None,
 ) -> None:
     """get_all_transactions will get all transactions for a given league"""
-    if conn is not None:
-        offset = 0
-        with conn.cursor() as cur:
-            while True:
-                logging.info(f"Offset: {offset}")
-                txs = league.recent_activity(offset=offset)
-                offset += 25
-                if len(txs) == 0:
-                    conn.commit()
-                    return None
-                logging.info(f"Number of transactions: {len(txs)}")
-                for tx in txs:
-                    tx_date = datetime.fromtimestamp(tx.date / 1000)
-                    for action in tx.actions:
-                        team = action[0]
-                        transaction_type = action[1]
-                        player = action[2]
-                        bid_amount = action[3]  # My league does not use bids so this is always 0
-                        logging.info(f"Team: {team.team_id}\tPlayer: {player.name}\tType: {transaction_type}")
+    logging.info(f"Getting all transactions for {league.year}")
 
+    all_transactions = []
+    offset = 0
+
+    while True:
+        logging.info(f"Processing transactions with offset: {offset}")
+        txs = league.recent_activity(offset=offset)
+
+        if not txs:
+            break
+
+        for tx in txs:
+            tx_date = datetime.fromtimestamp(tx.date / 1000)
+
+            for action in tx.actions:
+                team = action[0]
+                transaction_type = action[1]
+                player = action[2]
+                bid_amount = action[3]
+
+                transaction_data = {
+                    "team_espn_id": team.team_id,
+                    "player_id": player.playerId,
+                    "transaction_type": transaction_type,
+                    "player_name": player.name,
+                    "bid_amount": bid_amount,
+                    "date": tx_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    "year": league.year,
+                }
+
+                all_transactions.append(transaction_data)
+
+                # Update database if needed
+                if conn is not None:
+                    with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO transactions (team_id, player_id, transaction_type, date) SELECT %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
+                            "INSERT INTO transactions (team_id, player_id, transaction_type, date) "
+                            "SELECT %s, %s, %s, %s WHERE NOT EXISTS "
+                            "(SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
                             (
                                 team.team_id,
                                 player.playerId,
@@ -575,29 +718,17 @@ def get_all_transactions(
                                 tx_date,
                             ),
                         )
+                        conn.commit()
 
-    if file_name is not None:
-        # Write all transactions to a file
-        data = []
-        with open(file_name, "a") as f:
-            for tx in league.recent_activity():
-                tx_date = datetime.fromtimestamp(tx.date / 1000)
-                for action in tx.actions:
-                    team = action[0]
-                    transaction_type = action[1]
-                    player = action[2]
-                    bid_amount = action[3]
-                    data.append(
-                        {
-                            "team_id": team.team_id,
-                            "player_id": player.playerId,
-                            "transaction_type": transaction_type,
-                            "player_name": player.name,
-                            "bid_amount": bid_amount,
-                            "date": tx_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        }
-                    )
-                json.dump(data, f)
+        offset += 25
+
+    # Write transaction data to file if filename provided
+    if file_name is not None and all_transactions:
+        logging.info(f"Writing {len(all_transactions)} transactions to {file_name}")
+        with open(file_name, "w") as f:
+            json.dump(all_transactions, f, indent=2)
+
+    return None
 
 
 def get_db_counts(conn: "psycopg2.connection") -> None:
@@ -666,56 +797,15 @@ def export_games_to_csv(connection_string, output_file):
             csvwriter.writerow(headers)  # Write the headers
             csvwriter.writerows(rows)  # Write the data rows
 
-        print(f"Data successfully exported to {output_file}")
-
-        # 1. Lowest points to win
-        # 2. Lowest points all time
-        # 3. Highest points all time
-        # 4. Highest points in a loss
-
-        # filtered_rows = [row for row in rows if row[1] != 0 and row[3] != 0]
-        filtered_rows = [
-            row
-            for row in rows
-            if row[1] != 0 and row[3] != 0 and row[0] != "Trevor Landry" and row[2] != "Trevor Landry"
-        ]
-
-        bottom_5_winning_scores = sorted(filtered_rows, key=lambda x: x[1])[:5]
-        print("Bottom 5 winning scores")
-        for score in bottom_5_winning_scores:
-            print_game(score)
-
-        bottom_5_scores = sorted(filtered_rows, key=lambda x: x[3])[:5]
-        print("Bottom 5 scorers")
-        for score in bottom_5_scores:
-            print_game(score)
-
-        # Need to remove the championship games so remove 2017 week 14
-        filtered_rows = [row for row in rows if row[4] != 14 and row[5] != 2017]
-
-        top_5_scores = sorted(filtered_rows, key=lambda x: x[1], reverse=True)[:5]
-        print("Top 5 scores")
-        for score in top_5_scores:
-            print_game(score)
-
-        top_5_losses = sorted(filtered_rows, key=lambda x: x[3], reverse=True)[:5]
-        print("Top 5 losses")
-        for score in top_5_losses:
-            print_game(score)
+        logging.info(f"Data successfully exported to {output_file}")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An error occurred: {e}")
 
     finally:
         # Close the cursor and connection
         cursor.close()
         conn.close()
-
-
-def print_game(game_tuple) -> None:
-    print(
-        f"Year: {game_tuple[5]}\tWeek: {game_tuple[4]} \tWinner: {game_tuple[0]}\tWinning Score: {game_tuple[1]}\tLoser: {game_tuple[2]}\tLosing Score: {game_tuple[3]}"
-    )
 
 
 if __name__ == "__main__":
@@ -724,7 +814,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--use-database", action="store_true", help="Write data to database instead of just files")
+    parser.add_argument("--output-dir", type=str, default="data", help="Directory to store output JSON files")
     args = parser.parse_args()
+
+    # Create output directory if it doesn't exist
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
 
     SWID = os.environ.get("SWID")
     ESPN_S2 = os.environ.get("ESPN_S2")
@@ -736,8 +832,8 @@ if __name__ == "__main__":
     if ESPN_S2 is None or ESPN_S2 == "":
         logging.error("ESPN_S2 not set")
         exit(1)
-    if DATABASE_URL is None or DATABASE_URL == "":
-        logging.error("DATABASE_URL not set")
+    if args.use_database and (DATABASE_URL is None or DATABASE_URL == ""):
+        logging.error("DATABASE_URL not set but --use-database flag is enabled")
         exit(1)
 
     # This was done manually but have to iterate through each year to load data
@@ -745,13 +841,28 @@ if __name__ == "__main__":
     logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
     conn = None
-    # conn = psycopg2.connect(DATABASE_URL)
+    if args.use_database:
+        conn = psycopg2.connect(DATABASE_URL)
+        # get_db_counts(conn)
 
-    # get_db_counts(conn)
+    # Define file paths for outputs
+    teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")
+    matchups_file = os.path.join(args.output_dir, f"matchups_{args.year}.json")
+    box_score_file = os.path.join(args.output_dir, f"box_score_players_{args.year}.json")
+    draft_file = os.path.join(args.output_dir, f"draft_selections_{args.year}.json")
+    transactions_file = os.path.join(args.output_dir, f"transactions_{args.year}.json")
 
-    # get_schedule(league, conn=conn)
-    # get_simple_draft(league, conn=conn)
-    get_all_players(league, conn=conn)
-    # get_all_transactions(league, conn=conn)
+    # Create empty files to start with
+    for file_path in [teams_file, matchups_file, box_score_file, draft_file, transactions_file]:
+        with open(file_path, "w") as f:
+            f.write("[]")
+
+    get_schedule(league, conn=conn, file_name=matchups_file)
+    get_simple_draft(league, conn=conn, file_name=draft_file)
+    # get_all_players(league, conn=conn, file_name=box_score_file)
+    get_all_transactions(league, conn=conn, file_name=transactions_file)
+
+    if args.use_database and conn is not None:
+        conn.close()
 
     logging.info(f"Completed in {round(time.time() - start, 2)} seconds")
