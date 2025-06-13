@@ -41,7 +41,7 @@ func Initialize(cfg *config.Config) error {
 func runMigrations() error {
 	log.Println("Running database migrations...")
 
-	// Run the migrations
+	// // Run the migrations
 	// err := DB.AutoMigrate(
 	// 	&models.Team{},
 	// 	&models.TeamNameHistory{},
@@ -53,6 +53,7 @@ func runMigrations() error {
 	// 	&models.SimResult{},
 	// 	&models.SimTeamResult{},
 	// 	&models.DraftSelection{},
+	// 	&models.Transaction{},
 	// )
 
 	// if err != nil {

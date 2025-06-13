@@ -1,4 +1,4 @@
-.PHONY: build clean run
+.PHONY: build clean run etl
 
 help:
 	@echo "Makefile for backend"

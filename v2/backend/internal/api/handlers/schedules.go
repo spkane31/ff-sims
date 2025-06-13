@@ -93,8 +93,8 @@ func GetSchedules(c *gin.Context) {
 			ID:                 fmt.Sprintf("%d", matchup.ID),
 			Year:               matchup.Year,
 			Week:               matchup.Week,
-			HomeTeamESPNID:     matchup.HomeTeamESPNID,
-			AwayTeamESPNID:     matchup.AwayTeamESPNID,
+			HomeTeamESPNID:     matchup.HomeTeamID,
+			AwayTeamESPNID:     matchup.AwayTeamID,
 			HomeScore:          matchup.HomeTeamFinalScore,
 			AwayScore:          matchup.AwayTeamFinalScore,
 			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
@@ -102,10 +102,10 @@ func GetSchedules(c *gin.Context) {
 		}
 
 		for _, team := range teams {
-			if team.ESPNID == matchup.HomeTeamESPNID {
+			if team.ESPNID == matchup.HomeTeamID {
 				resp.Data.Matchups[i].HomeTeamName = team.Owner
 			}
-			if team.ESPNID == matchup.AwayTeamESPNID {
+			if team.ESPNID == matchup.AwayTeamID {
 				resp.Data.Matchups[i].AwayTeamName = team.Owner
 			}
 		}
@@ -202,7 +202,7 @@ func GetMatchup(c *gin.Context) {
 			Year: matchups[0].Year,
 			Week: matchups[0].Week,
 			HomeTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchups[0].HomeTeamESPNID),
+				ESPNID:         fmt.Sprintf("%d", matchups[0].HomeTeamID),
 				Score:          matchups[0].HomeTeamFinalScore,
 				ProjectedScore: matchups[0].HomeTeamESPNProjectedScore,
 				Name:           "Team Alpha", // Placeholder, should be fetched from teams
@@ -212,7 +212,7 @@ func GetMatchup(c *gin.Context) {
 				},
 			},
 			AwayTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchups[0].AwayTeamESPNID),
+				ESPNID:         fmt.Sprintf("%d", matchups[0].AwayTeamID),
 				Score:          matchups[0].AwayTeamFinalScore,
 				ProjectedScore: matchups[0].AwayTeamESPNProjectedScore,
 				Name:           "Team Omega", // Placeholder, should be fetched from teams

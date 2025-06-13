@@ -105,10 +105,10 @@ func GetTeams(c *gin.Context) {
 		for i, team := range resp.Teams {
 			// slog.Info("Checking team against matchup", "team_id", team.ESPNID, "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
 			// Add total points scored and against
-			if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+			if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 				resp.Teams[i].Points.Scored += matchup.HomeTeamFinalScore
 				resp.Teams[i].Points.Against += matchup.AwayTeamFinalScore
-			} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+			} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
 				resp.Teams[i].Points.Scored += matchup.AwayTeamFinalScore
 				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
 			}
@@ -116,15 +116,15 @@ func GetTeams(c *gin.Context) {
 			// Add the wins and losses
 			if matchup.Completed {
 				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-					if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+					if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 						resp.Teams[i].TeamRecord.Wins++
-					} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+					} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
 						resp.Teams[i].TeamRecord.Losses++
 					}
 				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
-					if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamESPNID) {
+					if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
 						resp.Teams[i].TeamRecord.Wins++
-					} else if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamESPNID) {
+					} else if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 						resp.Teams[i].TeamRecord.Losses++
 					}
 				} else {
@@ -268,18 +268,18 @@ func GetTeamByID(c *gin.Context) {
 		var teamScore, opponentScore float64
 		var isHome bool
 
-		if fmt.Sprintf("%d", matchup.HomeTeamESPNID) == id {
+		if fmt.Sprintf("%d", matchup.HomeTeamID) == id {
 			// This team is home
 			isHome = true
 			teamScore = matchup.HomeTeamFinalScore
 			opponentScore = matchup.AwayTeamFinalScore
-			opponent = teamMap[matchup.AwayTeamESPNID].Owner
+			opponent = teamMap[matchup.AwayTeamID].Owner
 		} else {
 			// This team is away
 			isHome = false
 			teamScore = matchup.AwayTeamFinalScore
 			opponentScore = matchup.HomeTeamFinalScore
-			opponent = teamMap[matchup.HomeTeamESPNID].Owner
+			opponent = teamMap[matchup.HomeTeamID].Owner
 		}
 
 		var result string
