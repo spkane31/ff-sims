@@ -13,13 +13,13 @@ type Player struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	ESPNID        int64   `json:"espn_id" gorm:"uniqueIndex:uni_players_espn_id"` // Unique ESPN ID for the player
+	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"` // Unique ESPN ID for the player
 	Name          string  `json:"name"`
 	Position      string  `json:"position"` // QB, RB, WR, TE, K, DEF
 	Team          string  `json:"team"`     // NFL team abbreviation
 	FantasyPoints float64 `json:"fantasy_points" gorm:"default:0"`
-	Status        string  `json:"status"`   // Active, Injured, etc.
-	
+	Status        string  `json:"status"` // Active, Injured, etc.
+
 	// Base stats - these represent career or season totals
 	Stats PlayerStats `json:"stats" gorm:"embedded"`
 
@@ -30,17 +30,17 @@ type Player struct {
 
 // PlayerStats represents the statistical categories for a player
 type PlayerStats struct {
-	PassingYards   int `json:"passing_yards" gorm:"default:0"`
-	PassingTDs     int `json:"passing_tds" gorm:"default:0"`
-	Interceptions  int `json:"interceptions" gorm:"default:0"`
-	RushingYards   int `json:"rushing_yards" gorm:"default:0"`
-	RushingTDs     int `json:"rushing_tds" gorm:"default:0"`
-	Receptions     int `json:"receptions" gorm:"default:0"`
-	ReceivingYards int `json:"receiving_yards" gorm:"default:0"`
-	ReceivingTDs   int `json:"receiving_tds" gorm:"default:0"`
-	Fumbles        int `json:"fumbles" gorm:"default:0"`
-	FieldGoals     int `json:"field_goals" gorm:"default:0"`
-	ExtraPoints    int `json:"extra_points" gorm:"default:0"`
+	PassingYards   float64 `json:"passing_yards" gorm:"default:0"`
+	PassingTDs     float64 `json:"passing_tds" gorm:"default:0"`
+	Interceptions  float64 `json:"float64erceptions" gorm:"default:0"`
+	RushingYards   float64 `json:"rushing_yards" gorm:"default:0"`
+	RushingTDs     float64 `json:"rushing_tds" gorm:"default:0"`
+	Receptions     float64 `json:"receptions" gorm:"default:0"`
+	ReceivingYards float64 `json:"receiving_yards" gorm:"default:0"`
+	ReceivingTDs   float64 `json:"receiving_tds" gorm:"default:0"`
+	Fumbles        float64 `json:"fumbles" gorm:"default:0"`
+	FieldGoals     float64 `json:"field_goals" gorm:"default:0"`
+	ExtraPoints    float64 `json:"extra_points" gorm:"default:0"`
 }
 
 // PlayerGameStats represents a player's stats for a specific game

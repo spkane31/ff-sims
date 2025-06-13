@@ -123,10 +123,10 @@ func processDraftSelections(filePath string) error {
 }
 
 type Matchup struct {
-	Week                       int            `json:"week"`
-	Year                       int            `json:"year"`
-	HomeTeamESPNID             int64          `json:"home_team_espn_id"`
-	AwayTeamESPNID             int64          `json:"away_team_espn_id"`
+	Week                       uint           `json:"week"`
+	Year                       uint           `json:"year"`
+	HomeTeamESPNID             uint           `json:"home_team_espn_id"`
+	AwayTeamESPNID             uint           `json:"away_team_espn_id"`
 	HomeTeamFinalScore         float64        `json:"home_team_final_score"`
 	AwayTeamFinalScore         float64        `json:"away_team_final_score"`
 	HomeTeamEspnProjectedScore float64        `json:"home_team_espn_projected_score"`
@@ -159,12 +159,39 @@ type PlayerLineup struct {
 }
 
 type WeeklyStats struct {
-	ProjectedPoints    float64            `json:"projected_points"`
-	ProjectedBreakdown map[string]float64 `json:"projected_breakdown"`
-	ProjectedAvgPoints float64            `json:"projected_avg_points"`
-	Breakdown          map[string]float64 `json:"breakdown"`
-	AvgPoints          float64            `json:"avg_points"`
+	ProjectedPoints    float64                   `json:"projected_points"`
+	ProjectedBreakdown map[BreakdownKeys]float64 `json:"projected_breakdown"`
+	ProjectedAvgPoints float64                   `json:"projected_avg_points"`
+	Breakdown          map[BreakdownKeys]float64 `json:"breakdown"`
+	AvgPoints          float64                   `json:"avg_points"`
 }
+
+type BreakdownKeys string
+
+const (
+	PassingYards               BreakdownKeys = "passingYards"
+	PassingAttempts            BreakdownKeys = "passingAttempts"
+	PassingCompletions         BreakdownKeys = "passingCompletions"
+	PassingIncompletions       BreakdownKeys = "passingIncompletions"
+	PassingTouchdowns          BreakdownKeys = "passingTouchdowns"
+	Passing2PointConversions   BreakdownKeys = "passing2PtConversions"
+	RushingAttempts            BreakdownKeys = "rushingAttempts"
+	RushingYards               BreakdownKeys = "rushingYards"
+	RushingTouchdowns          BreakdownKeys = "rushingTouchdowns"
+	Rushing2PointConversions   BreakdownKeys = "rushing2PtConversions"
+	ReceivingYards             BreakdownKeys = "receivingYards"
+	ReceivingReceptions        BreakdownKeys = "receivingReceptions"
+	ReceivingTargets           BreakdownKeys = "receivingTargets"
+	ReceivingTouchdowns        BreakdownKeys = "receivingTouchdowns"
+	Receiving2PointConversions BreakdownKeys = "receiving2PtConversions"
+	Fumbles                    BreakdownKeys = "fumbles"
+	LostFumbles                BreakdownKeys = "lostFumbles"
+	Turnovers                  BreakdownKeys = "turnovers"
+	FieldGoalsMade             BreakdownKeys = "madeFieldGoals"
+	FieldGoalsAttempted        BreakdownKeys = "attemptedFieldGoals"
+	ExtraPointsMade            BreakdownKeys = "madeExtraPoints"
+	ExtraPointsAttempted       BreakdownKeys = "attemptedExtraPoints"
+)
 
 // processMatchups processes matchups data
 func processMatchups(filePath string) error {
@@ -218,10 +245,10 @@ func processMatchups(filePath string) error {
 		}
 
 		entry := &models.Matchup{
-			LeagueID:                   leagueID,
-			Week:                       uint(matchup.Week),
-			Year:                       uint(matchup.Year),
-			Season:                     matchup.Year,
+			LeagueID: leagueID,
+			Week:     uint(matchup.Week),
+			Year:     uint(matchup.Year),
+			// Season:                     matchup.Year,
 			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -260,16 +287,21 @@ func processMatchups(filePath string) error {
 			logging.Infof("Updated existing matchup: %+v", existingMatchup)
 		}
 
+		if existingMatchup.ID == 0 {
+			// If the matchup was just created, use the new ID
+			existingMatchup.ID = entry.ID
+		}
+
 		// Process home team lineup
 		for _, player := range matchup.HomeTeamLineup {
-			if err := processPlayerLineUp(player, entry.HomeTeamID); err != nil {
+			if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
 				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
 			}
 		}
 
 		// Process away team lineup
 		for _, player := range matchup.AwayTeamLineup {
-			if err := processPlayerLineUp(player, entry.AwayTeamID); err != nil {
+			if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
 				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
 			}
 		}
@@ -278,9 +310,13 @@ func processMatchups(filePath string) error {
 	return nil
 }
 
-func processPlayerLineUp(player PlayerLineup, teamID uint) error {
+func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint) error {
 	logging.Infof("Processing player lineup - Name: %s, ID: %d, Position: %s, Points: %.2f, Projected Points: %.2f",
 		player.PlayerName, player.PlayerID, player.SlotPosition, player.Points, player.ProjectedPoints)
+
+	if teamID == 0 || matchupID == 0 || week == 0 || year == 0 || player.PlayerID == 0 {
+		return fmt.Errorf("invalid parameters: teamID=%d, matchupID=%d, week=%d, year=%d", teamID, matchupID, week, year)
+	}
 
 	// Create or update the player in the database
 	playerRecord := &models.Player{
@@ -289,8 +325,8 @@ func processPlayerLineUp(player PlayerLineup, teamID uint) error {
 	}
 
 	// Check if player already exists, create if not
-	var existingPlayer models.Player
-	if err := database.DB.First(&existingPlayer, "espn_id = ?", player.PlayerID).Error; err != nil {
+	// var existingPlayer models.Player
+	if err := database.DB.First(&playerRecord, "espn_id = ?", player.PlayerID).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return fmt.Errorf("error checking existing player with ESPN ID %d: %w", player.PlayerID, err)
 		}
@@ -299,6 +335,77 @@ func processPlayerLineUp(player PlayerLineup, teamID uint) error {
 			return fmt.Errorf("error creating new player with ESPN ID %d: %w", player.PlayerID, createErr)
 		}
 		logging.Infof("Created new player: %+v", playerRecord)
+	}
+
+	stats, ok := player.Stats[fmt.Sprintf("%d", week)]
+	if !ok && !player.OnByeWeek {
+		logging.Warnf("No stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
+		return fmt.Errorf("no stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
+	}
+
+	gameStats := models.PlayerStats{}
+	if !player.OnByeWeek {
+		gameStats = models.PlayerStats{
+			PassingYards:   stats.Breakdown[PassingYards],
+			PassingTDs:     stats.Breakdown[PassingTouchdowns],
+			Interceptions:  stats.Breakdown[Turnovers] - stats.Breakdown[LostFumbles],
+			RushingYards:   stats.Breakdown[RushingYards],
+			RushingTDs:     stats.Breakdown[RushingTouchdowns],
+			Receptions:     stats.Breakdown[ReceivingReceptions],
+			ReceivingYards: stats.Breakdown[ReceivingYards],
+			ReceivingTDs:   stats.Breakdown[ReceivingTouchdowns],
+			Fumbles:        stats.Breakdown[Fumbles],
+			FieldGoals:     stats.Breakdown[FieldGoalsMade],
+			ExtraPoints:    stats.Breakdown[ExtraPointsMade],
+		}
+	}
+
+	// Create a new BoxScore associated with the player and team
+	boxScore := &models.BoxScore{
+		MatchupID: matchupID,
+		PlayerID:  playerRecord.ID,
+		TeamID:    teamID,
+		Week:      week,
+		Year:      year,
+
+		ActualPoints:    player.Points,
+		ProjectedPoints: player.ProjectedPoints,
+		GameStats:       gameStats,
+	}
+
+	// Check if the box score already exists
+	var existingBoxScore models.BoxScore
+	if err := database.DB.First(&existingBoxScore, "matchup_id = ? AND player_id = ? AND week = ? AND year = ?",
+		matchupID, playerRecord.ID, week, year).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			return fmt.Errorf("error checking existing box score for player ID %d: %w", playerRecord.ID, err)
+		}
+		// Box score does not exist, create a new one
+		if createErr := database.DB.Create(boxScore).Error; createErr != nil {
+			return fmt.Errorf("error creating new box score for player ID %d: %w", playerRecord.ID, createErr)
+		}
+		logging.Infof("Created new box score for player %s (ID %d)", player.PlayerName, playerRecord.ID)
+	} else {
+		// Box score exists, update its details
+		existingBoxScore.ActualPoints = player.Points
+		existingBoxScore.ProjectedPoints = player.ProjectedPoints
+		existingBoxScore.GameStats = models.PlayerStats{
+			PassingYards:   stats.Breakdown[PassingYards],
+			PassingTDs:     stats.Breakdown[PassingTouchdowns],
+			Interceptions:  stats.Breakdown[Turnovers] - stats.Breakdown[LostFumbles],
+			RushingYards:   stats.Breakdown[RushingYards],
+			RushingTDs:     stats.Breakdown[RushingTouchdowns],
+			Receptions:     stats.Breakdown[ReceivingReceptions],
+			ReceivingYards: stats.Breakdown[ReceivingYards],
+			ReceivingTDs:   stats.Breakdown[ReceivingTouchdowns],
+			Fumbles:        stats.Breakdown[Fumbles],
+			FieldGoals:     stats.Breakdown[FieldGoalsMade],
+			ExtraPoints:    stats.Breakdown[ExtraPointsMade],
+		}
+		if err := database.DB.Save(&existingBoxScore).Error; err != nil {
+			return fmt.Errorf("error updating existing box score for player ID %d: %w", playerRecord.ID, err)
+		}
+		logging.Infof("Updated existing box score for player %s (ID %d)", player.PlayerName, playerRecord.ID)
 	}
 
 	logging.Infof("Processed player lineup for %s (ID %d)", player.PlayerName, player.PlayerID)
@@ -543,6 +650,32 @@ func Upload(directory string) error {
 	// Regex to extract file type from filename (pattern: {type}_{year}.json)
 	re := regexp.MustCompile(`^(.+)_\d{4}\.json$`)
 
+	// First have to create the teams
+	for _, file := range files {
+		if file.IsDir() {
+			continue // Skip directories
+		}
+		filePath := fmt.Sprintf("%s/%s", directory, file.Name())
+		logging.Infof("Processing file: %s", filePath)
+
+		// Extract file type using regex
+		matches := re.FindStringSubmatch(file.Name())
+		if len(matches) < 2 {
+			logging.Infof("Warning: File %s does not match the expected format, skipping", file.Name())
+			continue
+		}
+
+		fileType := matches[1]
+		fileType = strings.Replace(fileType, "-", "_", -1) // Normalize for switch statement
+
+		if fileType == "teams" {
+			logging.Infof("Processing teams file: %s", filePath)
+			if processErr := processTeams(filePath); processErr != nil {
+				return fmt.Errorf("error processing file %s: %w", filePath, processErr)
+			}
+		}
+	}
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue // Skip directories
@@ -565,14 +698,12 @@ func Upload(directory string) error {
 		switch fileType {
 		// case "box_score_players":
 		// 	processErr = processBoxScorePlayers(filePath)
-		case "draft_selections":
-			processErr = processDraftSelections(filePath)
-		// case "matchups":
-		// 	processErr = processMatchups(filePath)
-		case "teams":
-			processErr = processTeams(filePath)
-		case "transactions":
-			processErr = processTransactions(filePath)
+		// case "draft_selections":
+		// 	processErr = processDraftSelections(filePath)
+		case "matchups":
+			processErr = processMatchups(filePath)
+		// case "transactions":
+		// 	processErr = processTransactions(filePath)
 		default:
 			logging.Infof("Warning: Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue

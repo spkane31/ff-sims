@@ -16,13 +16,13 @@ type Team struct {
 
 	Name     string  `json:"name"`
 	Owner    string  `json:"owner_name"`
-	ESPNID   uint    `json:"espn_id" gorm:"uniqueIndex:uni_teams_espn_id"`
+	ESPNID   uint    `json:"espn_id" gorm:"index:idx_teams_espn_id,unique"`
 	LeagueID uint    `json:"league_id"`
 	Wins     int     `json:"wins" gorm:"default:0"`
 	Losses   int     `json:"losses" gorm:"default:0"`
 	Ties     int     `json:"ties" gorm:"default:0"`
 	Points   float64 `json:"points" gorm:"default:0"`
-	Year     uint    `json:"year"` // Season year
+	Year     uint    `json:"year"`
 
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`

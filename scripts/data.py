@@ -507,12 +507,12 @@ def get_simple_draft(
             # Create draft selection record
             draft_data = {
                 "player_name": pick.playerName,
-                "player_id": pick.playerId,
                 "player_position": player_info.position if player_info else "Unknown",
-                "owner_espn_id": pick.team.team_id,
+                "player_id": pick.playerId,
                 "round": pick.round_num,
                 "pick": pick.round_pick,
                 "year": league.year,
+                "owner_espn_id": pick.team.team_id,
             }
 
             draft_selections.append(draft_data)
@@ -672,6 +672,10 @@ def get_all_transactions(
     all_transactions = []
     offset = 0
 
+    if league.year < 2024:
+        logging.warning("Transactions are not available for years before 2024")
+        return None
+
     while True:
         logging.info(f"Processing transactions with offset: {offset}")
         txs = league.recent_activity(offset=offset)
@@ -693,6 +697,7 @@ def get_all_transactions(
                     "player_id": player.playerId,
                     "transaction_type": transaction_type,
                     "player_name": player.name,
+                    "player_position": player.position,
                     "bid_amount": bid_amount,
                     "date": tx_date.strftime("%Y-%m-%d %H:%M:%S"),
                     "year": league.year,
