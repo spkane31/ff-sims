@@ -463,7 +463,10 @@ export default function TeamDetail() {
                       Points For
                     </h3>
                     <div className="text-2xl font-bold">
-                      {team.points.scored.toFixed(2)}
+                      {team.points.scored.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </div>
                     <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       {(
@@ -481,7 +484,10 @@ export default function TeamDetail() {
                       Points Against
                     </h3>
                     <div className="text-2xl font-bold">
-                      {team.points.against.toFixed(2)}
+                      {team.points.against.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </div>
                     <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       {(
@@ -707,39 +713,44 @@ export default function TeamDetail() {
                     Recent Performance
                   </h2>
                   <div className="space-y-3">
-                    {team.schedule.slice(0, 4).map((game, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between py-2 border-b dark:border-gray-600 last:border-0"
-                      >
-                        <div>
-                          <span className="font-medium">Week {game.week}</span>
-                          <span className="mx-2 text-gray-400">vs</span>
-                          <span>{game.opponent}</span>
+                    {team.schedule
+                      .slice(-5)
+                      .reverse()
+                      .map((game, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between py-2 border-b dark:border-gray-600 last:border-0"
+                        >
+                          <div>
+                            <span className="font-medium">
+                              Week {game.week}
+                            </span>
+                            <span className="mx-2 text-gray-400">vs</span>
+                            <span>{game.opponent}</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="mr-2">{game.score}</span>
+                            {game.result === "W" && (
+                              <span className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-xs">
+                                W
+                              </span>
+                            )}
+                            {game.result === "L" && (
+                              <span className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs">
+                                L
+                              </span>
+                            )}
+                            {game.result === "T" && (
+                              <span className="w-5 h-5 rounded-full bg-yellow-500 text-white flex items-center justify-center text-xs">
+                                T
+                              </span>
+                            )}
+                            {game.result === "-" && (
+                              <span className="text-gray-400">Upcoming</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center">
-                          <span className="mr-2">{game.score}</span>
-                          {game.result === "W" && (
-                            <span className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-xs">
-                              W
-                            </span>
-                          )}
-                          {game.result === "L" && (
-                            <span className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs">
-                              L
-                            </span>
-                          )}
-                          {game.result === "T" && (
-                            <span className="w-5 h-5 rounded-full bg-yellow-500 text-white flex items-center justify-center text-xs">
-                              T
-                            </span>
-                          )}
-                          {game.result === "-" && (
-                            <span className="text-gray-400">Upcoming</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               </section>

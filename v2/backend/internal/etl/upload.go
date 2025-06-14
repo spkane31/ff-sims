@@ -698,10 +698,10 @@ func Upload(directory string) error {
 		switch fileType {
 		// case "box_score_players":
 		// 	processErr = processBoxScorePlayers(filePath)
-		// case "draft_selections":
-		// 	processErr = processDraftSelections(filePath)
-		case "matchups":
-			processErr = processMatchups(filePath)
+		case "draft_selections":
+			processErr = processDraftSelections(filePath)
+		// case "matchups":
+		// 	processErr = processMatchups(filePath)
 		// case "transactions":
 		// 	processErr = processTransactions(filePath)
 		default:

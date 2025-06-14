@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"backend/internal/database"
+	"backend/internal/logging"
 	"backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -95,41 +96,34 @@ func GetTeams(c *gin.Context) {
 		})
 	}
 
-	for idx, matchup := range fullSchedule {
-		_ = idx
-		// if idx > 1 {
-		// 	break
-		// }
-		// slog.Info("Processing matchup", "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
+	for _, matchup := range fullSchedule {
 		// Add to resp
 		for i, team := range resp.Teams {
 			// slog.Info("Checking team against matchup", "team_id", team.ESPNID, "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
 			// Add total points scored and against
-			if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+			if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 				resp.Teams[i].Points.Scored += matchup.HomeTeamFinalScore
 				resp.Teams[i].Points.Against += matchup.AwayTeamFinalScore
-			} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+			} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
 				resp.Teams[i].Points.Scored += matchup.AwayTeamFinalScore
 				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
 			}
 
 			// Add the wins and losses
-			if matchup.Completed {
-				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-					if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-						resp.Teams[i].TeamRecord.Wins++
-					} else if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-						resp.Teams[i].TeamRecord.Losses++
-					}
-				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
-					if team.ESPNID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-						resp.Teams[i].TeamRecord.Wins++
-					} else if team.ESPNID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-						resp.Teams[i].TeamRecord.Losses++
-					}
-				} else {
-					resp.Teams[i].TeamRecord.Ties++
+			if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+				if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+					resp.Teams[i].TeamRecord.Wins++
+				} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+					resp.Teams[i].TeamRecord.Losses++
 				}
+			} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+				if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+					resp.Teams[i].TeamRecord.Wins++
+				} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+					resp.Teams[i].TeamRecord.Losses++
+				}
+			} else {
+				resp.Teams[i].TeamRecord.Ties++
 			}
 		}
 	}
@@ -137,20 +131,19 @@ func GetTeams(c *gin.Context) {
 	// Sort teams by wins, then by points scored
 	slices.SortStableFunc(resp.Teams, func(a, b TeamResponse) int {
 		if a.TeamRecord.Wins != b.TeamRecord.Wins {
-			return b.TeamRecord.Wins - a.TeamRecord.Wins // Sort by wins descending
+			return b.TeamRecord.Wins - a.TeamRecord.Wins
 		}
 		if a.Points.Scored != b.Points.Scored {
 			if a.Points.Scored < b.Points.Scored {
-				return 1 // Sort by points scored descending
+				return 1
 			}
 			return -1
 		}
-		return 0 // Equal, maintain order
+		return 0
 	})
 
-	// Assign ranks based on sorted order
 	for i := range resp.Teams {
-		resp.Teams[i].Rank = i + 1 // Rank starts from 1
+		resp.Teams[i].Rank = i + 1
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -179,16 +172,24 @@ func GetTeamByID(c *gin.Context) {
 
 	// Fetch team's schedule (all matchups for this team)
 	var schedule []models.Matchup
-	if err := database.DB.Where("home_team_espn_id = ? OR away_team_espn_id = ?", id, id).
+	if err := database.DB.Where("home_team_id = ? OR away_team_id = ?", team.ID, team.ID).
 		Order("year desc, week asc").Find(&schedule).Error; err != nil {
-		slog.Error("Failed to fetch team schedule", "error", err, "team_id", id)
+		slog.Error("Failed to fetch team schedule", "error", err, "team_id", team.ID)
+	}
+
+	for _, matchup := range schedule {
+		logging.Infof("Matchup: Week %d, Year %d, Home Team: %s (%d), Away Team: %s (%d), Home Score: %.2f, Away Score: %.2f",
+			matchup.Week, matchup.Year,
+			teamMap[matchup.HomeTeamID].Owner, matchup.HomeTeamID,
+			teamMap[matchup.AwayTeamID].Owner, matchup.AwayTeamID,
+			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore)
 	}
 
 	// Fetch team's draft picks from DraftSelection table
 	var draftSelections []models.DraftSelection
-	if err := database.DB.Where("owner_espn_id = ?", id).
+	if err := database.DB.Where("team_id = ?", team.ID).
 		Order("year desc, round asc, pick asc").Find(&draftSelections).Error; err != nil {
-		slog.Error("Failed to fetch team draft picks", "error", err, "team_id", id)
+		slog.Error("Failed to fetch team draft picks", "error", err, "team_id", team.ID)
 	}
 
 	// TODO: Fetch current and past players once team-player relationships are implemented
@@ -268,7 +269,7 @@ func GetTeamByID(c *gin.Context) {
 		var teamScore, opponentScore float64
 		var isHome bool
 
-		if fmt.Sprintf("%d", matchup.HomeTeamID) == id {
+		if matchup.HomeTeamID == team.ID {
 			// This team is home
 			isHome = true
 			teamScore = matchup.HomeTeamFinalScore

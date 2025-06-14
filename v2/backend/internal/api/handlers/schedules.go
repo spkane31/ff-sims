@@ -57,20 +57,18 @@ func GetSchedules(c *gin.Context) {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		}
+		slog.Info("Fetched schedules from database", "count", len(schedule))
 	}()
 
 	teams, teamsErr := []models.Team{}, error(nil)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Select("espn_id, owner").Find(&teams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).Select("id, owner").Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return
 		}
 		slog.Info("Fetched teams from database", "count", len(teams))
-		for _, team := range teams {
-			slog.Info("Team", "espn_id", team.ESPNID, "owner", team.Owner)
-		}
 	}()
 
 	wg.Wait()
@@ -102,10 +100,10 @@ func GetSchedules(c *gin.Context) {
 		}
 
 		for _, team := range teams {
-			if team.ESPNID == matchup.HomeTeamID {
+			if team.ID == matchup.HomeTeamID {
 				resp.Data.Matchups[i].HomeTeamName = team.Owner
 			}
-			if team.ESPNID == matchup.AwayTeamID {
+			if team.ID == matchup.AwayTeamID {
 				resp.Data.Matchups[i].AwayTeamName = team.Owner
 			}
 		}
