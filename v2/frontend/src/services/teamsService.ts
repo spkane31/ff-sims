@@ -66,8 +66,14 @@ export interface Transaction {
   type: string;
   date: string;
   description: string;
-  playersGained: string[];
-  playersLost: string[];
+  playersGained: {
+    id: string;
+    name: string;
+  }[];
+  playersLost: {
+    id: string;
+    name: string;
+  }[];
   week: number;
 }
 
@@ -113,7 +119,7 @@ export const teamsService = {
   getTeamById: async (teamId: number): Promise<Team> => {
     return apiClient.get<Team>(`/teams/${teamId}`);
   },
-  
+
   /**
    * Get detailed team information including schedule, players, draft picks, and transactions
    */

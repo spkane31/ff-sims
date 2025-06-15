@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"backend/internal/database"
 	"backend/internal/logging"
@@ -51,7 +52,7 @@ func GetTeams(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Find(&allTeams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).Preload("NameHistory").Find(&allTeams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 		}
 	}()
@@ -239,28 +240,111 @@ func GetTeamByID(c *gin.Context) {
 			selection.Round, selection.Pick, selection.PlayerName, selection.PlayerPosition, selection.Year)
 	}
 
-	// TODO: Fetch transactions once transaction data is stored in database
-	// This would require a Transaction model with trade/waiver/free agent data
-	transactions := []TransactionResponse{
-		{
-			ID:            "1",
-			Type:          "Trade",
-			Date:          "2024-10-15",
-			Description:   "Traded DeAndre Hopkins for DJ Moore",
-			PlayersGained: []string{"DJ Moore"},
-			PlayersLost:   []string{"DeAndre Hopkins"},
-			Week:          7,
-		},
-		{
-			ID:            "2",
-			Type:          "Waiver",
-			Date:          "2024-11-01",
-			Description:   "Claimed Jayden Reed off waivers",
-			PlayersGained: []string{"Jayden Reed"},
-			PlayersLost:   []string{},
-			Week:          9,
-		},
+	transactionsResp := []TransactionResponse{}
+
+	// Transactions are not perfect in the database. The transactions are "grouped" together by the date.
+	// TRADED transaction_types need to be collected in a second query to get the related players.
+	transactions := []models.Transaction{}
+	if err := database.DB.Where("team_id = ?", team.ID).Order("date desc").Find(&transactions).Error; err != nil {
+		slog.Error("Failed to fetch team transactions", "error", err, "team_id", team.ID)
 	}
+
+	logging.Infof("Fetched %d transactions for team %s", len(transactions), team.Name)
+
+	tradesDates := []time.Time{}
+	for _, transaction := range transactions {
+		if transaction.TransactionType == "TRADED" {
+			tradesDates = append(tradesDates, transaction.Date)
+		}
+	}
+
+	tradesTransactions := []models.Transaction{}
+	if len(tradesDates) > 0 {
+		if err := database.DB.Where("date IN (?)", tradesDates).Find(&tradesTransactions).Error; err != nil {
+			slog.Error("Failed to fetch trades transactions", "error", err, "dates", tradesDates)
+		}
+	}
+
+	tradesGrouped := make(map[time.Time][]models.Transaction)
+	for _, trade := range tradesTransactions {
+		tradesGrouped[trade.Date] = append(tradesGrouped[trade.Date], trade)
+	}
+
+	logging.Infof("Fetched %d trades transactions for team %s", len(tradesTransactions), team.Name)
+
+	// Transform transactions data
+	groupedTransactions := make(map[time.Time][]models.Transaction)
+	for _, transaction := range transactions {
+		// Group transactions by date
+		groupedTransactions[transaction.Date] = append(groupedTransactions[transaction.Date], transaction)
+	}
+
+	for date, group := range groupedTransactions {
+		var playersGained, playersLost []TransactionPlayer
+		var transactionType string
+		// var description string
+		var week int
+		for _, transaction := range group {
+			if transaction.TransactionType == "TRADED" {
+				transactionType = "Trade"
+				tradeDetails, exists := tradesGrouped[transaction.Date]
+				if !exists {
+					slog.Warn("Trade details not found for transaction", "date", transaction.Date)
+					continue // Skip if no trade details found
+				}
+				for _, trade := range tradeDetails {
+					if trade.TeamID == team.ID {
+						// This is the team making the trade
+						playersGained = append(playersGained, TransactionPlayer{
+							ID:   trade.PlayerID,
+							Name: trade.PlayerName})
+					} else {
+						// This is the trade partner
+						playersLost = append(playersLost, TransactionPlayer{
+							ID:   trade.PlayerID,
+							Name: trade.PlayerName})
+					}
+				}
+			} else if transaction.TransactionType == "FA ADDED" {
+				transactionType = "Free Agent"
+				playersGained = append(playersGained, TransactionPlayer{
+					ID:   transaction.PlayerID,
+					Name: transaction.PlayerName,
+				})
+			} else if transaction.TransactionType == "DROPPED" {
+				if transactionType == "" {
+					transactionType = "Waiver"
+				}
+				playersLost = append(playersLost, TransactionPlayer{
+					ID:   transaction.PlayerID,
+					Name: transaction.PlayerName,
+				})
+			} else if transaction.TransactionType == "WAIVER ADDED" {
+			} else {
+				slog.Warn("Unknown transaction type", "type", transaction.TransactionType, "date", date)
+				continue
+			}
+		}
+		transactionsResp = append(transactionsResp, TransactionResponse{
+			Type:          transactionType,
+			Date:          date,
+			PlayersGained: playersGained,
+			PlayersLost:   playersLost,
+		})
+		logging.Infof("Transaction on %s: Type %s, Players Gained %v, Players Lost %v, Week %d",
+			date, transactionType, playersGained, playersLost, week)
+	}
+
+	slices.SortStableFunc(transactionsResp, func(a, b TransactionResponse) int {
+		// Sort by date descending
+		if a.Date != b.Date {
+			if b.Date.Before(a.Date) {
+				return -1 // a is more recent than b
+			}
+			return 1 // b is more recent than a
+		}
+		return 0
+	})
 
 	// Transform schedule data
 	scheduleResponse := make([]ScheduleGameResponse, len(schedule))
@@ -326,7 +410,7 @@ func GetTeamByID(c *gin.Context) {
 		Schedule:       scheduleResponse,
 		CurrentPlayers: currentPlayers,
 		DraftPicks:     draftPicks,
-		Transactions:   transactions,
+		Transactions:   transactionsResp,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -392,13 +476,16 @@ type DraftPickResponse struct {
 }
 
 type TransactionResponse struct {
-	ID            string   `json:"id"`
-	Type          string   `json:"type"` // "Trade", "Waiver", "Free Agent"
-	Date          string   `json:"date"`
-	Description   string   `json:"description"`
-	PlayersGained []string `json:"playersGained"`
-	PlayersLost   []string `json:"playersLost"`
-	Week          int      `json:"week"`
+	Type          string              `json:"type"` // "Trade", "Waiver", "Free Agent"
+	Date          time.Time           `json:"date"`
+	Description   string              `json:"description"`
+	PlayersGained []TransactionPlayer `json:"playersGained"`
+	PlayersLost   []TransactionPlayer `json:"playersLost"`
+}
+
+type TransactionPlayer struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
 }
 
 // CreateTeam creates a new team

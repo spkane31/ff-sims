@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useTeams } from "../../hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
 
-type SortField = "rank" | "name" | "wins" | "losses" | "pf" | "pa" | "playoffs";
+type SortField =
+  | "rank"
+  | "name"
+  | "wins"
+  | "losses"
+  | "pf"
+  | "pa"
+  | "playoffs"
+  | "diff";
 type SortDirection = "asc" | "desc";
 
 export default function Teams() {
@@ -160,6 +168,10 @@ export default function Teams() {
               fieldA = a.playoffChance;
               fieldB = b.playoffChance;
               break;
+            case "diff":
+              fieldA = a.points.scored - a.points.against;
+              fieldB = b.points.scored - b.points.against;
+              break;
             case "rank":
             default:
               fieldA = a.rank;
@@ -257,6 +269,12 @@ export default function Teams() {
                       </th>
                       <th
                         className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
+                        onClick={() => handleSort("diff")}
+                      >
+                        Diff {renderSortIcon("diff")}
+                      </th>
+                      <th
+                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
                         onClick={() => handleSort("playoffs")}
                       >
                         Playoff % {renderSortIcon("playoffs")}
@@ -285,9 +303,8 @@ export default function Teams() {
                               href={`/teams/${team.espnId}`}
                               className="font-medium hover:text-blue-600"
                             >
-                              {team.owner}
+                              {team.name}
                             </Link>
-                            {/* TODO 2025-06-03: replace team.owner with team.name once names are added to the database */}
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {team.owner}
                             </span>
@@ -307,6 +324,14 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {team.points.against.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          {(
+                            team.points.scored - team.points.against
+                          ).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}

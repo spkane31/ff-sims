@@ -57,6 +57,21 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
   players: Player[];
   draftPicks: DraftPick[];
   schedule: Game[];
+  transactions: {
+    id: string;
+    type: string;
+    date: string;
+    description: string;
+    playersGained: {
+      id: string;
+      name: string;
+    }[];
+    playersLost: {
+      id: string;
+      name: string;
+    }[];
+    week: number;
+  }[];
 } {
   // Convert API players to UI format
   const players: Player[] = teamData.currentPlayers.map((player) => ({
@@ -114,6 +129,9 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     isHome: game.isHome,
   }));
 
+  // Pass through the transactions directly
+  const transactions = teamData.transactions || [];
+
   return {
     id: parseInt(teamData.id),
     name: teamData.name,
@@ -132,6 +150,7 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     players,
     draftPicks,
     schedule,
+    transactions,
   };
 }
 
@@ -407,6 +426,16 @@ export default function TeamDetail() {
               }`}
             >
               Draft Picks
+            </button>
+            <button
+              onClick={() => setActiveTab("transactions")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "transactions"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Transactions
             </button>
           </nav>
         </div>
@@ -1105,6 +1134,138 @@ export default function TeamDetail() {
                   </tbody>
                 </table>
               </div>
+            </section>
+          )}
+
+          {/* Transactions Tab */}
+          {activeTab === "transactions" && (
+            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">Team Transactions</h2>
+
+              {team && team.transactions && team.transactions.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Filter buttons */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <button
+                      className="px-3 py-1 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                      onClick={() => {}}
+                    >
+                      All Types
+                    </button>
+                    <button
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => {}}
+                    >
+                      Draft
+                    </button>
+                    <button
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => {}}
+                    >
+                      Trade
+                    </button>
+                    <button
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => {}}
+                    >
+                      Waiver
+                    </button>
+                  </div>
+
+                  {/* Transaction Cards */}
+                  <div className="space-y-4">
+                    {team.transactions.map((transaction) => (
+                      <div
+                        key={transaction.id}
+                        className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
+                      >
+                        <div
+                          className={`px-4 py-3 flex justify-between items-center
+                          ${
+                            transaction.type.toLowerCase() === "draft"
+                              ? "bg-purple-50 dark:bg-purple-900/20"
+                              : transaction.type.toLowerCase() === "trade"
+                              ? "bg-blue-50 dark:bg-blue-900/20"
+                              : "bg-green-50 dark:bg-green-900/20"
+                          }`}
+                        >
+                          <div>
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full
+                              ${
+                                transaction.type.toLowerCase() === "draft"
+                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                                  : transaction.type.toLowerCase() === "trade"
+                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                                  : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                              }`}
+                            >
+                              {transaction.type}
+                            </span>
+                            <span className="ml-3 text-gray-600 dark:text-gray-400 text-sm">
+                              {transaction.date} - Week {transaction.week}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-4">
+                          <p className="mb-4">{transaction.description}</p>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {transaction.playersGained &&
+                              transaction.playersGained.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
+                                    Players Gained:
+                                  </h4>
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {transaction.playersGained.map(
+                                      (player, idx) => (
+                                        <li key={idx} className="text-sm">
+                                          {typeof player === "object"
+                                            ? player.name ||
+                                              JSON.stringify(player)
+                                            : player}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+
+                            {transaction.playersLost &&
+                              transaction.playersLost.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
+                                    Players Lost:
+                                  </h4>
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {transaction.playersLost.map(
+                                      (player, idx) => (
+                                        <li key={idx} className="text-sm">
+                                          {typeof player === "object"
+                                            ? player.name ||
+                                              JSON.stringify(player)
+                                            : player}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No transactions found for this team.
+                  </p>
+                </div>
+              )}
             </section>
           )}
         </div>
