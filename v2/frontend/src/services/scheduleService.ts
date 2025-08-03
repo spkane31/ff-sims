@@ -88,8 +88,8 @@ export const scheduleService = {
   /**
    * Get the schedule for a specific year
    */
-  getScheduleByYear: async (year: number): Promise<Game[][]> => {
-    return apiClient.get<Game[][]>(`/schedules?year=${year}`);
+  getScheduleByYear: async (year: number): Promise<Game[]> => {
+    return apiClient.get<Game[]>(`/schedules?year=${year}`);
   },
 
   /**

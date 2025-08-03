@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
+import { teamsService, Team } from "../services/teamsService";
 
 export default function Home() {
   const [apiHealth, setAPIHealth] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchTeamsData() {
+    async function fetchHealthData() {
       try {
         setIsLoading(true);
         const response = await fetch("http://localhost:8080/api/health");
@@ -21,6 +24,19 @@ export default function Home() {
       }
     }
 
+    async function fetchTeamsData() {
+      try {
+        setTeamsLoading(true);
+        const response = await teamsService.getAllTeams();
+        setTeams(response.teams);
+      } catch (error) {
+        console.error("Error fetching teams data:", error);
+      } finally {
+        setTeamsLoading(false);
+      }
+    }
+
+    fetchHealthData();
     fetchTeamsData();
   }, []);
 
@@ -92,6 +108,90 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Teams Data Section */}
+        <section className="bg-gray-100 dark:bg-gray-700 rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">All-Time Team Records</h2>
+          {teamsLoading ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <p>Loading teams data...</p>
+            </div>
+          ) : (
+            <div>
+              {teams.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full bg-white dark:bg-gray-800 rounded-lg">
+                    <thead className="bg-gray-50 dark:bg-gray-600">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Team
+                        </th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Owner
+                        </th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Regular Season Record
+                        </th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Playoffs Record
+                        </th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Points For
+                        </th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Points Against
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                      {teams.map((team) => (
+                        <tr
+                          key={team.id}
+                          className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {team.name}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                            {team.owner}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.record.wins}-{team.record.losses}
+                            {team.record.ties > 0 ? `-${team.record.ties}` : ""}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.playoffRecord.wins}-
+                            {team.playoffRecord.losses}
+                            {team.playoffRecord.ties > 0
+                              ? `-${team.playoffRecord.ties}`
+                              : ""}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.points.scored.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.points.against.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-600 dark:text-gray-300">
+                  No teams found.
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
         {/* API Status Section */}

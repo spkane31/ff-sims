@@ -180,7 +180,7 @@ export interface GetLeagueResponse {
 
 export interface GetMatchupsResponse {
   data: {
-    matchups: Matchup[][];
+    matchups: Matchup[];
   };
 }
 

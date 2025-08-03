@@ -15,5 +15,4 @@ func GetTeamsIDMap() (map[uint]models.Team, error) {
 		teamMap[team.ID] = team
 	}
 	return teamMap, nil
-
 }

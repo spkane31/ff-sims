@@ -17,7 +17,9 @@ const Header = () => {
     <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md">
       <div className="container mx-auto px-4 py-4">
         <div className="flex flex-col md:flex-row justify-between items-center">
-          <div className="text-2xl font-bold mb-4 md:mb-0">The League</div>
+          <Link href="/" className="text-2xl font-bold mb-4 md:mb-0">
+            The League
+          </Link>
           <nav>
             <ul className="flex flex-wrap justify-center space-x-1 md:space-x-8">
               {navItems.map((item) => (

@@ -21,14 +21,15 @@ type GetTeamsResponse struct {
 }
 
 type TeamResponse struct {
-	ID            string     `json:"id"`
-	ESPNID        string     `json:"espnId"`
-	Name          string     `json:"name"`
-	OwnerName     string     `json:"owner"`
-	TeamRecord    TeamRecord `json:"record"`
-	Points        TeamPoints `json:"points"`
-	Rank          int        `json:"rank"`
-	PlayoffChance float64    `json:"playoffChance"`
+	ID                  string     `json:"id"`
+	ESPNID              string     `json:"espnId"`
+	Name                string     `json:"name"`
+	OwnerName           string     `json:"owner"`
+	RegularSeasonRecord TeamRecord `json:"record"`
+	PlayoffsRecord      TeamRecord `json:"playoffRecord"`
+	Points              TeamPoints `json:"points"`
+	Rank                int        `json:"rank"`
+	PlayoffChance       float64    `json:"playoffChance"`
 }
 
 type TeamRecord struct {
@@ -91,7 +92,7 @@ func GetTeams(c *gin.Context) {
 			ESPNID:    fmt.Sprintf("%d", team.ESPNID),
 			Name:      team.Name,
 			OwnerName: team.Owner,
-			TeamRecord: TeamRecord{
+			RegularSeasonRecord: TeamRecord{
 				Wins:   team.Wins,
 				Losses: team.Losses,
 				Ties:   team.Ties,
@@ -100,6 +101,14 @@ func GetTeams(c *gin.Context) {
 	}
 
 	for _, matchup := range fullSchedule {
+		logging.Infof("Matchup: Week %d, Year %d, Home Team (%d), Away Team: (%d), Home Score: %.2f, Away Score: %.2f",
+			matchup.Week, matchup.Year,
+			matchup.HomeTeamID,
+			matchup.AwayTeamID,
+			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore)
+		if matchup.Week == 17 {
+			logging.Infof("Found matchup for week 17: %s vs %s, Home Score: %.2f, Away Score: %.2f")
+		}
 		// Add to resp
 		for i, team := range resp.Teams {
 			// Add total points scored and against
@@ -111,29 +120,49 @@ func GetTeams(c *gin.Context) {
 				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
 			}
 
-			// Add the wins and losses
-			if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-				if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-					resp.Teams[i].TeamRecord.Wins++
-				} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-					resp.Teams[i].TeamRecord.Losses++
+			switch matchup.GameType {
+			case "NONE":
+				// Add the wins and losses
+				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Losses++
+					}
+				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Losses++
+					}
+				} else {
+					resp.Teams[i].RegularSeasonRecord.Ties++
 				}
-			} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
-				if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-					resp.Teams[i].TeamRecord.Wins++
-				} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-					resp.Teams[i].TeamRecord.Losses++
+			case "WINNERS_BRACKET":
+				// For playoff games, we need to track playoff records separately
+				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].PlayoffsRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].PlayoffsRecord.Losses++
+					}
+				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].PlayoffsRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].PlayoffsRecord.Losses++
+					}
+				} else {
+					resp.Teams[i].PlayoffsRecord.Ties++
 				}
-			} else {
-				resp.Teams[i].TeamRecord.Ties++
 			}
 		}
 	}
 
 	// Sort teams by wins, then by points scored
 	slices.SortStableFunc(resp.Teams, func(a, b TeamResponse) int {
-		if a.TeamRecord.Wins != b.TeamRecord.Wins {
-			return b.TeamRecord.Wins - a.TeamRecord.Wins
+		if a.RegularSeasonRecord.Wins != b.RegularSeasonRecord.Wins {
+			return b.RegularSeasonRecord.Wins - a.RegularSeasonRecord.Wins
 		}
 		if a.Points.Scored != b.Points.Scored {
 			if a.Points.Scored < b.Points.Scored {
@@ -197,32 +226,32 @@ func GetTeamByID(c *gin.Context) {
 	// TODO: Fetch current and past players once team-player relationships are implemented
 	// This would require a join table or foreign keys between teams and players
 	currentPlayers := []PlayerResponse{
-		{
-			ID:            "1",
-			Name:          "Patrick Mahomes",
-			Position:      "QB",
-			Team:          "KC",
-			Status:        "Active",
-			FantasyPoints: 287.5,
-			Stats: PlayerStatsResponse{
-				PassingYards: 4183,
-				PassingTDs:   27,
-				RushingTDs:   1,
-			},
-		},
-		{
-			ID:            "2",
-			Name:          "Travis Kelce",
-			Position:      "TE",
-			Team:          "KC",
-			Status:        "Active",
-			FantasyPoints: 201.3,
-			Stats: PlayerStatsResponse{
-				Receptions:     93,
-				ReceivingYards: 984,
-				ReceivingTDs:   5,
-			},
-		},
+		// {
+		// 	ID:            "1",
+		// 	Name:          "Patrick Mahomes",
+		// 	Position:      "QB",
+		// 	Team:          "KC",
+		// 	Status:        "Active",
+		// 	FantasyPoints: 287.5,
+		// 	Stats: PlayerStatsResponse{
+		// 		PassingYards: 4183,
+		// 		PassingTDs:   27,
+		// 		RushingTDs:   1,
+		// 	},
+		// },
+		// {
+		// 	ID:            "2",
+		// 	Name:          "Travis Kelce",
+		// 	Position:      "TE",
+		// 	Team:          "KC",
+		// 	Status:        "Active",
+		// 	FantasyPoints: 201.3,
+		// 	Stats: PlayerStatsResponse{
+		// 		Receptions:     93,
+		// 		ReceivingYards: 984,
+		// 		ReceivingTDs:   5,
+		// 	},
+		// },
 	}
 
 	// Transform draft picks data

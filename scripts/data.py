@@ -302,7 +302,7 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: 
                     "away_team_final_score": matchup.away_score,
                     "home_team_espn_projected_score": matchup.home_projected,
                     "away_team_espn_projected_score": matchup.away_projected,
-                    "completed": league.current_week > week,
+                    "completed": league.current_week >= week,
                     "home_team_lineup": [
                         {
                             "slot_position": player.slot_position,

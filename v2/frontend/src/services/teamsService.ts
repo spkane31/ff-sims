@@ -18,6 +18,7 @@ export interface Team {
   name: string;
   owner: string;
   record: TeamRecord;
+  playoffRecord: TeamRecord;
   points: TeamPoints;
   rank: number;
   playoffChance: number;

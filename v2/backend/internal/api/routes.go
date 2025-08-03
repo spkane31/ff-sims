@@ -50,11 +50,12 @@ func SetupRouter(r *gin.Engine) {
 		// 	leagues.GET("/:id/standings", handlers.GetLeagueStandings)
 		// }
 
-		// // Simulation endpoints
-		// sim := api.Group("/simulations")
-		// {
-		// 	sim.POST("/run", middleware.AuthRequired(), handlers.RunSimulation)
-		// 	sim.GET("/results/:id", handlers.GetSimulationResults)
-		// }
+		// Simulation endpoints
+		sim := api.Group("/simulations")
+		{
+			sim.GET("/stats", handlers.GetStats)
+			// sim.POST("/run", handlers.RunSimulation)
+			// sim.GET("/results/:id", handlers.GetSimulationResults)
+		}
 	}
 }

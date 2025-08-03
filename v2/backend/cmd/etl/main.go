@@ -20,8 +20,8 @@ func main() {
 		Short: "ETL service for fantasy football simulations",
 		Long:  "Extract, Transform, Load service for processing fantasy football data",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			logging.Info("ETL service started")
-			logging.Info(fmt.Sprintf("Using data directory: %s", dataDir))
+			logging.Infof("ETL service started")
+			logging.Infof(fmt.Sprintf("Using data directory: %s", dataDir))
 		},
 	}
 
@@ -35,7 +35,7 @@ func main() {
 		Long:  "Process and upload data files to the database",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := etl.Upload(dataDir); err != nil {
-				logging.Error(fmt.Sprintf("Failed to upload data: %v", err))
+				logging.Errorf(fmt.Sprintf("Failed to upload data: %v", err))
 				os.Exit(1)
 			}
 		},
@@ -51,7 +51,7 @@ func main() {
 
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
-		logging.Error(fmt.Sprintf("Error executing command: %v", err))
+		logging.Errorf(fmt.Sprintf("Error executing command: %v", err))
 		os.Exit(1)
 	}
 }

@@ -246,10 +246,10 @@ func processMatchups(filePath string) error {
 		}
 
 		entry := &models.Matchup{
-			LeagueID: leagueID,
-			Week:     uint(matchup.Week),
-			Year:     uint(matchup.Year),
-			// Season:                     matchup.Year,
+			LeagueID:                   leagueID,
+			Week:                       uint(matchup.Week),
+			Year:                       uint(matchup.Year),
+			Season:                     int(matchup.Year),
 			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -282,6 +282,10 @@ func processMatchups(filePath string) error {
 			existingMatchup.HomeTeamESPNProjectedScore = matchup.HomeTeamEspnProjectedScore
 			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamEspnProjectedScore
 			existingMatchup.Completed = matchup.Completed
+			existingMatchup.GameType = matchup.GameType
+			existingMatchup.Week = uint(matchup.Week)
+			existingMatchup.Year = uint(matchup.Year)
+			existingMatchup.Season = int(matchup.Year)
 
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamESPNID, err)
@@ -295,18 +299,18 @@ func processMatchups(filePath string) error {
 		}
 
 		// Process home team lineup
-		for _, player := range matchup.HomeTeamLineup {
-			if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
-				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
-			}
-		}
+		// for _, player := range matchup.HomeTeamLineup {
+		// 	if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+		// 		return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
+		// 	}
+		// }
 
-		// Process away team lineup
-		for _, player := range matchup.AwayTeamLineup {
-			if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
-				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
-			}
-		}
+		// // Process away team lineup
+		// for _, player := range matchup.AwayTeamLineup {
+		// 	if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+		// 		return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
+		// 	}
+		// }
 	}
 
 	return nil
@@ -706,10 +710,10 @@ func Upload(directory string) error {
 		switch fileType {
 		// case "box_score_players":
 		// 	processErr = processBoxScorePlayers(filePath)
-		case "draft_selections":
-			processErr = processDraftSelections(filePath)
-		// case "matchups":
-		// 	processErr = processMatchups(filePath)
+		// case "draft_selections":
+		// 	processErr = processDraftSelections(filePath)
+		case "matchups":
+			processErr = processMatchups(filePath)
 		// case "transactions":
 		// 	processErr = processTransactions(filePath)
 		default:
