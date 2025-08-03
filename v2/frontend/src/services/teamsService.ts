@@ -81,6 +81,7 @@ export interface ScheduleGame {
   week: number;
   year: number;
   opponent: string;
+  opponentESPNID: string; // Add opponent ESPN ID for linking
   isHome: boolean;
   teamScore: number;
   opponentScore: number;

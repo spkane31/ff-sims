@@ -19,9 +19,6 @@ func SetupRouter(r *gin.Engine) {
 		{
 			teams.GET("", handlers.GetTeams)
 			teams.GET("/:id", handlers.GetTeamByID)
-			// teams.POST("", middleware.AuthRequired(), handlers.CreateTeam)
-			// teams.PUT("/:id", middleware.AuthRequired(), handlers.UpdateTeam)
-			// teams.DELETE("/:id", middleware.AuthRequired(), handlers.DeleteTeam)
 		}
 
 		// Players endpoints

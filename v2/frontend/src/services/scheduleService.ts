@@ -1,9 +1,5 @@
 import { apiClient } from "./apiClient";
-import {
-  Matchup,
-  GetMatchupsResponse,
-  GetMatchupResponse,
-} from "../types/models";
+import { Matchup, GetMatchupsResponse } from "../types/models";
 
 // Legacy interfaces for backward compatibility
 export interface Game {

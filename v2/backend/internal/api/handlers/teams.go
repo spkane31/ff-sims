@@ -60,7 +60,9 @@ func GetTeams(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if scheduleErr = database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&fullSchedule).Error; scheduleErr != nil {
+		if scheduleErr = database.DB.Model(&models.Matchup{}).
+			Where("completed = true AND game_type IN ?", []string{"NONE", "WINNERS_BRACKET"}).
+			Find(&fullSchedule).Error; scheduleErr != nil {
 			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
 		}
 	}()
@@ -100,7 +102,6 @@ func GetTeams(c *gin.Context) {
 	for _, matchup := range fullSchedule {
 		// Add to resp
 		for i, team := range resp.Teams {
-			// slog.Info("Checking team against matchup", "team_id", team.ESPNID, "home_team_espn_id", matchup.HomeTeamESPNID, "away_team_espn_id", matchup.AwayTeamESPNID)
 			// Add total points scored and against
 			if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 				resp.Teams[i].Points.Scored += matchup.HomeTeamFinalScore
@@ -350,6 +351,7 @@ func GetTeamByID(c *gin.Context) {
 	scheduleResponse := make([]ScheduleGameResponse, len(schedule))
 	for i, matchup := range schedule {
 		var opponent string
+		var opponentESPNID string
 		var teamScore, opponentScore float64
 		var isHome bool
 
@@ -359,12 +361,14 @@ func GetTeamByID(c *gin.Context) {
 			teamScore = matchup.HomeTeamFinalScore
 			opponentScore = matchup.AwayTeamFinalScore
 			opponent = teamMap[matchup.AwayTeamID].Owner
+			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.AwayTeamID].ESPNID)
 		} else {
 			// This team is away
 			isHome = false
 			teamScore = matchup.AwayTeamFinalScore
 			opponentScore = matchup.HomeTeamFinalScore
 			opponent = teamMap[matchup.HomeTeamID].Owner
+			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.HomeTeamID].ESPNID)
 		}
 
 		var result string
@@ -381,15 +385,16 @@ func GetTeamByID(c *gin.Context) {
 		}
 
 		scheduleResponse[i] = ScheduleGameResponse{
-			Week:          int(matchup.Week),
-			Year:          int(matchup.Year),
-			Opponent:      opponent,
-			IsHome:        isHome,
-			TeamScore:     teamScore,
-			OpponentScore: opponentScore,
-			Result:        result,
-			Completed:     matchup.Completed,
-			IsPlayoff:     matchup.IsPlayoff,
+			Week:           int(matchup.Week),
+			Year:           int(matchup.Year),
+			Opponent:       opponent,
+			OpponentESPNID: opponentESPNID,
+			IsHome:         isHome,
+			TeamScore:      teamScore,
+			OpponentScore:  opponentScore,
+			Result:         result,
+			Completed:      matchup.Completed,
+			IsPlayoff:      matchup.IsPlayoff,
 		}
 	}
 
@@ -431,15 +436,16 @@ type TeamDetailResponse struct {
 }
 
 type ScheduleGameResponse struct {
-	Week          int     `json:"week"`
-	Year          int     `json:"year"`
-	Opponent      string  `json:"opponent"`
-	IsHome        bool    `json:"isHome"`
-	TeamScore     float64 `json:"teamScore"`
-	OpponentScore float64 `json:"opponentScore"`
-	Result        string  `json:"result"` // "W", "L", "T", or "Upcoming"
-	Completed     bool    `json:"completed"`
-	IsPlayoff     bool    `json:"isPlayoff"`
+	Week           int     `json:"week"`
+	Year           int     `json:"year"`
+	Opponent       string  `json:"opponent"`
+	OpponentESPNID string  `json:"opponentESPNID"` // Add opponent ESPN ID for linking
+	IsHome         bool    `json:"isHome"`
+	TeamScore      float64 `json:"teamScore"`
+	OpponentScore  float64 `json:"opponentScore"`
+	Result         string  `json:"result"` // "W", "L", "T", or "Upcoming"
+	Completed      bool    `json:"completed"`
+	IsPlayoff      bool    `json:"isPlayoff"`
 }
 
 type PlayerResponse struct {

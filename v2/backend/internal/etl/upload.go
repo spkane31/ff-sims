@@ -132,6 +132,7 @@ type Matchup struct {
 	HomeTeamEspnProjectedScore float64        `json:"home_team_espn_projected_score"`
 	AwayTeamEspnProjectedScore float64        `json:"away_team_espn_projected_score"`
 	Completed                  bool           `json:"completed"`
+	GameType                   string         `json:"game_type"`
 	HomeTeamLineup             []PlayerLineup `json:"home_team_lineup"`
 	AwayTeamLineup             []PlayerLineup `json:"away_team_lineup"`
 }
@@ -255,6 +256,7 @@ func processMatchups(filePath string) error {
 			AwayTeamFinalScore:         matchup.AwayTeamFinalScore,
 			HomeTeamESPNProjectedScore: matchup.HomeTeamEspnProjectedScore,
 			AwayTeamESPNProjectedScore: matchup.AwayTeamEspnProjectedScore,
+			GameType:                   matchup.GameType,
 
 			Completed: matchup.Completed,
 			IsPlayoff: false, // TODO: implement playoff logic
@@ -339,8 +341,14 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 
 	stats, ok := player.Stats[fmt.Sprintf("%d", week)]
 	if !ok && !player.OnByeWeek {
-		logging.Warnf("No stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
-		return fmt.Errorf("no stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
+		if len(player.Stats) == 1 {
+			for _, value := range player.Stats {
+				stats = value
+			}
+		} else {
+			logging.Warnf("No stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
+			return fmt.Errorf("no stats found for player %s (ID %d) for week %d", player.PlayerName, player.PlayerID, week)
+		}
 	}
 
 	gameStats := models.PlayerStats{}
@@ -698,14 +706,14 @@ func Upload(directory string) error {
 		switch fileType {
 		// case "box_score_players":
 		// 	processErr = processBoxScorePlayers(filePath)
-		// case "draft_selections":
-		// 	processErr = processDraftSelections(filePath)
+		case "draft_selections":
+			processErr = processDraftSelections(filePath)
 		// case "matchups":
 		// 	processErr = processMatchups(filePath)
-		case "transactions":
-			processErr = processTransactions(filePath)
+		// case "transactions":
+		// 	processErr = processTransactions(filePath)
 		default:
-			logging.Infof("Warning: Unrecognized file type %s in file %s, skipping", fileType, file.Name())
+			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue
 		}
 

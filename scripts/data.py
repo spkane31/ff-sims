@@ -111,7 +111,7 @@ def upsert_matchups(
 
     if file_name is not None:
         matchups = []
-        for week in range(1, 15):
+        for week in range(1, 18):
             for matchup in league.scoreboard(week=week):
                 if matchup.matchup_type != "NONE":
                     continue
@@ -246,7 +246,7 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: 
     matchups_data = []
     box_score_data = []
 
-    for week in range(1, 15):
+    for week in range(1, 18):
         logging.info(f"Year: {league.year}\tWeek: {week}")
         if week > league.current_week and datetime.now().year == league.year:
             break
@@ -258,6 +258,8 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: 
                 matchup_info = {
                     "week": week,
                     "year": league.year,
+                    "game_type": matchup.matchup_type,
+                    "is_playoff": matchup.is_playoff,
                     "home_team_espn_id": matchup.home_team.team_id,
                     "away_team_espn_id": matchup.away_team.team_id,
                     "home_team_final_score": matchup.home_score,
@@ -287,11 +289,13 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: 
             # box_scores func only works for the current year
             for matchup in league.box_scores(week=week):
                 if matchup.away_team == 0 or matchup.home_team == 0:
-                    break
+                    continue
 
                 matchup_info = {
                     "week": week,
                     "year": league.year,
+                    "game_type": matchup.matchup_type,
+                    "is_playoff": matchup.is_playoff,
                     "home_team_espn_id": matchup.home_team.team_id,
                     "away_team_espn_id": matchup.away_team.team_id,
                     "home_team_final_score": matchup.home_score,
@@ -678,54 +682,58 @@ def get_all_transactions(
 
     while True:
         logging.info(f"Processing transactions with offset: {offset}")
-        txs = league.recent_activity(offset=offset)
+        try:
+            txs = league.recent_activity(offset=offset)
 
-        if not txs:
+            if not txs:
+                break
+
+            for tx in txs:
+                tx_date = datetime.fromtimestamp(tx.date / 1000)
+
+                for action in tx.actions:
+                    team = action[0]
+                    transaction_type = action[1]
+                    player = action[2]
+                    bid_amount = action[3]
+
+                    transaction_data = {
+                        "team_espn_id": team.team_id,
+                        "player_id": player.playerId,
+                        "transaction_type": transaction_type,
+                        "player_name": player.name,
+                        "player_position": player.position,
+                        "bid_amount": bid_amount,
+                        "date": tx_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "year": league.year,
+                    }
+
+                    all_transactions.append(transaction_data)
+
+                    # Update database if needed
+                    if conn is not None:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "INSERT INTO transactions (team_id, player_id, transaction_type, date) "
+                                "SELECT %s, %s, %s, %s WHERE NOT EXISTS "
+                                "(SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
+                                (
+                                    team.team_id,
+                                    player.playerId,
+                                    transaction_type,
+                                    tx_date,
+                                    team.team_id,
+                                    player.playerId,
+                                    transaction_type,
+                                    tx_date,
+                                ),
+                            )
+                            conn.commit()
+
+            offset += 25
+        except Exception as e:
+            logging.error(f"Error processing transactions at offset {offset}: {e}")
             break
-
-        for tx in txs:
-            tx_date = datetime.fromtimestamp(tx.date / 1000)
-
-            for action in tx.actions:
-                team = action[0]
-                transaction_type = action[1]
-                player = action[2]
-                bid_amount = action[3]
-
-                transaction_data = {
-                    "team_espn_id": team.team_id,
-                    "player_id": player.playerId,
-                    "transaction_type": transaction_type,
-                    "player_name": player.name,
-                    "player_position": player.position,
-                    "bid_amount": bid_amount,
-                    "date": tx_date.strftime("%Y-%m-%d %H:%M:%S"),
-                    "year": league.year,
-                }
-
-                all_transactions.append(transaction_data)
-
-                # Update database if needed
-                if conn is not None:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO transactions (team_id, player_id, transaction_type, date) "
-                            "SELECT %s, %s, %s, %s WHERE NOT EXISTS "
-                            "(SELECT 1 FROM transactions WHERE team_id = %s AND player_id = %s AND transaction_type = %s AND date = %s)",
-                            (
-                                team.team_id,
-                                player.playerId,
-                                transaction_type,
-                                tx_date,
-                                team.team_id,
-                                player.playerId,
-                                transaction_type,
-                                tx_date,
-                            ),
-                        )
-                        conn.commit()
-
-        offset += 25
 
     # Write transaction data to file if filename provided
     if file_name is not None and all_transactions:
@@ -864,8 +872,8 @@ if __name__ == "__main__":
 
     get_schedule(league, conn=conn, file_name=matchups_file)
     get_simple_draft(league, conn=conn, file_name=draft_file)
-    # get_all_players(league, conn=conn, file_name=box_score_file)
     get_all_transactions(league, conn=conn, file_name=transactions_file)
+    # get_all_players(league, conn=conn, file_name=box_score_file)
 
     if args.use_database and conn is not None:
         conn.close()

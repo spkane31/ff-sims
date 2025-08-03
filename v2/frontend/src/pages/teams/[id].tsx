@@ -5,7 +5,6 @@ import Layout from "../../components/Layout";
 import {
   teamsService,
   TeamDetail as TeamDetailType,
-  ScheduleGame,
 } from "../../services/teamsService";
 
 // Type definitions for the legacy UI components
@@ -33,6 +32,7 @@ interface Game {
   week: number;
   year: number;
   opponent: string;
+  opponentESPNID: string; // Add opponent ESPN ID for linking
   result: "W" | "L" | "T" | "-";
   score: string;
   isHome: boolean;
@@ -84,18 +84,20 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     status: player.status,
   }));
 
-  // Convert API draft picks to UI format
-  const draftPicks: DraftPick[] = teamData.draftPicks.map((pick) => ({
-    round: pick.round,
-    pick: pick.pick,
-    overall: (pick.round - 1) * 10 + pick.pick, // Assuming 12 teams per round
-    description: `${pick.round}${getOrdinalSuffix(pick.round)} Round (${
-      pick.year
-    })`,
-    playerId: 0, // TODO: Link draft picks to players when API supports it
-    player: pick.player,
-    position: pick.position,
-  }));
+  // Convert API draft picks to UI format if draftPicks is not null
+  const draftPicks: DraftPick[] = teamData.draftPicks
+    ? teamData.draftPicks.map((pick) => ({
+        round: pick.round,
+        pick: pick.pick,
+        overall: (pick.round - 1) * 10 + pick.pick, // Assuming 12 teams per round
+        description: `${pick.round}${getOrdinalSuffix(pick.round)} Round (${
+          pick.year
+        })`,
+        playerId: 0, // TODO: Link draft picks to players when API supports it
+        player: pick.player,
+        position: pick.position,
+      }))
+    : [];
 
   let pointsScored = 0;
   let pointsAgainst = 0;
@@ -127,6 +129,7 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
       ? `${game.teamScore.toFixed(2)}-${game.opponentScore.toFixed(2)}`
       : "0-0",
     isHome: game.isHome,
+    opponentESPNID: game.opponentESPNID, // Add opponent ESPN ID
   }));
 
   // Pass through the transactions directly
@@ -182,7 +185,7 @@ function calculateTeamStats(games: Game[]) {
     return b.week - a.week;
   });
 
-  let streakType = currentStreakGames[0]?.result;
+  const streakType = currentStreakGames[0]?.result;
   let streakCount = 0;
 
   for (const game of currentStreakGames) {
@@ -222,12 +225,17 @@ function calculateTeamStats(games: Game[]) {
   // Opponent analysis - find most common opponents and record against them
   const opponentStats: Record<
     string,
-    { wins: number; losses: number; ties: number }
+    { wins: number; losses: number; ties: number; opponentESPNID: string }
   > = {};
 
   completedGames.forEach((game) => {
     if (!opponentStats[game.opponent]) {
-      opponentStats[game.opponent] = { wins: 0, losses: 0, ties: 0 };
+      opponentStats[game.opponent] = {
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        opponentESPNID: game.opponentESPNID,
+      };
     }
 
     if (game.result === "W") opponentStats[game.opponent].wins++;
@@ -239,6 +247,7 @@ function calculateTeamStats(games: Game[]) {
   const topOpponents = Object.entries(opponentStats)
     .map(([opponent, record]) => ({
       opponent,
+      opponentESPNID: record.opponentESPNID, // Include opponent ESPN ID for linking
       totalGames: record.wins + record.losses + record.ties,
       winPercentage:
         (record.wins / (record.wins + record.losses + record.ties)) * 100,
@@ -277,7 +286,7 @@ export default function TeamDetail() {
     typeof mapApiDataToUiFormat
   > | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   // Add these state variables at the top of the TeamDetail function component
   const [yearFilter, setYearFilter] = useState<string>("all");
@@ -339,7 +348,7 @@ export default function TeamDetail() {
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
           <h2 className="text-lg font-medium mb-2">Team not found</h2>
           <p>
-            We couldn't find a team with the requested ID. Please check the URL
+            We could not find a team with the requested ID. Please check the URL
             and try again.
           </p>
           <Link
@@ -693,13 +702,12 @@ export default function TeamDetail() {
               <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
                   <h2 className="text-lg font-semibold mb-4">Playoff Odds</h2>
+                  {/* TODO(seankane): this whole section is hard coded */}
                   <div className="space-y-4">
                     <div>
                       <div className="flex justify-between mb-1">
-                        <span>Make Playoffs</span>
-                        <span className="font-medium">
-                          {team.playoffChance}%
-                        </span>
+                        <span>Last Place</span>
+                        <span className="font-medium">10%</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
                         <div
@@ -711,13 +719,15 @@ export default function TeamDetail() {
 
                     <div>
                       <div className="flex justify-between mb-1">
-                        <span>First Round Bye</span>
-                        <span className="font-medium">65%</span>
+                        <span>Make Playoffs</span>
+                        <span className="font-medium">
+                          {team.playoffChance}%
+                        </span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
                         <div
-                          className="h-2.5 rounded-full bg-green-600"
-                          style={{ width: "65%" }}
+                          className="h-2.5 rounded-full bg-blue-600"
+                          style={{ width: `${team.playoffChance}%` }}
                         ></div>
                       </div>
                     </div>
@@ -791,42 +801,57 @@ export default function TeamDetail() {
                     History vs Top Opponents
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {teamStats.topOpponents.map((opponentData, i) => (
-                      <div
-                        key={i}
-                        className="border rounded-lg p-4 dark:border-gray-600"
-                      >
-                        <h3 className="font-medium mb-2">
-                          {opponentData.opponent}
-                        </h3>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            Record:
-                          </span>
-                          <span className="font-medium">
-                            {opponentData.record.wins}-
-                            {opponentData.record.losses}
-                            {opponentData.record.ties > 0
-                              ? `-${opponentData.record.ties}`
-                              : ""}
-                          </span>
+                    {teamStats.topOpponents
+                      .sort((a, b) => b.record.wins - a.record.wins)
+                      .map((opponentData, i) => (
+                        <div
+                          key={i}
+                          className="border rounded-lg p-4 dark:border-gray-600"
+                        >
+                          <h3 className="font-medium mb-2">
+                            <Link
+                              href={`/teams/${opponentData.opponentESPNID}`}
+                              className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 transition-colors duration-200"
+                            >
+                              {opponentData.opponent}
+                            </Link>
+                          </h3>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              Record:
+                            </span>
+                            <span className="font-medium">
+                              {opponentData.record.wins}-
+                              {opponentData.record.losses}
+                              {opponentData.record.ties > 0
+                                ? `-${opponentData.record.ties}`
+                                : ""}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              Win %:
+                            </span>
+                            <span
+                              className={`font-medium ${
+                                opponentData.winPercentage >= 50
+                                  ? "text-green-600 dark:text-green-400"
+                                  : "text-red-600 dark:text-red-400"
+                              }`}
+                            >
+                              {opponentData.winPercentage.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="mt-2">
+                            <Link
+                              href={`/teams/${opponentData.opponentESPNID}`}
+                              className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300"
+                            >
+                              View {opponentData.opponent}&apos;s Team Page →
+                            </Link>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            Win %:
-                          </span>
-                          <span
-                            className={`font-medium ${
-                              opponentData.winPercentage >= 50
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-red-600 dark:text-red-400"
-                            }`}
-                          >
-                            {opponentData.winPercentage.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </section>
               )}

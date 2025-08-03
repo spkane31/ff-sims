@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
 
 	"backend/internal/config"
+	"backend/internal/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -20,7 +22,7 @@ func Initialize(cfg *config.Config) error {
 	var err error
 	slog.Info("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
 	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
-		Logger:                                   logger.Default.LogMode(logger.Info),
+		Logger:                                   logger.Default.LogMode(logger.Error),
 		DisableForeignKeyConstraintWhenMigrating: true, // Disable FK checks during migration
 	})
 	if err != nil {
@@ -47,24 +49,29 @@ func runMigrations() error {
 	// delete and recreate the database with the automigration logic.
 
 	// Run the migrations
-	// err := DB.AutoMigrate(
-	// 	&models.Team{},
-	// 	&models.TeamNameHistory{},
-	// 	&models.Player{},
-	// 	&models.PlayerGameStats{},
-	// 	&models.League{},
-	// 	&models.Matchup{},
-	// 	&models.Simulation{},
-	// 	&models.SimResult{},
-	// 	&models.SimTeamResult{},
-	// 	&models.DraftSelection{},
-	// 	&models.Transaction{},
-	// 	&models.BoxScore{},
-	// )
+	if os.Getenv("DB_MIGRATE") != "true" {
+		log.Println("Skipping migrations, DB_MIGRATE is not set to true")
+		return nil
+	}
 
-	// if err != nil {
-	// 	return err
-	// }
+	err := DB.AutoMigrate(
+		&models.Team{},
+		&models.TeamNameHistory{},
+		&models.Player{},
+		&models.PlayerGameStats{},
+		&models.League{},
+		&models.Matchup{},
+		&models.Simulation{},
+		&models.SimResult{},
+		&models.SimTeamResult{},
+		&models.DraftSelection{},
+		&models.Transaction{},
+		&models.BoxScore{},
+	)
+
+	if err != nil {
+		return err
+	}
 
 	log.Println("Migrations completed successfully")
 	return nil

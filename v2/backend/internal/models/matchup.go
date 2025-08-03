@@ -20,6 +20,7 @@ type Matchup struct {
 	HomeTeamID uint      `json:"home_team_id"`
 	AwayTeamID uint      `json:"away_team_id"`
 	GameDate   time.Time `json:"game_date"`
+	GameType   string    `json:"game_type"`
 
 	// Score information
 	HomeTeamFinalScore         float64 `json:"home_score"`
@@ -32,10 +33,10 @@ type Matchup struct {
 	IsPlayoff bool `json:"is_playoff" gorm:"default:false"`
 
 	// Relationships
-	League    *League     `json:"-"`
-	HomeTeam  *Team       `json:"home_team,omitempty" gorm:"foreignKey:HomeTeamID"`
-	AwayTeam  *Team       `json:"away_team,omitempty" gorm:"foreignKey:AwayTeamID"`
-	BoxScores []BoxScore  `json:"box_scores,omitempty" gorm:"foreignKey:MatchupID"`
+	League     *League     `json:"-"`
+	HomeTeam   *Team       `json:"home_team,omitempty" gorm:"foreignKey:HomeTeamID"`
+	AwayTeam   *Team       `json:"away_team,omitempty" gorm:"foreignKey:AwayTeamID"`
+	BoxScores  []BoxScore  `json:"box_scores,omitempty" gorm:"foreignKey:MatchupID"`
 	SimResults []SimResult `json:"-"`
 }
 

@@ -12,13 +12,13 @@ type DraftSelection struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	PlayerID       uint   `json:"player_id"`       // Reference to Player model
+	PlayerID       uint   `json:"player_id"` // Reference to Player model
 	PlayerName     string `json:"player_name"`
 	PlayerPosition string `json:"player_position"` // QB, RB, WR, TE, K, DEF
 	TeamID         uint   `json:"team_id"`         // Team drafting the player
 	Round          uint   `json:"round"`
-	Pick           uint   `json:"pick"`  // 1-based index
-	Year           uint   `json:"year"`  // Draft year
+	Pick           uint   `json:"pick"` // 1-based index
+	Year           uint   `json:"year"` // Draft year
 	LeagueID       uint   `json:"league_id"`
 
 	// Relationships
@@ -43,7 +43,7 @@ type Transaction struct {
 	Year            uint      `json:"year"`             // Season year
 	Week            uint      `json:"week"`             // Week of transaction
 	LeagueID        uint      `json:"league_id"`
-	
+
 	// For trades
 	RelatedTransactionID *uint  `json:"related_transaction_id,omitempty"` // For linking trade partners
 	TradePartnerTeamID   *uint  `json:"trade_partner_team_id,omitempty"`  // Only for TRADED type
