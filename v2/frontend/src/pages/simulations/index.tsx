@@ -307,7 +307,7 @@ export default function Simulations() {
           </div>
         </section>
 
-        {results && (
+        {results && simulationResults.length > 0 && (
           <section className="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg">
             <h2 className="text-xl font-semibold mb-4">Simulation Results</h2>
 
@@ -322,20 +322,35 @@ export default function Simulations() {
                   </p>
 
                   <div className="space-y-3">
-                    {["Team A", "Team B", "Team C", "Team D"].map((team, i) => (
-                      <div key={team} className="flex items-center">
-                        <span className="w-20 text-sm">{team}</span>
-                        <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-600"
-                            style={{ width: `${90 - i * 20}%` }}
-                          ></div>
+                    {simulationResults
+                      .filter(
+                        (team) =>
+                          team.teamName !== "League Average" && team.id !== -1
+                      )
+                      .sort((a, b) => b.playoff_odds - a.playoff_odds)
+                      .map((team) => (
+                        <div key={team.id} className="flex items-center">
+                          <span
+                            className="w-32 text-sm truncate"
+                            title={team.teamName}
+                          >
+                            {team.teamName}
+                          </span>
+                          <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mx-3">
+                            <div
+                              className="h-full bg-blue-600"
+                              style={{
+                                width: `${(team.playoff_odds * 100).toFixed(
+                                  1
+                                )}%`,
+                              }}
+                            ></div>
+                          </div>
+                          <span className="w-14 text-right text-sm">
+                            {(team.playoff_odds * 100).toFixed(1)}%
+                          </span>
                         </div>
-                        <span className="w-14 text-right text-sm">
-                          {90 - i * 20}%
-                        </span>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               </div>
@@ -349,45 +364,179 @@ export default function Simulations() {
                     <thead className="bg-gray-50 dark:bg-gray-800">
                       <tr>
                         <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Rank
+                        </th>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Team
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Wins
+                          Avg Wins
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Losses
+                          Avg Losses
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Points For
+                          Avg Points For
+                        </th>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Playoff %
+                        </th>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Last Place %
                         </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                      {["Team A", "Team B", "Team C", "Team D"].map(
-                        (team, i) => (
+                      {simulationResults
+                        .filter(
+                          (team) =>
+                            team.teamName !== "League Average" && team.id !== -1
+                        )
+                        .sort((a, b) => b.wins - a.wins)
+                        .map((team, index) => (
                           <tr
-                            key={team}
+                            key={team.id}
                             className={
-                              i % 2 === 0
+                              index % 2 === 0
+                                ? "bg-white dark:bg-gray-800"
+                                : "bg-gray-50 dark:bg-gray-700"
+                            }
+                          >
+                            <td className="py-2 px-4 whitespace-nowrap font-medium">
+                              {index + 1}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              <Link
+                                href={`/teams/${team.id}`}
+                                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+                              >
+                                {team.teamName}
+                              </Link>
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              {team.wins.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              {team.losses.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              {team.pointsFor.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              <span
+                                className={`font-medium ${
+                                  team.playoff_odds > 0.5
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.playoff_odds > 0.25
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-red-600 dark:text-red-400"
+                                }`}
+                              >
+                                {(team.playoff_odds * 100).toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              <span
+                                className={`font-medium ${
+                                  team.last_place_odds > 0.5
+                                    ? "text-red-600 dark:text-red-400"
+                                    : team.last_place_odds > 0.25
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-green-600 dark:text-green-400"
+                                }`}
+                              >
+                                {(team.last_place_odds * 100).toFixed(1)}%
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Additional detailed results section */}
+              <div>
+                <h3 className="text-lg font-medium mb-2">
+                  Championship Odds (Regular Season Finish)
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-800">
+                      <tr>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Team
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          1st
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          2nd
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          3rd
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Last
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {simulationResults
+                        .filter(
+                          (team) =>
+                            team.teamName !== "League Average" && team.id !== -1
+                        )
+                        .sort((a, b) => b.playoff_odds - a.playoff_odds)
+                        .map((team, index) => (
+                          <tr
+                            key={team.id}
+                            className={
+                              index % 2 === 0
                                 ? "bg-white dark:bg-gray-800"
                                 : "bg-gray-50 dark:bg-gray-700"
                             }
                           >
                             <td className="py-2 px-4 whitespace-nowrap">
-                              {team}
+                              {team.teamName}
                             </td>
-                            <td className="py-2 px-4 whitespace-nowrap">
-                              {12 - i}
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regular_season_result.length > 0
+                                ? (team.regular_season_result[0] * 100).toFixed(
+                                    1
+                                  ) + "%"
+                                : "0.0%"}
                             </td>
-                            <td className="py-2 px-4 whitespace-nowrap">
-                              {2 + i}
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regular_season_result.length > 1
+                                ? (team.regular_season_result[1] * 100).toFixed(
+                                    1
+                                  ) + "%"
+                                : "0.0%"}
                             </td>
-                            <td className="py-2 px-4 whitespace-nowrap">
-                              {1800 - i * 75}
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regular_season_result.length > 2
+                                ? (team.regular_season_result[2] * 100).toFixed(
+                                    1
+                                  ) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              <span className="text-red-600 dark:text-red-400 font-medium">
+                                {(team.last_place_odds * 100).toFixed(1)}%
+                              </span>
                             </td>
                           </tr>
-                        )
-                      )}
+                        ))}
                     </tbody>
                   </table>
                 </div>
