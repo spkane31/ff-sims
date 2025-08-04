@@ -48,7 +48,7 @@ export default function Teams() {
     }
 
     const completedMatchups = schedule.data.matchups.filter(
-      (matchup) => matchup.home_score > 0 && matchup.away_score > 0
+      (matchup) => matchup.homeScore > 0 && matchup.awayScore > 0
     );
     let highestScore = { score: 0, teamName: "", week: 0 };
     let closestMatchup = {
@@ -65,8 +65,8 @@ export default function Teams() {
 
     completedMatchups.forEach((matchup) => {
       console.log("Processing Matchup:", matchup);
-      const homeScore = matchup.home_score;
-      const awayScore = matchup.away_score;
+      const homeScore = matchup.homeScore;
+      const awayScore = matchup.awayScore;
       const margin = Math.abs(homeScore - awayScore);
 
       margins.push(margin);
@@ -77,14 +77,14 @@ export default function Teams() {
       if (homeScore > highestScore.score) {
         highestScore = {
           score: homeScore,
-          teamName: matchup.home_team_name,
+          teamName: matchup.homeTeamName,
           week: matchup.week,
         };
       }
       if (awayScore > highestScore.score) {
         highestScore = {
           score: awayScore,
-          teamName: matchup.away_team_name,
+          teamName: matchup.awayTeamName,
           week: matchup.week,
         };
       }
@@ -92,8 +92,8 @@ export default function Teams() {
       // Check for closest matchup
       if (margin < closestMatchup.margin) {
         closestMatchup = {
-          homeTeam: matchup.home_team_name,
-          awayTeam: matchup.away_team_name,
+          homeTeam: matchup.homeTeamName,
+          awayTeam: matchup.awayTeamName,
           homeScore: homeScore,
           awayScore: awayScore,
           week: matchup.week,

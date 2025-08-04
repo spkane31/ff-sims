@@ -87,11 +87,11 @@ export default function Simulations() {
         }
 
         weekMap.get(matchup.week)?.push({
-          home_team_espn_id: matchup.home_team_espn_id,
-          away_team_espn_id: matchup.away_team_espn_id,
-          home_team_final_score: matchup.home_score,
-          away_team_final_score: matchup.away_score,
-          completed: matchup.home_score > 0 || matchup.away_score > 0,
+          homeTeamEspnId: matchup.homeTeamEspnId,
+          awayTeamEspnId: matchup.awayTeamEspnId,
+          homeTeamFinalScore: matchup.homeScore,
+          awayTeamFinalScore: matchup.awayScore,
+          completed: matchup.homeScore > 0 || matchup.awayScore > 0,
           week: matchup.week,
         });
       });
@@ -447,14 +447,14 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap">
                               <span
                                 className={`font-medium ${
-                                  team.last_place_odds > 0.5
+                                  team.lastPlaceOdds > 0.5
                                     ? "text-red-600 dark:text-red-400"
-                                    : team.last_place_odds > 0.25
+                                    : team.lastPlaceOdds > 0.25
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-green-600 dark:text-green-400"
                                 }`}
                               >
-                                {(team.last_place_odds * 100).toFixed(1)}%
+                                {(team.lastPlaceOdds * 100).toFixed(1)}%
                               </span>
                             </td>
                           </tr>
@@ -510,29 +510,29 @@ export default function Simulations() {
                               {team.teamName}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regular_season_result.length > 0
-                                ? (team.regular_season_result[0] * 100).toFixed(
+                              {team.regularSeasonResult.length > 0
+                                ? (team.regularSeasonResult[0] * 100).toFixed(
                                     1
                                   ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regular_season_result.length > 1
-                                ? (team.regular_season_result[1] * 100).toFixed(
+                              {team.regularSeasonResult.length > 1
+                                ? (team.regularSeasonResult[1] * 100).toFixed(
                                     1
                                   ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regular_season_result.length > 2
-                                ? (team.regular_season_result[2] * 100).toFixed(
+                              {team.regularSeasonResult.length > 2
+                                ? (team.regularSeasonResult[2] * 100).toFixed(
                                     1
                                   ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span className="text-red-600 dark:text-red-400 font-medium">
-                                {(team.last_place_odds * 100).toFixed(1)}%
+                                {(team.lastPlaceOdds * 100).toFixed(1)}%
                               </span>
                             </td>
                           </tr>

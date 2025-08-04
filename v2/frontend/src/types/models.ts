@@ -16,20 +16,20 @@ export interface Matchup extends BaseModel {
   week: number;
   year: number;
   season: number;
-  home_team_id: number;
-  away_team_id: number;
-  home_team_name: string;
-  away_team_name: string;
-  home_team_espn_id: number;
-  away_team_espn_id: number;
-  home_score: number;
-  away_score: number;
-  home_projected_score: number;
-  away_projected_score: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeTeamEspnId: number;
+  awayTeamEspnId: number;
+  homeScore: number;
+  awayScore: number;
+  homeProjectedScore: number;
+  awayProjectedScore: number;
   completed: boolean;
-  is_playoff: boolean;
-  home_team?: Team;
-  away_team?: Team;
+  isPlayoff: boolean;
+  homeTeam?: Team;
+  awayTeam?: Team;
 }
 
 // Player stats model

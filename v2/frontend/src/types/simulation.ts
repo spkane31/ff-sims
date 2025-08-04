@@ -5,8 +5,8 @@ export interface TeamStats {
 }
 
 export interface LeagueStats {
-  average: number;
-  std_dev: number;
+  mean: number;
+  stdDev: number;
 }
 
 export interface TeamAverage {
@@ -18,10 +18,10 @@ export interface TeamAverage {
 
 // Matchup interfaces
 export interface Matchup {
-  home_team_espn_id: number;
-  away_team_espn_id: number;
-  home_team_final_score: number;
-  away_team_final_score: number;
+  homeTeamEspnId: number;
+  awayTeamEspnId: number;
+  homeTeamFinalScore: number;
+  awayTeamFinalScore: number;
   completed: boolean;
   week: number;
 }
@@ -58,15 +58,15 @@ export interface TeamScoringData {
   id: number;
   teamName: string;
   average: number;
-  std_dev: number;
+  stdDev: number;
   wins: number;
   losses: number;
   pointsFor: number;
   pointsAgainst: number;
   playoff_odds: number;
-  last_place_odds: number;
-  regular_season_result: number[];
-  playoff_result: number[];
+  lastPlaceOdds: number;
+  regularSeasonResult: number[];
+  playoffResult: number[];
 }
 
 // Simulation parameters

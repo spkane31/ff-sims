@@ -49,20 +49,20 @@ export default function Schedule({}: ScheduleProps) {
           season: game.year,
           year: game.year,
           week: game.week,
-          home_team_id: game.home_team_id || 0,
-          away_team_id: game.away_team_id || 0,
-          home_team_espn_id: game.home_team_espn_id || 0,
-          away_team_espn_id: game.away_team_espn_id || 0,
-          home_team_name: game.home_team_name,
-          away_team_name: game.away_team_name,
-          home_score: game.home_score,
-          away_score: game.away_score,
-          home_projected_score: game.home_projected_score,
-          away_projected_score: game.away_projected_score,
-          completed: game.home_score > 0 || game.away_score > 0,
-          home_team: game.home_team,
-          away_team: game.away_team,
-          is_playoff: game.is_playoff || false,
+          home_team_id: game.homeTeamId || 0,
+          away_team_id: game.awayTeamId || 0,
+          home_team_espn_id: game.homeTeamEspnId || 0,
+          away_team_espn_id: game.awayTeamEspnId || 0,
+          home_team_name: game.homeTeamName,
+          away_team_name: game.awayTeamName,
+          home_score: game.homeScore,
+          away_score: game.awayScore,
+          home_projected_score: game.homeProjectedScore,
+          away_projected_score: game.awayProjectedScore,
+          completed: game.homeScore > 0 || game.awayScore > 0,
+          home_team: game.homeTeam,
+          away_team: game.awayTeam,
+          is_playoff: game.isPlayoff || false,
         }))
       : [];
 
@@ -237,37 +237,37 @@ export default function Schedule({}: ScheduleProps) {
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">
                             <Link
-                              href={`/teams/${game.home_team_espn_id}`}
+                              href={`/teams/${game.homeTeamEspnId}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
-                                game.home_score > game.away_score
+                                game.homeScore > game.awayScore
                                   ? "text-green-600"
                                   : ""
                               }`}
                             >
-                              {game.home_team_name}
+                              {game.homeTeamName}
                             </Link>
                             <span className="hidden md:inline mx-2">vs</span>
                             <span className="md:hidden">@</span>
 
                             <Link
-                              href={`/teams/${game.away_team_espn_id}`}
+                              href={`/teams/${game.awayTeamEspnId}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
-                                game.away_score > game.home_score
+                                game.awayScore > game.homeScore
                                   ? "text-green-600"
                                   : ""
                               }`}
                             >
-                              {game.away_team_name}
+                              {game.awayTeamName}
                             </Link>
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {game.completed ? (
                             <span>
-                              {game.home_score.toFixed(2)} -{" "}
-                              {game.away_score.toFixed(2)}
+                              {game.homeScore.toFixed(2)} -{" "}
+                              {game.awayScore.toFixed(2)}
                             </span>
                           ) : (
                             <span className="text-gray-500 dark:text-gray-400">
@@ -278,8 +278,8 @@ export default function Schedule({}: ScheduleProps) {
                         <td className="py-4 px-4 whitespace-nowrap">
                           {game.completed ? (
                             <span>
-                              ({game.home_projected_score.toFixed(2)} -{" "}
-                              {game.away_projected_score.toFixed(2)})
+                              ({game.homeProjectedScore.toFixed(2)} -{" "}
+                              {game.awayProjectedScore.toFixed(2)})
                             </span>
                           ) : (
                             <span className="text-gray-500 dark:text-gray-400">

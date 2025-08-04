@@ -145,13 +145,13 @@ class SingleSeasonResults {
       (1 - firstJitter) *
         normalDistribution(firstStats.average, firstStats.std_dev) +
       firstJitter *
-        normalDistribution(this.leagueStats.average, this.leagueStats.std_dev);
+        normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
 
     const secondScore =
       (1 - secondJitter) *
         normalDistribution(secondStats.average, secondStats.std_dev) +
       secondJitter *
-        normalDistribution(this.leagueStats.average, this.leagueStats.std_dev);
+        normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
 
     return firstScore > secondScore ? first : second;
   }
@@ -210,16 +210,16 @@ export class Simulator {
 
     // Initialize leagueStats with default values
     this.leagueStats = {
-      average: 0,
-      std_dev: 0,
+      mean: 0,
+      stdDev: 0,
     };
 
     // Initialize team stats and results
     Object.entries(teamAvgs).forEach(([, value]) => {
       if (value.id === -1) {
         this.leagueStats = {
-          average: value.averageScore,
-          std_dev: value.stddevScore,
+          mean: value.averageScore,
+          stdDev: value.stddevScore,
         };
       } else {
         this.teamStats.set(value.id, {
@@ -245,18 +245,18 @@ export class Simulator {
           id: key,
           teamName,
           average: teamStats.average,
-          std_dev: teamStats.std_dev,
+          stdDev: teamStats.std_dev,
           wins: sims === 0 ? 0.0 : value.wins / sims,
           losses: sims === 0 ? 0.0 : value.losses / sims,
           pointsFor: sims === 0 ? 0.0 : value.pointsFor / sims,
           pointsAgainst: sims === 0 ? 0.0 : value.pointsAgainst / sims,
           playoff_odds: sims === 0 ? 0.0 : value.madePlayoffs / sims,
-          last_place_odds: sims === 0 ? 0.0 : value.lastPlace / sims,
-          regular_season_result:
+          lastPlaceOdds: sims === 0 ? 0.0 : value.lastPlace / sims,
+          regularSeasonResult:
             sims === 0
               ? new Array(10).fill(0)
               : value.regularSeasonResult.map((num) => num / sims),
-          playoff_result:
+          playoffResult:
             sims === 0
               ? new Array(10).fill(0)
               : value.playoffResult.map((num) => num / sims),
@@ -267,8 +267,8 @@ export class Simulator {
     return data.sort((a, b) => {
       if (a.playoff_odds !== b.playoff_odds) {
         return b.playoff_odds - a.playoff_odds;
-      } else if (a.last_place_odds !== b.last_place_odds) {
-        return b.last_place_odds - a.last_place_odds;
+      } else if (a.lastPlaceOdds !== b.lastPlaceOdds) {
+        return b.lastPlaceOdds - a.lastPlaceOdds;
       } else if (a.wins !== b.wins) {
         return b.wins - a.wins;
       }
@@ -289,8 +289,8 @@ export class Simulator {
     this.schedule.forEach((week) => {
       week.forEach((matchup) => {
         if (!matchup.completed) {
-          const homeTeamStats = this.teamStats.get(matchup.home_team_espn_id);
-          const awayTeamStats = this.teamStats.get(matchup.away_team_espn_id);
+          const homeTeamStats = this.teamStats.get(matchup.homeTeamEspnId);
+          const awayTeamStats = this.teamStats.get(matchup.awayTeamEspnId);
 
           if (!homeTeamStats || !awayTeamStats) return;
 
@@ -304,8 +304,8 @@ export class Simulator {
               normalDistribution(homeTeamStats.average, homeTeamStats.std_dev) +
             leagueJitterHome *
               normalDistribution(
-                this.leagueStats.average,
-                this.leagueStats.std_dev
+                this.leagueStats.mean,
+                this.leagueStats.stdDev
               );
 
           const awayScore =
@@ -313,65 +313,49 @@ export class Simulator {
               normalDistribution(awayTeamStats.average, awayTeamStats.std_dev) +
             leagueJitterAway *
               normalDistribution(
-                this.leagueStats.average,
-                this.leagueStats.std_dev
+                this.leagueStats.mean,
+                this.leagueStats.stdDev
               );
 
           if (homeScore > awayScore) {
-            singleSeasonResults.teamWin(matchup.home_team_espn_id);
-            singleSeasonResults.teamLoss(matchup.away_team_espn_id);
+            singleSeasonResults.teamWin(matchup.homeTeamEspnId);
+            singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
           } else {
-            singleSeasonResults.teamWin(matchup.away_team_espn_id);
-            singleSeasonResults.teamLoss(matchup.home_team_espn_id);
+            singleSeasonResults.teamWin(matchup.awayTeamEspnId);
+            singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
           }
 
-          singleSeasonResults.teamPointsFor(
-            matchup.home_team_espn_id,
-            homeScore
-          );
+          singleSeasonResults.teamPointsFor(matchup.homeTeamEspnId, homeScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.home_team_espn_id,
+            matchup.homeTeamEspnId,
             awayScore
           );
-          singleSeasonResults.teamPointsFor(
-            matchup.away_team_espn_id,
-            awayScore
-          );
+          singleSeasonResults.teamPointsFor(matchup.awayTeamEspnId, awayScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.away_team_espn_id,
+            matchup.awayTeamEspnId,
             homeScore
           );
         } else {
           // Handle completed games
-          const homeScore = parseFloat(
-            matchup.home_team_final_score.toString()
-          );
-          const awayScore = parseFloat(
-            matchup.away_team_final_score.toString()
-          );
+          const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
+          const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
 
           if (homeScore > awayScore) {
-            singleSeasonResults.teamWin(matchup.home_team_espn_id);
-            singleSeasonResults.teamLoss(matchup.away_team_espn_id);
+            singleSeasonResults.teamWin(matchup.homeTeamEspnId);
+            singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
           } else {
-            singleSeasonResults.teamWin(matchup.away_team_espn_id);
-            singleSeasonResults.teamLoss(matchup.home_team_espn_id);
+            singleSeasonResults.teamWin(matchup.awayTeamEspnId);
+            singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
           }
 
-          singleSeasonResults.teamPointsFor(
-            matchup.home_team_espn_id,
-            homeScore
-          );
+          singleSeasonResults.teamPointsFor(matchup.homeTeamEspnId, homeScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.home_team_espn_id,
+            matchup.homeTeamEspnId,
             awayScore
           );
-          singleSeasonResults.teamPointsFor(
-            matchup.away_team_espn_id,
-            awayScore
-          );
+          singleSeasonResults.teamPointsFor(matchup.awayTeamEspnId, awayScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.away_team_espn_id,
+            matchup.awayTeamEspnId,
             homeScore
           );
         }
