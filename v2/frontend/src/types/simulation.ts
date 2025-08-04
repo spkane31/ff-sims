@@ -18,6 +18,8 @@ export interface TeamAverage {
 
 // Matchup interfaces
 export interface Matchup {
+  homeTeamName: string;
+  awayTeamName: string;
   homeTeamEspnId: number;
   awayTeamEspnId: number;
   homeTeamFinalScore: number;

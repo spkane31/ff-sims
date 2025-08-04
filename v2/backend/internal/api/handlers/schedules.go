@@ -24,16 +24,16 @@ type Matchup struct {
 	ID                 string           `json:"id"`
 	Year               uint             `json:"year"`
 	Week               uint             `json:"week"`
-	HomeTeamESPNID     uint             `json:"home_team_espn_id"`
-	AwayTeamESPNID     uint             `json:"away_team_espn_id"`
-	HomeTeamName       string           `json:"home_team_name"`
-	AwayTeamName       string           `json:"away_team_name"`
-	HomeScore          float64          `json:"home_score"`
-	AwayScore          float64          `json:"away_score"`
-	HomeProjectedScore float64          `json:"home_projected_score"`
-	AwayProjectedScore float64          `json:"away_projected_score"`
-	HomePlayers        []BoxScorePlayer `json:"home_players"`
-	AwayPlayers        []BoxScorePlayer `json:"away_players"`
+	HomeTeamESPNID     uint             `json:"homeTeamEspnId"`
+	AwayTeamESPNID     uint             `json:"awayTeamEspnId"`
+	HomeTeamName       string           `json:"homeTeamName"`
+	AwayTeamName       string           `json:"awayTeamName"`
+	HomeScore          float64          `json:"homeScore"`
+	AwayScore          float64          `json:"awayScore"`
+	HomeProjectedScore float64          `json:"homeProjectedScore"`
+	AwayProjectedScore float64          `json:"awayProjectedScore"`
+	HomePlayers        []BoxScorePlayer `json:"homePlayers"`
+	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
 }
 
 // GetPlayers returns all players with optional filtering

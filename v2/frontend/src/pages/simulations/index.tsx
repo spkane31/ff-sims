@@ -6,12 +6,7 @@ import {
   TeamStats,
 } from "../../services/simulationsService";
 import { Simulator } from "../../utils/simulator";
-import {
-  TeamScoringData,
-  TeamAverage,
-  Schedule,
-  Matchup,
-} from "../../types/simulation";
+import { TeamScoringData, Schedule, Matchup } from "../../types/simulation";
 import { scheduleService } from "../../services/scheduleService";
 
 export default function Simulations() {
@@ -24,8 +19,12 @@ export default function Simulations() {
   const [startWeek, setStartWeek] = useState("current");
   const [useActualResults, setUseActualResults] = useState(true);
 
+  // New state for dynamic week options
+  const [availableWeeks, setAvailableWeeks] = useState<number[]>([]);
+  const [currentWeek, setCurrentWeek] = useState<number>(1);
+  const [scheduleLoaded, setScheduleLoaded] = useState(false);
+
   // Simulator state
-  const [simulator, setSimulator] = useState<Simulator | null>(null);
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
     []
   );
@@ -48,45 +47,54 @@ export default function Simulations() {
     fetchTeamStats();
   }, []);
 
-  // Add functions to fetch team averages and schedule data
-  const fetchTeamAverages = async (): Promise<Record<string, TeamAverage>> => {
-    try {
-      // Use the simulationsService to get team stats
-      const response = await simulationsService.getStats();
+  // New useEffect to load schedule and determine available weeks
+  useEffect(() => {
+    const loadScheduleInfo = async () => {
+      try {
+        const schedule = await fetchScheduleData();
 
-      // Convert to the format expected by the simulator
-      const teamAvgs: Record<string, TeamAverage> = {};
-      response.teamStats.forEach((team, index) => {
-        teamAvgs[index.toString()] = {
-          id: parseInt(team.teamId),
-          owner: team.teamOwner,
-          averageScore: team.averagePoints,
-          stddevScore: team.stdDevPoints,
-        };
-      });
+        // Get all available weeks
+        const weeks = schedule.map((_, index) => index + 1);
+        setAvailableWeeks(weeks);
 
-      return teamAvgs;
-    } catch (error) {
-      console.error("Error fetching team averages:", error);
-      throw error;
-    }
-  };
+        // Find current week (first week with incomplete games)
+        const currentWeekIndex = schedule.findIndex((week) =>
+          week.some((matchup) => !matchup.completed)
+        );
+        const detectedCurrentWeek =
+          currentWeekIndex === -1 ? weeks.length : currentWeekIndex + 1;
+        setCurrentWeek(detectedCurrentWeek);
+
+        setScheduleLoaded(true);
+      } catch (err) {
+        console.error("Failed to load schedule info:", err);
+        setError("Failed to load schedule information");
+      }
+    };
+
+    loadScheduleInfo();
+  }, []);
 
   const fetchScheduleData = async (): Promise<Schedule> => {
     try {
       // Use the v2 schedule service to get matchup data
       const response = await scheduleService.getFullSchedule();
+      console.log("Raw API response:", response);
 
       // Convert v2 API format to simulator format
       const schedule: Schedule = [];
       const weekMap = new Map<number, Matchup[]>();
 
       response.data.matchups.forEach((matchup) => {
+        console.log("Processing matchup from API:", matchup);
+
         if (!weekMap.has(matchup.week)) {
           weekMap.set(matchup.week, []);
         }
 
         weekMap.get(matchup.week)?.push({
+          homeTeamName: matchup.homeTeamName,
+          awayTeamName: matchup.awayTeamName,
           homeTeamEspnId: matchup.homeTeamEspnId,
           awayTeamEspnId: matchup.awayTeamEspnId,
           homeTeamFinalScore: matchup.homeScore,
@@ -103,6 +111,7 @@ export default function Simulations() {
         schedule.push(weekGames);
       });
 
+      console.log("Converted schedule:", schedule);
       return schedule;
     } catch (error) {
       console.error("Error fetching schedule data:", error);
@@ -115,31 +124,39 @@ export default function Simulations() {
     setResults(null);
 
     try {
-      // Fetch the data needed for simulation
-      const [teamAverages, schedule] = await Promise.all([
-        fetchTeamAverages(),
-        fetchScheduleData(),
-      ]);
+      // Fetch the schedule data for simulation
+      const schedule = await fetchScheduleData();
 
-      // Create and run the simulator
-      const sim = new Simulator(teamAverages, schedule);
+      // Parse the start week value
+      let startWeekNum = 1;
+      if (startWeek === "current") {
+        // Find the current week based on completed games
+        startWeekNum = schedule.findIndex((week) =>
+          week.some((matchup) => !matchup.completed)
+        );
+        if (startWeekNum === 0) startWeekNum = schedule.length; // All games completed
+      } else {
+        startWeekNum = parseInt(startWeek);
+      }
+
+      // Create and run the simulator with the new constructor
+      const sim = new Simulator(schedule, startWeekNum);
 
       // Run the specified number of simulations
       for (let i = 0; i < iterations; i++) {
+        console.log(`Running simulation iteration ${i + 1}`);
         sim.step();
       }
 
+      console.log("team scoring data: ", sim.getTeamScoringData());
+
       // Update state with results
-      setSimulator(sim);
       setSimulationResults(sim.getTeamScoringData());
       setResults(
-        `Simulation completed with ${iterations.toLocaleString()} iterations (ε = ${sim.epsilon.toFixed(
+        `Simulation completed with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
           6
         )})`
       );
-
-      console.log("simulator: ", simulator);
-      console.log("simulationResults: ", simulationResults);
     } catch (err) {
       setError("Failed to run simulation");
       console.error("Simulation error:", err);
@@ -189,18 +206,36 @@ export default function Simulations() {
                   className="block text-sm font-medium mb-1"
                 >
                   Start Week
+                  {scheduleLoaded && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      (Current: Week {currentWeek})
+                    </span>
+                  )}
                 </label>
                 <select
                   id="startWeek"
                   value={startWeek}
                   onChange={(e) => setStartWeek(e.target.value)}
-                  className="w-full md:w-64 px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  disabled={!scheduleLoaded}
+                  className="w-full md:w-64 px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="current">Current (Week 10)</option>
-                  <option value="11">Week 11</option>
-                  <option value="12">Week 12</option>
-                  <option value="13">Week 13</option>
+                  <option value="current">
+                    Current Week ({scheduleLoaded ? currentWeek : "..."})
+                  </option>
+                  {availableWeeks.map((week) => (
+                    <option key={week} value={week.toString()}>
+                      Week {week}
+                      {week === currentWeek ? " (Current)" : ""}
+                      {week < currentWeek ? " (Past)" : ""}
+                      {week > currentWeek ? " (Future)" : ""}
+                    </option>
+                  ))}
                 </select>
+                {!scheduleLoaded && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Loading schedule data...
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center">

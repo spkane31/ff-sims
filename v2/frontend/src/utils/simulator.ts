@@ -2,7 +2,6 @@ import { normalDistribution } from "./math";
 import {
   TeamStats,
   LeagueStats,
-  TeamAverage,
   Schedule,
   SingleTeamResult,
   TeamScoringData,
@@ -15,6 +14,7 @@ class SingleSeasonResults {
 
   constructor(teamAvgs: Map<number, TeamStats>, leagueStats: LeagueStats) {
     this.results = new Map();
+
     for (const [key] of teamAvgs.entries()) {
       this.results.set(key, {
         id: key,
@@ -34,12 +34,16 @@ class SingleSeasonResults {
 
   teamWin(teamID: number): void {
     const result = this.results.get(teamID);
-    if (result) result.wins++;
+    if (result) {
+      result.wins++;
+    }
   }
 
   teamLoss(teamID: number): void {
     const result = this.results.get(teamID);
-    if (result) result.losses++;
+    if (result) {
+      result.losses++;
+    }
   }
 
   teamPointsFor(teamID: number, points: number): void {
@@ -189,47 +193,207 @@ export class Simulator {
   schedule: Schedule;
   weeks: number;
   weeksCompleted: number;
+  startWeek: number;
   simulations: number = 0;
   results: Map<number, Results>;
   teamStats: Map<number, TeamStats>;
-  leagueStats: LeagueStats;
+  leagueStats: LeagueStats = { mean: 100, stdDev: 15 }; // Initialize with defaults
   idToOwner: Map<number, string>;
   epsilon: number = 0;
   previousStepFinalStandings: TeamScoringData[] | null = null;
 
-  constructor(teamAvgs: Record<string, TeamAverage>, schedule: Schedule) {
+  constructor(schedule: Schedule, startWeek: number = 1) {
     this.schedule = schedule;
     this.weeks = schedule.length;
-    this.weeksCompleted = schedule.filter((week) =>
-      week.every((matchup) => matchup.completed)
-    ).length;
+    this.startWeek = startWeek;
+    this.weeksCompleted = Math.min(
+      startWeek - 1,
+      schedule.filter((week) => week.every((matchup) => matchup.completed))
+        .length
+    );
 
     this.results = new Map();
     this.teamStats = new Map();
     this.idToOwner = new Map();
 
-    // Initialize leagueStats with default values
-    this.leagueStats = {
-      mean: 0,
-      stdDev: 0,
-    };
+    // Calculate team and league stats from schedule
+    this.calculateStatsFromSchedule();
+  }
 
-    // Initialize team stats and results
-    Object.entries(teamAvgs).forEach(([, value]) => {
-      if (value.id === -1) {
-        this.leagueStats = {
-          mean: value.averageScore,
-          stdDev: value.stddevScore,
-        };
-      } else {
-        this.teamStats.set(value.id, {
-          average: value.averageScore,
-          std_dev: value.stddevScore,
-        });
-        this.results.set(value.id, new Results());
-        this.idToOwner.set(value.id, value.owner);
+  private calculateStatsFromSchedule(): void {
+    console.log(
+      `Calculating stats from schedule. StartWeek: ${this.startWeek}`
+    );
+
+    // Map to store all scores for each team
+    const teamScores = new Map<number, number[]>();
+    const teamOwners = new Map<number, string>();
+
+    // Process completed games up to startWeek
+    this.schedule.forEach((week, weekIndex) => {
+      const currentWeek = weekIndex + 1;
+      console.log(
+        `Processing week ${currentWeek}, startWeek is ${this.startWeek}`
+      );
+
+      // Fix: Only use data before startWeek for calculating averages
+      if (currentWeek >= this.startWeek) {
+        console.log(
+          `Skipping week ${currentWeek} as it's >= startWeek ${this.startWeek}`
+        );
+        return;
       }
+
+      week.forEach((matchup) => {
+        if (!matchup.completed) {
+          console.log(`Skipping incomplete matchup in week ${currentWeek}`);
+          return;
+        }
+
+        const homeTeamId = matchup.homeTeamEspnId;
+        const awayTeamId = matchup.awayTeamEspnId;
+        const homeScore = matchup.homeTeamFinalScore;
+        const awayScore = matchup.awayTeamFinalScore;
+
+        console.log(
+          `Processing matchup: Team ${homeTeamId} (type: ${typeof homeTeamId}) (${homeScore}) vs Team ${awayTeamId} (type: ${typeof awayTeamId}) (${awayScore})`
+        );
+
+        // Validate team IDs
+        if (
+          homeTeamId === undefined ||
+          homeTeamId === null ||
+          isNaN(homeTeamId)
+        ) {
+          console.error(`Invalid homeTeamId: ${homeTeamId}`);
+          return;
+        }
+        if (
+          awayTeamId === undefined ||
+          awayTeamId === null ||
+          isNaN(awayTeamId)
+        ) {
+          console.error(`Invalid awayTeamId: ${awayTeamId}`);
+          return;
+        }
+
+        // Initialize arrays if they don't exist
+        if (!teamScores.has(homeTeamId)) {
+          teamScores.set(homeTeamId, []);
+        }
+        if (!teamScores.has(awayTeamId)) {
+          teamScores.set(awayTeamId, []);
+        }
+
+        // Add scores
+        teamScores.get(homeTeamId)!.push(homeScore);
+        teamScores.get(awayTeamId)!.push(awayScore);
+
+        // Store team owners (we'll need to get this from the schedule or API)
+        // For now, we'll use the team ID as the owner name
+        if (!teamOwners.has(homeTeamId)) {
+          teamOwners.set(homeTeamId, `Team ${homeTeamId}`);
+        }
+        if (!teamOwners.has(awayTeamId)) {
+          teamOwners.set(awayTeamId, `Team ${awayTeamId}`);
+        }
+      });
     });
+
+    console.log(
+      `Found ${teamScores.size} teams with game data:`,
+      Array.from(teamScores.keys())
+    );
+
+    // If no completed games before startWeek, we need to process ALL teams from the schedule
+    if (teamScores.size === 0) {
+      console.log(
+        "No completed games found before startWeek, processing all teams from schedule"
+      );
+
+      // Get all teams from the entire schedule
+      this.schedule.forEach((week) => {
+        week.forEach((matchup) => {
+          const homeTeamId = matchup.homeTeamEspnId;
+          const awayTeamId = matchup.awayTeamEspnId;
+
+          if (!teamScores.has(homeTeamId)) {
+            teamScores.set(homeTeamId, []);
+            teamOwners.set(homeTeamId, `Team ${homeTeamId}`);
+          }
+          if (!teamScores.has(awayTeamId)) {
+            teamScores.set(awayTeamId, []);
+            teamOwners.set(awayTeamId, `Team ${awayTeamId}`);
+          }
+
+          // If this is a completed game, add the scores
+          if (matchup.completed) {
+            teamScores.get(homeTeamId)!.push(matchup.homeTeamFinalScore);
+            teamScores.get(awayTeamId)!.push(matchup.awayTeamFinalScore);
+          }
+        });
+      });
+    }
+
+    console.log(`Final team count: ${teamScores.size}`);
+
+    // Calculate team stats
+    teamScores.forEach((scores, teamId) => {
+      if (scores.length === 0) {
+        // If no completed games, use league average as fallback
+        this.teamStats.set(teamId, { average: 100, std_dev: 15 });
+        console.log(`Team ${teamId}: No games, using default stats (100, 15)`);
+      } else {
+        const average =
+          scores.reduce((sum, score) => sum + score, 0) / scores.length;
+        const variance =
+          scores.reduce((sum, score) => sum + Math.pow(score - average, 2), 0) /
+          scores.length;
+        const std_dev = Math.sqrt(variance);
+
+        this.teamStats.set(teamId, { average, std_dev });
+        console.log(
+          `Team ${teamId}: ${scores.length} games, avg: ${average.toFixed(
+            2
+          )}, std: ${std_dev.toFixed(2)}`
+        );
+      }
+
+      this.results.set(teamId, new Results());
+      this.idToOwner.set(teamId, teamOwners.get(teamId) || `Team ${teamId}`);
+    });
+
+    // Calculate league stats from all scores
+    const allScores: number[] = [];
+    teamScores.forEach((scores) => {
+      allScores.push(...scores);
+    });
+
+    if (allScores.length > 0) {
+      const leagueMean =
+        allScores.reduce((sum, score) => sum + score, 0) / allScores.length;
+      const leagueVariance =
+        allScores.reduce(
+          (sum, score) => sum + Math.pow(score - leagueMean, 2),
+          0
+        ) / allScores.length;
+      const leagueStdDev = Math.sqrt(leagueVariance);
+
+      this.leagueStats = { mean: leagueMean, stdDev: leagueStdDev };
+      console.log(
+        `League stats: mean ${leagueMean.toFixed(
+          2
+        )}, std ${leagueStdDev.toFixed(2)}`
+      );
+    } else {
+      // Default league stats if no data
+      this.leagueStats = { mean: 100, stdDev: 15 };
+      console.log("Using default league stats (100, 15)");
+    }
+
+    console.log(
+      `Final teamStats size: ${this.teamStats.size}, results size: ${this.results.size}`
+    );
   }
 
   getTeamScoringData(): TeamScoringData[] {
@@ -286,83 +450,139 @@ export class Simulator {
       this.previousStepFinalStandings = this.getTeamScoringData();
     }
 
-    this.schedule.forEach((week) => {
+    this.schedule.forEach((week, weekIndex) => {
       week.forEach((matchup) => {
-        if (!matchup.completed) {
-          const homeTeamStats = this.teamStats.get(matchup.homeTeamEspnId);
-          const awayTeamStats = this.teamStats.get(matchup.awayTeamEspnId);
+        // Only simulate games from startWeek onwards
+        if (weekIndex + 1 < this.startWeek) {
+          // For weeks before startWeek, use actual results if completed
+          if (matchup.completed) {
+            const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
+            const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
 
-          if (!homeTeamStats || !awayTeamStats) return;
+            if (homeScore > awayScore) {
+              singleSeasonResults.teamWin(matchup.homeTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+            } else {
+              singleSeasonResults.teamWin(matchup.awayTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+            }
 
-          const leagueJitterHome =
-            Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
-          const leagueJitterAway =
-            Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
-
-          const homeScore =
-            (1 - leagueJitterHome) *
-              normalDistribution(homeTeamStats.average, homeTeamStats.std_dev) +
-            leagueJitterHome *
-              normalDistribution(
-                this.leagueStats.mean,
-                this.leagueStats.stdDev
-              );
-
-          const awayScore =
-            (1 - leagueJitterAway) *
-              normalDistribution(awayTeamStats.average, awayTeamStats.std_dev) +
-            leagueJitterAway *
-              normalDistribution(
-                this.leagueStats.mean,
-                this.leagueStats.stdDev
-              );
-
-          if (homeScore > awayScore) {
-            singleSeasonResults.teamWin(matchup.homeTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
-          } else {
-            singleSeasonResults.teamWin(matchup.awayTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+            singleSeasonResults.teamPointsFor(
+              matchup.homeTeamEspnId,
+              homeScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.homeTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsFor(
+              matchup.awayTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.awayTeamEspnId,
+              homeScore
+            );
           }
-
-          singleSeasonResults.teamPointsFor(matchup.homeTeamEspnId, homeScore);
-          singleSeasonResults.teamPointsAgainst(
-            matchup.homeTeamEspnId,
-            awayScore
-          );
-          singleSeasonResults.teamPointsFor(matchup.awayTeamEspnId, awayScore);
-          singleSeasonResults.teamPointsAgainst(
-            matchup.awayTeamEspnId,
-            homeScore
-          );
         } else {
-          // Handle completed games
-          const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
-          const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
+          // For weeks from startWeek onwards, simulate or use actual results
+          if (!matchup.completed) {
+            // Simulate future games
+            const homeTeamStats = this.teamStats.get(matchup.homeTeamEspnId);
+            const awayTeamStats = this.teamStats.get(matchup.awayTeamEspnId);
 
-          if (homeScore > awayScore) {
-            singleSeasonResults.teamWin(matchup.homeTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+            if (!homeTeamStats || !awayTeamStats) return;
+
+            const leagueJitterHome =
+              Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
+            const leagueJitterAway =
+              Math.random() * (1 - this.weeksCompleted / this.weeks) + 0.05;
+
+            const homeScore =
+              (1 - leagueJitterHome) *
+                normalDistribution(
+                  homeTeamStats.average,
+                  homeTeamStats.std_dev
+                ) +
+              leagueJitterHome *
+                normalDistribution(
+                  this.leagueStats.mean,
+                  this.leagueStats.stdDev
+                );
+
+            const awayScore =
+              (1 - leagueJitterAway) *
+                normalDistribution(
+                  awayTeamStats.average,
+                  awayTeamStats.std_dev
+                ) +
+              leagueJitterAway *
+                normalDistribution(
+                  this.leagueStats.mean,
+                  this.leagueStats.stdDev
+                );
+
+            if (homeScore > awayScore) {
+              singleSeasonResults.teamWin(matchup.homeTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+            } else {
+              singleSeasonResults.teamWin(matchup.awayTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+            }
+
+            singleSeasonResults.teamPointsFor(
+              matchup.homeTeamEspnId,
+              homeScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.homeTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsFor(
+              matchup.awayTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.awayTeamEspnId,
+              homeScore
+            );
           } else {
-            singleSeasonResults.teamWin(matchup.awayTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
-          }
+            // Use actual completed game results
+            const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
+            const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
 
-          singleSeasonResults.teamPointsFor(matchup.homeTeamEspnId, homeScore);
-          singleSeasonResults.teamPointsAgainst(
-            matchup.homeTeamEspnId,
-            awayScore
-          );
-          singleSeasonResults.teamPointsFor(matchup.awayTeamEspnId, awayScore);
-          singleSeasonResults.teamPointsAgainst(
-            matchup.awayTeamEspnId,
-            homeScore
-          );
+            if (homeScore > awayScore) {
+              singleSeasonResults.teamWin(matchup.homeTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+            } else {
+              singleSeasonResults.teamWin(matchup.awayTeamEspnId);
+              singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+            }
+
+            singleSeasonResults.teamPointsFor(
+              matchup.homeTeamEspnId,
+              homeScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.homeTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsFor(
+              matchup.awayTeamEspnId,
+              awayScore
+            );
+            singleSeasonResults.teamPointsAgainst(
+              matchup.awayTeamEspnId,
+              homeScore
+            );
+          }
         }
       });
     });
 
     singleSeasonResults.setFinalRankings();
+
+    console.log("Single season results:", singleSeasonResults.results);
 
     // Update results with single season results
     singleSeasonResults.results.forEach((value, key) => {
