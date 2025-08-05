@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Layout from "../../components/Layout";
-import {
-  simulationsService,
-  TeamStats,
-} from "../../services/simulationsService";
 import { Simulator } from "../../utils/simulator";
 import { TeamScoringData, Schedule, Matchup } from "../../types/simulation";
 import { scheduleService } from "../../services/scheduleService";
@@ -12,12 +8,9 @@ import { scheduleService } from "../../services/scheduleService";
 export default function Simulations() {
   const [simulating, setSimulating] = useState(false);
   const [results, setResults] = useState<string | null>(null);
-  const [teamStats, setTeamStats] = useState<TeamStats[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [iterations, setIterations] = useState(1000);
   const [startWeek, setStartWeek] = useState("current");
-  const [useActualResults, setUseActualResults] = useState(true);
 
   // New state for dynamic week options
   const [availableWeeks, setAvailableWeeks] = useState<number[]>([]);
@@ -28,24 +21,6 @@ export default function Simulations() {
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
     []
   );
-
-  useEffect(() => {
-    const fetchTeamStats = async () => {
-      try {
-        setLoading(true);
-        const response = await simulationsService.getStats();
-        setTeamStats(response.teamStats);
-        setError(null);
-      } catch (err) {
-        setError("Failed to load team statistics");
-        console.error("Error fetching team stats:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTeamStats();
-  }, []);
 
   // New useEffect to load schedule and determine available weeks
   useEffect(() => {
@@ -237,22 +212,6 @@ export default function Simulations() {
                   </p>
                 )}
               </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="useActualResults"
-                  checked={useActualResults}
-                  onChange={(e) => setUseActualResults(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label
-                  htmlFor="useActualResults"
-                  className="ml-2 block text-sm"
-                >
-                  Use actual results for completed weeks
-                </label>
-              </div>
             </div>
 
             <button
@@ -274,72 +233,43 @@ export default function Simulations() {
               )}
             </button>
           </div>
-        </section>
-        <section className="mt-8">
-          {/* Team Statistics Section */}
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Team Statistics</h2>
 
-            {loading ? (
-              <div className="flex justify-center items-center py-8">
-                <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="ml-2">Loading team statistics...</span>
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-red-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+                    Error
+                  </h3>
+                  <div className="mt-2 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                  </div>
+                  <div className="mt-3">
+                    <button
+                      onClick={() => setError(null)}
+                      className="text-sm bg-red-100 dark:bg-red-800/30 text-red-800 dark:text-red-200 px-3 py-1 rounded-md hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
               </div>
-            ) : error ? (
-              <div className="text-red-600 py-4">{error}</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Owner
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Avg Points
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Std Dev
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {teamStats.map((team, index) => (
-                      <tr
-                        key={team.teamId}
-                        className={
-                          team.teamId === "league_average"
-                            ? "bg-blue-50 dark:bg-blue-900 font-semibold border-t-2 border-blue-200 dark:border-blue-700"
-                            : index % 2 === 0
-                            ? "bg-white dark:bg-gray-800"
-                            : "bg-gray-50 dark:bg-gray-700"
-                        }
-                      >
-                        <td className="py-2 px-4 whitespace-nowrap">
-                          {team.teamId === "league_average" ? (
-                            team.teamOwner
-                          ) : (
-                            <Link
-                              href={`/teams/${team.teamId}`}
-                              className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
-                            >
-                              {team.teamOwner}
-                            </Link>
-                          )}
-                        </td>
-                        <td className="py-2 px-4 whitespace-nowrap">
-                          {team.averagePoints.toFixed(2)}
-                        </td>
-                        <td className="py-2 px-4 whitespace-nowrap">
-                          {team.stdDevPoints.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
         {results && simulationResults.length > 0 && (
