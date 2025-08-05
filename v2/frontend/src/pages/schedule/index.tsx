@@ -28,8 +28,8 @@ export default function Schedule() {
           week: game.week,
           homeTeamId: game.homeTeamId || 0,
           awayTeamId: game.awayTeamId || 0,
-          homeTeamEspnId: game.homeTeamEspnId || 0,
-          awayTeamEspnId: game.awayTeamEspnId || 0,
+          homeTeamESPNID: game.homeTeamESPNID || 0,
+          awayTeamESPNID: game.awayTeamESPNID || 0,
           homeTeamName: game.homeTeamName,
           awayTeamName: game.awayTeamName,
           homeScore: game.homeScore,
@@ -39,6 +39,7 @@ export default function Schedule() {
           completed: game.homeScore > 0 || game.awayScore > 0,
           homeTeam: game.homeTeam,
           awayTeam: game.awayTeam,
+          gameType: game.gameType,
           isPlayoff: game.isPlayoff || false,
         }))
       : [];
@@ -214,7 +215,7 @@ export default function Schedule() {
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">
                             <Link
-                              href={`/teams/${game.homeTeamEspnId}`}
+                              href={`/teams/${game.homeTeamESPNID}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.homeScore > game.awayScore
@@ -228,7 +229,7 @@ export default function Schedule() {
                             <span className="md:hidden">@</span>
 
                             <Link
-                              href={`/teams/${game.awayTeamEspnId}`}
+                              href={`/teams/${game.awayTeamESPNID}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.awayScore > game.homeScore

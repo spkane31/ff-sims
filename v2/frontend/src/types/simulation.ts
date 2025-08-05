@@ -20,11 +20,12 @@ export interface TeamAverage {
 export interface Matchup {
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamEspnId: number;
-  awayTeamEspnId: number;
+  homeTeamESPNID: number;
+  awayTeamESPNID: number;
   homeTeamFinalScore: number;
   awayTeamFinalScore: number;
   completed: boolean;
+  gameType: string;
   week: number;
 }
 
@@ -65,7 +66,7 @@ export interface TeamScoringData {
   losses: number;
   pointsFor: number;
   pointsAgainst: number;
-  playoff_odds: number;
+  playoffOdds: number;
   lastPlaceOdds: number;
   regularSeasonResult: number[];
   playoffResult: number[];

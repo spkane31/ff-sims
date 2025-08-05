@@ -28,6 +28,10 @@ type Matchup struct {
 	HomeTeamESPNProjectedScore float64 `json:"home_projected_score"`
 	AwayTeamESPNProjectedScore float64 `json:"away_projected_score"`
 
+	// Expected wins
+	HomeTeamExpectedWin float64 `json:"home_expected_win"`
+	AwayTeamExpectedWin float64 `json:"away_expected_win"`
+
 	// Status flags
 	Completed bool `json:"completed" gorm:"default:false"`
 	IsPlayoff bool `json:"is_playoff" gorm:"default:false"`

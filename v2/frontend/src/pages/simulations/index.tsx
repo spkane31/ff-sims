@@ -9,7 +9,7 @@ export default function Simulations() {
   const [simulating, setSimulating] = useState(false);
   const [results, setResults] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [iterations, setIterations] = useState(1000);
+  const [iterations, setIterations] = useState(5000);
   const [startWeek, setStartWeek] = useState("current");
 
   // New state for dynamic week options
@@ -28,16 +28,26 @@ export default function Simulations() {
       try {
         const schedule = await fetchScheduleData();
 
-        // Get all available weeks
-        const weeks = schedule.map((_, index) => index + 1);
-        setAvailableWeeks(weeks);
+        // Filter schedule to only include regular season weeks (gameType === "NONE")
+        // We don't simulate playoff games
+        const regularSeasonSchedule = schedule.filter((week) =>
+          week.every((matchup) => matchup.gameType === "NONE")
+        );
 
-        // Find current week (first week with incomplete games)
-        const currentWeekIndex = schedule.findIndex((week) =>
+        // Get all available weeks from regular season schedule
+        const regularSeasonWeeks = regularSeasonSchedule.map(
+          (_, index) => index + 1
+        );
+        setAvailableWeeks(regularSeasonWeeks);
+
+        // Find current week (first week with incomplete games) within regular season
+        const currentWeekIndex = regularSeasonSchedule.findIndex((week) =>
           week.some((matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
-          currentWeekIndex === -1 ? weeks.length : currentWeekIndex + 1;
+          currentWeekIndex === -1
+            ? regularSeasonWeeks.length
+            : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
 
         setScheduleLoaded(true);
@@ -54,15 +64,12 @@ export default function Simulations() {
     try {
       // Use the v2 schedule service to get matchup data
       const response = await scheduleService.getFullSchedule();
-      console.log("Raw API response:", response);
 
       // Convert v2 API format to simulator format
       const schedule: Schedule = [];
       const weekMap = new Map<number, Matchup[]>();
 
       response.data.matchups.forEach((matchup) => {
-        console.log("Processing matchup from API:", matchup);
-
         if (!weekMap.has(matchup.week)) {
           weekMap.set(matchup.week, []);
         }
@@ -70,12 +77,13 @@ export default function Simulations() {
         weekMap.get(matchup.week)?.push({
           homeTeamName: matchup.homeTeamName,
           awayTeamName: matchup.awayTeamName,
-          homeTeamEspnId: matchup.homeTeamEspnId,
-          awayTeamEspnId: matchup.awayTeamEspnId,
+          homeTeamESPNID: matchup.homeTeamESPNID,
+          awayTeamESPNID: matchup.awayTeamESPNID,
           homeTeamFinalScore: matchup.homeScore,
           awayTeamFinalScore: matchup.awayScore,
           completed: matchup.homeScore > 0 || matchup.awayScore > 0,
           week: matchup.week,
+          gameType: matchup.gameType,
         });
       });
 
@@ -85,8 +93,6 @@ export default function Simulations() {
         const weekGames = weekMap.get(week) || [];
         schedule.push(weekGames);
       });
-
-      console.log("Converted schedule:", schedule);
       return schedule;
     } catch (error) {
       console.error("Error fetching schedule data:", error);
@@ -119,11 +125,8 @@ export default function Simulations() {
 
       // Run the specified number of simulations
       for (let i = 0; i < iterations; i++) {
-        console.log(`Running simulation iteration ${i + 1}`);
         sim.step();
       }
-
-      console.log("team scoring data: ", sim.getTeamScoringData());
 
       // Update state with results
       setSimulationResults(sim.getTeamScoringData());
@@ -292,7 +295,7 @@ export default function Simulations() {
                         (team) =>
                           team.teamName !== "League Average" && team.id !== -1
                       )
-                      .sort((a, b) => b.playoff_odds - a.playoff_odds)
+                      .sort((a, b) => b.playoffOdds - a.playoffOdds)
                       .map((team) => (
                         <div key={team.id} className="flex items-center">
                           <span
@@ -304,21 +307,21 @@ export default function Simulations() {
                           <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mx-3">
                             <div
                               className={`h-full ${
-                                team.playoff_odds > 0.67
+                                team.playoffOdds > 0.67
                                   ? "bg-green-600"
-                                  : team.playoff_odds > 0.33
+                                  : team.playoffOdds > 0.33
                                   ? "bg-yellow-600"
                                   : "bg-red-600"
                               }`}
                               style={{
-                                width: `${(team.playoff_odds * 100).toFixed(
+                                width: `${(team.playoffOdds * 100).toFixed(
                                   1
                                 )}%`,
                               }}
                             ></div>
                           </div>
                           <span className="w-14 text-right text-sm">
-                            {(team.playoff_odds * 100).toFixed(1)}%
+                            {(team.playoffOdds * 100).toFixed(1)}%
                           </span>
                         </div>
                       ))}
@@ -405,14 +408,14 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap">
                               <span
                                 className={`font-medium ${
-                                  team.playoff_odds > 0.5
+                                  team.playoffOdds > 0.5
                                     ? "text-green-600 dark:text-green-400"
-                                    : team.playoff_odds > 0.25
+                                    : team.playoffOdds > 0.25
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-red-600 dark:text-red-400"
                                 }`}
                               >
-                                {(team.playoff_odds * 100).toFixed(1)}%
+                                {(team.playoffOdds * 100).toFixed(1)}%
                               </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap">
@@ -467,7 +470,7 @@ export default function Simulations() {
                           (team) =>
                             team.teamName !== "League Average" && team.id !== -1
                         )
-                        .sort((a, b) => b.playoff_odds - a.playoff_odds)
+                        .sort((a, b) => b.playoffOdds - a.playoffOdds)
                         .map((team, index) => (
                           <tr
                             key={team.id}
@@ -502,7 +505,15 @@ export default function Simulations() {
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              <span className="text-red-600 dark:text-red-400 font-medium">
+                              <span
+                                className={`font-medium ${
+                                  team.lastPlaceOdds < 0.1
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.lastPlaceOdds <= 0.3
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-red-600 dark:text-red-400"
+                                }`}
+                              >
                                 {(team.lastPlaceOdds * 100).toFixed(1)}%
                               </span>
                             </td>

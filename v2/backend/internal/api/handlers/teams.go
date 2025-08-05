@@ -101,14 +101,6 @@ func GetTeams(c *gin.Context) {
 	}
 
 	for _, matchup := range fullSchedule {
-		logging.Infof("Matchup: Week %d, Year %d, Home Team (%d), Away Team: (%d), Home Score: %.2f, Away Score: %.2f",
-			matchup.Week, matchup.Year,
-			matchup.HomeTeamID,
-			matchup.AwayTeamID,
-			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore)
-		if matchup.Week == 17 {
-			logging.Infof("Found matchup for week 17: %s vs %s, Home Score: %.2f, Away Score: %.2f")
-		}
 		// Add to resp
 		for i, team := range resp.Teams {
 			// Add total points scored and against

@@ -106,12 +106,12 @@ class SingleSeasonResults {
     const semifinal2Loser = semifinal2Winner === teams[3] ? teams[4] : teams[3];
     semifinal2Loser.playoffResult = 5;
 
-    // Championship semifinal 1: 1st vs semifinal winner
+    // Championship semifinal 1: 1st vs semifinal2 winner
     const champSemi1Winner = this.simulateGame(teams[0], semifinal2Winner);
     const champSemi1Loser =
       champSemi1Winner === teams[0] ? semifinal2Winner : teams[0];
 
-    // Championship semifinal 2: 2nd vs semifinal winner
+    // Championship semifinal 2: 2nd vs semifinal1 winner
     const champSemi2Winner = this.simulateGame(teams[1], semifinal1Winner);
     const champSemi2Loser =
       champSemi2Winner === teams[1] ? semifinal1Winner : teams[1];
@@ -197,7 +197,7 @@ export class Simulator {
   simulations: number = 0;
   results: Map<number, Results>;
   teamStats: Map<number, TeamStats>;
-  leagueStats: LeagueStats = { mean: 100, stdDev: 15 }; // Initialize with defaults
+  leagueStats: LeagueStats = { mean: 0, stdDev: 0 };
   idToOwner: Map<number, string>;
   epsilon: number = 0;
   previousStepFinalStandings: TeamScoringData[] | null = null;
@@ -250,8 +250,8 @@ export class Simulator {
           return;
         }
 
-        const homeTeamId = matchup.homeTeamEspnId;
-        const awayTeamId = matchup.awayTeamEspnId;
+        const homeTeamId = matchup.homeTeamESPNID;
+        const awayTeamId = matchup.awayTeamESPNID;
         const homeScore = matchup.homeTeamFinalScore;
         const awayScore = matchup.awayTeamFinalScore;
 
@@ -319,8 +319,8 @@ export class Simulator {
       // Get all teams from the entire schedule
       this.schedule.forEach((week) => {
         week.forEach((matchup) => {
-          const homeTeamId = matchup.homeTeamEspnId;
-          const awayTeamId = matchup.awayTeamEspnId;
+          const homeTeamId = matchup.homeTeamESPNID;
+          const awayTeamId = matchup.awayTeamESPNID;
 
           if (!teamScores.has(homeTeamId)) {
             teamScores.set(homeTeamId, []);
@@ -427,7 +427,7 @@ export class Simulator {
           losses: sims === 0 ? 0.0 : value.losses / sims,
           pointsFor: sims === 0 ? 0.0 : value.pointsFor / sims,
           pointsAgainst: sims === 0 ? 0.0 : value.pointsAgainst / sims,
-          playoff_odds: sims === 0 ? 0.0 : value.madePlayoffs / sims,
+          playoffOdds: sims === 0 ? 0.0 : value.madePlayoffs / sims,
           lastPlaceOdds: sims === 0 ? 0.0 : value.lastPlace / sims,
           regularSeasonResult:
             sims === 0
@@ -442,8 +442,8 @@ export class Simulator {
     });
 
     return data.sort((a, b) => {
-      if (a.playoff_odds !== b.playoff_odds) {
-        return b.playoff_odds - a.playoff_odds;
+      if (a.playoffOdds !== b.playoffOdds) {
+        return b.playoffOdds - a.playoffOdds;
       } else if (a.lastPlaceOdds !== b.lastPlaceOdds) {
         return b.lastPlaceOdds - a.lastPlaceOdds;
       } else if (a.wins !== b.wins) {
@@ -465,6 +465,14 @@ export class Simulator {
 
     this.schedule.forEach((week, weekIndex) => {
       week.forEach((matchup) => {
+        if (matchup.gameType !== "NONE") {
+          console.log(
+            `Skipping matchup in week ${weekIndex + 1} due to game type: ${
+              matchup.gameType
+            }`
+          );
+          return;
+        }
         const currentWeek = weekIndex + 1;
 
         if (currentWeek < this.startWeek) {
@@ -474,34 +482,34 @@ export class Simulator {
             const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
 
             if (homeScore > awayScore) {
-              singleSeasonResults.teamWin(matchup.homeTeamEspnId);
-              singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+              singleSeasonResults.teamWin(matchup.homeTeamESPNID);
+              singleSeasonResults.teamLoss(matchup.awayTeamESPNID);
             } else {
-              singleSeasonResults.teamWin(matchup.awayTeamEspnId);
-              singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+              singleSeasonResults.teamWin(matchup.awayTeamESPNID);
+              singleSeasonResults.teamLoss(matchup.homeTeamESPNID);
             }
 
             singleSeasonResults.teamPointsFor(
-              matchup.homeTeamEspnId,
+              matchup.homeTeamESPNID,
               homeScore
             );
             singleSeasonResults.teamPointsAgainst(
-              matchup.homeTeamEspnId,
+              matchup.homeTeamESPNID,
               awayScore
             );
             singleSeasonResults.teamPointsFor(
-              matchup.awayTeamEspnId,
+              matchup.awayTeamESPNID,
               awayScore
             );
             singleSeasonResults.teamPointsAgainst(
-              matchup.awayTeamEspnId,
+              matchup.awayTeamESPNID,
               homeScore
             );
           }
         } else {
           // For weeks from startWeek onwards, always simulate (ignore actual results)
-          const homeTeamStats = this.teamStats.get(matchup.homeTeamEspnId);
-          const awayTeamStats = this.teamStats.get(matchup.awayTeamEspnId);
+          const homeTeamStats = this.teamStats.get(matchup.homeTeamESPNID);
+          const awayTeamStats = this.teamStats.get(matchup.awayTeamESPNID);
 
           if (!homeTeamStats || !awayTeamStats) return;
 
@@ -529,21 +537,21 @@ export class Simulator {
               );
 
           if (homeScore > awayScore) {
-            singleSeasonResults.teamWin(matchup.homeTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.awayTeamEspnId);
+            singleSeasonResults.teamWin(matchup.homeTeamESPNID);
+            singleSeasonResults.teamLoss(matchup.awayTeamESPNID);
           } else {
-            singleSeasonResults.teamWin(matchup.awayTeamEspnId);
-            singleSeasonResults.teamLoss(matchup.homeTeamEspnId);
+            singleSeasonResults.teamWin(matchup.awayTeamESPNID);
+            singleSeasonResults.teamLoss(matchup.homeTeamESPNID);
           }
 
-          singleSeasonResults.teamPointsFor(matchup.homeTeamEspnId, homeScore);
+          singleSeasonResults.teamPointsFor(matchup.homeTeamESPNID, homeScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.homeTeamEspnId,
+            matchup.homeTeamESPNID,
             awayScore
           );
-          singleSeasonResults.teamPointsFor(matchup.awayTeamEspnId, awayScore);
+          singleSeasonResults.teamPointsFor(matchup.awayTeamESPNID, awayScore);
           singleSeasonResults.teamPointsAgainst(
-            matchup.awayTeamEspnId,
+            matchup.awayTeamESPNID,
             homeScore
           );
         }

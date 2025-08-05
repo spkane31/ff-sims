@@ -5,6 +5,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
+	"backend/internal/simulation"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -129,8 +130,8 @@ type Matchup struct {
 	AwayTeamESPNID             uint           `json:"away_team_espn_id"`
 	HomeTeamFinalScore         float64        `json:"home_team_final_score"`
 	AwayTeamFinalScore         float64        `json:"away_team_final_score"`
-	HomeTeamEspnProjectedScore float64        `json:"home_team_espn_projected_score"`
-	AwayTeamEspnProjectedScore float64        `json:"away_team_espn_projected_score"`
+	HomeTeamESPNProjectedScore float64        `json:"home_team_espn_projected_score"`
+	AwayTeamESPNProjectedScore float64        `json:"away_team_espn_projected_score"`
 	Completed                  bool           `json:"completed"`
 	GameType                   string         `json:"game_type"`
 	HomeTeamLineup             []PlayerLineup `json:"home_team_lineup"`
@@ -202,9 +203,29 @@ func processMatchups(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read matchups file %s: %w", filePath, err)
 	}
-	matchups := []Matchup{}
-	if err := json.Unmarshal(data, &matchups); err != nil {
+	matchupsMarshalled := []Matchup{}
+	if err := json.Unmarshal(data, &matchupsMarshalled); err != nil {
 		return fmt.Errorf("failed to unmarshal matchups data from %s: %w", filePath, err)
+	}
+
+	matchups := make([]*models.Matchup, len(matchupsMarshalled))
+	for i, matchup := range matchupsMarshalled {
+		matchups[i] = &models.Matchup{
+			Week:                       matchup.Week,
+			Year:                       matchup.Year,
+			HomeTeamID:                 matchup.HomeTeamESPNID,
+			AwayTeamID:                 matchup.AwayTeamESPNID,
+			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
+			AwayTeamFinalScore:         matchup.AwayTeamFinalScore,
+			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
+			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
+			Completed:                  matchup.Completed,
+			GameType:                   matchup.GameType,
+		}
+	}
+
+	if err := simulation.CalculateExpectedWins(matchups); err != nil {
+		return fmt.Errorf("failed to calculate expected wins: %w", err)
 	}
 
 	// Need to get the teams to get the {Home,Away}TeamID mappings
@@ -225,24 +246,24 @@ func processMatchups(filePath string) error {
 	logging.Infof("Successfully processed %d matchups from %s", len(matchups), filePath)
 	for _, matchup := range matchups {
 		logging.Debugf("Matchup - Week: %d, Year: %d, Home Team ESPN ID: %d, Away Team ESPN ID: %d, Home Score: %.2f, Away Score: %.2f, Completed: %t",
-			matchup.Week, matchup.Year, matchup.HomeTeamESPNID, matchup.AwayTeamESPNID,
+			matchup.Week, matchup.Year, matchup.HomeTeamID, matchup.AwayTeamID,
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore, matchup.Completed)
 		logging.Debugf("Home Team Projected Score: %.2f, Away Team Projected Score: %.2f",
-			matchup.HomeTeamEspnProjectedScore, matchup.AwayTeamEspnProjectedScore)
-		logging.Debugf("Home Team Lineup: %+v", matchup.HomeTeamLineup)
-		logging.Debugf("Away Team Lineup: %+v", matchup.AwayTeamLineup)
+			matchup.HomeTeamESPNProjectedScore, matchup.AwayTeamESPNProjectedScore)
+		// logging.Debugf("Home Team Lineup: %+v", matchup.HomeTeamLineup)
+		// logging.Debugf("Away Team Lineup: %+v", matchup.AwayTeamLineup)
 
 		logging.Infof("%+v", idMap)
 
 		// Look up the internal database IDs using the ESPN IDs
-		homeTeamID, homeTeamExists := idMap[uint(matchup.HomeTeamESPNID)]
+		homeTeamID, homeTeamExists := idMap[uint(matchup.HomeTeamID)]
 		if !homeTeamExists {
-			return fmt.Errorf("home team with ESPN ID %d not found in database", matchup.HomeTeamESPNID)
+			return fmt.Errorf("home team with ESPN ID %d not found in database", matchup.HomeTeamID)
 		}
 
-		awayTeamID, awayTeamExists := idMap[uint(matchup.AwayTeamESPNID)]
+		awayTeamID, awayTeamExists := idMap[uint(matchup.AwayTeamID)]
 		if !awayTeamExists {
-			return fmt.Errorf("away team with ESPN ID %d not found in database", matchup.AwayTeamESPNID)
+			return fmt.Errorf("away team with ESPN ID %d not found in database", matchup.AwayTeamID)
 		}
 
 		entry := &models.Matchup{
@@ -254,9 +275,11 @@ func processMatchups(filePath string) error {
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
 			AwayTeamFinalScore:         matchup.AwayTeamFinalScore,
-			HomeTeamESPNProjectedScore: matchup.HomeTeamEspnProjectedScore,
-			AwayTeamESPNProjectedScore: matchup.AwayTeamEspnProjectedScore,
+			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
+			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:                   matchup.GameType,
+			HomeTeamExpectedWin:        matchup.HomeTeamExpectedWin,
+			AwayTeamExpectedWin:        matchup.AwayTeamExpectedWin,
 
 			Completed: matchup.Completed,
 			IsPlayoff: false, // TODO: implement playoff logic
@@ -279,8 +302,8 @@ func processMatchups(filePath string) error {
 			// Matchup exists, update its details
 			existingMatchup.HomeTeamFinalScore = matchup.HomeTeamFinalScore
 			existingMatchup.AwayTeamFinalScore = matchup.AwayTeamFinalScore
-			existingMatchup.HomeTeamESPNProjectedScore = matchup.HomeTeamEspnProjectedScore
-			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamEspnProjectedScore
+			existingMatchup.HomeTeamESPNProjectedScore = matchup.HomeTeamESPNProjectedScore
+			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamESPNProjectedScore
 			existingMatchup.Completed = matchup.Completed
 			existingMatchup.GameType = matchup.GameType
 			existingMatchup.Week = uint(matchup.Week)
@@ -288,7 +311,7 @@ func processMatchups(filePath string) error {
 			existingMatchup.Season = int(matchup.Year)
 
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
-				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamESPNID, err)
+				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamID, err)
 			}
 			logging.Infof("Updated existing matchup: %+v", existingMatchup)
 		}

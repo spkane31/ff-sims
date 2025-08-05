@@ -24,8 +24,8 @@ type Matchup struct {
 	ID                 string           `json:"id"`
 	Year               uint             `json:"year"`
 	Week               uint             `json:"week"`
-	HomeTeamESPNID     uint             `json:"homeTeamEspnId"`
-	AwayTeamESPNID     uint             `json:"awayTeamEspnId"`
+	HomeTeamESPNID     uint             `json:"homeTeamESPNID"`
+	AwayTeamESPNID     uint             `json:"awayTeamESPNID"`
 	HomeTeamName       string           `json:"homeTeamName"`
 	AwayTeamName       string           `json:"awayTeamName"`
 	HomeScore          float64          `json:"homeScore"`
@@ -34,6 +34,7 @@ type Matchup struct {
 	AwayProjectedScore float64          `json:"awayProjectedScore"`
 	HomePlayers        []BoxScorePlayer `json:"homePlayers"`
 	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
+	GameType           string           `json:"gameType"`
 }
 
 // GetPlayers returns all players with optional filtering
@@ -97,6 +98,7 @@ func GetSchedules(c *gin.Context) {
 			AwayScore:          matchup.AwayTeamFinalScore,
 			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
 			AwayProjectedScore: matchup.AwayTeamESPNProjectedScore,
+			GameType:           matchup.GameType,
 		}
 
 		for _, team := range teams {

@@ -20,14 +20,15 @@ export interface Matchup extends BaseModel {
   awayTeamId: number;
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamEspnId: number;
-  awayTeamEspnId: number;
+  homeTeamESPNID: number;
+  awayTeamESPNID: number;
   homeScore: number;
   awayScore: number;
   homeProjectedScore: number;
   awayProjectedScore: number;
   completed: boolean;
   isPlayoff: boolean;
+  gameType: string;
   homeTeam?: Team;
   awayTeam?: Team;
 }
