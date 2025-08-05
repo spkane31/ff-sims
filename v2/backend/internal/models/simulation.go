@@ -9,8 +9,8 @@ import (
 // Simulation represents a fantasy football simulation run
 type Simulation struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	LeagueID       uint   `json:"league_id"`
@@ -34,18 +34,18 @@ type Simulation struct {
 // SimResult represents a result of a single simulation matchup
 type SimResult struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	SimulationID  uint    `json:"simulation_id"`
-	MatchupID     uint    `json:"matchup_id"`
-	TeamID        uint    `json:"team_id"`
-	OpponentID    uint    `json:"opponent_id"`
+	SimulationID  uint    `json:"simulationId"`
+	MatchupID     uint    `json:"matchupId"`
+	TeamID        uint    `json:"teamId"`
+	OpponentID    uint    `json:"opponentId"`
 	Score         float64 `json:"score"`
-	OpponentScore float64 `json:"opponent_score"`
+	OpponentScore float64 `json:"opponentScore"`
 	Win           bool    `json:"win"`
-	SimRun        int     `json:"sim_run"` // Which simulation run this result is from
+	SimRun        int     `json:"simRun"` // Which simulation run this result is from
 
 	// Relationships
 	Simulation *Simulation `json:"-"`
@@ -56,17 +56,17 @@ type SimResult struct {
 // SimTeamResult represents aggregated results for a team across simulations
 type SimTeamResult struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	SimulationID     uint    `json:"simulation_id"`
-	TeamID           uint    `json:"team_id"`
+	SimulationID     uint    `json:"simulationId"`
+	TeamID           uint    `json:"teamId"`
 	Wins             int     `json:"wins"`
 	Losses           int     `json:"losses"`
-	PlayoffOdds      float64 `json:"playoff_odds"`
-	ChampionshipOdds float64 `json:"championship_odds"`
-	AvgPoints        float64 `json:"avg_points"`
+	PlayoffOdds      float64 `json:"playoffOdds"`
+	ChampionshipOdds float64 `json:"championshipOdds"`
+	AvgPoints        float64 `json:"avgPoints"`
 
 	// Relationships
 	Simulation *Simulation `json:"-"`

@@ -6,13 +6,13 @@
 // Base model with common fields
 export interface BaseModel {
   id: number;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Matchup model
 export interface Matchup extends BaseModel {
-  league_id: number;
+  leagueId: number;
   week: number;
   year: number;
   season: number;

@@ -303,7 +303,13 @@ export default function Simulations() {
                           </span>
                           <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mx-3">
                             <div
-                              className="h-full bg-blue-600"
+                              className={`h-full ${
+                                team.playoff_odds > 0.67
+                                  ? "bg-green-600"
+                                  : team.playoff_odds > 0.33
+                                  ? "bg-yellow-600"
+                                  : "bg-red-600"
+                              }`}
                               style={{
                                 width: `${(team.playoff_odds * 100).toFixed(
                                   1

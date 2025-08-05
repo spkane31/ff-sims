@@ -1,27 +1,8 @@
 import { useState } from "react";
 import Layout from "../../components/Layout";
 import { useSchedule } from "../../hooks/useSchedule";
-import {
-  Game as ApiGame,
-  GetScheduleResponse,
-  // Matchup,
-} from "../../services/scheduleService";
 import { Matchup } from "@/types/models";
 import Link from "next/link";
-
-// Type definitions
-interface Game {
-  id: string;
-  year: number;
-  week: number;
-  homeTeam: string;
-  awayTeam: string;
-  homeScore: number;
-  awayScore: number;
-  homeProjectedScore: number;
-  awayProjectedScore: number;
-  completed: boolean;
-}
 
 interface TeamStrength {
   team: string;
@@ -29,11 +10,7 @@ interface TeamStrength {
   strengthPercentage: number;
 }
 
-interface ScheduleProps {
-  // Add props if needed in the future
-}
-
-export default function Schedule({}: ScheduleProps) {
+export default function Schedule() {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const { schedule, isLoading, error } = useSchedule();
@@ -42,27 +19,27 @@ export default function Schedule({}: ScheduleProps) {
   const scheduleData: Matchup[] =
     !isLoading && schedule
       ? schedule.data.matchups.flat().map((game) => ({
-          league_id: 1, // TODO: this might not be necessary
+          leagueId: 1, // TODO: this might not be necessary
           id: game.id,
-          created_at: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
-          updated_at: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
+          createdAt: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
+          updatedAt: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
           season: game.year,
           year: game.year,
           week: game.week,
-          home_team_id: game.homeTeamId || 0,
-          away_team_id: game.awayTeamId || 0,
-          home_team_espn_id: game.homeTeamEspnId || 0,
-          away_team_espn_id: game.awayTeamEspnId || 0,
-          home_team_name: game.homeTeamName,
-          away_team_name: game.awayTeamName,
-          home_score: game.homeScore,
-          away_score: game.awayScore,
-          home_projected_score: game.homeProjectedScore,
-          away_projected_score: game.awayProjectedScore,
+          homeTeamId: game.homeTeamId || 0,
+          awayTeamId: game.awayTeamId || 0,
+          homeTeamEspnId: game.homeTeamEspnId || 0,
+          awayTeamEspnId: game.awayTeamEspnId || 0,
+          homeTeamName: game.homeTeamName,
+          awayTeamName: game.awayTeamName,
+          homeScore: game.homeScore,
+          awayScore: game.awayScore,
+          homeProjectedScore: game.homeProjectedScore,
+          awayProjectedScore: game.awayProjectedScore,
           completed: game.homeScore > 0 || game.awayScore > 0,
-          home_team: game.homeTeam,
-          away_team: game.awayTeam,
-          is_playoff: game.isPlayoff || false,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          isPlayoff: game.isPlayoff || false,
         }))
       : [];
 

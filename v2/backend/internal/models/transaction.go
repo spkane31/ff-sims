@@ -8,8 +8,8 @@ import (
 
 type DraftSelection struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	PlayerID       uint   `json:"player_id"` // Reference to Player model
@@ -30,8 +30,8 @@ type DraftSelection struct {
 // Transaction represents various team transactions like adding/dropping/trading players
 type Transaction struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	TeamID          uint      `json:"team_id"`

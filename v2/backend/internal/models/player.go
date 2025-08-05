@@ -9,8 +9,8 @@ import (
 // Player represents a football player
 type Player struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"` // Unique ESPN ID for the player
@@ -46,8 +46,8 @@ type PlayerStats struct {
 // PlayerGameStats represents a player's stats for a specific game
 type PlayerGameStats struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	PlayerID      uint        `json:"player_id"`

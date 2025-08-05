@@ -9,8 +9,8 @@ import (
 // BoxScore represents a player's performance in a specific matchup
 type BoxScore struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	MatchupID   uint      `json:"matchup_id"`
