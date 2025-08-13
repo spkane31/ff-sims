@@ -278,8 +278,8 @@ func processMatchups(filePath string) error {
 			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
 			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:                   matchup.GameType,
-			HomeTeamExpectedWin:        matchup.HomeTeamExpectedWin,
-			AwayTeamExpectedWin:        matchup.AwayTeamExpectedWin,
+			// HomeTeamExpectedWin:        matchup.HomeTeamExpectedWin,
+			// AwayTeamExpectedWin:        matchup.AwayTeamExpectedWin,
 
 			Completed: matchup.Completed,
 			IsPlayoff: false, // TODO: implement playoff logic
@@ -731,14 +731,14 @@ func Upload(directory string) error {
 		// Process based on file type
 		var processErr error
 		switch fileType {
-		// case "box_score_players":
-		// 	processErr = processBoxScorePlayers(filePath)
-		// case "draft_selections":
-		// 	processErr = processDraftSelections(filePath)
+		case "box_score_players":
+			processErr = processBoxScorePlayers(filePath)
+		case "draft_selections":
+			processErr = processDraftSelections(filePath)
 		case "matchups":
 			processErr = processMatchups(filePath)
-		// case "transactions":
-		// 	processErr = processTransactions(filePath)
+		case "transactions":
+			processErr = processTransactions(filePath)
 		default:
 			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue

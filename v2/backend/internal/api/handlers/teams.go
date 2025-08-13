@@ -479,20 +479,6 @@ type PlayerResponse struct {
 	Stats         PlayerStatsResponse `json:"stats"`
 }
 
-type PlayerStatsResponse struct {
-	PassingYards   int `json:"passingYards"`
-	PassingTDs     int `json:"passingTDs"`
-	Interceptions  int `json:"interceptions"`
-	RushingYards   int `json:"rushingYards"`
-	RushingTDs     int `json:"rushingTDs"`
-	Receptions     int `json:"receptions"`
-	ReceivingYards int `json:"receivingYards"`
-	ReceivingTDs   int `json:"receivingTDs"`
-	Fumbles        int `json:"fumbles"`
-	FieldGoals     int `json:"fieldGoals"`
-	ExtraPoints    int `json:"extraPoints"`
-}
-
 type DraftPickResponse struct {
 	Round    int    `json:"round"`
 	Pick     int    `json:"pick"`

@@ -856,7 +856,6 @@ if __name__ == "__main__":
     conn = None
     if args.use_database:
         conn = psycopg2.connect(DATABASE_URL)
-        # get_db_counts(conn)
 
     # Define file paths for outputs
     teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")

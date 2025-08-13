@@ -13,35 +13,42 @@ interface TeamStrength {
 export default function Schedule() {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedGameType, setSelectedGameType] = useState<string>("all");
   const { schedule, isLoading, error } = useSchedule();
 
   // Transform API data to our Game format
   const scheduleData: Matchup[] =
     !isLoading && schedule
-      ? schedule.data.matchups.flat().map((game) => ({
-          leagueId: 1, // TODO: this might not be necessary
-          id: game.id,
-          createdAt: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
-          updatedAt: "2023-10-01T00:00:00Z", // Placeholder, adjust as needed
-          season: game.year,
-          year: game.year,
-          week: game.week,
-          homeTeamId: game.homeTeamId || 0,
-          awayTeamId: game.awayTeamId || 0,
-          homeTeamESPNID: game.homeTeamESPNID || 0,
-          awayTeamESPNID: game.awayTeamESPNID || 0,
-          homeTeamName: game.homeTeamName,
-          awayTeamName: game.awayTeamName,
-          homeScore: game.homeScore,
-          awayScore: game.awayScore,
-          homeProjectedScore: game.homeProjectedScore,
-          awayProjectedScore: game.awayProjectedScore,
-          completed: game.homeScore > 0 || game.awayScore > 0,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          gameType: game.gameType,
-          isPlayoff: game.isPlayoff || false,
-        }))
+      ? schedule.data.matchups
+          .flat()
+          .map((game) => ({
+            leagueId: 1, // TODO: this might not be necessary
+            id: game.id,
+            createdAt: "2023-10-01T00:00:00Z",
+            updatedAt: "2023-10-01T00:00:00Z",
+            season: game.year,
+            year: game.year,
+            week: game.week,
+            homeTeamId: game.homeTeamId || 0,
+            awayTeamId: game.awayTeamId || 0,
+            homeTeamESPNID: game.homeTeamESPNID || 0,
+            awayTeamESPNID: game.awayTeamESPNID || 0,
+            homeTeamName: game.homeTeamName,
+            awayTeamName: game.awayTeamName,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            homeProjectedScore: game.homeProjectedScore,
+            awayProjectedScore: game.awayProjectedScore,
+            completed: game.homeScore > 0 || game.awayScore > 0,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            gameType: game.gameType,
+            isPlayoff: game.isPlayoff || false,
+          }))
+          .filter(
+            (game) =>
+              game.gameType === "NONE" || game.gameType === "WINNERS_BRACKET"
+          )
       : [];
 
   const weeks: number[] = Array.from(
@@ -53,15 +60,22 @@ export default function Schedule() {
   ).sort((a, b) => b - a);
 
   const filteredGames: Matchup[] = scheduleData.filter((game) => {
-    if (selectedYear === "all" && selectedWeek === "all") return true; // Show all games
-    if (selectedYear !== "all" && selectedWeek === "all")
-      return game.year.toString() === selectedYear;
-    if (selectedYear === "all" && selectedWeek !== "all")
-      return game.week.toString() === selectedWeek;
-    return (
-      game.year.toString() === selectedYear &&
-      game.week.toString() === selectedWeek
-    );
+    // Apply year filter
+    const yearMatch =
+      selectedYear === "all" || game.year.toString() === selectedYear;
+
+    // Apply week filter
+    const weekMatch =
+      selectedWeek === "all" || game.week.toString() === selectedWeek;
+
+    // Apply game type filter
+    const gameTypeMatch =
+      selectedGameType === "all" ||
+      (selectedGameType === "playoffs" &&
+        game.gameType === "WINNERS_BRACKET") ||
+      (selectedGameType === "regular" && game.gameType === "NONE");
+
+    return yearMatch && weekMatch && gameTypeMatch;
   });
 
   // Strength of schedule data
@@ -129,7 +143,7 @@ export default function Schedule() {
                   <option value="all">All Years</option>
                   {years.map((year) => (
                     <option key={year} value={year}>
-                      Year {year}
+                      {year}
                     </option>
                   ))}
                 </select>
@@ -152,6 +166,23 @@ export default function Schedule() {
                       Week {week}
                     </option>
                   ))}
+                </select>
+                <label
+                  htmlFor="gameTypeFilter"
+                  className="block text-sm font-medium mb-1 md:hidden"
+                >
+                  Select Game Type
+                </label>
+                <select
+                  id="gameTypeFilter"
+                  value={selectedGameType}
+                  onChange={(e) => setSelectedGameType(e.target.value)}
+                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  disabled={isLoading}
+                >
+                  <option value="all">All Games</option>
+                  <option value="regular">Regular Season</option>
+                  <option value="playoffs">Playoffs</option>
                 </select>
               </div>
             </div>
@@ -210,7 +241,9 @@ export default function Schedule() {
                           {game.year}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          Week {game.week}
+                          {game.week > 14
+                            ? `Playoffs (Round ${game.week - 14})`
+                            : `Week ${game.week}`}
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">

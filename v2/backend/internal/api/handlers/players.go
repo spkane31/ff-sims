@@ -4,15 +4,27 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"backend/internal/database"
 	"backend/internal/models"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/exp/slices"
 	"gorm.io/gorm"
 )
+
+type PlayerStatsResponse struct {
+	PassingYards   int `json:"passingYards"`
+	PassingTDs     int `json:"passingTDs"`
+	Interceptions  int `json:"interceptions"`
+	RushingYards   int `json:"rushingYards"`
+	RushingTDs     int `json:"rushingTDs"`
+	Receptions     int `json:"receptions"`
+	ReceivingYards int `json:"receivingYards"`
+	ReceivingTDs   int `json:"receivingTDs"`
+	Fumbles        int `json:"fumbles"`
+	FieldGoals     int `json:"fieldGoals"`
+	ExtraPoints    int `json:"extraPoints"`
+}
 
 type GetPlayersResponse struct {
 	Players []PlayerSummaryResponse `json:"players"`
@@ -48,80 +60,112 @@ func GetPlayers(c *gin.Context) {
 		page = 1
 	}
 	if limit < 1 || limit > 500 {
-		limit = 100
+		limit = 50
 	}
 
 	offset := (page - 1) * limit
 
 	slog.Info("Fetching players", "position", position, "year", year, "page", page, "limit", limit)
 
-	var allPlayers []models.Player
+	// Build the SQL query similar to your provided query
+	// SELECT p.id, p.name, p.position, p.team, p.status, p.espn_id,
+	//        SUM(bs.actual_points) AS total_points,
+	//        SUM(bs.projected_points) AS total_proj_points,
+	//        COUNT(bs.id) AS games_played
+	// FROM players p
+	// JOIN box_scores bs ON p.id = bs.player_id
+	// WHERE bs.year = ? [AND p.position = ?]
+	// GROUP BY p.id, p.name, p.position, p.team, p.status, p.espn_id
+	// ORDER BY total_points DESC
+	// LIMIT ? OFFSET ?
+
+	type PlayerAggregateResult struct {
+		ID                   uint    `json:"id"`
+		Name                 string  `json:"name"`
+		Position             string  `json:"position"`
+		Team                 string  `json:"team"`
+		Status               string  `json:"status"`
+		ESPNID               int64   `json:"espn_id"`
+		TotalPoints          float64 `json:"total_points"`
+		TotalProjectedPoints float64 `json:"total_projected_points"`
+		GamesPlayed          int     `json:"games_played"`
+	}
+
+	var results []PlayerAggregateResult
 	var totalCount int64
-	var boxScores []models.BoxScore
 
-	wg := sync.WaitGroup{}
-	var playersErr, countErr, boxScoresErr error
+	// Build the query with joins
+	query := database.DB.Table("players p").
+		Select(`p.id, p.name, p.position, p.team, p.status, p.espn_id,
+			COALESCE(SUM(bs.actual_points), 0) AS total_points,
+			COALESCE(SUM(bs.projected_points), 0) AS total_projected_points,
+			COALESCE(COUNT(bs.id), 0) AS games_played`).
+		Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.year = ?", year).
+		Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
 
-	// Build query conditions
-	query := database.DB.Model(&models.Player{})
+	// Add position filter if provided
 	if position != "" {
-		query = query.Where("position = ?", position)
+		query = query.Where("p.position = ?", position)
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		countErr = query.Count(&totalCount).Error
-		if countErr != nil {
-			slog.Error("Failed to count players", "error", countErr)
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		playersQuery := database.DB.Model(&models.Player{}).Offset(offset).Limit(limit).Order("name ASC")
-		playersErr = playersQuery.Find(&allPlayers).Error
-		if playersErr != nil {
-			slog.Error("Failed to fetch players from database", "error", playersErr)
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		yearInt, _ := strconv.Atoi(year)
-		boxScoresErr = database.DB.Where("year = ?", yearInt).Find(&boxScores).Error
-		if boxScoresErr != nil {
-			slog.Error("Failed to fetch box scores from database", "error", boxScoresErr)
-		}
-	}()
-
-	wg.Wait()
-
-	if playersErr != nil {
-		slog.Error("Error fetching players", "error", playersErr)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch players"})
-		return
+	// Get total count for pagination
+	countQuery := database.DB.Table("players p")
+	if position != "" {
+		countQuery = countQuery.Where("position = ?", position)
 	}
-	if countErr != nil {
-		slog.Error("Error counting players", "error", countErr)
+	if err := countQuery.Count(&totalCount).Error; err != nil {
+		slog.Error("Failed to count players", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count players"})
 		return
 	}
-	if boxScoresErr != nil {
-		slog.Error("Error fetching box scores", "error", boxScoresErr)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch box scores"})
+
+	// Execute the main query with pagination and ordering
+	if err := query.Order("total_points DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&results).Error; err != nil {
+		slog.Error("Failed to fetch player aggregates", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch players"})
 		return
 	}
 
-	slog.Info("Fetched data from database", "players", len(allPlayers), "total_count", totalCount, "box_scores", len(boxScores))
+	slog.Info("Fetched player aggregates", "count", len(results), "total_count", totalCount)
 
-	// Create map for quick box score lookups by player ID
-	playerBoxScores := make(map[uint][]models.BoxScore)
-	for _, boxScore := range boxScores {
-		playerBoxScores[boxScore.PlayerID] = append(playerBoxScores[boxScore.PlayerID], boxScore)
+	// For detailed stats, we still need to fetch box scores for these specific players
+	playerIDs := make([]uint, len(results))
+	for i, result := range results {
+		playerIDs[i] = result.ID
 	}
+
+	var boxScores []models.BoxScore
+	if len(playerIDs) > 0 {
+		yearInt, _ := strconv.Atoi(year)
+		if err := database.DB.Where("player_id IN ? AND year = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
+			slog.Error("Failed to fetch detailed box scores", "error", err)
+			// Continue without detailed stats rather than failing completely
+		}
+	}
+
+	// Create map for detailed stats lookup
+	playerDetailedStats := make(map[uint]PlayerStatsResponse)
+	for _, boxScore := range boxScores {
+		stats := playerDetailedStats[boxScore.PlayerID]
+		stats.PassingYards += int(boxScore.GameStats.PassingYards)
+		stats.PassingTDs += int(boxScore.GameStats.PassingTDs)
+		stats.Interceptions += int(boxScore.GameStats.Interceptions)
+		stats.RushingYards += int(boxScore.GameStats.RushingYards)
+		stats.RushingTDs += int(boxScore.GameStats.RushingTDs)
+		stats.Receptions += int(boxScore.GameStats.Receptions)
+		stats.ReceivingYards += int(boxScore.GameStats.ReceivingYards)
+		stats.ReceivingTDs += int(boxScore.GameStats.ReceivingTDs)
+		stats.Fumbles += int(boxScore.GameStats.Fumbles)
+		stats.FieldGoals += int(boxScore.GameStats.FieldGoals)
+		stats.ExtraPoints += int(boxScore.GameStats.ExtraPoints)
+		playerDetailedStats[boxScore.PlayerID] = stats
+	}
+
+	// Calculate position ranks within the current result set
+	positionRanks := make(map[string]int)
 
 	resp := GetPlayersResponse{
 		Total: totalCount,
@@ -129,72 +173,33 @@ func GetPlayers(c *gin.Context) {
 		Limit: limit,
 	}
 
-	// Process each player and aggregate their statistics
-	for _, player := range allPlayers {
-		playerScores := playerBoxScores[player.ID]
-
-		var totalFantasyPoints, totalProjectedPoints float64
-		var totalStats PlayerStatsResponse
-		gamesPlayed := len(playerScores)
-
-		for _, boxScore := range playerScores {
-			totalFantasyPoints += boxScore.ActualPoints
-			totalProjectedPoints += boxScore.ProjectedPoints
-
-			// Aggregate stats
-			totalStats.PassingYards += int(boxScore.GameStats.PassingYards)
-			totalStats.PassingTDs += int(boxScore.GameStats.PassingTDs)
-			totalStats.Interceptions += int(boxScore.GameStats.Interceptions)
-			totalStats.RushingYards += int(boxScore.GameStats.RushingYards)
-			totalStats.RushingTDs += int(boxScore.GameStats.RushingTDs)
-			totalStats.Receptions += int(boxScore.GameStats.Receptions)
-			totalStats.ReceivingYards += int(boxScore.GameStats.ReceivingYards)
-			totalStats.ReceivingTDs += int(boxScore.GameStats.ReceivingTDs)
-			totalStats.Fumbles += int(boxScore.GameStats.Fumbles)
-			totalStats.FieldGoals += int(boxScore.GameStats.FieldGoals)
-			totalStats.ExtraPoints += int(boxScore.GameStats.ExtraPoints)
-		}
-
+	// Convert results to response format
+	for _, result := range results {
 		avgFantasyPoints := 0.0
-		if gamesPlayed > 0 {
-			avgFantasyPoints = totalFantasyPoints / float64(gamesPlayed)
+		if result.GamesPlayed > 0 {
+			avgFantasyPoints = result.TotalPoints / float64(result.GamesPlayed)
 		}
 
-		difference := totalFantasyPoints - totalProjectedPoints
+		difference := result.TotalPoints - result.TotalProjectedPoints
+
+		// Calculate position rank
+		positionRanks[result.Position]++
 
 		resp.Players = append(resp.Players, PlayerSummaryResponse{
-			ID:                   strconv.FormatUint(uint64(player.ID), 10),
-			ESPNID:               strconv.FormatInt(player.ESPNID, 10),
-			Name:                 player.Name,
-			Position:             player.Position,
-			Team:                 player.Team,
-			Status:               player.Status,
-			TotalFantasyPoints:   totalFantasyPoints,
-			TotalProjectedPoints: totalProjectedPoints,
+			ID:                   strconv.FormatUint(uint64(result.ID), 10),
+			ESPNID:               strconv.FormatInt(result.ESPNID, 10),
+			Name:                 result.Name,
+			Position:             result.Position,
+			Team:                 result.Team,
+			Status:               result.Status,
+			TotalFantasyPoints:   result.TotalPoints,
+			TotalProjectedPoints: result.TotalProjectedPoints,
 			Difference:           difference,
-			GamesPlayed:          gamesPlayed,
+			GamesPlayed:          result.GamesPlayed,
 			AvgFantasyPoints:     avgFantasyPoints,
-			TotalStats:           totalStats,
+			PositionRank:         positionRanks[result.Position],
+			TotalStats:           playerDetailedStats[result.ID],
 		})
-	}
-
-	// Sort players by total fantasy points (descending)
-	slices.SortStableFunc(resp.Players, func(a, b PlayerSummaryResponse) int {
-		if a.TotalFantasyPoints != b.TotalFantasyPoints {
-			if a.TotalFantasyPoints < b.TotalFantasyPoints {
-				return 1
-			}
-			return -1
-		}
-		return 0
-	})
-
-	// Calculate position ranks
-	positionRanks := make(map[string]int)
-	for i := range resp.Players {
-		position := resp.Players[i].Position
-		positionRanks[position]++
-		resp.Players[i].PositionRank = positionRanks[position]
 	}
 
 	c.JSON(http.StatusOK, resp)

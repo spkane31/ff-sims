@@ -126,9 +126,6 @@ export default function Home() {
                     <thead className="bg-gray-50 dark:bg-gray-600">
                       <tr>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Team
-                        </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
                           Owner
                         </th>
                         <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -151,9 +148,6 @@ export default function Home() {
                           key={team.id}
                           className="hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {team.name}
-                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
                             {team.owner}
                           </td>

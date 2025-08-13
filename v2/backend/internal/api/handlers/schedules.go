@@ -65,7 +65,7 @@ func GetSchedules(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Select("id, owner").Find(&teams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).Select("id, espn_id, owner").Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return
 		}
@@ -92,8 +92,8 @@ func GetSchedules(c *gin.Context) {
 			ID:                 fmt.Sprintf("%d", matchup.ID),
 			Year:               matchup.Year,
 			Week:               matchup.Week,
-			HomeTeamESPNID:     matchup.HomeTeamID,
-			AwayTeamESPNID:     matchup.AwayTeamID,
+			// HomeTeamESPNID:     matchup.HomeTeamID,
+			// AwayTeamESPNID:     matchup.AwayTeamID,
 			HomeScore:          matchup.HomeTeamFinalScore,
 			AwayScore:          matchup.AwayTeamFinalScore,
 			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
@@ -104,9 +104,11 @@ func GetSchedules(c *gin.Context) {
 		for _, team := range teams {
 			if team.ID == matchup.HomeTeamID {
 				resp.Data.Matchups[i].HomeTeamName = team.Owner
+				resp.Data.Matchups[i].HomeTeamESPNID = team.ESPNID
 			}
 			if team.ID == matchup.AwayTeamID {
 				resp.Data.Matchups[i].AwayTeamName = team.Owner
+				resp.Data.Matchups[i].AwayTeamESPNID = team.ESPNID
 			}
 		}
 	}
