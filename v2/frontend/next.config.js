@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Only use export for production builds, not for development
-  output: process.env.NODE_ENV === "production" ? "export" : undefined,
-  distDir: process.env.NODE_ENV === "production" ? "out" : ".next",
+  // Disable static export to support dynamic routes
+  // output: process.env.NODE_ENV === "production" ? "export" : undefined,
+  distDir: ".next",
   /* other config options here */
 };
 

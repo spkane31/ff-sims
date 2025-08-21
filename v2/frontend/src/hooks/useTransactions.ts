@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Transaction, transactionsService, TransactionsResponse } from '../services/transactionsService';
+import { Transaction, transactionsService } from '../services/transactionsService';
 
 interface UseTransactionsReturn {
   transactions: Transaction[];

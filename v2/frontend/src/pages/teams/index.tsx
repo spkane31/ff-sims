@@ -61,7 +61,7 @@ export default function Teams() {
     };
     let totalPoints = 0;
     let totalScores = 0;
-    let margins: number[] = [];
+    const margins: number[] = [];
 
     completedMatchups.forEach((matchup) => {
       console.log("Processing Matchup:", matchup);

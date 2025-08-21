@@ -1,22 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Layout from "../../components/Layout";
-import Link from "next/link";
 import { useTransactions } from "@/hooks/useTransactions";
 
-// Type definitions
-interface Transaction {
-  id: string;
-  date: string;
-  type: 'DRAFT' | 'TRADE' | 'WAIVER';
-  description: string;
-  teams: string[];
-  players: {
-    name: string;
-    position: string;
-    team: string;
-    points?: number;
-  }[];
-}
+// Transaction type is imported from the useTransactions hook
 
 export default function Transactions() {
   const { transactions, isLoading, error } = useTransactions();
@@ -109,7 +95,7 @@ export default function Transactions() {
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => setActiveTab(tab.id as 'all' | 'draft' | 'waiver' | 'trade')}
                     className={`py-3 px-4 border-b-2 font-medium text-sm ${
                       activeTab === tab.id
                         ? 'border-blue-600 text-blue-600'
@@ -263,70 +249,3 @@ export default function Transactions() {
   );
 }
 
-// Mock data for development
-const mockTransactions: Transaction[] = [
-  {
-    id: '1',
-    date: 'Aug 25, 2025',
-    type: 'DRAFT',
-    description: 'Team A drafted Cooper Kupp with the 8th overall pick.',
-    teams: ['Team A'],
-    players: [
-      { name: 'Cooper Kupp', position: 'WR', team: 'LAR', points: 256 }
-    ]
-  },
-  {
-    id: '2',
-    date: 'Aug 25, 2025',
-    type: 'DRAFT',
-    description: 'Team B drafted JaMarr Chase with the 9th overall pick.',
-    teams: ['Team B'],
-    players: [
-      { name: 'JaMarr Chase', position: 'WR', team: 'CIN', points: 238 }
-    ]
-  },
-  {
-    id: '3',
-    date: 'Sept 21, 2025',
-    type: 'WAIVER',
-    description: 'Team C added Jerome Ford from waivers.',
-    teams: ['Team C'],
-    players: [
-      { name: 'Jerome Ford', position: 'RB', team: 'CLE', points: 42 }
-    ]
-  },
-  {
-    id: '4',
-    date: 'Oct 12, 2025',
-    type: 'TRADE',
-    description: 'Team D traded Travis Kelce to Team E for Amon-Ra St. Brown and a 2026 2nd round pick.',
-    teams: ['Team D', 'Team E'],
-    players: [
-      { name: 'Travis Kelce', position: 'TE', team: 'KC', points: 178 },
-      { name: 'Amon-Ra St. Brown', position: 'WR', team: 'DET', points: 214 }
-    ]
-  },
-  {
-    id: '5',
-    date: 'Oct 14, 2025',
-    type: 'WAIVER',
-    description: 'Team F added Jaylen Warren from waivers, dropped Michael Gallup.',
-    teams: ['Team F'],
-    players: [
-      { name: 'Jaylen Warren', position: 'RB', team: 'PIT', points: 58 },
-      { name: 'Michael Gallup', position: 'WR', team: 'DAL', points: 22 }
-    ]
-  },
-  {
-    id: '6',
-    date: 'Nov 2, 2025',
-    type: 'TRADE',
-    description: 'Team A traded Christian McCaffrey to Team B for Justin Jefferson and Tony Pollard.',
-    teams: ['Team A', 'Team B'],
-    players: [
-      { name: 'Christian McCaffrey', position: 'RB', team: 'SF', points: 310 },
-      { name: 'Justin Jefferson', position: 'WR', team: 'MIN', points: 245 },
-      { name: 'Tony Pollard', position: 'RB', team: 'TEN', points: 156 }
-    ]
-  }
-];
