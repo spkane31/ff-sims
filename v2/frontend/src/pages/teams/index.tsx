@@ -40,8 +40,15 @@ export default function Teams() {
           week: 0,
           margin: 0,
         },
+        biggestBlowout: {
+          winner: "",
+          loser: "",
+          winnerScore: 0,
+          loserScore: 0,
+          week: 0,
+          margin: 0,
+        },
         averageScore: 0,
-        competitiveness: 0,
         totalGames: 0,
         completedGames: 0,
       };
@@ -59,9 +66,16 @@ export default function Teams() {
       week: 0,
       margin: Infinity,
     };
+    let biggestBlowout = {
+      winner: "",
+      loser: "",
+      winnerScore: 0,
+      loserScore: 0,
+      week: 0,
+      margin: 0,
+    };
     let totalPoints = 0;
     let totalScores = 0;
-    const margins: number[] = [];
 
     completedMatchups.forEach((matchup) => {
       console.log("Processing Matchup:", matchup);
@@ -69,7 +83,6 @@ export default function Teams() {
       const awayScore = matchup.awayScore;
       const margin = Math.abs(homeScore - awayScore);
 
-      margins.push(margin);
       totalPoints += homeScore + awayScore;
       totalScores += 2;
 
@@ -100,22 +113,32 @@ export default function Teams() {
           margin: margin,
         };
       }
+
+      // Check for biggest blowout
+      if (margin > biggestBlowout.margin) {
+        const winner = homeScore > awayScore ? matchup.homeTeamName : matchup.awayTeamName;
+        const loser = homeScore > awayScore ? matchup.awayTeamName : matchup.homeTeamName;
+        const winnerScore = Math.max(homeScore, awayScore);
+        const loserScore = Math.min(homeScore, awayScore);
+        
+        biggestBlowout = {
+          winner,
+          loser,
+          winnerScore,
+          loserScore,
+          week: matchup.week,
+          margin,
+        };
+      }
     });
 
     const averageScore = totalScores > 0 ? totalPoints / totalScores : 0;
 
-    // Calculate competitiveness based on average margin of victory
-    const averageMargin =
-      margins.length > 0
-        ? margins.reduce((a, b) => a + b, 0) / margins.length
-        : 0;
-    const competitiveness = Math.max(0, Math.min(100, 100 - averageMargin * 2)); // Lower margins = higher competitiveness
-
     return {
       highestScore,
       closestMatchup,
+      biggestBlowout,
       averageScore,
-      competitiveness,
       totalGames: schedule.data.matchups.length,
       completedGames: completedMatchups.length,
     };
@@ -530,38 +553,26 @@ export default function Teams() {
 
               <div>
                 <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  League Competitiveness
+                  Biggest Blowout
                 </span>
                 <span className="text-2xl font-bold">
                   {isScheduleLoading
                     ? "..."
-                    : leagueStats.competitiveness > 75
-                    ? "High"
-                    : leagueStats.competitiveness > 50
-                    ? "Medium"
-                    : leagueStats.competitiveness > 25
-                    ? "Low"
-                    : "Very Low"}
+                    : leagueStats.biggestBlowout.margin > 0
+                    ? `${leagueStats.biggestBlowout.winnerScore.toFixed(1)}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
+                    : "None"}
                 </span>
-                <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5 mt-1">
-                  <div
-                    className={`h-2.5 rounded-full ${
-                      leagueStats.competitiveness > 75
-                        ? "bg-green-600"
-                        : leagueStats.competitiveness > 50
-                        ? "bg-blue-600"
-                        : leagueStats.competitiveness > 25
-                        ? "bg-yellow-600"
-                        : "bg-red-600"
-                    }`}
-                    style={{
-                      width: `${Math.max(10, leagueStats.competitiveness)}%`,
-                    }}
-                  ></div>
+                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                  {!isScheduleLoading &&
+                  leagueStats.biggestBlowout.margin > 0
+                    ? `${leagueStats.biggestBlowout.winner} vs ${leagueStats.biggestBlowout.loser}, Week ${leagueStats.biggestBlowout.week}`
+                    : "No games"}
+                </span>
+                <div className="mt-2">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Margin: {leagueStats.biggestBlowout.margin > 0 ? `${leagueStats.biggestBlowout.margin.toFixed(1)} pts` : "0 pts"}
+                  </span>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">
-                  Based on {leagueStats.completedGames} completed games
-                </span>
               </div>
             </div>
           </div>

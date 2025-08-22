@@ -3,6 +3,8 @@ import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
 import { healthService } from "../services/healthService";
+import { useSchedule } from "../hooks/useSchedule";
+import { Matchup } from "@/types/models";
 
 type SortField = "owner" | "regularSeasonRecord" | "playoffRecord" | "pointsFor" | "pointsAgainst";
 type SortDirection = "asc" | "desc";
@@ -14,6 +16,7 @@ export default function Home() {
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [sortField, setSortField] = useState<SortField>("regularSeasonRecord");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const { schedule, isLoading: scheduleLoading } = useSchedule();
 
   useEffect(() => {
     async function fetchHealthData() {
@@ -119,6 +122,153 @@ export default function Home() {
     );
   };
 
+  // Calculate winners and losers from schedule data
+  const calculateWinnersAndLosers = () => {
+    if (scheduleLoading || !schedule?.data?.matchups) {
+      return { winners: [], losers: [] };
+    }
+
+    const scheduleData: Matchup[] = schedule.data.matchups
+      .flat()
+      .map((game) => ({
+        leagueId: 1,
+        id: game.id,
+        createdAt: "2023-10-01T00:00:00Z",
+        updatedAt: "2023-10-01T00:00:00Z",
+        season: game.year,
+        year: game.year,
+        week: game.week,
+        homeTeamId: game.homeTeamId || 0,
+        awayTeamId: game.awayTeamId || 0,
+        homeTeamESPNID: game.homeTeamESPNID || 0,
+        awayTeamESPNID: game.awayTeamESPNID || 0,
+        homeTeamName: game.homeTeamName,
+        awayTeamName: game.awayTeamName,
+        homeScore: game.homeScore,
+        awayScore: game.awayScore,
+        homeProjectedScore: game.homeProjectedScore,
+        awayProjectedScore: game.awayProjectedScore,
+        completed: game.homeScore > 0 || game.awayScore > 0,
+        homeTeam: game.homeTeam,
+        awayTeam: game.awayTeam,
+        gameType: game.gameType,
+        isPlayoff: game.isPlayoff || false,
+      }));
+
+    const years = Array.from(new Set(scheduleData.map(game => game.year))).sort((a, b) => b - a);
+    
+    const winners = years.map(year => {
+      const yearGames = scheduleData.filter(game => game.year === year && game.completed);
+      const playoffGames = yearGames.filter(game => game.gameType === "WINNERS_BRACKET");
+      
+      // Count playoff wins per team
+      const playoffWins: Record<string, { wins: number, owner: string, totalPoints: number }> = {};
+      
+      playoffGames.forEach(game => {
+        const homeWin = game.homeScore > game.awayScore;
+        const awayWin = game.awayScore > game.homeScore;
+        
+        if (homeWin) {
+          const key = game.homeTeamName;
+          if (!playoffWins[key]) playoffWins[key] = { wins: 0, owner: game.homeTeam?.owner_name || key, totalPoints: 0 };
+          playoffWins[key].wins++;
+        }
+        if (awayWin) {
+          const key = game.awayTeamName;
+          if (!playoffWins[key]) playoffWins[key] = { wins: 0, owner: game.awayTeam?.owner_name || key, totalPoints: 0 };
+          playoffWins[key].wins++;
+        }
+      });
+
+      // Get regular season record and points for winner
+      const regularSeasonGames = yearGames.filter(game => game.gameType === "NONE");
+      const teamStats: Record<string, { wins: number, losses: number, points: number }> = {};
+      
+      regularSeasonGames.forEach(game => {
+        const homeWin = game.homeScore > game.awayScore;
+        const awayWin = game.awayScore > game.homeScore;
+        
+        if (!teamStats[game.homeTeamName]) teamStats[game.homeTeamName] = { wins: 0, losses: 0, points: 0 };
+        if (!teamStats[game.awayTeamName]) teamStats[game.awayTeamName] = { wins: 0, losses: 0, points: 0 };
+        
+        teamStats[game.homeTeamName].points += game.homeScore;
+        teamStats[game.awayTeamName].points += game.awayScore;
+        
+        if (homeWin) {
+          teamStats[game.homeTeamName].wins++;
+          teamStats[game.awayTeamName].losses++;
+        } else if (awayWin) {
+          teamStats[game.awayTeamName].wins++;
+          teamStats[game.homeTeamName].losses++;
+        }
+      });
+      
+      // Find team with most playoff wins
+      const winner = Object.entries(playoffWins).reduce((max, [team, stats]) => {
+        return stats.wins > max.wins ? { team, ...stats } : max;
+      }, { team: "", wins: 0, owner: "", totalPoints: 0 });
+
+      const winnerStats = teamStats[winner.team] || { wins: 0, losses: 0, points: 0 };
+      
+      return {
+        year,
+        owner: winner.owner,
+        record: `${winnerStats.wins}-${winnerStats.losses}`,
+        points: winnerStats.points
+      };
+    }).filter(w => w.owner);
+
+    const losers = years.map(year => {
+      const yearGames = scheduleData.filter(game => game.year === year && game.completed);
+      const regularSeasonGames = yearGames.filter(game => game.gameType === "NONE");
+      
+      // Count regular season losses and points per team
+      const teamStats: Record<string, { wins: number, losses: number, points: number, owner: string }> = {};
+      
+      regularSeasonGames.forEach(game => {
+        const homeWin = game.homeScore > game.awayScore;
+        const awayWin = game.awayScore > game.homeScore;
+        
+        if (!teamStats[game.homeTeamName]) {
+          teamStats[game.homeTeamName] = { wins: 0, losses: 0, points: 0, owner: game.homeTeam?.owner_name || game.homeTeamName };
+        }
+        if (!teamStats[game.awayTeamName]) {
+          teamStats[game.awayTeamName] = { wins: 0, losses: 0, points: 0, owner: game.awayTeam?.owner_name || game.awayTeamName };
+        }
+        
+        teamStats[game.homeTeamName].points += game.homeScore;
+        teamStats[game.awayTeamName].points += game.awayScore;
+        
+        if (homeWin) {
+          teamStats[game.homeTeamName].wins++;
+          teamStats[game.awayTeamName].losses++;
+        } else if (awayWin) {
+          teamStats[game.awayTeamName].wins++;
+          teamStats[game.homeTeamName].losses++;
+        }
+      });
+      
+      // Find team with most losses (tiebreak by lowest points)
+      const loser = Object.entries(teamStats).reduce((max, [team, stats]) => {
+        if (stats.losses > max.losses || (stats.losses === max.losses && stats.points < max.points)) {
+          return { team, ...stats };
+        }
+        return max;
+      }, { team: "", wins: 0, losses: 0, points: 0, owner: "" });
+      
+      return {
+        year,
+        owner: loser.owner,
+        record: `${loser.wins}-${loser.losses}`,
+        points: loser.points
+      };
+    }).filter(l => l.owner);
+
+    return { winners, losers };
+  };
+
+  const { winners, losers } = calculateWinnersAndLosers();
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -189,6 +339,89 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Hall of Fame & Wall of Shame Section */}
+        <section className="py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Hall of Fame */}
+            <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 p-6 rounded-lg shadow-md">
+              <h2 className="text-2xl font-semibold mb-6 text-yellow-800 dark:text-yellow-200 flex items-center">
+                <span className="text-3xl mr-3">🏆</span>
+                Hall of Fame
+              </h2>
+              <div className="space-y-4">
+                {(scheduleLoading ? [
+                  { year: 2023, owner: "Loading...", record: "0-0", points: 0 },
+                ] : winners).map((champion, index) => (
+                  <div 
+                    key={champion.year}
+                    className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
+                      index === 0 ? 'border-yellow-500' : 'border-yellow-300'
+                    } hover:shadow-md transition-shadow`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+                          {champion.year} Champion
+                        </h3>
+                        <p className="text-blue-600 dark:text-blue-400 font-medium">
+                          {champion.owner}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-green-600 dark:text-green-400">
+                          {champion.record}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {champion.points.toLocaleString()} pts
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Wall of Shame */}
+            <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 p-6 rounded-lg shadow-md">
+              <h2 className="text-2xl font-semibold mb-6 text-red-800 dark:text-red-200 flex items-center">
+                <span className="text-3xl mr-3">💩</span>
+                Wall of Shame
+              </h2>
+              <div className="space-y-4">
+                {(scheduleLoading ? [
+                  { year: 2023, owner: "Loading...", record: "0-0", points: 0 },
+                ] : losers).map((lastPlace, index) => (
+                  <div 
+                    key={lastPlace.year}
+                    className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
+                      index === 0 ? 'border-red-500' : 'border-red-300'
+                    } hover:shadow-md transition-shadow`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+                          {lastPlace.year} Last Place
+                        </h3>
+                        <p className="text-red-600 dark:text-red-400 font-medium">
+                          {lastPlace.owner}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-red-600 dark:text-red-400">
+                          {lastPlace.record}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {lastPlace.points.toLocaleString()} pts
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Teams Data Section */}
         <section className="bg-gray-100 dark:bg-gray-700 rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">All-Time Team Records</h2>
@@ -242,8 +475,13 @@ export default function Home() {
                           key={team.id}
                           className="hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
-                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                            {team.owner}
+                          <td className="px-4 py-3 text-sm">
+                            <Link
+                              href={`/teams/${team.espnId}`}
+                              className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+                            >
+                              {team.owner}
+                            </Link>
                           </td>
                           <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
                             {team.record.wins}-{team.record.losses}
