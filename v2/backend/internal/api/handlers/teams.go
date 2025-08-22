@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	slices0 "slices"
 	"sync"
 	"time"
 
@@ -21,7 +22,7 @@ func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
 	if game.GameType != "WINNERS_CONSOLATION_LADDER" {
 		return false
 	}
-	
+
 	// Get all games for this year
 	var yearGames []models.Matchup
 	var lastWeek uint
@@ -33,12 +34,12 @@ func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
 			}
 		}
 	}
-	
+
 	// Third place game should be in the last week
 	if game.Week != lastWeek {
 		return false
 	}
-	
+
 	// Find WINNERS_BRACKET games from the second-to-last week (semifinals)
 	secondToLastWeek := lastWeek - 1
 	var semifinalGames []models.Matchup
@@ -47,11 +48,11 @@ func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
 			semifinalGames = append(semifinalGames, g)
 		}
 	}
-	
+
 	if len(semifinalGames) == 0 {
 		return false
 	}
-	
+
 	// Get the losers from the semifinal games
 	var semifinalLosers []uint
 	for _, semifinal := range semifinalGames {
@@ -64,26 +65,19 @@ func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
 		}
 		// If tied, we can't determine a loser, so skip
 	}
-	
+
 	// Check if both teams in the third place game are semifinal losers
 	gameTeams := []uint{game.HomeTeamID, game.AwayTeamID}
 	if len(semifinalLosers) < 2 {
 		return false
 	}
-	
+
 	for _, teamID := range gameTeams {
-		found := false
-		for _, loserID := range semifinalLosers {
-			if teamID == loserID {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices0.Contains(semifinalLosers, teamID) {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -284,7 +278,7 @@ func GetTeamByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch team's schedule (all matchups for this team)
+	// Fetch team's schedule (all matchups for this team, including incomplete games for display)
 	var schedule []models.Matchup
 	if err := database.DB.Where("home_team_id = ? OR away_team_id = ?", team.ID, team.ID).
 		Order("year desc, week asc").Find(&schedule).Error; err != nil {

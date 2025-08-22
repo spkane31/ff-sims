@@ -173,6 +173,55 @@ function getOrdinalSuffix(num: number): string {
   return "th";
 }
 
+// Calculate year-by-year team records
+function calculateYearByYearRecords(games: Game[]) {
+  const yearRecords = new Map<number, {
+    year: number;
+    regularSeason: { wins: number; losses: number; ties: number };
+    playoffs: { wins: number; losses: number; ties: number };
+    totalPoints: number;
+    gamesPlayed: number;
+  }>();
+
+  games.forEach((game) => {
+    if (game.result === "-") return; // Skip upcoming games
+
+    if (!yearRecords.has(game.year)) {
+      yearRecords.set(game.year, {
+        year: game.year,
+        regularSeason: { wins: 0, losses: 0, ties: 0 },
+        playoffs: { wins: 0, losses: 0, ties: 0 },
+        totalPoints: 0,
+        gamesPlayed: 0,
+      });
+    }
+
+    const record = yearRecords.get(game.year)!;
+    
+    // Parse score to get points
+    const scoreParts = game.score.split('-');
+    const teamPoints = parseFloat(scoreParts[0]) || 0;
+    
+    record.totalPoints += teamPoints;
+    record.gamesPlayed++;
+
+    // Determine if this is a playoff game (you may need to adjust this logic based on your data)
+    const isPlayoffWeek = game.week > 14; // Assuming weeks 15+ are playoffs
+    
+    if (isPlayoffWeek) {
+      if (game.result === "W") record.playoffs.wins++;
+      else if (game.result === "L") record.playoffs.losses++;
+      else if (game.result === "T") record.playoffs.ties++;
+    } else {
+      if (game.result === "W") record.regularSeason.wins++;
+      else if (game.result === "L") record.regularSeason.losses++;
+      else if (game.result === "T") record.regularSeason.ties++;
+    }
+  });
+
+  return Array.from(yearRecords.values()).sort((a, b) => b.year - a.year);
+}
+
 // Calculate team performance metrics from schedule data
 function calculateTeamStats(games: Game[]) {
   // Filter only completed games (games with results)
@@ -297,6 +346,11 @@ export default function TeamDetail() {
     typeof calculateTeamStats
   > | null>(null);
 
+  // Add state for year-by-year records
+  const [yearByYearRecords, setYearByYearRecords] = useState<ReturnType<
+    typeof calculateYearByYearRecords
+  >>([]);
+
   useEffect(() => {
     if (!id) return;
 
@@ -316,7 +370,13 @@ export default function TeamDetail() {
         if (mappedTeam) {
           const stats = calculateTeamStats(mappedTeam.schedule);
           setTeamStats(stats);
+          
+          // Calculate year-by-year records
+          const yearRecords = calculateYearByYearRecords(mappedTeam.schedule);
+          setYearByYearRecords(yearRecords);
+          
           console.log("Team stats calculated:", stats);
+          console.log("Year-by-year records:", yearRecords);
         }
       } catch (err) {
         console.error("Error fetching team data:", err);
@@ -852,6 +912,83 @@ export default function TeamDetail() {
                           </div>
                         </div>
                       ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Year-by-Year Records Table */}
+              {yearByYearRecords.length > 0 && (
+                <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+                  <h2 className="text-xl font-semibold mb-4">Year-by-Year Record</h2>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                      <thead className="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Year
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Regular Season
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Playoff Record
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Total Points
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Avg Points/Game
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                        {yearByYearRecords.map((yearRecord, index) => {
+                          const regularSeasonRecord = `${yearRecord.regularSeason.wins}-${yearRecord.regularSeason.losses}${yearRecord.regularSeason.ties > 0 ? `-${yearRecord.regularSeason.ties}` : ''}`;
+                          const playoffRecord = `${yearRecord.playoffs.wins}-${yearRecord.playoffs.losses}${yearRecord.playoffs.ties > 0 ? `-${yearRecord.playoffs.ties}` : ''}`;
+                          const totalPlayoffGames = yearRecord.playoffs.wins + yearRecord.playoffs.losses + yearRecord.playoffs.ties;
+                          
+                          return (
+                            <tr key={yearRecord.year} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                              <td className="py-4 px-4 whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">
+                                {yearRecord.year}
+                              </td>
+                              <td className="py-4 px-4 whitespace-nowrap">
+                                <span className={`font-medium ${
+                                  yearRecord.regularSeason.wins > yearRecord.regularSeason.losses
+                                    ? "text-green-600 dark:text-green-400"
+                                    : yearRecord.regularSeason.wins < yearRecord.regularSeason.losses
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-yellow-600 dark:text-yellow-400"
+                                }`}>
+                                  {regularSeasonRecord}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4 whitespace-nowrap">
+                                {totalPlayoffGames > 0 ? (
+                                  <span className={`font-medium ${
+                                    yearRecord.playoffs.wins > yearRecord.playoffs.losses
+                                      ? "text-green-600 dark:text-green-400"
+                                      : yearRecord.playoffs.wins < yearRecord.playoffs.losses
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-yellow-600 dark:text-yellow-400"
+                                  }`}>
+                                    {playoffRecord}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-500 dark:text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-4 px-4 whitespace-nowrap font-medium">
+                                {yearRecord.totalPoints.toFixed(2)}
+                              </td>
+                              <td className="py-4 px-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                                {yearRecord.gamesPlayed > 0 ? (yearRecord.totalPoints / yearRecord.gamesPlayed).toFixed(2) : "-"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </section>
               )}

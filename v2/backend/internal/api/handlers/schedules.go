@@ -50,11 +50,11 @@ func GetSchedules(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if year == "" {
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Find(&schedule).Error; scheduleErr != nil {
+			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		} else {
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ?", year).Find(&schedule).Error; scheduleErr != nil {
+			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ? AND completed = true", year).Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		}
