@@ -29,16 +29,15 @@ func main() {
 
 	// Create a gin router with default middleware
 	r := gin.Default()
-	// Configure CORS for production
-	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{
-		"http://localhost:3000",
-		"http://127.0.0.1:3000",
-		"http://172.17.0.2:3000", // Docker internal network
-		"*", // Allow all origins in development - restrict in production
+	// Configure CORS - most permissive settings
+	config := cors.Config{
+		AllowAllOrigins:  true,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"},
+		AllowHeaders:     []string{"*"},
+		ExposeHeaders:    []string{"*"},
+		AllowCredentials: true,
+		MaxAge:           12 * 3600, // 12 hours
 	}
-	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
 	r.Use(cors.New(config))
 
 	api.SetupRouter(r)
