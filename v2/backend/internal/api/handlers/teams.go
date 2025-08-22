@@ -16,6 +16,77 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// Function to determine if a consolation game is the actual third place game
+func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
+	if game.GameType != "WINNERS_CONSOLATION_LADDER" {
+		return false
+	}
+	
+	// Get all games for this year
+	var yearGames []models.Matchup
+	var lastWeek uint
+	for _, g := range allSchedule {
+		if g.Year == game.Year {
+			yearGames = append(yearGames, g)
+			if g.Week > lastWeek {
+				lastWeek = g.Week
+			}
+		}
+	}
+	
+	// Third place game should be in the last week
+	if game.Week != lastWeek {
+		return false
+	}
+	
+	// Find WINNERS_BRACKET games from the second-to-last week (semifinals)
+	secondToLastWeek := lastWeek - 1
+	var semifinalGames []models.Matchup
+	for _, g := range yearGames {
+		if g.GameType == "WINNERS_BRACKET" && g.Week == secondToLastWeek {
+			semifinalGames = append(semifinalGames, g)
+		}
+	}
+	
+	if len(semifinalGames) == 0 {
+		return false
+	}
+	
+	// Get the losers from the semifinal games
+	var semifinalLosers []uint
+	for _, semifinal := range semifinalGames {
+		if semifinal.HomeTeamFinalScore > semifinal.AwayTeamFinalScore {
+			// Away team lost
+			semifinalLosers = append(semifinalLosers, semifinal.AwayTeamID)
+		} else if semifinal.AwayTeamFinalScore > semifinal.HomeTeamFinalScore {
+			// Home team lost
+			semifinalLosers = append(semifinalLosers, semifinal.HomeTeamID)
+		}
+		// If tied, we can't determine a loser, so skip
+	}
+	
+	// Check if both teams in the third place game are semifinal losers
+	gameTeams := []uint{game.HomeTeamID, game.AwayTeamID}
+	if len(semifinalLosers) < 2 {
+		return false
+	}
+	
+	for _, teamID := range gameTeams {
+		found := false
+		for _, loserID := range semifinalLosers {
+			if teamID == loserID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	
+	return true
+}
+
 type GetTeamsResponse struct {
 	Teams []TeamResponse `json:"teams"`
 }
@@ -62,7 +133,7 @@ func GetTeams(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if scheduleErr = database.DB.Model(&models.Matchup{}).
-			Where("completed = true AND game_type IN ?", []string{"NONE", "WINNERS_BRACKET"}).
+			Where("completed = true").
 			Find(&fullSchedule).Error; scheduleErr != nil {
 			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
 		}
@@ -146,6 +217,26 @@ func GetTeams(c *gin.Context) {
 					}
 				} else {
 					resp.Teams[i].PlayoffsRecord.Ties++
+				}
+			case "WINNERS_CONSOLATION_LADDER":
+				// Check if this is actually a third place game (last week with semifinals in second-to-last week)
+				if isThirdPlaceGame(matchup, fullSchedule) {
+					// For third place playoff games, we need to track playoff records separately
+					if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+						if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+							resp.Teams[i].PlayoffsRecord.Wins++
+						} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+							resp.Teams[i].PlayoffsRecord.Losses++
+						}
+					} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+						if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+							resp.Teams[i].PlayoffsRecord.Wins++
+						} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+							resp.Teams[i].PlayoffsRecord.Losses++
+						}
+					} else {
+						resp.Teams[i].PlayoffsRecord.Ties++
+					}
 				}
 			}
 		}

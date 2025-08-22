@@ -8,8 +8,6 @@
 
 * [ ] On the players page, player positions arent showing up correctly
 
-* [ ] Knapp and Trevor shouldnt show up in simulations and pages
-
 ## Completed
 
 * [X] Data from 2017

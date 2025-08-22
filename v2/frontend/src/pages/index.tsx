@@ -6,7 +6,12 @@ import { healthService } from "../services/healthService";
 import { useSchedule } from "../hooks/useSchedule";
 import { Matchup } from "@/types/models";
 
-type SortField = "owner" | "regularSeasonRecord" | "playoffRecord" | "pointsFor" | "pointsAgainst";
+type SortField =
+  | "owner"
+  | "regularSeasonRecord"
+  | "playoffRecord"
+  | "pointsFor"
+  | "pointsAgainst";
 type SortDirection = "asc" | "desc";
 
 export default function Home() {
@@ -23,7 +28,9 @@ export default function Home() {
       try {
         setIsLoading(true);
         const healthData = await healthService.checkHealth();
-        setAPIHealth(`Healthy - Version: ${healthData.GitSHA}, Build: ${healthData.BuildTime}`);
+        setAPIHealth(
+          `Healthy - Version: ${healthData.GitSHA}, Build: ${healthData.BuildTime}`
+        );
       } catch (error) {
         console.error("Error fetching health data:", error);
         setAPIHealth("Failed to fetch health data.");
@@ -57,60 +64,70 @@ export default function Home() {
     }
   };
 
-  const sortedTeams = [...teams].sort((a, b) => {
-    let fieldA: string | number;
-    let fieldB: string | number;
+  const sortedTeams = [...teams]
+    .filter((team) => team.espnId !== "2" && team.espnId !== "8")
+    .sort((a, b) => {
+      let fieldA: string | number;
+      let fieldB: string | number;
 
-    switch (sortField) {
-      case "owner":
-        fieldA = a.owner.toLowerCase();
-        fieldB = b.owner.toLowerCase();
-        break;
-      case "regularSeasonRecord":
-        // Sort by wins, then by win percentage
-        fieldA = a.record.wins;
-        fieldB = b.record.wins;
-        if (fieldA === fieldB) {
-          // If wins are equal, sort by win percentage
-          const totalGamesA = a.record.wins + a.record.losses + a.record.ties;
-          const totalGamesB = b.record.wins + b.record.losses + b.record.ties;
-          const winPctA = totalGamesA > 0 ? a.record.wins / totalGamesA : 0;
-          const winPctB = totalGamesB > 0 ? b.record.wins / totalGamesB : 0;
-          fieldA = winPctA;
-          fieldB = winPctB;
-        }
-        break;
-      case "playoffRecord":
-        // Sort by playoff wins, then by playoff win percentage
-        fieldA = a.playoffRecord.wins;
-        fieldB = b.playoffRecord.wins;
-        if (fieldA === fieldB) {
-          const totalGamesA = a.playoffRecord.wins + a.playoffRecord.losses + a.playoffRecord.ties;
-          const totalGamesB = b.playoffRecord.wins + b.playoffRecord.losses + b.playoffRecord.ties;
-          const winPctA = totalGamesA > 0 ? a.playoffRecord.wins / totalGamesA : 0;
-          const winPctB = totalGamesB > 0 ? b.playoffRecord.wins / totalGamesB : 0;
-          fieldA = winPctA;
-          fieldB = winPctB;
-        }
-        break;
-      case "pointsFor":
-        fieldA = a.points.scored;
-        fieldB = b.points.scored;
-        break;
-      case "pointsAgainst":
-        fieldA = a.points.against;
-        fieldB = b.points.against;
-        break;
-      default:
-        fieldA = a.owner.toLowerCase();
-        fieldB = b.owner.toLowerCase();
-    }
+      switch (sortField) {
+        case "owner":
+          fieldA = a.owner.toLowerCase();
+          fieldB = b.owner.toLowerCase();
+          break;
+        case "regularSeasonRecord":
+          // Sort by wins, then by win percentage
+          fieldA = a.record.wins;
+          fieldB = b.record.wins;
+          if (fieldA === fieldB) {
+            // If wins are equal, sort by win percentage
+            const totalGamesA = a.record.wins + a.record.losses + a.record.ties;
+            const totalGamesB = b.record.wins + b.record.losses + b.record.ties;
+            const winPctA = totalGamesA > 0 ? a.record.wins / totalGamesA : 0;
+            const winPctB = totalGamesB > 0 ? b.record.wins / totalGamesB : 0;
+            fieldA = winPctA;
+            fieldB = winPctB;
+          }
+          break;
+        case "playoffRecord":
+          // Sort by playoff wins, then by playoff win percentage
+          fieldA = a.playoffRecord.wins;
+          fieldB = b.playoffRecord.wins;
+          if (fieldA === fieldB) {
+            const totalGamesA =
+              a.playoffRecord.wins +
+              a.playoffRecord.losses +
+              a.playoffRecord.ties;
+            const totalGamesB =
+              b.playoffRecord.wins +
+              b.playoffRecord.losses +
+              b.playoffRecord.ties;
+            const winPctA =
+              totalGamesA > 0 ? a.playoffRecord.wins / totalGamesA : 0;
+            const winPctB =
+              totalGamesB > 0 ? b.playoffRecord.wins / totalGamesB : 0;
+            fieldA = winPctA;
+            fieldB = winPctB;
+          }
+          break;
+        case "pointsFor":
+          fieldA = a.points.scored;
+          fieldB = b.points.scored;
+          break;
+        case "pointsAgainst":
+          fieldA = a.points.against;
+          fieldB = b.points.against;
+          break;
+        default:
+          fieldA = a.owner.toLowerCase();
+          fieldB = b.owner.toLowerCase();
+      }
 
-    if (fieldA === fieldB) return 0;
+      if (fieldA === fieldB) return 0;
 
-    const result = fieldA > fieldB ? 1 : -1;
-    return sortDirection === "asc" ? result : -result;
-  });
+      const result = fieldA > fieldB ? 1 : -1;
+      return sortDirection === "asc" ? result : -result;
+    });
 
   const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null;
@@ -155,114 +172,208 @@ export default function Home() {
         isPlayoff: game.isPlayoff || false,
       }));
 
-    const years = Array.from(new Set(scheduleData.map(game => game.year))).sort((a, b) => b - a);
-    
-    const winners = years.map(year => {
-      const yearGames = scheduleData.filter(game => game.year === year && game.completed);
-      const playoffGames = yearGames.filter(game => game.gameType === "WINNERS_BRACKET");
-      
-      // Count playoff wins per team
-      const playoffWins: Record<string, { wins: number, owner: string, totalPoints: number }> = {};
-      
-      playoffGames.forEach(game => {
-        const homeWin = game.homeScore > game.awayScore;
-        const awayWin = game.awayScore > game.homeScore;
-        
-        if (homeWin) {
-          const key = game.homeTeamName;
-          if (!playoffWins[key]) playoffWins[key] = { wins: 0, owner: game.homeTeam?.owner_name || key, totalPoints: 0 };
-          playoffWins[key].wins++;
-        }
-        if (awayWin) {
-          const key = game.awayTeamName;
-          if (!playoffWins[key]) playoffWins[key] = { wins: 0, owner: game.awayTeam?.owner_name || key, totalPoints: 0 };
-          playoffWins[key].wins++;
-        }
-      });
+    const years = Array.from(
+      new Set(scheduleData.map((game) => game.year))
+    ).sort((a, b) => b - a);
 
-      // Get regular season record and points for winner
-      const regularSeasonGames = yearGames.filter(game => game.gameType === "NONE");
-      const teamStats: Record<string, { wins: number, losses: number, points: number }> = {};
-      
-      regularSeasonGames.forEach(game => {
-        const homeWin = game.homeScore > game.awayScore;
-        const awayWin = game.awayScore > game.homeScore;
-        
-        if (!teamStats[game.homeTeamName]) teamStats[game.homeTeamName] = { wins: 0, losses: 0, points: 0 };
-        if (!teamStats[game.awayTeamName]) teamStats[game.awayTeamName] = { wins: 0, losses: 0, points: 0 };
-        
-        teamStats[game.homeTeamName].points += game.homeScore;
-        teamStats[game.awayTeamName].points += game.awayScore;
-        
-        if (homeWin) {
-          teamStats[game.homeTeamName].wins++;
-          teamStats[game.awayTeamName].losses++;
-        } else if (awayWin) {
-          teamStats[game.awayTeamName].wins++;
-          teamStats[game.homeTeamName].losses++;
-        }
-      });
-      
-      // Find team with most playoff wins
-      const winner = Object.entries(playoffWins).reduce((max, [team, stats]) => {
-        return stats.wins > max.wins ? { team, ...stats } : max;
-      }, { team: "", wins: 0, owner: "", totalPoints: 0 });
+    const winners = years
+      .map((year) => {
+        const yearGames = scheduleData.filter(
+          (game) => game.year === year && game.completed
+        );
+        const playoffGames = yearGames.filter(
+          (game) => {
+            if (game.gameType === "WINNERS_BRACKET") return true;
+            
+            // Check if this is a third place game (WINNERS_CONSOLATION_LADDER in last week between semifinal losers)
+            if (game.gameType === "WINNERS_CONSOLATION_LADDER") {
+              const lastWeek = Math.max(...yearGames.map((g) => g.week));
+              if (game.week !== lastWeek) return false;
+              
+              const secondToLastWeek = lastWeek - 1;
+              const semifinalGames = yearGames.filter(
+                (g) => g.gameType === "WINNERS_BRACKET" && g.week === secondToLastWeek
+              );
+              
+              if (semifinalGames.length === 0) return false;
+              
+              // Get the losers from the semifinal games
+              const semifinalLosers: number[] = [];
+              semifinalGames.forEach((semifinal) => {
+                if (semifinal.homeScore > semifinal.awayScore) {
+                  // Away team lost
+                  semifinalLosers.push(semifinal.awayTeamId);
+                } else if (semifinal.awayScore > semifinal.homeScore) {
+                  // Home team lost
+                  semifinalLosers.push(semifinal.homeTeamId);
+                }
+                // If tied, we can't determine a loser, so skip
+              });
+              
+              // Check if both teams in the third place game are semifinal losers
+              const gameTeams = [game.homeTeamId, game.awayTeamId];
+              return gameTeams.every((teamId) => semifinalLosers.includes(teamId)) && semifinalLosers.length >= 2;
+            }
+            
+            return false;
+          }
+        );
 
-      const winnerStats = teamStats[winner.team] || { wins: 0, losses: 0, points: 0 };
-      
-      return {
-        year,
-        owner: winner.owner,
-        record: `${winnerStats.wins}-${winnerStats.losses}`,
-        points: winnerStats.points
-      };
-    }).filter(w => w.owner);
+        // Count playoff wins per team
+        const playoffWins: Record<
+          string,
+          { wins: number; owner: string; totalPoints: number }
+        > = {};
 
-    const losers = years.map(year => {
-      const yearGames = scheduleData.filter(game => game.year === year && game.completed);
-      const regularSeasonGames = yearGames.filter(game => game.gameType === "NONE");
-      
-      // Count regular season losses and points per team
-      const teamStats: Record<string, { wins: number, losses: number, points: number, owner: string }> = {};
-      
-      regularSeasonGames.forEach(game => {
-        const homeWin = game.homeScore > game.awayScore;
-        const awayWin = game.awayScore > game.homeScore;
-        
-        if (!teamStats[game.homeTeamName]) {
-          teamStats[game.homeTeamName] = { wins: 0, losses: 0, points: 0, owner: game.homeTeam?.owner_name || game.homeTeamName };
-        }
-        if (!teamStats[game.awayTeamName]) {
-          teamStats[game.awayTeamName] = { wins: 0, losses: 0, points: 0, owner: game.awayTeam?.owner_name || game.awayTeamName };
-        }
-        
-        teamStats[game.homeTeamName].points += game.homeScore;
-        teamStats[game.awayTeamName].points += game.awayScore;
-        
-        if (homeWin) {
-          teamStats[game.homeTeamName].wins++;
-          teamStats[game.awayTeamName].losses++;
-        } else if (awayWin) {
-          teamStats[game.awayTeamName].wins++;
-          teamStats[game.homeTeamName].losses++;
-        }
-      });
-      
-      // Find team with most losses (tiebreak by lowest points)
-      const loser = Object.entries(teamStats).reduce((max, [team, stats]) => {
-        if (stats.losses > max.losses || (stats.losses === max.losses && stats.points < max.points)) {
-          return { team, ...stats };
-        }
-        return max;
-      }, { team: "", wins: 0, losses: 0, points: 0, owner: "" });
-      
-      return {
-        year,
-        owner: loser.owner,
-        record: `${loser.wins}-${loser.losses}`,
-        points: loser.points
-      };
-    }).filter(l => l.owner);
+        playoffGames.forEach((game) => {
+          const homeWin = game.homeScore > game.awayScore;
+          const awayWin = game.awayScore > game.homeScore;
+
+          if (homeWin) {
+            const key = game.homeTeamName;
+            if (!playoffWins[key])
+              playoffWins[key] = {
+                wins: 0,
+                owner: game.homeTeam?.owner_name || key,
+                totalPoints: 0,
+              };
+            playoffWins[key].wins++;
+          }
+          if (awayWin) {
+            const key = game.awayTeamName;
+            if (!playoffWins[key])
+              playoffWins[key] = {
+                wins: 0,
+                owner: game.awayTeam?.owner_name || key,
+                totalPoints: 0,
+              };
+            playoffWins[key].wins++;
+          }
+        });
+
+        // Get regular season record and points for winner
+        const regularSeasonGames = yearGames.filter(
+          (game) => game.gameType === "NONE"
+        );
+        const teamStats: Record<
+          string,
+          { wins: number; losses: number; points: number }
+        > = {};
+
+        regularSeasonGames.forEach((game) => {
+          const homeWin = game.homeScore > game.awayScore;
+          const awayWin = game.awayScore > game.homeScore;
+
+          if (!teamStats[game.homeTeamName])
+            teamStats[game.homeTeamName] = { wins: 0, losses: 0, points: 0 };
+          if (!teamStats[game.awayTeamName])
+            teamStats[game.awayTeamName] = { wins: 0, losses: 0, points: 0 };
+
+          teamStats[game.homeTeamName].points += game.homeScore;
+          teamStats[game.awayTeamName].points += game.awayScore;
+
+          if (homeWin) {
+            teamStats[game.homeTeamName].wins++;
+            teamStats[game.awayTeamName].losses++;
+          } else if (awayWin) {
+            teamStats[game.awayTeamName].wins++;
+            teamStats[game.homeTeamName].losses++;
+          }
+        });
+
+        // Find team with most playoff wins
+        const winner = Object.entries(playoffWins).reduce(
+          (max, [team, stats]) => {
+            return stats.wins > max.wins ? { team, ...stats } : max;
+          },
+          { team: "", wins: 0, owner: "", totalPoints: 0 }
+        );
+
+        const winnerStats = teamStats[winner.team] || {
+          wins: 0,
+          losses: 0,
+          points: 0,
+        };
+
+        return {
+          year,
+          owner: winner.owner,
+          record: `${winnerStats.wins}-${winnerStats.losses}`,
+          points: winnerStats.points,
+        };
+      })
+      .filter((w) => w.owner);
+
+    const losers = years
+      .map((year) => {
+        const yearGames = scheduleData.filter(
+          (game) => game.year === year && game.completed
+        );
+        const regularSeasonGames = yearGames.filter(
+          (game) => game.gameType === "NONE"
+        );
+
+        // Count regular season losses and points per team
+        const teamStats: Record<
+          string,
+          { wins: number; losses: number; points: number; owner: string }
+        > = {};
+
+        regularSeasonGames.forEach((game) => {
+          const homeWin = game.homeScore > game.awayScore;
+          const awayWin = game.awayScore > game.homeScore;
+
+          if (!teamStats[game.homeTeamName]) {
+            teamStats[game.homeTeamName] = {
+              wins: 0,
+              losses: 0,
+              points: 0,
+              owner: game.homeTeam?.owner_name || game.homeTeamName,
+            };
+          }
+          if (!teamStats[game.awayTeamName]) {
+            teamStats[game.awayTeamName] = {
+              wins: 0,
+              losses: 0,
+              points: 0,
+              owner: game.awayTeam?.owner_name || game.awayTeamName,
+            };
+          }
+
+          teamStats[game.homeTeamName].points += game.homeScore;
+          teamStats[game.awayTeamName].points += game.awayScore;
+
+          if (homeWin) {
+            teamStats[game.homeTeamName].wins++;
+            teamStats[game.awayTeamName].losses++;
+          } else if (awayWin) {
+            teamStats[game.awayTeamName].wins++;
+            teamStats[game.homeTeamName].losses++;
+          }
+        });
+
+        // Find team with most losses (tiebreak by lowest points)
+        const loser = Object.entries(teamStats).reduce(
+          (max, [team, stats]) => {
+            if (
+              stats.losses > max.losses ||
+              (stats.losses === max.losses && stats.points < max.points)
+            ) {
+              return { team, ...stats };
+            }
+            return max;
+          },
+          { team: "", wins: 0, losses: 0, points: 0, owner: "" }
+        );
+
+        return {
+          year,
+          owner: loser.owner,
+          record: `${loser.wins}-${loser.losses}`,
+          points: loser.points,
+        };
+      })
+      .filter((l) => l.owner);
 
     return { winners, losers };
   };
@@ -349,13 +460,21 @@ export default function Home() {
                 Hall of Fame
               </h2>
               <div className="space-y-4">
-                {(scheduleLoading ? [
-                  { year: 2023, owner: "Loading...", record: "0-0", points: 0 },
-                ] : winners).map((champion, index) => (
-                  <div 
+                {(scheduleLoading
+                  ? [
+                      {
+                        year: 2023,
+                        owner: "Loading...",
+                        record: "0-0",
+                        points: 0,
+                      },
+                    ]
+                  : winners
+                ).map((champion, index) => (
+                  <div
                     key={champion.year}
                     className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
-                      index === 0 ? 'border-yellow-500' : 'border-yellow-300'
+                      index === 0 ? "border-yellow-500" : "border-yellow-300"
                     } hover:shadow-md transition-shadow`}
                   >
                     <div className="flex justify-between items-center">
@@ -388,13 +507,21 @@ export default function Home() {
                 Wall of Shame
               </h2>
               <div className="space-y-4">
-                {(scheduleLoading ? [
-                  { year: 2023, owner: "Loading...", record: "0-0", points: 0 },
-                ] : losers).map((lastPlace, index) => (
-                  <div 
+                {(scheduleLoading
+                  ? [
+                      {
+                        year: 2023,
+                        owner: "Loading...",
+                        record: "0-0",
+                        points: 0,
+                      },
+                    ]
+                  : losers
+                ).map((lastPlace, index) => (
+                  <div
                     key={lastPlace.year}
                     className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
-                      index === 0 ? 'border-red-500' : 'border-red-300'
+                      index === 0 ? "border-red-500" : "border-red-300"
                     } hover:shadow-md transition-shadow`}
                   >
                     <div className="flex justify-between items-center">
@@ -437,31 +564,32 @@ export default function Home() {
                   <table className="w-full bg-white dark:bg-gray-800 rounded-lg">
                     <thead className="bg-gray-50 dark:bg-gray-600">
                       <tr>
-                        <th 
+                        <th
                           className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("owner")}
                         >
                           Owner{renderSortIcon("owner")}
                         </th>
-                        <th 
+                        <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("regularSeasonRecord")}
                         >
-                          Regular Season Record{renderSortIcon("regularSeasonRecord")}
+                          Regular Season Record
+                          {renderSortIcon("regularSeasonRecord")}
                         </th>
-                        <th 
+                        <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("playoffRecord")}
                         >
                           Playoffs Record{renderSortIcon("playoffRecord")}
                         </th>
-                        <th 
+                        <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("pointsFor")}
                         >
                           Points For{renderSortIcon("pointsFor")}
                         </th>
-                        <th 
+                        <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("pointsAgainst")}
                         >
