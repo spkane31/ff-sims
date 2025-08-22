@@ -59,6 +59,16 @@ export default function Schedule() {
     new Set(scheduleData.map((game) => game.year))
   ).sort((a, b) => b - a);
 
+  // Calculate playoff start week for each year based on first WINNERS_BRACKET game
+  const playoffStartWeeks: Record<number, number> = {};
+  years.forEach((year) => {
+    const yearGames = scheduleData.filter((game) => game.year === year);
+    const playoffGames = yearGames.filter((game) => game.gameType === "WINNERS_BRACKET");
+    if (playoffGames.length > 0) {
+      playoffStartWeeks[year] = Math.min(...playoffGames.map((game) => game.week));
+    }
+  });
+
   const filteredGames: Matchup[] = scheduleData.filter((game) => {
     // Apply year filter
     const yearMatch =
@@ -241,8 +251,8 @@ export default function Schedule() {
                           {game.year}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {game.week > 14
-                            ? `Playoffs (Round ${game.week - 14})`
+                          {game.gameType === "WINNERS_BRACKET"
+                            ? `Playoffs (Round ${game.week - (playoffStartWeeks[game.year] - 1)})`
                             : `Week ${game.week}`}
                         </td>
                         <td className="py-4 px-4">
@@ -289,8 +299,13 @@ export default function Schedule() {
                         <td className="py-4 px-4 whitespace-nowrap">
                           {game.completed ? (
                             <span>
-                              ({game.homeProjectedScore.toFixed(2)} -{" "}
-                              {game.awayProjectedScore.toFixed(2)})
+                              {game.homeProjectedScore === -1
+                                ? "NA"
+                                : game.homeProjectedScore.toFixed(2)}{" "}
+                              -{" "}
+                              {game.awayProjectedScore === -1
+                                ? "NA"
+                                : game.awayProjectedScore.toFixed(2)}
                             </span>
                           ) : (
                             <span className="text-gray-500 dark:text-gray-400">

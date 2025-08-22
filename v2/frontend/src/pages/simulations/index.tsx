@@ -17,16 +17,34 @@ export default function Simulations() {
   const [currentWeek, setCurrentWeek] = useState<number>(1);
   const [scheduleLoaded, setScheduleLoaded] = useState(false);
 
+  // Year filter state
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+
   // Simulator state
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
     []
   );
 
-  // New useEffect to load schedule and determine available weeks
+  // New useEffect to load schedule and determine available weeks/years
   useEffect(() => {
     const loadScheduleInfo = async () => {
       try {
-        const schedule = await fetchScheduleData();
+        // Get all schedule data to determine available years
+        const response = await scheduleService.getFullSchedule();
+
+        // Extract unique years and set available years
+        const uniqueYears = Array.from(
+          new Set(response.data.matchups.map((matchup) => matchup.year))
+        ).sort((a, b) => b - a); // Sort in descending order (newest first)
+        setAvailableYears(uniqueYears);
+
+        // Set default selected year to the most recent year
+        const defaultYear = uniqueYears[0];
+        setSelectedYear(defaultYear);
+
+        // Convert to the format expected by the simulator for the default year
+        const schedule = await fetchScheduleDataForYear(defaultYear);
 
         // Filter schedule to only include regular season weeks (gameType === "NONE")
         // We don't simulate playoff games
@@ -60,16 +78,61 @@ export default function Simulations() {
     loadScheduleInfo();
   }, []);
 
-  const fetchScheduleData = async (): Promise<Schedule> => {
+  // Separate useEffect to handle year changes
+  useEffect(() => {
+    if (selectedYear === null) return;
+    
+    const loadScheduleForYear = async () => {
+      try {
+        setScheduleLoaded(false);
+        const schedule = await fetchScheduleDataForYear(selectedYear);
+
+        // Filter schedule to only include regular season weeks
+        const regularSeasonSchedule = schedule.filter((week: Matchup[]) =>
+          week.every((matchup: Matchup) => matchup.gameType === "NONE")
+        );
+
+        // Get all available weeks from regular season schedule
+        const regularSeasonWeeks = regularSeasonSchedule.map(
+          (_: Matchup[], index: number) => index + 1
+        );
+        setAvailableWeeks(regularSeasonWeeks);
+
+        // Find current week (first week with incomplete games) within regular season
+        const currentWeekIndex = regularSeasonSchedule.findIndex((week: Matchup[]) =>
+          week.some((matchup: Matchup) => !matchup.completed)
+        );
+        const detectedCurrentWeek =
+          currentWeekIndex === -1
+            ? regularSeasonWeeks.length
+            : currentWeekIndex + 1;
+        setCurrentWeek(detectedCurrentWeek);
+
+        setScheduleLoaded(true);
+      } catch (err) {
+        console.error("Failed to load schedule for year:", err);
+        setError("Failed to load schedule information for selected year");
+      }
+    };
+
+    loadScheduleForYear();
+  }, [selectedYear]);
+
+  const fetchScheduleDataForYear = async (year: number): Promise<Schedule> => {
     try {
-      // Use the v2 schedule service to get matchup data
+      // Use the v2 schedule service to get all matchup data, then filter by year
       const response = await scheduleService.getFullSchedule();
+
+      // Filter matchups by the selected year
+      const yearMatchups = response.data.matchups.filter(
+        (matchup) => matchup.year === year
+      );
 
       // Convert v2 API format to simulator format
       const schedule: Schedule = [];
       const weekMap = new Map<number, Matchup[]>();
 
-      response.data.matchups.forEach((matchup) => {
+      yearMatchups.forEach((matchup) => {
         if (!weekMap.has(matchup.week)) {
           weekMap.set(matchup.week, []);
         }
@@ -95,18 +158,24 @@ export default function Simulations() {
       });
       return schedule;
     } catch (error) {
-      console.error("Error fetching schedule data:", error);
+      console.error("Error fetching schedule data for year:", error);
       throw error;
     }
   };
 
+
   const handleSimulation = async () => {
+    if (selectedYear === null) {
+      setError("Please select a year first");
+      return;
+    }
+
     setSimulating(true);
     setResults(null);
 
     try {
-      // Fetch the schedule data for simulation
-      const schedule = await fetchScheduleData();
+      // Fetch the schedule data for simulation for the selected year
+      const schedule = await fetchScheduleDataForYear(selectedYear);
 
       // Parse the start week value
       let startWeekNum = 1;
@@ -131,7 +200,7 @@ export default function Simulations() {
       // Update state with results
       setSimulationResults(sim.getTeamScoringData());
       setResults(
-        `Simulation completed with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
+        `Simulation completed for ${selectedYear} season with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
           6
         )})`
       );
@@ -162,6 +231,33 @@ export default function Simulations() {
             </h2>
 
             <div className="space-y-4 mb-6">
+              <div>
+                <label
+                  htmlFor="year"
+                  className="block text-sm font-medium mb-1"
+                >
+                  Season Year
+                </label>
+                <select
+                  id="year"
+                  value={selectedYear || ""}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  disabled={availableYears.length === 0}
+                  className="w-full md:w-64 px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                {availableYears.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Loading available years...
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label
                   htmlFor="iterations"

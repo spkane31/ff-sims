@@ -4,11 +4,16 @@ import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
 import { healthService } from "../services/healthService";
 
+type SortField = "owner" | "regularSeasonRecord" | "playoffRecord" | "pointsFor" | "pointsAgainst";
+type SortDirection = "asc" | "desc";
+
 export default function Home() {
   const [apiHealth, setAPIHealth] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
+  const [sortField, setSortField] = useState<SortField>("regularSeasonRecord");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
     async function fetchHealthData() {
@@ -39,6 +44,80 @@ export default function Home() {
     fetchHealthData();
     fetchTeamsData();
   }, []);
+
+  const handleSort = (field: SortField) => {
+    if (field === sortField) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("desc"); // Default to descending for most fields
+    }
+  };
+
+  const sortedTeams = [...teams].sort((a, b) => {
+    let fieldA: string | number;
+    let fieldB: string | number;
+
+    switch (sortField) {
+      case "owner":
+        fieldA = a.owner.toLowerCase();
+        fieldB = b.owner.toLowerCase();
+        break;
+      case "regularSeasonRecord":
+        // Sort by wins, then by win percentage
+        fieldA = a.record.wins;
+        fieldB = b.record.wins;
+        if (fieldA === fieldB) {
+          // If wins are equal, sort by win percentage
+          const totalGamesA = a.record.wins + a.record.losses + a.record.ties;
+          const totalGamesB = b.record.wins + b.record.losses + b.record.ties;
+          const winPctA = totalGamesA > 0 ? a.record.wins / totalGamesA : 0;
+          const winPctB = totalGamesB > 0 ? b.record.wins / totalGamesB : 0;
+          fieldA = winPctA;
+          fieldB = winPctB;
+        }
+        break;
+      case "playoffRecord":
+        // Sort by playoff wins, then by playoff win percentage
+        fieldA = a.playoffRecord.wins;
+        fieldB = b.playoffRecord.wins;
+        if (fieldA === fieldB) {
+          const totalGamesA = a.playoffRecord.wins + a.playoffRecord.losses + a.playoffRecord.ties;
+          const totalGamesB = b.playoffRecord.wins + b.playoffRecord.losses + b.playoffRecord.ties;
+          const winPctA = totalGamesA > 0 ? a.playoffRecord.wins / totalGamesA : 0;
+          const winPctB = totalGamesB > 0 ? b.playoffRecord.wins / totalGamesB : 0;
+          fieldA = winPctA;
+          fieldB = winPctB;
+        }
+        break;
+      case "pointsFor":
+        fieldA = a.points.scored;
+        fieldB = b.points.scored;
+        break;
+      case "pointsAgainst":
+        fieldA = a.points.against;
+        fieldB = b.points.against;
+        break;
+      default:
+        fieldA = a.owner.toLowerCase();
+        fieldB = b.owner.toLowerCase();
+    }
+
+    if (fieldA === fieldB) return 0;
+
+    const result = fieldA > fieldB ? 1 : -1;
+    return sortDirection === "asc" ? result : -result;
+  });
+
+  const renderSortIcon = (field: SortField) => {
+    if (sortField !== field) return null;
+
+    return (
+      <span className="ml-1 text-gray-400">
+        {sortDirection === "asc" ? "↑" : "↓"}
+      </span>
+    );
+  };
 
   return (
     <Layout>
@@ -125,25 +204,40 @@ export default function Home() {
                   <table className="w-full bg-white dark:bg-gray-800 rounded-lg">
                     <thead className="bg-gray-50 dark:bg-gray-600">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Owner
+                        <th 
+                          className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("owner")}
+                        >
+                          Owner{renderSortIcon("owner")}
                         </th>
-                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Regular Season Record
+                        <th 
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("regularSeasonRecord")}
+                        >
+                          Regular Season Record{renderSortIcon("regularSeasonRecord")}
                         </th>
-                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Playoffs Record
+                        <th 
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("playoffRecord")}
+                        >
+                          Playoffs Record{renderSortIcon("playoffRecord")}
                         </th>
-                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Points For
+                        <th 
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("pointsFor")}
+                        >
+                          Points For{renderSortIcon("pointsFor")}
                         </th>
-                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Points Against
+                        <th 
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("pointsAgainst")}
+                        >
+                          Points Against{renderSortIcon("pointsAgainst")}
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                      {teams.map((team) => (
+                      {sortedTeams.map((team) => (
                         <tr
                           key={team.id}
                           className="hover:bg-gray-50 dark:hover:bg-gray-700"
