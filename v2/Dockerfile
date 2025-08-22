@@ -47,6 +47,7 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo '' >> /etc/supervisord.conf && \
     echo '[program:nginx]' >> /etc/supervisord.conf && \
     echo 'command=nginx -g "daemon off;"' >> /etc/supervisord.conf && \
+    echo 'priority=100' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
@@ -60,6 +61,7 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'command=/app/backend/main' >> /etc/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisord.conf && \
     echo 'environment=SERVER_PORT=8080' >> /etc/supervisord.conf && \
+    echo 'priority=200' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
@@ -73,6 +75,7 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'command=npm start' >> /etc/supervisord.conf && \
     echo 'directory=/app/frontend' >> /etc/supervisord.conf && \
     echo 'environment=PORT=3000' >> /etc/supervisord.conf && \
+    echo 'priority=300' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
