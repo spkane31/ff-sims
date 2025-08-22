@@ -59,6 +59,7 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo '[program:backend]' >> /etc/supervisord.conf && \
     echo 'command=/app/backend/main' >> /etc/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisord.conf && \
+    echo 'environment=SERVER_PORT=8080' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
@@ -71,6 +72,7 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo '[program:frontend]' >> /etc/supervisord.conf && \
     echo 'command=npm start' >> /etc/supervisord.conf && \
     echo 'directory=/app/frontend' >> /etc/supervisord.conf && \
+    echo 'environment=PORT=3000' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisord.conf && \
