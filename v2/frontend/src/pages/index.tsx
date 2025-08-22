@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
+import { healthService } from "../services/healthService";
 
 export default function Home() {
   const [apiHealth, setAPIHealth] = useState<string | null>(null);
@@ -13,9 +14,8 @@ export default function Home() {
     async function fetchHealthData() {
       try {
         setIsLoading(true);
-        const response = await fetch("http://localhost:8080/api/health");
-        const data = await response.text();
-        setAPIHealth(data);
+        const healthData = await healthService.checkHealth();
+        setAPIHealth(`Healthy - Version: ${healthData.GitSHA}, Build: ${healthData.BuildTime}`);
       } catch (error) {
         console.error("Error fetching health data:", error);
         setAPIHealth("Failed to fetch health data.");

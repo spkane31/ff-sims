@@ -24,7 +24,8 @@ func main() {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 	if err := database.Initialize(cfg); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
+		log.Printf("Warning: Could not initialize database: %v", err)
+		log.Printf("Server will continue without database connection")
 	}
 
 	// Create a gin router with default middleware
@@ -35,7 +36,7 @@ func main() {
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"},
 		AllowHeaders:     []string{"*"},
 		ExposeHeaders:    []string{"*"},
-		AllowCredentials: true,
+		AllowCredentials: false,     // Set to false when AllowAllOrigins is true
 		MaxAge:           12 * 3600, // 12 hours
 	}
 	r.Use(cors.New(config))

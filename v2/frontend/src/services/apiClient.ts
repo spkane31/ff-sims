@@ -2,8 +2,12 @@
  * Base API client for making HTTP requests
  */
 
-// Base URL for API requests - adjust based on environment
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+// Base URL for API requests - differentiate between dev and production
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 
+  (process.env.NODE_ENV === 'production' 
+    ? '/api'  // Production: nginx will proxy /api to backend
+    : 'http://localhost:8080/api'  // Development: direct backend connection
+  );
 
 /**
  * Generic API request function with error handling

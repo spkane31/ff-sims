@@ -40,7 +40,7 @@ func Load() (*Config, error) {
 			Env:  getEnv("ENV", "development"),
 		},
 		DB: DBConfig{
-			ConnectionString: getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims"),
+			ConnectionString: getEnv("DATABASE_URL", getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims")),
 		},
 	}
 

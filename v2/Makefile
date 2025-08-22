@@ -8,5 +8,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 docker-run: ## Build and run the Docker image
-	docker build -t ff-sims .
-	docker run -p 3000:3000 -p 8080:8080 ff-sims
+	docker build -t ff-sims \
+		--build-arg GIT_SHA=$$(git rev-parse --short=9 HEAD 2>/dev/null || echo "unknown") \
+		--build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+		.
+	docker run -p 8000:80 -e DATABASE_URL="$$DATABASE_URL" ff-sims

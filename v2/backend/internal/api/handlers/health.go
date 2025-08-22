@@ -7,10 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetPlayers returns all players with optional filtering
+// HealthCheck returns application health and version information
 func HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"GitSHA":    version.GitSHA,
 		"BuildTime": version.BuildTime,
-	})
+		"status":    "healthy",
+	}
+	
+	// Add debug info if values are empty
+	if version.GitSHA == "" {
+		response["GitSHA"] = "not-set-during-build"
+	}
+	if version.BuildTime == "" {
+		response["BuildTime"] = "not-set-during-build"  
+	}
+	
+	c.JSON(http.StatusOK, response)
 }
