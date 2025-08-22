@@ -25,7 +25,7 @@ RUN NODE_OPTIONS="--max_old_space_size=2048" npm run build
 
 # Stage 3: Final runtime image with nginx
 FROM nginx:alpine
-RUN apk --no-cache add ca-certificates nodejs npm supervisor
+RUN apk --no-cache add ca-certificates nodejs npm supervisor curl
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
@@ -43,7 +43,8 @@ COPY --from=frontend-builder /app/frontend/node_modules /app/frontend/node_modul
 RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisord.conf && \
     echo 'user=root' >> /etc/supervisord.conf && \
-    echo 'silent=false' >> /etc/supervisord.conf && \
+    echo 'loglevel=info' >> /etc/supervisord.conf && \
+    echo 'pidfile=/var/run/supervisord.pid' >> /etc/supervisord.conf && \
     echo '' >> /etc/supervisord.conf && \
     echo '[program:nginx]' >> /etc/supervisord.conf && \
     echo 'command=nginx -g "daemon off;"' >> /etc/supervisord.conf && \
@@ -56,11 +57,13 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'stderr_logfile_maxbytes=0' >> /etc/supervisord.conf && \
     echo 'stdout_events_enabled=true' >> /etc/supervisord.conf && \
     echo 'stderr_events_enabled=true' >> /etc/supervisord.conf && \
+    echo 'startsecs=5' >> /etc/supervisord.conf && \
+    echo 'startretries=3' >> /etc/supervisord.conf && \
     echo '' >> /etc/supervisord.conf && \
     echo '[program:backend]' >> /etc/supervisord.conf && \
     echo 'command=/app/backend/main' >> /etc/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisord.conf && \
-    echo 'environment=SERVER_PORT=8080' >> /etc/supervisord.conf && \
+    echo 'environment=SERVER_PORT=8080,SERVER_HOST=0.0.0.0' >> /etc/supervisord.conf && \
     echo 'priority=200' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
@@ -70,11 +73,13 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'stderr_logfile_maxbytes=0' >> /etc/supervisord.conf && \
     echo 'stdout_events_enabled=true' >> /etc/supervisord.conf && \
     echo 'stderr_events_enabled=true' >> /etc/supervisord.conf && \
+    echo 'startsecs=5' >> /etc/supervisord.conf && \
+    echo 'startretries=3' >> /etc/supervisord.conf && \
     echo '' >> /etc/supervisord.conf && \
     echo '[program:frontend]' >> /etc/supervisord.conf && \
     echo 'command=npm start' >> /etc/supervisord.conf && \
     echo 'directory=/app/frontend' >> /etc/supervisord.conf && \
-    echo 'environment=PORT=3000' >> /etc/supervisord.conf && \
+    echo 'environment=PORT=3000,NODE_ENV=production,HOSTNAME=0.0.0.0' >> /etc/supervisord.conf && \
     echo 'priority=300' >> /etc/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisord.conf && \
@@ -83,13 +88,28 @@ RUN echo '[supervisord]' > /etc/supervisord.conf && \
     echo 'stderr_logfile=/dev/stderr' >> /etc/supervisord.conf && \
     echo 'stderr_logfile_maxbytes=0' >> /etc/supervisord.conf && \
     echo 'stdout_events_enabled=true' >> /etc/supervisord.conf && \
-    echo 'stderr_events_enabled=true' >> /etc/supervisord.conf
+    echo 'stderr_events_enabled=true' >> /etc/supervisord.conf && \
+    echo 'startsecs=10' >> /etc/supervisord.conf && \
+    echo 'startretries=3' >> /etc/supervisord.conf
 
-# Install supervisor
-RUN apk add --no-cache supervisor
+# Create a healthcheck script
+RUN echo '#!/bin/sh' > /healthcheck.sh && \
+    echo 'echo "=== Health Check Starting ==="' >> /healthcheck.sh && \
+    echo 'echo "Checking nginx..."' >> /healthcheck.sh && \
+    echo 'curl -f http://localhost/nginx-status || exit 1' >> /healthcheck.sh && \
+    echo 'echo "Checking backend..."' >> /healthcheck.sh && \
+    echo 'curl -f http://localhost:8080/api/health || echo "Backend health check failed"' >> /healthcheck.sh && \
+    echo 'echo "Checking frontend..."' >> /healthcheck.sh && \
+    echo 'curl -f http://localhost:3000 || echo "Frontend health check failed"' >> /healthcheck.sh && \
+    echo 'echo "=== Health Check Complete ==="' >> /healthcheck.sh && \
+    chmod +x /healthcheck.sh
 
 # Expose only port 80 (nginx)
 EXPOSE 80
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD /healthcheck.sh
 
 # Start supervisor to manage all processes
 CMD ["supervisord", "-c", "/etc/supervisord.conf"]
