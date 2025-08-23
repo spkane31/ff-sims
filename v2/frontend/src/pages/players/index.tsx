@@ -4,6 +4,7 @@ import Layout from "../../components/Layout";
 import {
   playersService,
   GetPlayersResponse,
+  PlayerSummary,
 } from "../../services/playersService";
 
 // Helper function to get position color
@@ -42,6 +43,43 @@ export default function PlayersIndex() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
+  // Sorting states
+  const [sortBy, setSortBy] = useState<string>("positionRank");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  // Sort function
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(column);
+      setSortDirection("asc");
+    }
+  };
+
+  // SortHeader component
+  const SortHeader = ({
+    column,
+    children,
+  }: {
+    column: string;
+    children: React.ReactNode;
+  }) => (
+    <th
+      className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center space-x-1">
+        <span>{children}</span>
+        {sortBy === column && (
+          <span className="text-blue-600">
+            {sortDirection === "asc" ? "↑" : "↓"}
+          </span>
+        )}
+      </div>
+    </th>
+  );
+
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
@@ -70,13 +108,46 @@ export default function PlayersIndex() {
     fetchPlayers();
   }, [positionFilter, yearFilter, currentPage]);
 
-  // Filter players by search term
-  const filteredPlayers =
+  // Filter and sort players
+  const filteredPlayers = (
     playersData?.players?.filter(
       (player) =>
         player.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
         player.team.toLowerCase().includes(searchFilter.toLowerCase())
-    ) || [];
+    ) || []
+  ).sort((a, b) => {
+    const getValue = (player: PlayerSummary, key: string) => {
+      switch (key) {
+        case "positionRank":
+          return player.positionRank;
+        case "name":
+          return player.name.toLowerCase();
+        case "position":
+          return player.position;
+        case "totalFantasyPoints":
+          return player.totalFantasyPoints;
+        case "avgFantasyPoints":
+          return player.avgFantasyPoints;
+        case "difference":
+          return player.difference;
+        case "gamesPlayed":
+          return player.gamesPlayed;
+        default:
+          return 0;
+      }
+    };
+
+    const aValue = getValue(a, sortBy);
+    const bValue = getValue(b, sortBy);
+
+    if (aValue < bValue) {
+      return sortDirection === "asc" ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return sortDirection === "asc" ? 1 : -1;
+    }
+    return 0;
+  });
 
   const positions = ["QB", "RB", "WR", "TE", "K", "D/ST"];
 
@@ -207,30 +278,15 @@ export default function PlayersIndex() {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
               <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Rank
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Player
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Position
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Team
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <SortHeader column="positionRank">Rank</SortHeader>
+                  <SortHeader column="name">Player</SortHeader>
+                  <SortHeader column="position">Position</SortHeader>
+                  <SortHeader column="totalFantasyPoints">
                     Fantasy Points
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Avg/Game
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    vs Projection
-                  </th>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Games
-                  </th>
+                  </SortHeader>
+                  <SortHeader column="avgFantasyPoints">Avg/Game</SortHeader>
+                  <SortHeader column="difference">vs Projection</SortHeader>
+                  <SortHeader column="gamesPlayed">Games</SortHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -259,9 +315,6 @@ export default function PlayersIndex() {
                         >
                           {player.position}
                         </span>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                        {player.team}
                       </td>
                       <td className="py-4 px-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                         {player.totalFantasyPoints.toFixed(1)}

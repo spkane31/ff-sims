@@ -1,10 +1,6 @@
 # TODO Items
 
-* [ ] Include the 3rd place game in totals. Game is between the two losers of the PLAYOFF game of the second to last week.
-
 * [ ] Strength-of-schedule measurement and important games coming up
-
-* [ ] On the players page, player positions arent showing up correctly
 
 * [ ] Expected wins on a seasonal basis
 
@@ -19,3 +15,7 @@
 * [X] Hall-of-fame / wall-of-shame on the front page showing the winners for each season and the losers
 
 * [X] Create a user-friendly experience on mobile devices, fixing transactions on team detail page
+
+* [X] On the players page, player positions arent showing up correctly
+
+* [X] Include the 3rd place game in totals. Game is between the two losers of the PLAYOFF game of the second to last week.

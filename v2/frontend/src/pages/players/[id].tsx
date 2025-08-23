@@ -8,17 +8,6 @@ import {
   PlayerStats,
 } from "../../services/playersService";
 
-// Type definitions for additional data not in the service
-// interface PlayerGameLog {
-//   week: number;
-//   year: number;
-//   opponent: string;
-//   points: number;
-//   projectedPoints: number;
-//   status: string;
-//   gameStats: PlayerStats;
-// }
-
 // Helper function to get position color
 function getPositionColor(position: string): string {
   switch (position) {
@@ -178,23 +167,6 @@ export default function PlayerDetailPage() {
                 </span>
                 <span className="ml-2 px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-sm">
                   #{player.positionRank} {player.position}
-                </span>
-              </div>
-              <div className="flex items-center space-x-4 text-lg text-gray-500 dark:text-gray-400">
-                <span>{player.team}</span>
-                <span>•</span>
-                <span
-                  className={`inline-flex px-2 py-1 text-xs rounded-full
-                    ${
-                      player.status === "Active"
-                        ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
-                        : player.status === "IR"
-                        ? "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100"
-                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
-                    }
-                  `}
-                >
-                  {player.status}
                 </span>
               </div>
             </div>
@@ -364,16 +336,6 @@ export default function PlayerDetailPage() {
                     <div className="flex justify-between">
                       <span>Consistency:</span>
                       <span className="font-medium">Coming Soon</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Target Share:</span>
-                      <span className="font-medium">
-                        {player.position === "WR" ||
-                        player.position === "TE" ||
-                        player.position === "RB"
-                          ? "Coming Soon"
-                          : "N/A"}
-                      </span>
                     </div>
                   </div>
                 </div>
