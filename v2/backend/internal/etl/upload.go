@@ -244,14 +244,12 @@ func processMatchups(filePath string) error {
 	}
 
 	logging.Infof("Successfully processed %d matchups from %s", len(matchups), filePath)
-	for _, matchup := range matchups {
+	for idx, matchup := range matchups {
 		logging.Debugf("Matchup - Week: %d, Year: %d, Home Team ESPN ID: %d, Away Team ESPN ID: %d, Home Score: %.2f, Away Score: %.2f, Completed: %t",
 			matchup.Week, matchup.Year, matchup.HomeTeamID, matchup.AwayTeamID,
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore, matchup.Completed)
 		logging.Debugf("Home Team Projected Score: %.2f, Away Team Projected Score: %.2f",
 			matchup.HomeTeamESPNProjectedScore, matchup.AwayTeamESPNProjectedScore)
-		// logging.Debugf("Home Team Lineup: %+v", matchup.HomeTeamLineup)
-		// logging.Debugf("Away Team Lineup: %+v", matchup.AwayTeamLineup)
 
 		logging.Infof("%+v", idMap)
 
@@ -278,8 +276,6 @@ func processMatchups(filePath string) error {
 			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
 			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:                   matchup.GameType,
-			// HomeTeamExpectedWin:        matchup.HomeTeamExpectedWin,
-			// AwayTeamExpectedWin:        matchup.AwayTeamExpectedWin,
 
 			Completed: matchup.Completed,
 			IsPlayoff: false, // TODO: implement playoff logic
@@ -322,18 +318,18 @@ func processMatchups(filePath string) error {
 		}
 
 		// Process home team lineup
-		// for _, player := range matchup.HomeTeamLineup {
-		// 	if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
-		// 		return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
-		// 	}
-		// }
+		for _, player := range matchupsMarshalled[idx].HomeTeamLineup {
+			if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
+			}
+		}
 
-		// // Process away team lineup
-		// for _, player := range matchup.AwayTeamLineup {
-		// 	if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
-		// 		return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
-		// 	}
-		// }
+		// Process away team lineup
+		for _, player := range matchupsMarshalled[idx].AwayTeamLineup {
+			if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
+			}
+		}
 	}
 
 	return nil
@@ -347,14 +343,62 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		return fmt.Errorf("invalid parameters: teamID=%d, matchupID=%d, week=%d, year=%d", teamID, matchupID, week, year)
 	}
 
+	// Check if player exists first to get the correct position
+	var existingPlayer models.Player
+	playerExists := database.DB.First(&existingPlayer, "espn_id = ?", player.PlayerID).Error == nil
+
 	// Create or update the player in the database
 	playerRecord := &models.Player{
 		Name:   player.PlayerName,
 		ESPNID: player.PlayerID,
 	}
 
-	// Check if player already exists, create if not
-	// var existingPlayer models.Player
+	// If player doesn't exist, we need to determine their actual position
+	// SlotPosition could be "FLEX", "BE", etc., but we need the actual position
+	if !playerExists || existingPlayer.Position == "" {
+		// Try to determine position from eligible slots if available
+		actualPosition := ""
+		if len(player.EligibleSlots) > 0 {
+			// Use the first eligible slot that's not a flex position
+			valid := map[string]bool{
+				"QB":   true,
+				"RB":   true,
+				"WR":   true,
+				"TE":   true,
+				"K":    true,
+				"D/ST": true,
+			}
+			for _, slot := range player.EligibleSlots {
+				if valid[strings.ToUpper(slot)] {
+					actualPosition = slot
+					break
+				}
+			}
+		}
+
+		// If we couldn't determine from eligible slots, use slot position but clean it up
+		if actualPosition == "" {
+			slotPos := strings.ToUpper(player.SlotPosition)
+			// Map common slot positions to actual positions
+			switch slotPos {
+			case "FLEX", "BE", "IR":
+				// For these cases, we can't determine the position from slot alone
+				// We'll need to leave it empty and update it later when we have better data
+				actualPosition = ""
+			default:
+				actualPosition = slotPos
+			}
+		}
+
+		playerRecord.Position = actualPosition
+
+		if err := database.DB.Model(playerRecord).Where("espn_id = ?", player.PlayerID).Updates(map[string]interface{}{
+			"position": playerRecord.Position,
+		}).Error; err != nil {
+			return fmt.Errorf("error updating position for player with ESPN ID %d: %w", player.PlayerID, err)
+		}
+	}
+
 	if err := database.DB.First(&playerRecord, "espn_id = ?", player.PlayerID).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return fmt.Errorf("error checking existing player with ESPN ID %d: %w", player.PlayerID, err)
@@ -536,6 +580,7 @@ func processTransactions(filePath string) error {
 		PlayerID        int    `json:"player_id"`
 		TransactionType string `json:"transaction_type"`
 		PlayerName      string `json:"player_name"`
+		PlayerPosition  string `json:"player_position"`
 		BidAmount       int    `json:"bid_amount"`
 		Date            string `json:"date"`
 		Year            int    `json:"year"`
@@ -561,6 +606,7 @@ func processTransactions(filePath string) error {
 			PlayerID:        t.PlayerID,
 			TransactionType: t.TransactionType,
 			PlayerName:      t.PlayerName,
+			PlayerPosition:  t.PlayerPosition,
 			BidAmount:       t.BidAmount,
 			Date:            parsedDate,
 			Year:            t.Year,
@@ -572,8 +618,8 @@ func processTransactions(filePath string) error {
 	logging.Infof("Successfully processed %d transactions", len(transactions))
 
 	for _, t := range transactions {
-		logging.Infof("Transaction - Team ESPN ID: %d, Player ID: %d, Type: %s, Player Name: %s, Bid Amount: %d, Date: %s, Year: %d",
-			t.TeamESPNID, t.PlayerID, t.TransactionType, t.PlayerName, t.BidAmount,
+		logging.Infof("Transaction - Team ESPN ID: %d, Player ID: %d, Type: %s, Player Name: %s, Player Position: %s, Bid Amount: %d, Date: %s, Year: %d",
+			t.TeamESPNID, t.PlayerID, t.TransactionType, t.PlayerName, t.PlayerPosition, t.BidAmount,
 			t.Date.Format("2006-01-02 15:04:05"), t.Year)
 
 		// Get the player by ESPN ID
@@ -586,7 +632,7 @@ func processTransactions(filePath string) error {
 			player = models.Player{
 				ESPNID:   int64(t.PlayerID),
 				Name:     t.PlayerName,
-				Position: t.PlayerPosition,
+				Position: t.PlayerPosition, // Now use the position from transaction data
 			}
 			if createErr := database.DB.Create(&player).Error; createErr != nil {
 				return fmt.Errorf("error creating new player with ESPN ID %d: %w", t.PlayerID, createErr)
@@ -731,14 +777,14 @@ func Upload(directory string) error {
 		// Process based on file type
 		var processErr error
 		switch fileType {
-		case "box_score_players":
-			processErr = processBoxScorePlayers(filePath)
-		case "draft_selections":
-			processErr = processDraftSelections(filePath)
+		// case "box_score_players":
+		// 	processErr = processBoxScorePlayers(filePath)
+		// case "draft_selections":
+		// 	processErr = processDraftSelections(filePath)
 		case "matchups":
 			processErr = processMatchups(filePath)
-		case "transactions":
-			processErr = processTransactions(filePath)
+		// case "transactions":
+		// 	processErr = processTransactions(filePath)
 		default:
 			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue

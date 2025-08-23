@@ -872,7 +872,7 @@ if __name__ == "__main__":
     get_schedule(league, conn=conn, file_name=matchups_file)
     get_simple_draft(league, conn=conn, file_name=draft_file)
     get_all_transactions(league, conn=conn, file_name=transactions_file)
-    # get_all_players(league, conn=conn, file_name=box_score_file)
+    get_all_players(league, conn=conn, file_name=box_score_file)
 
     if args.use_database and conn is not None:
         conn.close()
