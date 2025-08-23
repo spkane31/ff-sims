@@ -456,53 +456,53 @@ export default function TeamDetail() {
 
         {/* Navigation Tabs */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex space-x-8">
+          <nav className="flex overflow-x-auto scrollbar-hide">
             <button
               onClick={() => setActiveTab("overview")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === "overview"
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
             >
               Overview
             </button>
             <button
               onClick={() => setActiveTab("players")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === "players"
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
             >
               Players
             </button>
             <button
               onClick={() => setActiveTab("schedule")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === "schedule"
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
             >
               Schedule
             </button>
             <button
               onClick={() => setActiveTab("draft")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === "draft"
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
             >
               Draft Picks
             </button>
             <button
               onClick={() => setActiveTab("transactions")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === "transactions"
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
             >
               Transactions
@@ -1347,27 +1347,27 @@ export default function TeamDetail() {
               {team && team.transactions && team.transactions.length > 0 ? (
                 <div className="space-y-4">
                   {/* Filter buttons */}
-                  <div className="flex flex-wrap gap-2 mb-4">
+                  <div className="flex flex-wrap gap-2 mb-6 justify-center sm:justify-start">
                     <button
-                      className="px-3 py-1 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                      className="px-4 py-2 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
                       onClick={() => {}}
                     >
                       All Types
                     </button>
                     <button
-                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => {}}
                     >
                       Draft
                     </button>
                     <button
-                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => {}}
                     >
                       Trade
                     </button>
                     <button
-                      className="px-3 py-1 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => {}}
                     >
                       Waiver
@@ -1382,7 +1382,7 @@ export default function TeamDetail() {
                         className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
                       >
                         <div
-                          className={`px-4 py-3 flex justify-between items-center
+                          className={`px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0
                           ${
                             transaction.type.toLowerCase() === "draft"
                               ? "bg-purple-50 dark:bg-purple-900/20"
@@ -1391,9 +1391,9 @@ export default function TeamDetail() {
                               : "bg-green-50 dark:bg-green-900/20"
                           }`}
                         >
-                          <div>
+                          <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0">
                             <span
-                              className={`px-2 py-1 text-xs rounded-full
+                              className={`px-2 py-1 text-xs rounded-full w-fit
                               ${
                                 transaction.type.toLowerCase() === "draft"
                                   ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
@@ -1404,7 +1404,7 @@ export default function TeamDetail() {
                             >
                               {transaction.type}
                             </span>
-                            <span className="ml-3 text-gray-600 dark:text-gray-400 text-sm">
+                            <span className="sm:ml-3 text-gray-600 dark:text-gray-400 text-sm">
                               {transaction.date} - Week {transaction.week}
                             </span>
                           </div>
@@ -1413,7 +1413,7 @@ export default function TeamDetail() {
                         <div className="p-4">
                           <p className="mb-4">{transaction.description}</p>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-4 sm:space-y-0 sm:grid sm:grid-cols-1 lg:grid-cols-2 sm:gap-4">
                             {transaction.playersGained &&
                               transaction.playersGained.length > 0 && (
                                 <div>

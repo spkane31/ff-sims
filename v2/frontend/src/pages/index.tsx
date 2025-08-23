@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
-import { healthService } from "../services/healthService";
 import { useSchedule } from "../hooks/useSchedule";
 import { Matchup } from "@/types/models";
 
@@ -15,8 +14,6 @@ type SortField =
 type SortDirection = "asc" | "desc";
 
 export default function Home() {
-  const [apiHealth, setAPIHealth] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [sortField, setSortField] = useState<SortField>("regularSeasonRecord");
@@ -24,21 +21,6 @@ export default function Home() {
   const { schedule, isLoading: scheduleLoading } = useSchedule();
 
   useEffect(() => {
-    async function fetchHealthData() {
-      try {
-        setIsLoading(true);
-        const healthData = await healthService.checkHealth();
-        setAPIHealth(
-          `Healthy - Version: ${healthData.GitSHA}, Build: ${healthData.BuildTime}`
-        );
-      } catch (error) {
-        console.error("Error fetching health data:", error);
-        setAPIHealth("Failed to fetch health data.");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     async function fetchTeamsData() {
       try {
         setTeamsLoading(true);
@@ -51,7 +33,6 @@ export default function Home() {
       }
     }
 
-    fetchHealthData();
     fetchTeamsData();
   }, []);
 
@@ -181,43 +162,45 @@ export default function Home() {
         const yearGames = scheduleData.filter(
           (game) => game.year === year && game.completed
         );
-        const playoffGames = yearGames.filter(
-          (game) => {
-            if (game.gameType === "WINNERS_BRACKET") return true;
-            
-            // Check if this is a third place game (WINNERS_CONSOLATION_LADDER in last week between semifinal losers)
-            if (game.gameType === "WINNERS_CONSOLATION_LADDER") {
-              const lastWeek = Math.max(...yearGames.map((g) => g.week));
-              if (game.week !== lastWeek) return false;
-              
-              const secondToLastWeek = lastWeek - 1;
-              const semifinalGames = yearGames.filter(
-                (g) => g.gameType === "WINNERS_BRACKET" && g.week === secondToLastWeek
-              );
-              
-              if (semifinalGames.length === 0) return false;
-              
-              // Get the losers from the semifinal games
-              const semifinalLosers: number[] = [];
-              semifinalGames.forEach((semifinal) => {
-                if (semifinal.homeScore > semifinal.awayScore) {
-                  // Away team lost
-                  semifinalLosers.push(semifinal.awayTeamId);
-                } else if (semifinal.awayScore > semifinal.homeScore) {
-                  // Home team lost
-                  semifinalLosers.push(semifinal.homeTeamId);
-                }
-                // If tied, we can't determine a loser, so skip
-              });
-              
-              // Check if both teams in the third place game are semifinal losers
-              const gameTeams = [game.homeTeamId, game.awayTeamId];
-              return gameTeams.every((teamId) => semifinalLosers.includes(teamId)) && semifinalLosers.length >= 2;
-            }
-            
-            return false;
+        const playoffGames = yearGames.filter((game) => {
+          if (game.gameType === "WINNERS_BRACKET") return true;
+
+          // Check if this is a third place game (WINNERS_CONSOLATION_LADDER in last week between semifinal losers)
+          if (game.gameType === "WINNERS_CONSOLATION_LADDER") {
+            const lastWeek = Math.max(...yearGames.map((g) => g.week));
+            if (game.week !== lastWeek) return false;
+
+            const secondToLastWeek = lastWeek - 1;
+            const semifinalGames = yearGames.filter(
+              (g) =>
+                g.gameType === "WINNERS_BRACKET" && g.week === secondToLastWeek
+            );
+
+            if (semifinalGames.length === 0) return false;
+
+            // Get the losers from the semifinal games
+            const semifinalLosers: number[] = [];
+            semifinalGames.forEach((semifinal) => {
+              if (semifinal.homeScore > semifinal.awayScore) {
+                // Away team lost
+                semifinalLosers.push(semifinal.awayTeamId);
+              } else if (semifinal.awayScore > semifinal.homeScore) {
+                // Home team lost
+                semifinalLosers.push(semifinal.homeTeamId);
+              }
+              // If tied, we can't determine a loser, so skip
+            });
+
+            // Check if both teams in the third place game are semifinal losers
+            const gameTeams = [game.homeTeamId, game.awayTeamId];
+            return (
+              gameTeams.every((teamId) => semifinalLosers.includes(teamId)) &&
+              semifinalLosers.length >= 2
+            );
           }
-        );
+
+          return false;
+        });
 
         // Count playoff wins per team
         const playoffWins: Record<
@@ -644,26 +627,6 @@ export default function Home() {
                   No teams found.
                 </p>
               )}
-            </div>
-          )}
-        </section>
-
-        {/* API Status Section */}
-        <section className="bg-gray-100 dark:bg-gray-700 rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">API Status</h2>
-          {isLoading ? (
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <p>Loading API status...</p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-gray-600 dark:text-gray-300 mb-2">
-                Health API Response:
-              </p>
-              <pre className="bg-gray-200 dark:bg-gray-800 p-4 rounded-md overflow-x-auto text-sm">
-                {apiHealth}
-              </pre>
             </div>
           )}
         </section>

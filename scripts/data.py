@@ -593,6 +593,43 @@ def get_all_players(
 
     player_data = []
 
+    # Get all player IDs from the database
+
+    if conn is None:
+        logging.warning("conn must not be None to fetch all players")
+        return
+
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT espn_id, position FROM players WHERE status != 'inactive'")
+
+    all_players_espn_ids = [[row[0], row[1]] for row in cursor.fetchall()]
+
+    print(all_players_espn_ids)
+
+    for combo in all_players_espn_ids:
+        espn_id, position = combo[0], combo[1]
+        p = league.player_info(playerId=espn_id)
+
+        if p is None:
+            logging.info(f"Marking player {espn_id} as inactive")
+            with conn.cursor() as cur:
+                cur.execute("UPDATE players SET status = 'inactive' WHERE espn_id = %s", (espn_id,))
+                conn.commit()
+            continue
+
+        # Convert to dict and print
+        if p.position != position:
+            logging.info(f"Updating player {espn_id} position from {position} to {p.position}")
+            with conn.cursor() as cur:
+                cur.execute("UPDATE players SET position = %s WHERE espn_id = %s", (p.position, espn_id))
+                conn.commit()
+
+        print(p)
+        # exit(1)
+
+    exit(1)
+
     # First fetch all player data
     league._fetch_players()
 
@@ -627,27 +664,7 @@ def get_all_players(
 
                 player_data.append(player_week_data)
 
-                # Also update database if needed
-                if conn is not None:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO box_score_players (player_name, player_id, projected_points, actual_points, player_position, week, year) "
-                            "SELECT %s, %s, %s, %s, %s, %s, %s "
-                            "WHERE NOT EXISTS (SELECT 1 FROM box_score_players WHERE player_id = %s AND week = %s AND year = %s)",
-                            (
-                                p.name,
-                                p.playerId,
-                                stats.get("projected_points", 0),
-                                stats.get("actual_points", 0),
-                                p.position,
-                                week,
-                                league.year,
-                                p.playerId,
-                                week,
-                                league.year,
-                            ),
-                        )
-                        conn.commit()
+                # TODO seankane: write to the database
 
             # Avoid rate limiting
             time.sleep(0.1)
@@ -827,7 +844,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--year", type=int, default=2024)
-    parser.add_argument("--use-database", action="store_true", help="Write data to database instead of just files")
+    parser.add_argument(
+        "--use-database",
+        default=False,
+        action="store_true",
+        help="Write data to database instead of just files",
+    )
     parser.add_argument("--output-dir", type=str, default="data", help="Directory to store output JSON files")
     args = parser.parse_args()
 
@@ -855,6 +877,7 @@ if __name__ == "__main__":
 
     conn = None
     if args.use_database:
+        logging.info("Connecting to database")
         conn = psycopg2.connect(DATABASE_URL)
 
     # Define file paths for outputs
@@ -869,9 +892,9 @@ if __name__ == "__main__":
         with open(file_path, "w") as f:
             f.write("[]")
 
-    get_schedule(league, conn=conn, file_name=matchups_file)
-    get_simple_draft(league, conn=conn, file_name=draft_file)
-    get_all_transactions(league, conn=conn, file_name=transactions_file)
+    # get_schedule(league, conn=conn, file_name=matchups_file)
+    # get_simple_draft(league, conn=conn, file_name=draft_file)
+    # get_all_transactions(league, conn=conn, file_name=transactions_file)
     get_all_players(league, conn=conn, file_name=box_score_file)
 
     if args.use_database and conn is not None:

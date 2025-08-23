@@ -777,14 +777,14 @@ func Upload(directory string) error {
 		// Process based on file type
 		var processErr error
 		switch fileType {
-		// case "box_score_players":
-		// 	processErr = processBoxScorePlayers(filePath)
-		// case "draft_selections":
-		// 	processErr = processDraftSelections(filePath)
+		case "box_score_players":
+			processErr = processBoxScorePlayers(filePath)
+		case "draft_selections":
+			processErr = processDraftSelections(filePath)
 		case "matchups":
 			processErr = processMatchups(filePath)
-		// case "transactions":
-		// 	processErr = processTransactions(filePath)
+		case "transactions":
+			processErr = processTransactions(filePath)
 		default:
 			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue
