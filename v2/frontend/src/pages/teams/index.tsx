@@ -116,11 +116,13 @@ export default function Teams() {
 
       // Check for biggest blowout
       if (margin > biggestBlowout.margin) {
-        const winner = homeScore > awayScore ? matchup.homeTeamName : matchup.awayTeamName;
-        const loser = homeScore > awayScore ? matchup.awayTeamName : matchup.homeTeamName;
+        const winner =
+          homeScore > awayScore ? matchup.homeTeamName : matchup.awayTeamName;
+        const loser =
+          homeScore > awayScore ? matchup.awayTeamName : matchup.homeTeamName;
         const winnerScore = Math.max(homeScore, awayScore);
         const loserScore = Math.min(homeScore, awayScore);
-        
+
         biggestBlowout = {
           winner,
           loser,
@@ -302,9 +304,6 @@ export default function Teams() {
                       >
                         Playoff % {renderSortIcon("playoffs")}
                       </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Actions
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -334,10 +333,10 @@ export default function Teams() {
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.wins}
+                          {team.record.wins + team.playoffRecord.wins}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.losses}
+                          {team.record.losses + team.playoffRecord.losses}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {team.points.scored.toLocaleString(undefined, {
@@ -377,14 +376,6 @@ export default function Teams() {
                           <span className="text-xs mt-1 block">
                             {team.playoffChance}%
                           </span>
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          <Link
-                            href={`/teams/${team.espnId}`}
-                            className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
-                          >
-                            View Details
-                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -559,18 +550,22 @@ export default function Teams() {
                   {isScheduleLoading
                     ? "..."
                     : leagueStats.biggestBlowout.margin > 0
-                    ? `${leagueStats.biggestBlowout.winnerScore.toFixed(1)}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
+                    ? `${leagueStats.biggestBlowout.winnerScore.toFixed(
+                        1
+                      )}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
                     : "None"}
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                  {!isScheduleLoading &&
-                  leagueStats.biggestBlowout.margin > 0
+                  {!isScheduleLoading && leagueStats.biggestBlowout.margin > 0
                     ? `${leagueStats.biggestBlowout.winner} vs ${leagueStats.biggestBlowout.loser}, Week ${leagueStats.biggestBlowout.week}`
                     : "No games"}
                 </span>
                 <div className="mt-2">
                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                    Margin: {leagueStats.biggestBlowout.margin > 0 ? `${leagueStats.biggestBlowout.margin.toFixed(1)} pts` : "0 pts"}
+                    Margin:{" "}
+                    {leagueStats.biggestBlowout.margin > 0
+                      ? `${leagueStats.biggestBlowout.margin.toFixed(1)} pts`
+                      : "0 pts"}
                   </span>
                 </div>
               </div>

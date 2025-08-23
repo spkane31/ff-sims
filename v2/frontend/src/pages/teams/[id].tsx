@@ -36,6 +36,7 @@ interface Game {
   result: "W" | "L" | "T" | "-";
   score: string;
   isHome: boolean;
+  isPlayoff?: boolean; // Add isPlayoff field
 }
 
 // This mapping function converts API data to UI component format
@@ -52,7 +53,6 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     scored: number;
     against: number;
   };
-  rank: number; // TODO: Actual rank from standings
   playoffChance: number; // TODO: Calculate from simulation data
   players: Player[];
   draftPicks: DraftPick[];
@@ -130,6 +130,7 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
       : "0-0",
     isHome: game.isHome,
     opponentESPNID: game.opponentESPNID, // Add opponent ESPN ID
+    isPlayoff: game.isPlayoff, // Add isPlayoff field
   }));
 
   // Pass through the transactions directly
@@ -148,7 +149,6 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
       scored: pointsScored,
       against: pointsAgainst,
     },
-    rank: 1, // TODO: Get actual rank from standings
     playoffChance: 0, // TODO: Calculate from simulation data
     players,
     draftPicks,
@@ -175,13 +175,16 @@ function getOrdinalSuffix(num: number): string {
 
 // Calculate year-by-year team records
 function calculateYearByYearRecords(games: Game[]) {
-  const yearRecords = new Map<number, {
-    year: number;
-    regularSeason: { wins: number; losses: number; ties: number };
-    playoffs: { wins: number; losses: number; ties: number };
-    totalPoints: number;
-    gamesPlayed: number;
-  }>();
+  const yearRecords = new Map<
+    number,
+    {
+      year: number;
+      regularSeason: { wins: number; losses: number; ties: number };
+      playoffs: { wins: number; losses: number; ties: number };
+      totalPoints: number;
+      gamesPlayed: number;
+    }
+  >();
 
   games.forEach((game) => {
     if (game.result === "-") return; // Skip upcoming games
@@ -197,17 +200,18 @@ function calculateYearByYearRecords(games: Game[]) {
     }
 
     const record = yearRecords.get(game.year)!;
-    
+
     // Parse score to get points
-    const scoreParts = game.score.split('-');
+    const scoreParts = game.score.split("-");
     const teamPoints = parseFloat(scoreParts[0]) || 0;
-    
+
     record.totalPoints += teamPoints;
     record.gamesPlayed++;
 
-    // Determine if this is a playoff game (you may need to adjust this logic based on your data)
-    const isPlayoffWeek = game.week > 14; // Assuming weeks 15+ are playoffs
-    
+    // Check if this is a playoff game - look for isPlayoff field or fall back to week logic
+    const isPlayoffWeek =
+      game.isPlayoff !== undefined ? game.isPlayoff : game.week > 14;
+
     if (isPlayoffWeek) {
       if (game.result === "W") record.playoffs.wins++;
       else if (game.result === "L") record.playoffs.losses++;
@@ -347,9 +351,9 @@ export default function TeamDetail() {
   > | null>(null);
 
   // Add state for year-by-year records
-  const [yearByYearRecords, setYearByYearRecords] = useState<ReturnType<
-    typeof calculateYearByYearRecords
-  >>([]);
+  const [yearByYearRecords, setYearByYearRecords] = useState<
+    ReturnType<typeof calculateYearByYearRecords>
+  >([]);
 
   useEffect(() => {
     if (!id) return;
@@ -370,11 +374,11 @@ export default function TeamDetail() {
         if (mappedTeam) {
           const stats = calculateTeamStats(mappedTeam.schedule);
           setTeamStats(stats);
-          
+
           // Calculate year-by-year records
           const yearRecords = calculateYearByYearRecords(mappedTeam.schedule);
           setYearByYearRecords(yearRecords);
-          
+
           console.log("Team stats calculated:", stats);
           console.log("Year-by-year records:", yearRecords);
         }
@@ -433,9 +437,6 @@ export default function TeamDetail() {
                 <h1 className="text-3xl md:text-4xl font-bold text-blue-600">
                   {team.name}
                 </h1>
-                <span className="ml-3 px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-sm">
-                  Rank #{team.rank}
-                </span>
               </div>
               <p className="text-lg text-gray-500 dark:text-gray-400">
                 Managed by {team.owner}
@@ -519,7 +520,7 @@ export default function TeamDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Record
+                      Overall Record
                     </h3>
                     <div className="text-2xl font-bold">
                       {teamStats
@@ -767,7 +768,7 @@ export default function TeamDetail() {
                     <div>
                       <div className="flex justify-between mb-1">
                         <span>Last Place</span>
-                        <span className="font-medium">10%</span>
+                        <span className="font-medium">0%</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
                         <div
@@ -795,12 +796,12 @@ export default function TeamDetail() {
                     <div>
                       <div className="flex justify-between mb-1">
                         <span>Win Championship</span>
-                        <span className="font-medium">28%</span>
+                        <span className="font-medium">0%</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
                         <div
                           className="h-2.5 rounded-full bg-yellow-600"
-                          style={{ width: "28%" }}
+                          style={{ width: "0%" }}
                         ></div>
                       </div>
                     </div>
@@ -919,7 +920,9 @@ export default function TeamDetail() {
               {/* Year-by-Year Records Table */}
               {yearByYearRecords.length > 0 && (
                 <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-xl font-semibold mb-4">Year-by-Year Record</h2>
+                  <h2 className="text-xl font-semibold mb-4">
+                    Year-by-Year Record
+                  </h2>
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
                       <thead className="bg-gray-50 dark:bg-gray-800">
@@ -943,46 +946,83 @@ export default function TeamDetail() {
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                         {yearByYearRecords.map((yearRecord, index) => {
-                          const regularSeasonRecord = `${yearRecord.regularSeason.wins}-${yearRecord.regularSeason.losses}${yearRecord.regularSeason.ties > 0 ? `-${yearRecord.regularSeason.ties}` : ''}`;
-                          const playoffRecord = `${yearRecord.playoffs.wins}-${yearRecord.playoffs.losses}${yearRecord.playoffs.ties > 0 ? `-${yearRecord.playoffs.ties}` : ''}`;
-                          const totalPlayoffGames = yearRecord.playoffs.wins + yearRecord.playoffs.losses + yearRecord.playoffs.ties;
-                          
+                          const regularSeasonRecord = `${
+                            yearRecord.regularSeason.wins
+                          }-${yearRecord.regularSeason.losses}${
+                            yearRecord.regularSeason.ties > 0
+                              ? `-${yearRecord.regularSeason.ties}`
+                              : ""
+                          }`;
+                          const playoffRecord = `${yearRecord.playoffs.wins}-${
+                            yearRecord.playoffs.losses
+                          }${
+                            yearRecord.playoffs.ties > 0
+                              ? `-${yearRecord.playoffs.ties}`
+                              : ""
+                          }`;
+                          const totalPlayoffGames =
+                            yearRecord.playoffs.wins +
+                            yearRecord.playoffs.losses +
+                            yearRecord.playoffs.ties;
+
                           return (
-                            <tr key={yearRecord.year} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                            <tr
+                              key={yearRecord.year}
+                              className={
+                                index % 2 === 0
+                                  ? "bg-white dark:bg-gray-700"
+                                  : "bg-gray-50 dark:bg-gray-800"
+                              }
+                            >
                               <td className="py-4 px-4 whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">
                                 {yearRecord.year}
                               </td>
                               <td className="py-4 px-4 whitespace-nowrap">
-                                <span className={`font-medium ${
-                                  yearRecord.regularSeason.wins > yearRecord.regularSeason.losses
-                                    ? "text-green-600 dark:text-green-400"
-                                    : yearRecord.regularSeason.wins < yearRecord.regularSeason.losses
-                                    ? "text-red-600 dark:text-red-400"
-                                    : "text-yellow-600 dark:text-yellow-400"
-                                }`}>
+                                <span
+                                  className={`font-medium ${
+                                    yearRecord.regularSeason.wins >
+                                    yearRecord.regularSeason.losses
+                                      ? "text-green-600 dark:text-green-400"
+                                      : yearRecord.regularSeason.wins <
+                                        yearRecord.regularSeason.losses
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-yellow-600 dark:text-yellow-400"
+                                  }`}
+                                >
                                   {regularSeasonRecord}
                                 </span>
                               </td>
                               <td className="py-4 px-4 whitespace-nowrap">
                                 {totalPlayoffGames > 0 ? (
-                                  <span className={`font-medium ${
-                                    yearRecord.playoffs.wins > yearRecord.playoffs.losses
-                                      ? "text-green-600 dark:text-green-400"
-                                      : yearRecord.playoffs.wins < yearRecord.playoffs.losses
-                                      ? "text-red-600 dark:text-red-400"
-                                      : "text-yellow-600 dark:text-yellow-400"
-                                  }`}>
+                                  <span
+                                    className={`font-medium ${
+                                      yearRecord.playoffs.wins >
+                                      yearRecord.playoffs.losses
+                                        ? "text-green-600 dark:text-green-400"
+                                        : yearRecord.playoffs.wins <
+                                          yearRecord.playoffs.losses
+                                        ? "text-red-600 dark:text-red-400"
+                                        : "text-yellow-600 dark:text-yellow-400"
+                                    }`}
+                                  >
                                     {playoffRecord}
                                   </span>
                                 ) : (
-                                  <span className="text-gray-500 dark:text-gray-400">-</span>
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    -
+                                  </span>
                                 )}
                               </td>
                               <td className="py-4 px-4 whitespace-nowrap font-medium">
                                 {yearRecord.totalPoints.toFixed(2)}
                               </td>
                               <td className="py-4 px-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                {yearRecord.gamesPlayed > 0 ? (yearRecord.totalPoints / yearRecord.gamesPlayed).toFixed(2) : "-"}
+                                {yearRecord.gamesPlayed > 0
+                                  ? (
+                                      yearRecord.totalPoints /
+                                      yearRecord.gamesPlayed
+                                    ).toFixed(2)
+                                  : "-"}
                               </td>
                             </tr>
                           );

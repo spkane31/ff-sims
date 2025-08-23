@@ -3,6 +3,7 @@ package handlers
 import (
 	"backend/internal/database"
 	"backend/internal/models"
+	"backend/internal/utils"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -35,13 +36,15 @@ type Matchup struct {
 	HomePlayers        []BoxScorePlayer `json:"homePlayers"`
 	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
 	GameType           string           `json:"gameType"`
+	PlayoffGameType    string           `json:"playoffGameType"`
 }
 
 // GetPlayers returns all players with optional filtering
 func GetSchedules(c *gin.Context) {
 	year := c.Query("year")
+	gameTypeFilter := c.Query("gameType") // "all", "regular", "playoffs"
 
-	slog.Info("Fetching schedules", "year", year)
+	slog.Info("Fetching schedules", "year", year, "gameType", gameTypeFilter)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -85,20 +88,46 @@ func GetSchedules(c *gin.Context) {
 		return
 	}
 
+	// Apply server-side filtering using playoff detection logic
+	filteredSchedule := utils.FilterPlayoffGames(schedule)
+	
+	// Further filter based on gameType query parameter
+	if gameTypeFilter != "" && gameTypeFilter != "all" {
+		var typeFilteredSchedule []models.Matchup
+		for _, matchup := range filteredSchedule {
+			playoffGameType := utils.GetPlayoffGameType(matchup, schedule)
+			
+			switch gameTypeFilter {
+			case "regular":
+				if playoffGameType == utils.PlayoffGameTypeRegular {
+					typeFilteredSchedule = append(typeFilteredSchedule, matchup)
+				}
+			case "playoffs":
+				if playoffGameType == utils.PlayoffGameTypePlayoff ||
+				   playoffGameType == utils.PlayoffGameTypeChampionship ||
+				   playoffGameType == utils.PlayoffGameTypeThirdPlace {
+					typeFilteredSchedule = append(typeFilteredSchedule, matchup)
+				}
+			}
+		}
+		filteredSchedule = typeFilteredSchedule
+	}
+
 	resp := GetSchedulesResponse{}
-	resp.Data.Matchups = make([]Matchup, len(schedule))
-	for i, matchup := range schedule {
+	resp.Data.Matchups = make([]Matchup, len(filteredSchedule))
+	for i, matchup := range filteredSchedule {
+		playoffGameType := utils.GetPlayoffGameType(matchup, schedule)
+		
 		resp.Data.Matchups[i] = Matchup{
 			ID:                 fmt.Sprintf("%d", matchup.ID),
 			Year:               matchup.Year,
 			Week:               matchup.Week,
-			// HomeTeamESPNID:     matchup.HomeTeamID,
-			// AwayTeamESPNID:     matchup.AwayTeamID,
 			HomeScore:          matchup.HomeTeamFinalScore,
 			AwayScore:          matchup.AwayTeamFinalScore,
 			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
 			AwayProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:           matchup.GameType,
+			PlayoffGameType:    string(playoffGameType),
 		}
 
 		for _, team := range teams {

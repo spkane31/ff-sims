@@ -81,8 +81,9 @@ export const scheduleService = {
   /**
    * Get the full schedule
    */
-  getFullSchedule: async (): Promise<GetMatchupsResponse> => {
-    return apiClient.get<GetMatchupsResponse>("/schedules");
+  getFullSchedule: async (gameType?: string): Promise<GetMatchupsResponse> => {
+    const params = gameType && gameType !== "all" ? `?gameType=${gameType}` : "";
+    return apiClient.get<GetMatchupsResponse>(`/schedules${params}`);
   },
 
   /**

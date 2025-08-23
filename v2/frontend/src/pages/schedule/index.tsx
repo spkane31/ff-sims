@@ -14,69 +14,11 @@ export default function Schedule() {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedGameType, setSelectedGameType] = useState<string>("all");
-  const { schedule, isLoading, error } = useSchedule();
+  const { schedule, isLoading, error } = useSchedule({ gameType: selectedGameType });
 
-  // Function to determine if a game is the championship game
-  const isChampionshipGame = (game: Matchup, allGames: Matchup[]): boolean => {
-    if (game.gameType !== "WINNERS_BRACKET") return false;
+  // Server-side filtering now handles playoff detection
 
-    // Get all WINNERS_BRACKET games for this year
-    const yearPlayoffGames = allGames.filter(
-      (g) => g.gameType === "WINNERS_BRACKET" && g.year === game.year
-    );
-
-    if (yearPlayoffGames.length === 0) return false;
-
-    // Find the last week of playoff games
-    const lastPlayoffWeek = Math.max(...yearPlayoffGames.map((g) => g.week));
-
-    // Championship game should be in the last week of playoffs
-    return game.week === lastPlayoffWeek;
-  };
-
-  // Function to determine if a consolation game is the actual third place game
-  const isThirdPlaceGame = (game: Matchup, allGames: Matchup[]): boolean => {
-    if (game.gameType !== "WINNERS_CONSOLATION_LADDER") return false;
-
-    // Get all games for this year
-    const yearGames = allGames.filter((g) => g.year === game.year);
-
-    // Find the last week of the season
-    const lastWeek = Math.max(...yearGames.map((g) => g.week));
-
-    // Third place game should be in the last week
-    if (game.week !== lastWeek) return false;
-
-    // Find WINNERS_BRACKET games from the second-to-last week (semifinals)
-    const secondToLastWeek = lastWeek - 1;
-    const semifinalGames = yearGames.filter(
-      (g) => g.gameType === "WINNERS_BRACKET" && g.week === secondToLastWeek
-    );
-
-    if (semifinalGames.length === 0) return false;
-
-    // Get the losers from the semifinal games
-    const semifinalLosers: number[] = [];
-    semifinalGames.forEach((semifinal) => {
-      if (semifinal.homeScore > semifinal.awayScore) {
-        // Away team lost
-        semifinalLosers.push(semifinal.awayTeamESPNID);
-      } else if (semifinal.awayScore > semifinal.homeScore) {
-        // Home team lost
-        semifinalLosers.push(semifinal.homeTeamESPNID);
-      }
-      // If tied, we can't determine a loser, so skip
-    });
-
-    // Check if both teams in the third place game are semifinal losers
-    const gameTeams = [game.homeTeamESPNID, game.awayTeamESPNID];
-    return (
-      gameTeams.every((teamId) => semifinalLosers.includes(teamId)) &&
-      semifinalLosers.length >= 2
-    );
-  };
-
-  // Transform API data to our Game format
+  // Transform API data - server now handles filtering
   const scheduleData: Matchup[] =
     !isLoading && schedule
       ? schedule.data.matchups
@@ -103,14 +45,9 @@ export default function Schedule() {
             homeTeam: game.homeTeam,
             awayTeam: game.awayTeam,
             gameType: game.gameType,
+            playoffGameType: game.playoffGameType,
             isPlayoff: game.isPlayoff || false,
           }))
-          .filter(
-            (game, _, allGames) =>
-              game.gameType === "NONE" ||
-              game.gameType === "WINNERS_BRACKET" ||
-              isThirdPlaceGame(game, allGames)
-          )
       : [];
 
   const weeks: number[] = Array.from(
@@ -145,15 +82,8 @@ export default function Schedule() {
     const weekMatch =
       selectedWeek === "all" || game.week.toString() === selectedWeek;
 
-    // Apply game type filter
-    const gameTypeMatch =
-      selectedGameType === "all" ||
-      (selectedGameType === "playoffs" &&
-        (game.gameType === "WINNERS_BRACKET" ||
-          isThirdPlaceGame(game, scheduleData))) ||
-      (selectedGameType === "regular" && game.gameType === "NONE");
-
-    return yearMatch && weekMatch && gameTypeMatch;
+    // Game type filtering is now handled server-side via the useSchedule hook
+    return yearMatch && weekMatch;
   });
 
   // Strength of schedule data
@@ -319,14 +249,14 @@ export default function Schedule() {
                           {game.year}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {isChampionshipGame(game, scheduleData)
+                          {game.playoffGameType === "CHAMPIONSHIP"
                             ? "Championship"
-                            : game.gameType === "WINNERS_BRACKET"
+                            : game.playoffGameType === "THIRD_PLACE"
+                            ? "Third Place Game"
+                            : game.playoffGameType === "PLAYOFF"
                             ? `Playoffs (Round ${
                                 game.week - (playoffStartWeeks[game.year] - 1)
                               })`
-                            : isThirdPlaceGame(game, scheduleData)
-                            ? `Third Place Game`
                             : `Week ${game.week}`}
                         </td>
                         <td className="py-4 px-4">

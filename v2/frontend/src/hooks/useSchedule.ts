@@ -4,7 +4,7 @@ import { Game, GetScheduleResponse, scheduleService } from '../services/schedule
 /**
  * Hook for fetching the full schedule
  */
-export function useSchedule() {
+export function useSchedule(options?: { gameType?: string }) {
   const [schedule, setSchedule] = useState<GetScheduleResponse>({ data: { matchups: [] } });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -13,7 +13,7 @@ export function useSchedule() {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getFullSchedule();
+      const data = await scheduleService.getFullSchedule(options?.gameType);
       setSchedule(data);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred while fetching schedule'));
@@ -24,7 +24,7 @@ export function useSchedule() {
 
   useEffect(() => {
     fetchSchedule();
-  }, []);
+  }, [options?.gameType]);
 
   return { schedule, isLoading, error, refetch: fetchSchedule };
 }

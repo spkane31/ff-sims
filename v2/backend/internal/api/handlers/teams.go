@@ -5,81 +5,19 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
-	slices0 "slices"
 	"sync"
 	"time"
 
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
+	"backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/exp/slices"
 )
 
-// Function to determine if a consolation game is the actual third place game
-func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
-	if game.GameType != "WINNERS_CONSOLATION_LADDER" {
-		return false
-	}
-
-	// Get all games for this year
-	var yearGames []models.Matchup
-	var lastWeek uint
-	for _, g := range allSchedule {
-		if g.Year == game.Year {
-			yearGames = append(yearGames, g)
-			if g.Week > lastWeek {
-				lastWeek = g.Week
-			}
-		}
-	}
-
-	// Third place game should be in the last week
-	if game.Week != lastWeek {
-		return false
-	}
-
-	// Find WINNERS_BRACKET games from the second-to-last week (semifinals)
-	secondToLastWeek := lastWeek - 1
-	var semifinalGames []models.Matchup
-	for _, g := range yearGames {
-		if g.GameType == "WINNERS_BRACKET" && g.Week == secondToLastWeek {
-			semifinalGames = append(semifinalGames, g)
-		}
-	}
-
-	if len(semifinalGames) == 0 {
-		return false
-	}
-
-	// Get the losers from the semifinal games
-	var semifinalLosers []uint
-	for _, semifinal := range semifinalGames {
-		if semifinal.HomeTeamFinalScore > semifinal.AwayTeamFinalScore {
-			// Away team lost
-			semifinalLosers = append(semifinalLosers, semifinal.AwayTeamID)
-		} else if semifinal.AwayTeamFinalScore > semifinal.HomeTeamFinalScore {
-			// Home team lost
-			semifinalLosers = append(semifinalLosers, semifinal.HomeTeamID)
-		}
-		// If tied, we can't determine a loser, so skip
-	}
-
-	// Check if both teams in the third place game are semifinal losers
-	gameTeams := []uint{game.HomeTeamID, game.AwayTeamID}
-	if len(semifinalLosers) < 2 {
-		return false
-	}
-
-	for _, teamID := range gameTeams {
-		if !slices0.Contains(semifinalLosers, teamID) {
-			return false
-		}
-	}
-
-	return true
-}
+// Removed isThirdPlaceGame function - now using utils.GetPlayoffGameType
 
 type GetTeamsResponse struct {
 	Teams []TeamResponse `json:"teams"`
@@ -166,6 +104,10 @@ func GetTeams(c *gin.Context) {
 	}
 
 	for _, matchup := range fullSchedule {
+		if !utils.ShouldIncludeInRecord(matchup, fullSchedule) {
+			continue
+		}
+
 		// Add to resp
 		for i, team := range resp.Teams {
 			// Add total points scored and against
@@ -177,25 +119,8 @@ func GetTeams(c *gin.Context) {
 				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
 			}
 
-			switch matchup.GameType {
-			case "NONE":
-				// Add the wins and losses
-				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-					if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-						resp.Teams[i].RegularSeasonRecord.Wins++
-					} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-						resp.Teams[i].RegularSeasonRecord.Losses++
-					}
-				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
-					if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-						resp.Teams[i].RegularSeasonRecord.Wins++
-					} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-						resp.Teams[i].RegularSeasonRecord.Losses++
-					}
-				} else {
-					resp.Teams[i].RegularSeasonRecord.Ties++
-				}
-			case "WINNERS_BRACKET":
+			// Use the new playoff utility to determine game type
+			if utils.ShouldIncludeInPlayoffRecord(matchup, fullSchedule) {
 				// For playoff games, we need to track playoff records separately
 				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
 					if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
@@ -212,25 +137,22 @@ func GetTeams(c *gin.Context) {
 				} else {
 					resp.Teams[i].PlayoffsRecord.Ties++
 				}
-			case "WINNERS_CONSOLATION_LADDER":
-				// Check if this is actually a third place game (last week with semifinals in second-to-last week)
-				if isThirdPlaceGame(matchup, fullSchedule) {
-					// For third place playoff games, we need to track playoff records separately
-					if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-						if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-							resp.Teams[i].PlayoffsRecord.Wins++
-						} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-							resp.Teams[i].PlayoffsRecord.Losses++
-						}
-					} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
-						if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
-							resp.Teams[i].PlayoffsRecord.Wins++
-						} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
-							resp.Teams[i].PlayoffsRecord.Losses++
-						}
-					} else {
-						resp.Teams[i].PlayoffsRecord.Ties++
+			} else if matchup.GameType == "NONE" {
+				// Add the wins and losses for regular season games
+				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Losses++
 					}
+				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+					if team.ID == fmt.Sprintf("%d", matchup.AwayTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Wins++
+					} else if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
+						resp.Teams[i].RegularSeasonRecord.Losses++
+					}
+				} else {
+					resp.Teams[i].RegularSeasonRecord.Ties++
 				}
 			}
 		}
@@ -277,12 +199,19 @@ func GetTeamByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
 		return
 	}
+	team.Wins, team.Losses = 0, 0
 
 	// Fetch team's schedule (all matchups for this team, including incomplete games for display)
 	var schedule []models.Matchup
-	if err := database.DB.Where("home_team_id = ? OR away_team_id = ?", team.ID, team.ID).
+	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND completed = true", team.ID, team.ID).
 		Order("year desc, week asc").Find(&schedule).Error; err != nil {
 		slog.Error("Failed to fetch team schedule", "error", err, "team_id", team.ID)
+	}
+
+	// Fetch full schedule for playoff detection (only completed games needed for playoff logic)
+	var fullSchedule []models.Matchup
+	if err := database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&fullSchedule).Error; err != nil {
+		slog.Error("Failed to fetch full schedule for playoff detection", "error", err)
 	}
 
 	for _, matchup := range schedule {
@@ -298,37 +227,6 @@ func GetTeamByID(c *gin.Context) {
 	if err := database.DB.Where("team_id = ?", team.ID).
 		Order("year desc, round asc, pick asc").Find(&draftSelections).Error; err != nil {
 		slog.Error("Failed to fetch team draft picks", "error", err, "team_id", team.ID)
-	}
-
-	// TODO: Fetch current and past players once team-player relationships are implemented
-	// This would require a join table or foreign keys between teams and players
-	currentPlayers := []PlayerResponse{
-		// {
-		// 	ID:            "1",
-		// 	Name:          "Patrick Mahomes",
-		// 	Position:      "QB",
-		// 	Team:          "KC",
-		// 	Status:        "Active",
-		// 	FantasyPoints: 287.5,
-		// 	Stats: PlayerStatsResponse{
-		// 		PassingYards: 4183,
-		// 		PassingTDs:   27,
-		// 		RushingTDs:   1,
-		// 	},
-		// },
-		// {
-		// 	ID:            "2",
-		// 	Name:          "Travis Kelce",
-		// 	Position:      "TE",
-		// 	Team:          "KC",
-		// 	Status:        "Active",
-		// 	FantasyPoints: 201.3,
-		// 	Stats: PlayerStatsResponse{
-		// 		Receptions:     93,
-		// 		ReceivingYards: 984,
-		// 		ReceivingTDs:   5,
-		// 	},
-		// },
 	}
 
 	// Transform draft picks data
@@ -454,8 +352,12 @@ func GetTeamByID(c *gin.Context) {
 	})
 
 	// Transform schedule data
-	scheduleResponse := make([]ScheduleGameResponse, len(schedule))
-	for i, matchup := range schedule {
+	scheduleResponse := []ScheduleGameResponse{}
+	for _, matchup := range schedule {
+		if !utils.ShouldIncludeInRecord(matchup, fullSchedule) {
+			continue
+		}
+
 		var opponent string
 		var opponentESPNID string
 		var teamScore, opponentScore float64
@@ -477,20 +379,26 @@ func GetTeamByID(c *gin.Context) {
 			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.HomeTeamID].ESPNID)
 		}
 
+		// Use our playoff detection utility to determine if this is a playoff game
+		isPlayoff := utils.ShouldIncludeInPlayoffRecord(matchup, fullSchedule)
+
 		var result string
 		if matchup.Completed {
 			if teamScore > opponentScore {
 				result = "W"
+				team.Wins++
 			} else if teamScore < opponentScore {
 				result = "L"
+				team.Losses++
 			} else {
 				result = "T"
+				team.Ties++
 			}
 		} else {
 			result = "Upcoming"
 		}
 
-		scheduleResponse[i] = ScheduleGameResponse{
+		scheduleResponse = append(scheduleResponse, ScheduleGameResponse{
 			Week:           int(matchup.Week),
 			Year:           int(matchup.Year),
 			Opponent:       opponent,
@@ -500,8 +408,8 @@ func GetTeamByID(c *gin.Context) {
 			OpponentScore:  opponentScore,
 			Result:         result,
 			Completed:      matchup.Completed,
-			IsPlayoff:      matchup.IsPlayoff,
-		}
+			IsPlayoff:      isPlayoff,
+		})
 	}
 
 	response := TeamDetailResponse{
@@ -519,7 +427,7 @@ func GetTeamByID(c *gin.Context) {
 			Against: 0.0,         // TODO: Calculate from actual matchup data
 		},
 		Schedule:       scheduleResponse,
-		CurrentPlayers: currentPlayers,
+		CurrentPlayers: []PlayerResponse{}, // TODO: Fetch current roster players
 		DraftPicks:     draftPicks,
 		Transactions:   transactionsResp,
 	}

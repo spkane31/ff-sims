@@ -29,6 +29,7 @@ export interface Matchup extends BaseModel {
   completed: boolean;
   isPlayoff: boolean;
   gameType: string;
+  playoffGameType?: string; // Server-determined playoff type: REGULAR, PLAYOFF, CHAMPIONSHIP, THIRD_PLACE
   homeTeam?: Team;
   awayTeam?: Team;
 }
