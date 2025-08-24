@@ -42,86 +42,109 @@ func ProcessWeeklyExpectedWins(leagueID uint, year uint, week uint) error {
 
 // processTeamWeeklyExpectedWins processes expected wins for a single team
 func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, week uint) error {
-	// Get all matchups for this team through current week
-	teamMatchups, err := GetTeamMatchupsThroughWeek(db, team.ID, year, week)
+	// Get all matchups for this team through current week (for cumulative calculation)
+	teamMatchupsThrough, err := GetTeamMatchupsThroughWeek(db, team.ID, year, week)
 	if err != nil {
 		return err
 	}
 
-	if len(teamMatchups) == 0 {
+	if len(teamMatchupsThrough) == 0 {
 		return nil // No matchups for this team yet
 	}
 
 	// Convert to pointers for CalculateExpectedWins function
-	matchupPointers := convertMatchupsToPointers(teamMatchups)
+	cumulativeMatchupPointers := convertMatchupsToPointers(teamMatchupsThrough)
 
-	// Calculate cumulative expected wins
-	results, err := CalculateExpectedWins(matchupPointers)
+	// Calculate cumulative expected wins through this week
+	cumulativeResults, err := CalculateExpectedWins(cumulativeMatchupPointers)
 	if err != nil {
 		return err
 	}
 
-	// Find this team's result
-	var teamResult *ExpectedWinsResult
-	for _, r := range results {
+	// Find this team's cumulative result
+	var teamCumulativeResult *ExpectedWinsResult
+	for _, r := range cumulativeResults {
 		if r.TeamID == team.ID {
-			teamResult = &r
+			teamCumulativeResult = &r
 			break
 		}
 	}
 
-	if teamResult == nil {
-		log.Printf("No expected wins result found for team %d", team.ID)
+	if teamCumulativeResult == nil {
+		log.Printf("No cumulative expected wins result found for team %d", team.ID)
 		return nil
 	}
 
 	// Get this week's specific matchup for additional context
-	weekMatchup := findTeamMatchupForWeek(teamMatchups, week)
-	var weeklyWinProb float64
+	weekMatchup := findTeamMatchupForWeek(teamMatchupsThrough, week)
+
+	// Skip teams that didn't play this week
+	if weekMatchup == nil {
+		return nil // Team didn't play this week, skip processing
+	}
+
 	var weeklyWin bool
 	var opponentID uint
 	var teamScore, oppScore, pointDiff float64
 
-	if weekMatchup != nil {
-		if weekMatchup.HomeTeamID == team.ID {
-			teamScore = weekMatchup.HomeTeamFinalScore
-			oppScore = weekMatchup.AwayTeamFinalScore
-			opponentID = weekMatchup.AwayTeamID
-			weeklyWin = teamScore > oppScore
-		} else {
-			teamScore = weekMatchup.AwayTeamFinalScore
-			oppScore = weekMatchup.HomeTeamFinalScore
-			opponentID = weekMatchup.HomeTeamID
-			weeklyWin = teamScore > oppScore
-		}
-		pointDiff = teamScore - oppScore
-		weeklyWinProb = logisticWinProbability(pointDiff)
+	if weekMatchup.HomeTeamID == team.ID {
+		teamScore = weekMatchup.HomeTeamFinalScore
+		oppScore = weekMatchup.AwayTeamFinalScore
+		opponentID = weekMatchup.AwayTeamID
+		weeklyWin = teamScore > oppScore
+	} else {
+		teamScore = weekMatchup.AwayTeamFinalScore
+		oppScore = weekMatchup.HomeTeamFinalScore
+		opponentID = weekMatchup.HomeTeamID
+		weeklyWin = teamScore > oppScore
+	}
+	pointDiff = teamScore - oppScore
+
+	// Calculate weekly expected wins using simulation for just this week
+	var weeklyExpectedWins float64
+
+	// Get all league matchups for just this week to calculate weekly expected wins
+	allWeekMatchups, err := GetCompletedMatchupsByWeek(db, team.LeagueID, year, week)
+	if err != nil {
+		return err
 	}
 
-	// Get previous week's data to calculate weekly deltas
-	var prevWeekExpected, prevWeekExpectedLosses float64
-	if week > 1 {
-		prevWeek, err := models.GetWeeklyExpectedWins(db, team.ID, year, week-1)
-		if err == nil && prevWeek != nil {
-			prevWeekExpected = prevWeek.ExpectedWins
-			prevWeekExpectedLosses = prevWeek.ExpectedLosses
+	// Convert to pointers
+	weekMatchupPointers := convertMatchupsToPointers(allWeekMatchups)
+
+	// Calculate expected wins for just this week using simulation
+	weeklyResults, err := CalculateWeeklyExpectedWins(weekMatchupPointers, week)
+	if err != nil {
+		return err
+	}
+
+	// Find this team's weekly result
+	for _, r := range weeklyResults {
+		if r.TeamID == team.ID {
+			weeklyExpectedWins = r.ExpectedWins // This should be 0-1
+			break
 		}
 	}
 
-	// Calculate weekly values (just this week)
-	weeklyExpectedWins := teamResult.ExpectedWins - prevWeekExpected
-	weeklyExpectedLosses := teamResult.ExpectedLosses - prevWeekExpectedLosses
-	
+	// Only skip if team truly didn't play (no matchup found for this week)
+	// weeklyExpectedWins of 0 is valid - it means they were the lowest score of the week
+
 	// Get cumulative actual wins/losses from previous week
 	var prevWeekActualWins, prevWeekActualLosses int
+	var prevCumulativeExpectedWins, prevCumulativeExpectedLosses float64
 	if week > 1 {
 		prevWeek, err := models.GetWeeklyExpectedWins(db, team.ID, year, week-1)
 		if err == nil && prevWeek != nil {
 			prevWeekActualWins = prevWeek.ActualWins
 			prevWeekActualLosses = prevWeek.ActualLosses
+			prevCumulativeExpectedWins = prevWeek.ExpectedWins + weeklyExpectedWins
+			prevCumulativeExpectedLosses = prevWeek.ExpectedLosses + (1.0 - weeklyExpectedWins)
 		}
+	} else {
+		prevCumulativeExpectedWins = weeklyExpectedWins
+		prevCumulativeExpectedLosses = 1.0 - weeklyExpectedWins
 	}
-	
+
 	// Calculate cumulative actual wins/losses
 	cumulativeActualWins := prevWeekActualWins
 	cumulativeActualLosses := prevWeekActualLosses
@@ -130,27 +153,27 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 	} else {
 		cumulativeActualLosses += 1
 	}
-	
+
 	// Create/update weekly record
 	weeklyRecord := &models.WeeklyExpectedWins{
-		TeamID:                team.ID,
-		Week:                  week,
-		Year:                  year,
-		LeagueID:              team.LeagueID,
-		ExpectedWins:          teamResult.ExpectedWins,   // Cumulative expected wins through this week
-		WeeklyExpectedWins:    weeklyExpectedWins,        // Expected wins for just this week (≤ 1)
-		ExpectedLosses:        teamResult.ExpectedLosses, // Cumulative expected losses through this week
-		WeeklyExpectedLosses:  weeklyExpectedLosses,      // Expected losses for just this week (≤ 1)
-		ActualWins:            cumulativeActualWins,      // Cumulative actual wins through this week
-		ActualLosses:          cumulativeActualLosses,    // Cumulative actual losses through this week
-		WeeklyActualWin:       weeklyWin,
-		WinLuck:               float64(cumulativeActualWins) - teamResult.ExpectedWins,
-		StrengthOfSchedule:    teamResult.StrengthOfSchedule,
-		WeeklyWinProbability:  weeklyWinProb,
-		TeamScore:             teamScore,
-		OpponentScore:         oppScore,
-		OpponentTeamID:        opponentID,
-		PointDifferential:     pointDiff,
+		TeamID:               team.ID,
+		Week:                 week,
+		Year:                 year,
+		LeagueID:             team.LeagueID,
+		ExpectedWins:         prevCumulativeExpectedWins,   // Cumulative expected wins through this week
+		WeeklyExpectedWins:   weeklyExpectedWins,           // Expected wins for just this week (0-1)
+		ExpectedLosses:       prevCumulativeExpectedLosses, // Cumulative expected losses through this week
+		WeeklyExpectedLosses: 1.0 - weeklyExpectedWins,     // Expected losses for just this week (0-1)
+		ActualWins:           cumulativeActualWins,         // Cumulative actual wins through this week
+		ActualLosses:         cumulativeActualLosses,       // Cumulative actual losses through this week
+		WeeklyActualWin:      weeklyWin,
+		WinLuck:              float64(cumulativeActualWins) - teamCumulativeResult.ExpectedWins,
+		StrengthOfSchedule:   teamCumulativeResult.StrengthOfSchedule,
+		WeeklyWinProbability: weeklyExpectedWins, // Use weekly expected wins as win probability for this week
+		TeamScore:            teamScore,
+		OpponentScore:        oppScore,
+		OpponentTeamID:       opponentID,
+		PointDifferential:    pointDiff,
 	}
 
 	// Save to database

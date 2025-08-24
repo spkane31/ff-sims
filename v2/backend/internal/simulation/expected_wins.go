@@ -2,8 +2,32 @@ package simulation
 
 import (
 	"backend/internal/models"
-	"math"
+	"math/rand"
+	"os"
+	"strconv"
+	"time"
 )
+
+// ExpectedWinsConfig holds configuration for expected wins calculations
+type ExpectedWinsConfig struct {
+	NumSimulations int
+}
+
+// GetExpectedWinsConfig returns configuration with defaults
+func GetExpectedWinsConfig() ExpectedWinsConfig {
+	config := ExpectedWinsConfig{
+		NumSimulations: 10000, // Default to 10,000 simulations
+	}
+	
+	// Allow override via environment variable
+	if envSims := os.Getenv("EXPECTED_WINS_SIMULATIONS"); envSims != "" {
+		if sims, err := strconv.Atoi(envSims); err == nil && sims > 0 {
+			config.NumSimulations = sims
+		}
+	}
+	
+	return config
+}
 
 // ExpectedWinsResult contains expected wins calculation for a team
 type ExpectedWinsResult struct {
@@ -16,178 +40,328 @@ type ExpectedWinsResult struct {
 	StrengthOfSchedule float64 `json:"strength_of_schedule"`
 }
 
-// CalculateExpectedWins calculates expected wins for all teams based on their schedule
-// Expected wins uses a logistic model based on the point differential
+// CalculateExpectedWins calculates expected wins using hypothetical schedule simulations
+// This approach generates thousands of random schedules using actual team scores
+// and averages the win totals to determine true expected performance
 func CalculateExpectedWins(schedule []*models.Matchup) ([]ExpectedWinsResult, error) {
 	if len(schedule) == 0 {
 		return []ExpectedWinsResult{}, nil
 	}
 	
-	// Group matchups by team
-	teamMatchups := make(map[uint][]*models.Matchup)
-	teamStats := make(map[uint]*ExpectedWinsResult)
+	// Extract team weekly scores from actual matchups
+	teamWeeklyScores, weeks := extractTeamWeeklyScores(schedule)
+	if len(teamWeeklyScores) == 0 {
+		return []ExpectedWinsResult{}, nil
+	}
+	
+	// Get team IDs
+	teamIDs := make([]uint, 0, len(teamWeeklyScores))
+	for teamID := range teamWeeklyScores {
+		teamIDs = append(teamIDs, teamID)
+	}
+	
+	// Calculate actual wins/losses for comparison
+	actualStats := calculateActualStats(schedule)
+	
+	// Run simulations with random schedules
+	config := GetExpectedWinsConfig()
+	simulationResults := runScheduleSimulations(teamWeeklyScores, teamIDs, weeks, config.NumSimulations)
+	
+	// Calculate strength of schedule
+	strengthOfSchedule := calculateStrengthOfSchedule(schedule, actualStats)
+	
+	// Combine results
+	results := make([]ExpectedWinsResult, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		expectedWins := simulationResults[teamID] / float64(config.NumSimulations)
+		actualData := actualStats[teamID]
+		
+		results = append(results, ExpectedWinsResult{
+			TeamID:             teamID,
+			ExpectedWins:       expectedWins,
+			ExpectedLosses:     float64(len(weeks)) - expectedWins,
+			ActualWins:         actualData.ActualWins,
+			ActualLosses:       actualData.ActualLosses,
+			TotalGames:         actualData.TotalGames,
+			StrengthOfSchedule: strengthOfSchedule[teamID],
+		})
+	}
+	
+	return results, nil
+}
+
+// CalculateWeeklyExpectedWins calculates expected wins for a specific week only
+func CalculateWeeklyExpectedWins(schedule []*models.Matchup, targetWeek uint) ([]ExpectedWinsResult, error) {
+	if len(schedule) == 0 {
+		return []ExpectedWinsResult{}, nil
+	}
+	
+	// Filter to only the target week
+	weekMatchups := make([]*models.Matchup, 0)
+	for _, matchup := range schedule {
+		if !matchup.Completed {
+			continue
+		}
+		
+		// Only include regular season games for target week
+		if matchup.IsPlayoff || matchup.GameType != "NONE" || matchup.Week != targetWeek {
+			continue
+		}
+		
+		weekMatchups = append(weekMatchups, matchup)
+	}
+	
+	if len(weekMatchups) == 0 {
+		return []ExpectedWinsResult{}, nil
+	}
+	
+	// Extract team weekly scores for just this week
+	teamWeeklyScores := make(map[uint]map[uint]float64)
+	for _, matchup := range weekMatchups {
+		if teamWeeklyScores[matchup.HomeTeamID] == nil {
+			teamWeeklyScores[matchup.HomeTeamID] = make(map[uint]float64)
+		}
+		if teamWeeklyScores[matchup.AwayTeamID] == nil {
+			teamWeeklyScores[matchup.AwayTeamID] = make(map[uint]float64)
+		}
+		
+		teamWeeklyScores[matchup.HomeTeamID][targetWeek] = matchup.HomeTeamFinalScore
+		teamWeeklyScores[matchup.AwayTeamID][targetWeek] = matchup.AwayTeamFinalScore
+	}
+	
+	// Get team IDs
+	teamIDs := make([]uint, 0, len(teamWeeklyScores))
+	for teamID := range teamWeeklyScores {
+		teamIDs = append(teamIDs, teamID)
+	}
+	
+	if len(teamIDs) == 0 {
+		return []ExpectedWinsResult{}, nil
+	}
+	
+	// Calculate actual stats for this week only
+	actualStats := calculateActualStats(weekMatchups)
+	
+	// Run simulations for just this week
+	config := GetExpectedWinsConfig()
+	weeks := []uint{targetWeek}
+	simulationResults := runScheduleSimulations(teamWeeklyScores, teamIDs, weeks, config.NumSimulations)
+	
+	// Calculate strength of schedule for this week
+	strengthOfSchedule := calculateStrengthOfSchedule(weekMatchups, actualStats)
+	
+	// Combine results
+	results := make([]ExpectedWinsResult, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		expectedWins := simulationResults[teamID] / float64(config.NumSimulations)
+		actualData := actualStats[teamID]
+		
+		results = append(results, ExpectedWinsResult{
+			TeamID:             teamID,
+			ExpectedWins:       expectedWins,        // For single week, this should be 0-1
+			ExpectedLosses:     1.0 - expectedWins,  // For single week
+			ActualWins:         actualData.ActualWins,
+			ActualLosses:       actualData.ActualLosses,
+			TotalGames:         actualData.TotalGames,
+			StrengthOfSchedule: strengthOfSchedule[teamID],
+		})
+	}
+	
+	return results, nil
+}
+
+// extractTeamWeeklyScores extracts actual scores for each team by week
+func extractTeamWeeklyScores(schedule []*models.Matchup) (map[uint]map[uint]float64, []uint) {
+	teamWeeklyScores := make(map[uint]map[uint]float64)
+	weeksSet := make(map[uint]bool)
 	
 	for _, matchup := range schedule {
 		if !matchup.Completed {
-			continue // Only calculate for completed games
+			continue
 		}
 		
-		// Only include regular season games in expected wins calculation
+		// Only include regular season games
 		if matchup.IsPlayoff || matchup.GameType != "NONE" {
 			continue
 		}
 		
-		// Initialize team stats if not exists
-		if teamStats[matchup.HomeTeamID] == nil {
-			teamStats[matchup.HomeTeamID] = &ExpectedWinsResult{
-				TeamID: matchup.HomeTeamID,
-			}
+		// Initialize team score maps
+		if teamWeeklyScores[matchup.HomeTeamID] == nil {
+			teamWeeklyScores[matchup.HomeTeamID] = make(map[uint]float64)
 		}
-		if teamStats[matchup.AwayTeamID] == nil {
-			teamStats[matchup.AwayTeamID] = &ExpectedWinsResult{
-				TeamID: matchup.AwayTeamID,
-			}
+		if teamWeeklyScores[matchup.AwayTeamID] == nil {
+			teamWeeklyScores[matchup.AwayTeamID] = make(map[uint]float64)
 		}
 		
-		// Add matchup to both teams' lists
-		teamMatchups[matchup.HomeTeamID] = append(teamMatchups[matchup.HomeTeamID], matchup)
-		teamMatchups[matchup.AwayTeamID] = append(teamMatchups[matchup.AwayTeamID], matchup)
+		// Record scores
+		teamWeeklyScores[matchup.HomeTeamID][matchup.Week] = matchup.HomeTeamFinalScore
+		teamWeeklyScores[matchup.AwayTeamID][matchup.Week] = matchup.AwayTeamFinalScore
+		weeksSet[matchup.Week] = true
+	}
+	
+	// Convert weeks set to sorted slice
+	weeks := make([]uint, 0, len(weeksSet))
+	for week := range weeksSet {
+		weeks = append(weeks, week)
+	}
+	
+	// Sort weeks
+	for i := 0; i < len(weeks); i++ {
+		for j := i + 1; j < len(weeks); j++ {
+			if weeks[i] > weeks[j] {
+				weeks[i], weeks[j] = weeks[j], weeks[i]
+			}
+		}
+	}
+	
+	return teamWeeklyScores, weeks
+}
+
+// calculateActualStats calculates actual wins/losses from the real schedule
+func calculateActualStats(schedule []*models.Matchup) map[uint]struct {
+	ActualWins   int
+	ActualLosses int
+	TotalGames   int
+} {
+	stats := make(map[uint]struct {
+		ActualWins   int
+		ActualLosses int
+		TotalGames   int
+	})
+	
+	for _, matchup := range schedule {
+		if !matchup.Completed {
+			continue
+		}
 		
-		// Update actual wins/losses
+		// Only include regular season games
+		if matchup.IsPlayoff || matchup.GameType != "NONE" {
+			continue
+		}
+		
+		homeStats := stats[matchup.HomeTeamID]
+		awayStats := stats[matchup.AwayTeamID]
+		
 		if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
-			teamStats[matchup.HomeTeamID].ActualWins++
-			teamStats[matchup.AwayTeamID].ActualLosses++
+			homeStats.ActualWins++
+			awayStats.ActualLosses++
 		} else if matchup.AwayTeamFinalScore > matchup.HomeTeamFinalScore {
-			teamStats[matchup.AwayTeamID].ActualWins++
-			teamStats[matchup.HomeTeamID].ActualLosses++
+			awayStats.ActualWins++
+			homeStats.ActualLosses++
 		}
 		
-		teamStats[matchup.HomeTeamID].TotalGames++
-		teamStats[matchup.AwayTeamID].TotalGames++
+		homeStats.TotalGames++
+		awayStats.TotalGames++
+		
+		stats[matchup.HomeTeamID] = homeStats
+		stats[matchup.AwayTeamID] = awayStats
 	}
 	
-	// Calculate expected wins for each team
-	for teamID, matchups := range teamMatchups {
-		stats := teamStats[teamID]
-		expectedWins := 0.0
-		totalOpponentStrength := 0.0
-		
-		for _, matchup := range matchups {
-			var teamScore, opponentScore float64
-			var opponentID uint
-			
-			if matchup.HomeTeamID == teamID {
-				teamScore = matchup.HomeTeamFinalScore
-				opponentScore = matchup.AwayTeamFinalScore
-				opponentID = matchup.AwayTeamID
-			} else {
-				teamScore = matchup.AwayTeamFinalScore
-				opponentScore = matchup.HomeTeamFinalScore
-				opponentID = matchup.HomeTeamID
-			}
-			
-			// Calculate expected win probability using logistic function
-			// Based on point differential
-			pointDiff := teamScore - opponentScore
-			winProbability := logisticWinProbability(pointDiff)
-			expectedWins += winProbability
-			
-			// Add to strength of schedule calculation
-			if opponentStats, exists := teamStats[opponentID]; exists {
-				opponentWinRate := float64(opponentStats.ActualWins) / float64(opponentStats.TotalGames)
-				totalOpponentStrength += opponentWinRate
-			}
-		}
-		
-		stats.ExpectedWins = expectedWins
-		stats.ExpectedLosses = float64(len(matchups)) - expectedWins
-		
-		// Calculate strength of schedule (average opponent win rate)
-		if len(matchups) > 0 {
-			stats.StrengthOfSchedule = totalOpponentStrength / float64(len(matchups))
-		}
-	}
-	
-	// Convert map to slice
-	results := make([]ExpectedWinsResult, 0, len(teamStats))
-	for _, stats := range teamStats {
-		results = append(results, *stats)
-	}
-	
-	return results, nil
+	return stats
 }
 
-// logisticWinProbability calculates win probability based on point differential
-// Uses a logistic function: P(win) = 1 / (1 + e^(-point_diff / scale))
-// The scale parameter controls how sensitive the probability is to point differences
-func logisticWinProbability(pointDiff float64) float64 {
-	scale := 16.0 // Standard scale for fantasy football
-	if pointDiff == 0 {
-		return 0.5 // Tie game = 50% probability
+// runScheduleSimulations runs thousands of simulations with randomized schedules
+func runScheduleSimulations(teamWeeklyScores map[uint]map[uint]float64, teamIDs []uint, weeks []uint, numSimulations int) map[uint]float64 {
+	results := make(map[uint]float64)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	
+	for sim := 0; sim < numSimulations; sim++ {
+		// Generate random schedule for this simulation
+		scheduleWins := simulateRandomSchedule(teamWeeklyScores, teamIDs, weeks, rng)
+		
+		// Accumulate wins for each team
+		for teamID, wins := range scheduleWins {
+			results[teamID] += float64(wins)
+		}
 	}
-	return 1.0 / (1.0 + math.Exp(-pointDiff/scale))
+	
+	return results
 }
 
-// CalculateSeasonExpectedWins calculates expected wins for a full season
-// This function can be used to project expected wins across an entire season
-func CalculateSeasonExpectedWins(teams []models.Team, completedMatchups []*models.Matchup, remainingSchedule []*models.Matchup) ([]ExpectedWinsResult, error) {
-	// First calculate expected wins from completed games
-	completedResults, err := CalculateExpectedWins(completedMatchups)
-	if err != nil {
-		return nil, err
+// simulateRandomSchedule generates one random schedule and calculates wins
+func simulateRandomSchedule(teamWeeklyScores map[uint]map[uint]float64, teamIDs []uint, weeks []uint, rng *rand.Rand) map[uint]int {
+	wins := make(map[uint]int)
+	
+	// Ensure even number of teams
+	if len(teamIDs)%2 != 0 {
+		return wins
 	}
 	
-	// Create a map for easy lookup
-	teamResults := make(map[uint]*ExpectedWinsResult)
-	for i := range completedResults {
-		result := &completedResults[i]
-		teamResults[result.TeamID] = result
+	// For each week, create random pairings
+	for _, week := range weeks {
+		// Shuffle teams for this week
+		shuffledTeams := make([]uint, len(teamIDs))
+		copy(shuffledTeams, teamIDs)
+		rng.Shuffle(len(shuffledTeams), func(i, j int) {
+			shuffledTeams[i], shuffledTeams[j] = shuffledTeams[j], shuffledTeams[i]
+		})
+		
+		// Create pairings and determine winners
+		for i := 0; i < len(shuffledTeams); i += 2 {
+			team1ID := shuffledTeams[i]
+			team2ID := shuffledTeams[i+1]
+			
+			// Get scores for this week (if they played in this week)
+			team1Score, team1HasScore := teamWeeklyScores[team1ID][week]
+			team2Score, team2HasScore := teamWeeklyScores[team2ID][week]
+			
+			// Only count if both teams have scores for this week
+			if team1HasScore && team2HasScore {
+				if team1Score > team2Score {
+					wins[team1ID]++
+				} else if team2Score > team1Score {
+					wins[team2ID]++
+				}
+				// Ties don't count as wins for either team
+			}
+		}
 	}
 	
-	// For remaining games, use projected scores to estimate expected wins
-	for _, matchup := range remainingSchedule {
-		if matchup.Completed {
-			continue // Skip if already completed
+	return wins
+}
+
+// calculateStrengthOfSchedule calculates opponent strength for each team
+func calculateStrengthOfSchedule(schedule []*models.Matchup, actualStats map[uint]struct {
+	ActualWins   int
+	ActualLosses int
+	TotalGames   int
+}) map[uint]float64 {
+	strengthOfSchedule := make(map[uint]float64)
+	opponentCounts := make(map[uint]int)
+	
+	for _, matchup := range schedule {
+		if !matchup.Completed {
+			continue
 		}
 		
-		// Only include regular season games in expected wins calculation
+		// Only include regular season games
 		if matchup.IsPlayoff || matchup.GameType != "NONE" {
 			continue
 		}
 		
-		// Initialize team results if they don't exist
-		if teamResults[matchup.HomeTeamID] == nil {
-			teamResults[matchup.HomeTeamID] = &ExpectedWinsResult{
-				TeamID: matchup.HomeTeamID,
-			}
-		}
-		if teamResults[matchup.AwayTeamID] == nil {
-			teamResults[matchup.AwayTeamID] = &ExpectedWinsResult{
-				TeamID: matchup.AwayTeamID,
-			}
+		// Calculate opponent win rates
+		homeOpponentStats := actualStats[matchup.AwayTeamID]
+		awayOpponentStats := actualStats[matchup.HomeTeamID]
+		
+		if homeOpponentStats.TotalGames > 0 {
+			opponentWinRate := float64(homeOpponentStats.ActualWins) / float64(homeOpponentStats.TotalGames)
+			strengthOfSchedule[matchup.HomeTeamID] += opponentWinRate
+			opponentCounts[matchup.HomeTeamID]++
 		}
 		
-		// Use projected scores for future games
-		homeProjDiff := matchup.HomeTeamESPNProjectedScore - matchup.AwayTeamESPNProjectedScore
-		awayProjDiff := -homeProjDiff
-		
-		homeWinProb := logisticWinProbability(homeProjDiff)
-		awayWinProb := logisticWinProbability(awayProjDiff)
-		
-		teamResults[matchup.HomeTeamID].ExpectedWins += homeWinProb
-		teamResults[matchup.HomeTeamID].ExpectedLosses += awayWinProb
-		teamResults[matchup.HomeTeamID].TotalGames++
-		
-		teamResults[matchup.AwayTeamID].ExpectedWins += awayWinProb
-		teamResults[matchup.AwayTeamID].ExpectedLosses += homeWinProb
-		teamResults[matchup.AwayTeamID].TotalGames++
+		if awayOpponentStats.TotalGames > 0 {
+			opponentWinRate := float64(awayOpponentStats.ActualWins) / float64(awayOpponentStats.TotalGames)
+			strengthOfSchedule[matchup.AwayTeamID] += opponentWinRate
+			opponentCounts[matchup.AwayTeamID]++
+		}
 	}
 	
-	// Convert back to slice
-	results := make([]ExpectedWinsResult, 0, len(teamResults))
-	for _, result := range teamResults {
-		results = append(results, *result)
+	// Average the opponent win rates
+	for teamID, totalStrength := range strengthOfSchedule {
+		if opponentCounts[teamID] > 0 {
+			strengthOfSchedule[teamID] = totalStrength / float64(opponentCounts[teamID])
+		}
 	}
 	
-	return results, nil
+	return strengthOfSchedule
 }

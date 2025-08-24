@@ -356,16 +356,38 @@ TypeScript interfaces mirror Go models for type safety across the full stack. Co
 
 This implementation successfully provides fair team assessment by removing schedule luck from performance evaluation, enabling more accurate playoff predictions and historical analysis.
 
-### Random Schedule Generation Configuration
-The original expected wins proposal suggested using 10,000 random schedule simulations, but the current implementation uses Monte Carlo simulations with a configurable `NumSimulations` parameter (defaults to 1,000) in the `Simulation` model. 
+### Random Schedule Generation Configuration - UPDATED ✅
+**IMPLEMENTED**: Replaced logistic probability approach with true simulation-based expected wins calculation.
 
 **Current Implementation**:
-- Default simulation count: 1,000 (defined in `internal/models/simulation.go:22`)
-- Configurable per simulation run via `NumSimulations` field
-- No random schedule generation - uses logistic probability function on actual game scores
-- Single calculation per team per week based on head-to-head matchup results
+- **10,000 random schedule simulations** per calculation (configurable via `EXPECTED_WINS_SIMULATIONS` environment variable)
+- **True schedule luck removal**: Generates random opponent matchings using actual weekly scores
+- **Performance optimized**: Uses Go's built-in random shuffle for schedule generation
+- **Script-only access**: Removed POST API endpoints for recalculation to prevent server stress
 
-**Recommendation**: The current approach using logistic probability on actual scores is more accurate than random schedule generation, as it considers actual team performance rather than hypothetical matchups.
+**How It Works**:
+1. **Extract Weekly Scores**: Collects actual scores for each team by week from completed games
+2. **Generate Random Schedules**: Creates thousands of hypothetical schedules with random opponent pairings
+3. **Simulate Matchups**: For each simulation, determines winners using actual scores in random matchups
+4. **Average Results**: Expected wins = average wins across all simulated schedules
+
+**Configuration**:
+```bash
+# Set simulation count (default: 10,000)
+export EXPECTED_WINS_SIMULATIONS=5000
+```
+
+**Key Benefits**:
+- **True schedule luck analysis**: Shows how teams would perform across all possible schedules
+- **Accounts for strength of schedule**: Weak teams benefit when randomly matched against easier opponents
+- **More comprehensive than logistic approach**: Reveals schedule-dependent performance variations
+- **Performance balanced**: 10,000 simulations provide accurate results while remaining computationally feasible
+
+**Technical Implementation**:
+- Removed `logisticWinProbability()` function and all logistic-based calculations
+- Added `runScheduleSimulations()` with proper random number generation
+- Updated tests to account for simulation variance with appropriate tolerance
+- Maintained idempotent ETL processing and script-only recalculation access
 
 * [ ] Show the most important games based on simulation data and which ones change the outcome the most
 

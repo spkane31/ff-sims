@@ -111,15 +111,30 @@ func TestProcessWeeklyExpectedWins(t *testing.T) {
 
 	if len(weeklyRecords) != 4 {
 		t.Errorf("Expected 4 weekly records, got %d", len(weeklyRecords))
+		// Debug: show which teams we got
+		for _, record := range weeklyRecords {
+			t.Logf("Got record for team %d: expected=%.3f, weekly=%.3f", record.TeamID, record.ExpectedWins, record.WeeklyExpectedWins)
+		}
 	}
 
-	// Check that expected wins are calculated
+	// Check that expected wins are calculated properly
 	for _, record := range weeklyRecords {
-		if record.ExpectedWins <= 0 {
-			t.Errorf("Expected wins should be > 0, got %.3f for team %d", record.ExpectedWins, record.TeamID)
+		if record.ExpectedWins < 0 || record.ExpectedWins > float64(record.ActualWins + record.ActualLosses) {
+			t.Errorf("Expected wins should be between 0 and total games for team %d, got %.3f", record.TeamID, record.ExpectedWins)
 		}
-		if record.WeeklyExpectedWins <= 0 {
-			t.Errorf("Weekly expected wins should be > 0, got %.3f for team %d", record.WeeklyExpectedWins, record.TeamID)
+		if record.WeeklyExpectedWins < 0 || record.WeeklyExpectedWins > 1 {
+			t.Errorf("Weekly expected wins should be between 0 and 1 for team %d, got %.3f", record.TeamID, record.WeeklyExpectedWins)
+		}
+		
+		// Check that weekly + cumulative relationship makes sense
+		if record.Week == 1 {
+			// For week 1, cumulative and weekly should be approximately equal since there's only one week
+			// Allow some tolerance for simulation variance
+			tolerance := 0.1
+			if record.ExpectedWins-record.WeeklyExpectedWins > tolerance || record.WeeklyExpectedWins-record.ExpectedWins > tolerance {
+				t.Errorf("Team %d week 1: cumulative expected wins (%.3f) should be close to weekly (%.3f)", 
+					record.TeamID, record.ExpectedWins, record.WeeklyExpectedWins)
+			}
 		}
 	}
 }
