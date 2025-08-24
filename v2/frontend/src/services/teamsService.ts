@@ -12,6 +12,13 @@ export interface TeamPoints {
   against: number;
 }
 
+export interface TeamExpectedWins {
+  expectedWins: number;
+  expectedLosses: number;
+  winLuck: number;
+  seasonsPlayed: number;
+}
+
 export interface Team {
   id: string;
   espnId: string;
@@ -20,6 +27,7 @@ export interface Team {
   record: TeamRecord;
   playoffRecord: TeamRecord;
   points: TeamPoints;
+  expectedWins?: TeamExpectedWins;
   rank: number;
   playoffChance: number;
 }

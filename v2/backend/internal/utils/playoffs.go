@@ -153,10 +153,21 @@ func FilterPlayoffGames(allSchedule []models.Matchup) []models.Matchup {
 
 // ShouldIncludeInPlayoffRecord determines if a game should count towards playoff records
 func ShouldIncludeInPlayoffRecord(game models.Matchup, allSchedule []models.Matchup) bool {
+	// First check: only consider games that are NOT regular season (GameType != "NONE")
+	if game.GameType == "NONE" {
+		return false
+	}
+	
+	// Additional check: make sure the game is actually a playoff game by checking game type
 	gameType := GetPlayoffGameType(game, allSchedule)
-	return gameType == PlayoffGameTypePlayoff ||
-		gameType == PlayoffGameTypeChampionship ||
-		gameType == PlayoffGameTypeThirdPlace
+	
+	// Only count meaningful playoff games:
+	// - Championship games (finals)
+	// - Playoff bracket games (semifinals) 
+	// - Third place games (verified third place matchup)
+	return gameType == PlayoffGameTypeChampionship ||
+		(gameType == PlayoffGameTypePlayoff && game.GameType == "WINNERS_BRACKET") ||
+		(gameType == PlayoffGameTypeThirdPlace && isThirdPlaceGame(game, allSchedule))
 }
 
 // ShouldIncludeInRecord determines if a game should count towards playoff records

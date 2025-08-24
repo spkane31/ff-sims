@@ -22,7 +22,7 @@ func Initialize(cfg *config.Config) error {
 	var err error
 	slog.Info("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
 	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
-		Logger:                                   logger.Default.LogMode(logger.Error),
+		Logger:                                   logger.Default.LogMode(logger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true, // Disable FK checks during migration
 	})
 	if err != nil {

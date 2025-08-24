@@ -1,4 +1,4 @@
-.PHONY: build clean run etl
+.PHONY: build clean run etl migrate deduplicate
 
 help:
 	@echo "Makefile for backend"
@@ -7,6 +7,8 @@ help:
 	@echo "  run - Build and run the backend server"
 	@echo "  clean - Remove built binaries"
 	@echo "  etl - Run the ETL process"
+	@echo "  migrate - Run all database migration files (requires DATABASE_URL)"
+	@echo "  deduplicate - Remove duplicate records from database"
 
 build:
 	@echo "Building the backend..."
@@ -28,3 +30,21 @@ clean:
 etl: build
 	@echo "Running ETL process..."
 	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
+
+migrate:
+	@echo "Running database migrations..."
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "ERROR: DATABASE_URL environment variable is not set"; \
+		exit 1; \
+	fi
+	@for file in migrations/*.sql; do \
+		if [ -f "$$file" ]; then \
+			echo "Applying migration: $$file"; \
+			psql $(DATABASE_URL) -f "$$file" || exit 1; \
+		fi; \
+	done
+	@echo "All migrations applied successfully"
+
+deduplicate:
+	@echo "Running deduplication process..."
+	@go run ./cmd/deduplicate

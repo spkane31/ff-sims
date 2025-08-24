@@ -19,6 +19,7 @@ func SetupRouter(r *gin.Engine) {
 		{
 			teams.GET("", handlers.GetTeams)
 			teams.GET("/:id", handlers.GetTeamByID)
+			teams.GET("/all-time-expected-wins", handlers.GetAllTimeExpectedWins)
 		}
 
 		// Players endpoints
@@ -40,15 +41,23 @@ func SetupRouter(r *gin.Engine) {
 			transactions.GET("", handlers.GetTransactions)
 		}
 
-		// // Leagues endpoints
-		// leagues := api.Group("/leagues")
-		// {
-		// 	leagues.GET("", handlers.GetLeagues)
-		// 	leagues.GET("/:id", handlers.GetLeagueByID)
-		// 	leagues.POST("", middleware.AuthRequired(), handlers.CreateLeague)
-		// 	leagues.PUT("/:id", middleware.AuthRequired(), handlers.UpdateLeague)
-		// 	leagues.GET("/:id/standings", handlers.GetLeagueStandings)
-		// }
+		// Leagues endpoints
+		leagues := api.Group("/leagues")
+		{
+			// Expected wins endpoints
+			leagues.GET("/:id/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
+			leagues.GET("/:id/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
+			leagues.GET("/:id/expected-wins/rankings/:year", handlers.GetSeasonRankings)
+			leagues.GET("/:id/expected-wins/luck/:year", handlers.GetLuckDistribution)
+			
+			// Management endpoints
+			leagues.POST("/:id/expected-wins/recalculate/:year", handlers.RecalculateExpectedWins)
+			leagues.POST("/:id/expected-wins/process/:year/:week", handlers.ProcessWeek)
+			leagues.POST("/:id/expected-wins/finalize/:year", handlers.FinalizeSeasonExpectedWinsHandler)
+		}
+		
+		// Teams endpoints (additional expected wins routes)
+		teams.GET("/:id/expected-wins/:year", handlers.GetTeamProgression)
 
 		// Simulation endpoints
 		sim := api.Group("/simulations")

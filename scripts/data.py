@@ -605,7 +605,7 @@ def get_all_players(
 
     all_players_espn_ids = [[row[0], row[1]] for row in cursor.fetchall()]
 
-    print(all_players_espn_ids)
+    logging.info(f"Found {len(all_players_espn_ids)} players in the database")
 
     for combo in all_players_espn_ids:
         espn_id, position = combo[0], combo[1]
@@ -625,7 +625,7 @@ def get_all_players(
                 cur.execute("UPDATE players SET position = %s WHERE espn_id = %s", (p.position, espn_id))
                 conn.commit()
 
-    exit(1)
+    return
 
     # First fetch all player data
     league._fetch_players()
@@ -892,7 +892,7 @@ if __name__ == "__main__":
     get_schedule(league, conn=conn, file_name=matchups_file)
     get_simple_draft(league, conn=conn, file_name=draft_file)
     get_all_transactions(league, conn=conn, file_name=transactions_file)
-    # get_all_players(league, conn=conn, file_name=box_score_file)
+    get_all_players(league, conn=conn, file_name=box_score_file)
 
     if args.use_database and conn is not None:
         conn.close()

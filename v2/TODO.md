@@ -2,11 +2,11 @@
 
 * [ ] Transactions page
 
-* [ ] Draft data on team detail page
+* [ ] Draft data on team detail pagec
 
 * [ ] Strength-of-schedule measurement and important games coming up
 
-* [ ] Expected wins on a seasonal basis
+* [ ] Expected wins on a seasonal basis - **SCHEDULE GENERATOR COMPLETED**
 
 ## Expected Wins on a Seasonal Basis - Proposal
 
@@ -266,6 +266,106 @@ export const expectedWinsService = {
 5. **Phase 5**: Advanced features (weekly progression, historical comparisons)
 
 This feature would provide valuable insights into team performance beyond traditional win-loss records, helping users understand the difference between skill and luck in fantasy football.
+
+## Weekly Expected Wins Tracking Implementation - COMPLETED ✅
+
+### Overview
+**IMPLEMENTED**: A comprehensive weekly expected wins tracking system that:
+1. Tracks expected wins progression throughout the season
+2. Calculates season totals using the final regular season week
+3. Provides week-by-week analysis and cumulative statistics
+4. Supports idempotent processing (no duplicate entries on re-runs)
+
+### Implementation Details
+
+#### Database Schema
+The system uses two main models:
+
+**`WeeklyExpectedWins`**: Stores week-by-week data with both cumulative and weekly values:
+- `ExpectedWins`: Cumulative expected wins through this week (can be > 1)
+- `WeeklyExpectedWins`: Expected wins for just this week (≤ 1) 
+- `ActualWins`/`ActualLosses`: Cumulative actual performance
+- `WinLuck`: Difference between actual and expected wins
+- Includes opponent data, scores, and context
+
+**`SeasonExpectedWins`**: Final season totals calculated from the last regular season week:
+- Uses cumulative data from the final regular season week
+- Includes season aggregates (points for/against, averages)
+- Playoff and standings information
+
+#### Core Processing Logic
+
+**Weekly Processing** (`ProcessWeeklyExpectedWins`):
+- Processes each week sequentially (1 → N) during ETL
+- Calculates cumulative expected wins using all games through current week
+- Derives weekly expected wins by subtracting previous week's cumulative total
+- Uses logistic probability function based on point differentials
+- Idempotent via `SaveWeeklyExpectedWins` upsert function
+
+**Season Finalization** (`FinalizeSeasonExpectedWins`):
+- Triggered after regular season completion
+- Uses each team's final regular season week data (handles missing weeks gracefully)
+- Calculates season aggregates and contextual metrics
+
+#### ETL Integration
+- Modified ETL to process weeks 1 through final week sequentially
+- Added `--calculate-expected-wins` flag for recalculation
+- Clears existing data when forced recalculation is requested
+- Processes all years or specific year ranges
+
+#### Expected Wins Calculation
+**Regular Season Games Only**: Excludes playoff games using `IsPlayoff = false AND GameType = "NONE"` filters to ensure consistent game counts across all teams.
+
+**Logistic Probability Function**: Uses point differential to calculate win probability:
+```
+P(win) = 1 / (1 + e^(-0.09 * point_differential))
+```
+
+#### Idempotency
+Implements robust upsert logic in `SaveWeeklyExpectedWins`:
+- Searches for existing record by (team_id, year, week)
+- Updates existing records preserving ID and created timestamp
+- Creates new records only when none exist
+- Prevents duplicate entries on multiple runs
+
+#### Performance Features
+- Comprehensive test coverage including idempotency tests
+- Efficient database queries with proper indexing
+- Sequential processing to maintain data consistency
+- Error handling that continues processing other teams/weeks on failures
+
+### Data Structure Validation
+Extensive testing validates:
+- Weekly expected wins are ≤ 1.0 (single week maximum)
+- Cumulative values increase monotonically through the season
+- Actual wins/losses match expected game counts
+- Idempotent behavior preserves data integrity
+- Playoff games are properly excluded from calculations
+
+### API Endpoints
+Provides REST endpoints for:
+- Weekly expected wins data (specific week or full season progression)
+- Season totals and rankings
+- Recalculation triggers
+
+### Frontend Integration
+TypeScript interfaces mirror Go models for type safety across the full stack. Components can display:
+- Week-by-week expected wins progression
+- Season totals and luck analysis  
+- Team performance trends and comparisons
+
+This implementation successfully provides fair team assessment by removing schedule luck from performance evaluation, enabling more accurate playoff predictions and historical analysis.
+
+### Random Schedule Generation Configuration
+The original expected wins proposal suggested using 10,000 random schedule simulations, but the current implementation uses Monte Carlo simulations with a configurable `NumSimulations` parameter (defaults to 1,000) in the `Simulation` model. 
+
+**Current Implementation**:
+- Default simulation count: 1,000 (defined in `internal/models/simulation.go:22`)
+- Configurable per simulation run via `NumSimulations` field
+- No random schedule generation - uses logistic probability function on actual game scores
+- Single calculation per team per week based on head-to-head matchup results
+
+**Recommendation**: The current approach using logistic probability on actual scores is more accurate than random schedule generation, as it considers actual team performance rather than hypothetical matchups.
 
 * [ ] Show the most important games based on simulation data and which ones change the outcome the most
 

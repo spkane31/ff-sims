@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
+import { expectedWinsService } from "../services/expectedWinsService";
 import { useSchedule } from "../hooks/useSchedule";
 import { Matchup } from "@/types/models";
 
@@ -10,7 +11,9 @@ type SortField =
   | "regularSeasonRecord"
   | "playoffRecord"
   | "pointsFor"
-  | "pointsAgainst";
+  | "pointsAgainst"
+  | "expectedWins"
+  | "expectedLosses";
 type SortDirection = "asc" | "desc";
 
 export default function Home() {
@@ -24,8 +27,31 @@ export default function Home() {
     async function fetchTeamsData() {
       try {
         setTeamsLoading(true);
-        const response = await teamsService.getAllTeams();
-        setTeams(response.teams);
+        
+        // Fetch teams and expected wins data in parallel
+        const [teamsResponse, expectedWinsResponse] = await Promise.all([
+          teamsService.getAllTeams(),
+          expectedWinsService.getAllTimeExpectedWins().catch(() => ({ data: [] }))
+        ]);
+
+        // Merge expected wins data with teams data
+        const teamsWithExpectedWins = teamsResponse.teams.map(team => {
+          const expectedWinsData = expectedWinsResponse.data.find(ew => 
+            ew.team_id.toString() === team.id || ew.owner === team.owner
+          );
+
+          return {
+            ...team,
+            expectedWins: expectedWinsData ? {
+              expectedWins: expectedWinsData.total_expected_wins,
+              expectedLosses: expectedWinsData.total_expected_losses,
+              winLuck: expectedWinsData.total_win_luck,
+              seasonsPlayed: expectedWinsData.seasons_played
+            } : undefined
+          };
+        });
+
+        setTeams(teamsWithExpectedWins);
       } catch (error) {
         console.error("Error fetching teams data:", error);
       } finally {
@@ -98,6 +124,14 @@ export default function Home() {
         case "pointsAgainst":
           fieldA = a.points.against;
           fieldB = b.points.against;
+          break;
+        case "expectedWins":
+          fieldA = a.expectedWins?.expectedWins ?? 0;
+          fieldB = b.expectedWins?.expectedWins ?? 0;
+          break;
+        case "expectedLosses":
+          fieldA = a.expectedWins?.expectedLosses ?? 0;
+          fieldB = b.expectedWins?.expectedLosses ?? 0;
           break;
         default:
           fieldA = a.owner.toLowerCase();
@@ -578,6 +612,18 @@ export default function Home() {
                         >
                           Points Against{renderSortIcon("pointsAgainst")}
                         </th>
+                        <th
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("expectedWins")}
+                        >
+                          Expected Wins{renderSortIcon("expectedWins")}
+                        </th>
+                        <th
+                          className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
+                          onClick={() => handleSort("expectedLosses")}
+                        >
+                          Expected Losses{renderSortIcon("expectedLosses")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -616,6 +662,24 @@ export default function Home() {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.expectedWins?.expectedWins !== undefined 
+                              ? team.expectedWins.expectedWins.toLocaleString(undefined, {
+                                  minimumFractionDigits: 1,
+                                  maximumFractionDigits: 1,
+                                })
+                              : "N/A"
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.expectedWins?.expectedLosses !== undefined 
+                              ? team.expectedWins.expectedLosses.toLocaleString(undefined, {
+                                  minimumFractionDigits: 1,
+                                  maximumFractionDigits: 1,
+                                })
+                              : "N/A"
+                            }
                           </td>
                         </tr>
                       ))}
