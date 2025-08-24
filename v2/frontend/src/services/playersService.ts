@@ -119,6 +119,7 @@ export const playersService = {
   getPlayers: async (params?: {
     position?: string;
     year?: string;
+    rank?: 'fantasy_points' | 'avg_points' | 'projected_points' | 'games_played' | 'vs_projection';
     page?: number;
     limit?: number;
   }): Promise<GetPlayersResponse> => {
@@ -126,6 +127,7 @@ export const playersService = {
 
     if (params?.position) queryParams.append("position", params.position);
     if (params?.year) queryParams.append("year", params.year);
+    if (params?.rank) queryParams.append("rank", params.rank);
     if (params?.page) queryParams.append("page", params.page.toString());
     if (params?.limit) queryParams.append("limit", params.limit.toString());
 

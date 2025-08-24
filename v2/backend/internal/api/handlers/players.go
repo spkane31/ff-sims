@@ -129,6 +129,7 @@ type PlayerSummaryResponse struct {
 func GetPlayers(c *gin.Context) {
 	position := c.Query("position")       // Filter by position if provided
 	year := c.DefaultQuery("year", "all") // Default to all years for career stats
+	rank := c.DefaultQuery("rank", "fantasy_points") // Ranking method: fantasy_points, avg_points, projected_points, games_played, vs_projection
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 
@@ -141,7 +142,7 @@ func GetPlayers(c *gin.Context) {
 
 	offset := (page - 1) * limit
 
-	slog.Info("Fetching players", "position", position, "year", year, "page", page, "limit", limit)
+	slog.Info("Fetching players", "position", position, "year", year, "rank", rank, "page", page, "limit", limit)
 
 	// Build the SQL query similar to your provided query
 	// SELECT p.id, p.name, p.position, p.team, p.status, p.espn_id,
@@ -203,8 +204,25 @@ func GetPlayers(c *gin.Context) {
 		return
 	}
 
+	// Determine ordering based on rank parameter
+	var orderBy string
+	switch rank {
+	case "fantasy_points":
+		orderBy = "COALESCE(SUM(bs.actual_points), 0) DESC"
+	case "avg_points":
+		orderBy = "CASE WHEN COALESCE(COUNT(bs.id), 0) > 0 THEN COALESCE(SUM(bs.actual_points), 0) / COALESCE(COUNT(bs.id), 0) ELSE 0 END DESC"
+	case "projected_points":
+		orderBy = "COALESCE(SUM(bs.projected_points), 0) DESC"
+	case "games_played":
+		orderBy = "COALESCE(COUNT(bs.id), 0) DESC"
+	case "vs_projection":
+		orderBy = "(COALESCE(SUM(bs.actual_points), 0) - COALESCE(SUM(bs.projected_points), 0)) DESC"
+	default:
+		orderBy = "COALESCE(SUM(bs.actual_points), 0) DESC" // Default to fantasy points
+	}
+
 	// Execute the main query with pagination and ordering
-	if err := query.Order("total_points DESC").
+	if err := query.Order(orderBy).
 		Limit(limit).
 		Offset(offset).
 		Find(&results).Error; err != nil {
