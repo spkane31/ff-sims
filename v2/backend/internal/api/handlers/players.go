@@ -329,28 +329,9 @@ func GetPlayerStats(c *gin.Context) {
 	week := c.DefaultQuery("week", "all")
 	season := c.DefaultQuery("season", "2023")
 
-	stats := []models.PlayerGameStats{
-		{
-			PlayerID:   1,
-			PlayerName: "Tom Brady",
-			Week:       1,
-			Season:     2023,
-			GameStats: models.PlayerStats{
-				PassingYards:   312,
-				PassingTDs:     3,
-				RushingYards:   5,
-				RushingTDs:     0,
-				Receptions:     0,
-				ReceivingYards: 0,
-				ReceivingTDs:   0,
-			},
-			FantasyPoints: 25.7,
-		},
-		// Add more mock data
-	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"stats": stats,
+		"stats": map[string]int{},
 		"filters": gin.H{
 			"week":   week,
 			"season": season,

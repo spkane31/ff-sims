@@ -625,9 +625,6 @@ def get_all_players(
                 cur.execute("UPDATE players SET position = %s WHERE espn_id = %s", (p.position, espn_id))
                 conn.commit()
 
-        print(p)
-        # exit(1)
-
     exit(1)
 
     # First fetch all player data
@@ -892,10 +889,10 @@ if __name__ == "__main__":
         with open(file_path, "w") as f:
             f.write("[]")
 
-    # get_schedule(league, conn=conn, file_name=matchups_file)
-    # get_simple_draft(league, conn=conn, file_name=draft_file)
-    # get_all_transactions(league, conn=conn, file_name=transactions_file)
-    get_all_players(league, conn=conn, file_name=box_score_file)
+    get_schedule(league, conn=conn, file_name=matchups_file)
+    get_simple_draft(league, conn=conn, file_name=draft_file)
+    get_all_transactions(league, conn=conn, file_name=transactions_file)
+    # get_all_players(league, conn=conn, file_name=box_score_file)
 
     if args.use_database and conn is not None:
         conn.close()

@@ -19,3 +19,5 @@
 * [X] On the players page, player positions arent showing up correctly
 
 * [X] Include the 3rd place game in totals. Game is between the two losers of the PLAYOFF game of the second to last week.
+
+* [X] Store player data from pre-2024

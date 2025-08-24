@@ -58,7 +58,6 @@ func runMigrations() error {
 		&models.Team{},
 		&models.TeamNameHistory{},
 		&models.Player{},
-		&models.PlayerGameStats{},
 		&models.League{},
 		&models.Matchup{},
 		&models.Simulation{},

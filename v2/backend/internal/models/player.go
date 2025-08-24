@@ -43,24 +43,6 @@ type PlayerStats struct {
 	ExtraPoints    float64 `json:"extra_points" gorm:"default:0"`
 }
 
-// PlayerGameStats represents a player's stats for a specific game
-type PlayerGameStats struct {
-	ID        uint           `json:"id" gorm:"primarykey"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
-
-	PlayerID      uint        `json:"player_id"`
-	PlayerName    string      `json:"player_name"`
-	Week          int         `json:"week"`
-	Season        int         `json:"season"`
-	GameStats     PlayerStats `json:"game_stats" gorm:"embedded"`
-	FantasyPoints float64     `json:"fantasy_points"`
-
-	// Relationships
-	Player *Player `json:"-"`
-}
-
 // GetPlayerByESPNID retrieves a player by their ESPN ID
 func GetPlayerByESPNID(db *gorm.DB, espnID int64) (*Player, error) {
 	var player Player
