@@ -36,7 +36,7 @@ export default function PlayersIndex() {
 
   // Filter states
   const [positionFilter, setPositionFilter] = useState<string>("all");
-  const [yearFilter, setYearFilter] = useState<string>("2024");
+  const [yearFilter, setYearFilter] = useState<string>("all");
   const [searchFilter, setSearchFilter] = useState<string>("");
 
   // Pagination states
@@ -187,8 +187,8 @@ export default function PlayersIndex() {
         <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
           <h1 className="text-3xl font-bold text-blue-600 mb-2">Players</h1>
           <p className="text-gray-600 dark:text-gray-400">
-            View detailed statistics and performance data for all fantasy
-            players
+            View career statistics and performance data for all fantasy
+            players. Use the season filter to view specific year data.
           </p>
         </section>
 
@@ -244,15 +244,22 @@ export default function PlayersIndex() {
               >
                 Season
               </label>
-              <select
+                <select
                 id="year"
                 className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 value={yearFilter}
                 onChange={(e) => setYearFilter(e.target.value)}
-              >
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
-              </select>
+                >
+                <option value="all">All Time</option>
+                {Array.from(
+                  { length: new Date().getFullYear() - 2019 + 1 },
+                  (_, i) => new Date().getFullYear() - i
+                ).map((year) => (
+                  <option key={year} value={year}>
+                  {year}
+                  </option>
+                ))}
+                </select>
             </div>
 
             {/* Reset Filters */}
@@ -260,7 +267,7 @@ export default function PlayersIndex() {
               <button
                 onClick={() => {
                   setPositionFilter("all");
-                  setYearFilter("2024");
+                  setYearFilter("all");
                   setSearchFilter("");
                   setCurrentPage(1);
                 }}

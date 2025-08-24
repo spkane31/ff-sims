@@ -6,6 +6,9 @@ import {
   playersService,
   PlayerDetail,
   PlayerStats,
+  GameLogEntry,
+  AnnualStatsEntry,
+  GamePerformance,
 } from "../../services/playersService";
 
 // Helper function to get position color
@@ -26,6 +29,19 @@ function getPositionColor(position: string): string {
     default:
       return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
   }
+}
+
+// Helper function to filter game log entries
+function filterGameLog(
+  gameLog: GameLogEntry[],
+  yearFilter: string,
+  weekFilter: string
+): GameLogEntry[] {
+  return gameLog.filter((entry) => {
+    const yearMatch = yearFilter === "all" || entry.year.toString() === yearFilter;
+    const weekMatch = weekFilter === "all" || entry.week.toString() === weekFilter;
+    return yearMatch && weekMatch;
+  });
 }
 
 // Helper function to format stats based on position
@@ -308,6 +324,182 @@ export default function PlayerDetailPage() {
                 </div>
               </section>
 
+              {/* Annual Statistics Table */}
+              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Annual Statistics</h2>
+                {player.annualStats && player.annualStats.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                      <thead className="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Year
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Games
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Points
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Projected
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Average
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Difference
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Best Game
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Worst Game
+                          </th>
+                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Consistency
+                          </th>
+                          {player.position === "QB" && (
+                            <>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Pass Yds
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Pass TDs
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                INTs
+                              </th>
+                            </>
+                          )}
+                          {(player.position === "RB" || player.position === "WR" || player.position === "TE") && (
+                            <>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Rec
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Rec Yds
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Rec TDs
+                              </th>
+                            </>
+                          )}
+                          {player.position === "K" && (
+                            <>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                FG
+                              </th>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                XP
+                              </th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                        {player.annualStats.map((yearStats, index) => (
+                          <tr key={yearStats.year} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                            <td className="py-3 px-4 text-sm font-medium text-blue-600">
+                              {yearStats.year}
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              {yearStats.gamesPlayed}
+                            </td>
+                            <td className="py-3 px-4 text-sm font-bold">
+                              {yearStats.totalFantasyPoints.toFixed(1)}
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-500">
+                              {yearStats.totalProjectedPoints.toFixed(1)}
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              {yearStats.avgFantasyPoints.toFixed(1)}
+                            </td>
+                            <td className={`py-3 px-4 text-sm font-medium ${
+                              yearStats.difference > 0 
+                                ? "text-green-600 dark:text-green-400" 
+                                : "text-red-600 dark:text-red-400"
+                            }`}>
+                              {yearStats.difference > 0 ? "+" : ""}{yearStats.difference.toFixed(1)}
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="font-medium text-green-600 dark:text-green-400">
+                                {yearStats.bestGame.points.toFixed(1)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Wk {yearStats.bestGame.week}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="font-medium text-red-600 dark:text-red-400">
+                                {yearStats.worstGame.points.toFixed(1)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Wk {yearStats.worstGame.week}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="font-medium">
+                                {yearStats.consistencyScore.toFixed(1)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {yearStats.consistencyScore < 5 
+                                  ? "Very consistent" 
+                                  : yearStats.consistencyScore < 8 
+                                  ? "Consistent" 
+                                  : yearStats.consistencyScore < 12 
+                                  ? "Variable" 
+                                  : "Inconsistent"}
+                              </div>
+                            </td>
+                            {player.position === "QB" && (
+                              <>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.passingYards.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.passingTDs}
+                                </td>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.interceptions}
+                                </td>
+                              </>
+                            )}
+                            {(player.position === "RB" || player.position === "WR" || player.position === "TE") && (
+                              <>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.receptions}
+                                </td>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.receivingYards.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.receivingTDs}
+                                </td>
+                              </>
+                            )}
+                            {player.position === "K" && (
+                              <>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.fieldGoals}
+                                </td>
+                                <td className="py-3 px-4 text-sm">
+                                  {yearStats.totalStats.extraPoints}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <p>No annual statistics available</p>
+                  </div>
+                )}
+              </section>
+
               <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
                   <h2 className="text-lg font-semibold mb-4">
@@ -327,15 +519,54 @@ export default function PlayerDetailPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span>Best Game:</span>
-                      <span className="font-medium">Coming Soon</span>
+                      <span className="font-medium text-green-600 dark:text-green-400">
+                        {player.bestGame?.points > 0 ? (
+                          <>
+                            {player.bestGame.points.toFixed(1)} pts
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {player.bestGame.year} Week {player.bestGame.week}
+                            </div>
+                          </>
+                        ) : (
+                          "No games"
+                        )}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Worst Game:</span>
-                      <span className="font-medium">Coming Soon</span>
+                      <span className="font-medium text-red-600 dark:text-red-400">
+                        {player.worstGame?.points >= 0 && player.worstGame.points < 1000 ? (
+                          <>
+                            {player.worstGame.points.toFixed(1)} pts
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {player.worstGame.year} Week {player.worstGame.week}
+                            </div>
+                          </>
+                        ) : (
+                          "No games"
+                        )}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Consistency:</span>
-                      <span className="font-medium">Coming Soon</span>
+                      <span className="font-medium">
+                        {player.consistencyScore > 0 ? (
+                          <>
+                            σ = {player.consistencyScore.toFixed(1)}
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {player.consistencyScore < 5 
+                                ? "Very consistent" 
+                                : player.consistencyScore < 8 
+                                ? "Consistent" 
+                                : player.consistencyScore < 12 
+                                ? "Variable" 
+                                : "Inconsistent"}
+                            </div>
+                          </>
+                        ) : (
+                          "No data"
+                        )}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -609,7 +840,7 @@ export default function PlayerDetailPage() {
                         Week
                       </th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Opponent
+                        Year
                       </th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Points
@@ -621,21 +852,68 @@ export default function PlayerDetailPage() {
                         Difference
                       </th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Status
+                        Started
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Date
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                    {/* TODO: Replace with actual game log data when available */}
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="py-8 text-center text-gray-500 dark:text-gray-400"
-                      >
-                        Game log data will be available when GetPlayerByID API
-                        is fully implemented
-                      </td>
-                    </tr>
+                    {(() => {
+                      const filteredGameLog = filterGameLog(player.gameLog || [], yearFilter, weekFilter);
+                      
+                      if (filteredGameLog.length === 0) {
+                        return (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              className="py-8 text-center text-gray-500 dark:text-gray-400"
+                            >
+                              {player.gameLog?.length === 0 
+                                ? "No game log data available" 
+                                : "No games match the selected filters"}
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filteredGameLog.map((game, index) => (
+                        <tr key={`${game.year}-${game.week}`} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                          <td className="py-3 px-4 text-sm font-medium">
+                            {game.week}
+                          </td>
+                          <td className="py-3 px-4 text-sm">
+                            {game.year}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-bold text-blue-600">
+                            {game.actualPoints.toFixed(1)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-500">
+                            {game.projectedPoints.toFixed(1)}
+                          </td>
+                          <td className={`py-3 px-4 text-sm font-medium ${
+                            game.difference > 0 
+                              ? "text-green-600 dark:text-green-400" 
+                              : "text-red-600 dark:text-red-400"
+                          }`}>
+                            {game.difference > 0 ? "+" : ""}{game.difference.toFixed(1)}
+                          </td>
+                          <td className="py-3 px-4 text-sm">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              game.startedFlag 
+                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" 
+                                : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                            }`}>
+                              {game.startedFlag ? "Started" : "Bench"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-500">
+                            {new Date(game.gameDate).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>

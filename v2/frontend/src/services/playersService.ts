@@ -15,6 +15,36 @@ export interface PlayerStats {
   extraPoints: number;
 }
 
+export interface GameLogEntry {
+  week: number;
+  year: number;
+  actualPoints: number;
+  projectedPoints: number;
+  difference: number;
+  startedFlag: boolean;
+  gameDate: string;
+  stats: PlayerStats;
+}
+
+export interface GamePerformance {
+  points: number;
+  year: number;
+  week: number;
+}
+
+export interface AnnualStatsEntry {
+  year: number;
+  gamesPlayed: number;
+  totalFantasyPoints: number;
+  totalProjectedPoints: number;
+  avgFantasyPoints: number;
+  difference: number;
+  bestGame: GamePerformance;
+  worstGame: GamePerformance;
+  consistencyScore: number; // Standard deviation
+  totalStats: PlayerStats;
+}
+
 export interface PlayerDetail {
   id: string;
   espnId: string;
@@ -28,7 +58,12 @@ export interface PlayerDetail {
   gamesPlayed: number;
   avgFantasyPoints: number;
   positionRank: number;
+  bestGame: GamePerformance;
+  worstGame: GamePerformance;
+  consistencyScore: number; // Standard deviation
   totalStats: PlayerStats;
+  annualStats: AnnualStatsEntry[];
+  gameLog: GameLogEntry[];
 }
 
 export interface PlayerSummary {

@@ -10,7 +10,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"math"
 )
+
+// calculateStandardDeviation calculates the standard deviation of a slice of float64 values
+func calculateStandardDeviation(values []float64) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+
+	// Calculate mean
+	sum := 0.0
+	for _, v := range values {
+		sum += v
+	}
+	mean := sum / float64(len(values))
+
+	// Calculate variance
+	variance := 0.0
+	for _, v := range values {
+		variance += math.Pow(v-mean, 2)
+	}
+	variance /= float64(len(values))
+
+	// Return standard deviation
+	return math.Sqrt(variance)
+}
 
 type PlayerStatsResponse struct {
 	PassingYards   int `json:"passingYards"`
@@ -24,6 +49,57 @@ type PlayerStatsResponse struct {
 	Fumbles        int `json:"fumbles"`
 	FieldGoals     int `json:"fieldGoals"`
 	ExtraPoints    int `json:"extraPoints"`
+}
+
+type GameLogEntry struct {
+	Week            uint    `json:"week"`
+	Year            uint    `json:"year"`
+	ActualPoints    float64 `json:"actualPoints"`
+	ProjectedPoints float64 `json:"projectedPoints"`
+	Difference      float64 `json:"difference"`
+	StartedFlag     bool    `json:"startedFlag"`
+	GameDate        string  `json:"gameDate"`
+	Stats           PlayerStatsResponse `json:"stats"`
+}
+
+type GamePerformance struct {
+	Points float64 `json:"points"`
+	Year   uint    `json:"year"`
+	Week   uint    `json:"week"`
+}
+
+type AnnualStatsEntry struct {
+	Year                 uint             `json:"year"`
+	GamesPlayed          int              `json:"gamesPlayed"`
+	TotalFantasyPoints   float64          `json:"totalFantasyPoints"`
+	TotalProjectedPoints float64          `json:"totalProjectedPoints"`
+	AvgFantasyPoints     float64          `json:"avgFantasyPoints"`
+	Difference           float64          `json:"difference"`
+	BestGame             GamePerformance  `json:"bestGame"`
+	WorstGame            GamePerformance  `json:"worstGame"`
+	ConsistencyScore     float64          `json:"consistencyScore"` // Standard deviation
+	TotalStats           PlayerStatsResponse `json:"totalStats"`
+}
+
+type PlayerDetailResponse struct {
+	ID                   string              `json:"id"`
+	ESPNID               string              `json:"espnId"`
+	Name                 string              `json:"name"`
+	Position             string              `json:"position"`
+	Team                 string              `json:"team"`
+	Status               string              `json:"status"`
+	TotalFantasyPoints   float64             `json:"totalFantasyPoints"`
+	TotalProjectedPoints float64             `json:"totalProjectedPoints"`
+	Difference           float64             `json:"difference"`
+	GamesPlayed          int                 `json:"gamesPlayed"`
+	AvgFantasyPoints     float64             `json:"avgFantasyPoints"`
+	PositionRank         int                 `json:"positionRank"`
+	BestGame             GamePerformance     `json:"bestGame"`
+	WorstGame            GamePerformance     `json:"worstGame"`
+	ConsistencyScore     float64             `json:"consistencyScore"` // Standard deviation
+	TotalStats           PlayerStatsResponse `json:"totalStats"`
+	AnnualStats          []AnnualStatsEntry  `json:"annualStats"`
+	GameLog              []GameLogEntry      `json:"gameLog"`
 }
 
 type GetPlayersResponse struct {
@@ -51,8 +127,8 @@ type PlayerSummaryResponse struct {
 
 // GetPlayers returns all players with optional filtering and pagination
 func GetPlayers(c *gin.Context) {
-	position := c.Query("position")        // Filter by position if provided
-	year := c.DefaultQuery("year", "2024") // Default to current year
+	position := c.Query("position")       // Filter by position if provided
+	year := c.DefaultQuery("year", "all") // Default to all years for career stats
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 
@@ -99,9 +175,17 @@ func GetPlayers(c *gin.Context) {
 		Select(`p.id, p.name, p.position, p.team, p.status, p.espn_id,
 			COALESCE(SUM(bs.actual_points), 0) AS total_points,
 			COALESCE(SUM(bs.projected_points), 0) AS total_projected_points,
-			COALESCE(COUNT(bs.id), 0) AS games_played`).
-		Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.year = ?", year).
-		Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
+			COALESCE(COUNT(bs.id), 0) AS games_played`)
+
+	// Add year filter if not "all"
+	if year == "all" {
+		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id")
+	} else {
+		yearInt, _ := strconv.Atoi(year)
+		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.year = ?", yearInt)
+	}
+
+	query = query.Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
 
 	// Add position filter if provided
 	if position != "" {
@@ -139,10 +223,17 @@ func GetPlayers(c *gin.Context) {
 
 	var boxScores []models.BoxScore
 	if len(playerIDs) > 0 {
-		yearInt, _ := strconv.Atoi(year)
-		if err := database.DB.Where("player_id IN ? AND year = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
-			slog.Error("Failed to fetch detailed box scores", "error", err)
-			// Continue without detailed stats rather than failing completely
+		if year == "all" {
+			if err := database.DB.Where("player_id IN ?", playerIDs).Find(&boxScores).Error; err != nil {
+				slog.Error("Failed to fetch detailed box scores", "error", err)
+				// Continue without detailed stats rather than failing completely
+			}
+		} else {
+			yearInt, _ := strconv.Atoi(year)
+			if err := database.DB.Where("player_id IN ? AND year = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
+				slog.Error("Failed to fetch detailed box scores", "error", err)
+				// Continue without detailed stats rather than failing completely
+			}
 		}
 	}
 
@@ -232,16 +323,25 @@ func GetPlayerByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch box scores for the player (default to current year)
-	year := c.DefaultQuery("year", "2024")
-	yearInt, _ := strconv.Atoi(year)
-
+	// Fetch all box scores for the player
+	year := c.DefaultQuery("year", "all")
+	
 	var boxScores []models.BoxScore
-	if err := database.DB.Where("player_id = ? AND year = ?", player.ID, yearInt).
-		Order("week asc").Find(&boxScores).Error; err != nil {
-		slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
-		return
+	if year == "all" {
+		if err := database.DB.Where("player_id = ?", player.ID).
+			Order("year desc, week asc").Find(&boxScores).Error; err != nil {
+			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
+			return
+		}
+	} else {
+		yearInt, _ := strconv.Atoi(year)
+		if err := database.DB.Where("player_id = ? AND year = ?", player.ID, yearInt).
+			Order("week asc").Find(&boxScores).Error; err != nil {
+			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
+			return
+		}
 	}
 
 	// Aggregate statistics
@@ -274,49 +374,192 @@ func GetPlayerByID(c *gin.Context) {
 
 	difference := totalFantasyPoints - totalProjectedPoints
 
-	// Calculate position rank by fetching all players of same position and comparing total fantasy points
-	var playersInPosition []models.Player
-	if err := database.DB.Where("position = ?", player.Position).Find(&playersInPosition).Error; err != nil {
-		slog.Error("Failed to fetch players for position ranking", "error", err, "position", player.Position)
+	// TODO: Position rank calculation removed for performance
+	// Will be implemented using pre-calculated rankings in player_season_stats table
+	positionRank := 0
+
+	// Calculate annual statistics
+	yearlyStats := make(map[uint]*AnnualStatsEntry)
+	yearlyGamePoints := make(map[uint][]float64) // Track individual game scores for standard deviation
+	
+	for _, boxScore := range boxScores {
+		year := boxScore.Year
+		if yearlyStats[year] == nil {
+			yearlyStats[year] = &AnnualStatsEntry{
+				Year:                 year,
+				GamesPlayed:          0,
+				TotalFantasyPoints:   0,
+				TotalProjectedPoints: 0,
+				AvgFantasyPoints:     0,
+				Difference:           0,
+				BestGame:             GamePerformance{Points: 0, Year: year, Week: 0},
+				WorstGame:            GamePerformance{Points: math.MaxFloat64, Year: year, Week: 0},
+				ConsistencyScore:     0,
+				TotalStats:           PlayerStatsResponse{},
+			}
+			yearlyGamePoints[year] = []float64{}
+		}
+
+		entry := yearlyStats[year]
+		entry.GamesPlayed++
+		entry.TotalFantasyPoints += boxScore.ActualPoints
+		entry.TotalProjectedPoints += boxScore.ProjectedPoints
+		
+		// Track individual game points
+		yearlyGamePoints[year] = append(yearlyGamePoints[year], boxScore.ActualPoints)
+		
+		// Update best game
+		if boxScore.ActualPoints > entry.BestGame.Points {
+			entry.BestGame = GamePerformance{
+				Points: boxScore.ActualPoints,
+				Year:   boxScore.Year,
+				Week:   boxScore.Week,
+			}
+		}
+		
+		// Update worst game (exclude 0-point games which are likely bye weeks)
+		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < entry.WorstGame.Points {
+			entry.WorstGame = GamePerformance{
+				Points: boxScore.ActualPoints,
+				Year:   boxScore.Year,
+				Week:   boxScore.Week,
+			}
+		}
+
+		// Aggregate stats for the year
+		entry.TotalStats.PassingYards += int(boxScore.GameStats.PassingYards)
+		entry.TotalStats.PassingTDs += int(boxScore.GameStats.PassingTDs)
+		entry.TotalStats.Interceptions += int(boxScore.GameStats.Interceptions)
+		entry.TotalStats.RushingYards += int(boxScore.GameStats.RushingYards)
+		entry.TotalStats.RushingTDs += int(boxScore.GameStats.RushingTDs)
+		entry.TotalStats.Receptions += int(boxScore.GameStats.Receptions)
+		entry.TotalStats.ReceivingYards += int(boxScore.GameStats.ReceivingYards)
+		entry.TotalStats.ReceivingTDs += int(boxScore.GameStats.ReceivingTDs)
+		entry.TotalStats.Fumbles += int(boxScore.GameStats.Fumbles)
+		entry.TotalStats.FieldGoals += int(boxScore.GameStats.FieldGoals)
+		entry.TotalStats.ExtraPoints += int(boxScore.GameStats.ExtraPoints)
 	}
 
-	positionRank := 1
-	for _, otherPlayer := range playersInPosition {
-		if otherPlayer.ID == player.ID {
-			continue
+	// Calculate averages, differences, and consistency scores for each year
+	var annualStats []AnnualStatsEntry
+	for year, entry := range yearlyStats {
+		if entry.GamesPlayed > 0 {
+			entry.AvgFantasyPoints = entry.TotalFantasyPoints / float64(entry.GamesPlayed)
+		}
+		entry.Difference = entry.TotalFantasyPoints - entry.TotalProjectedPoints
+		
+		// Calculate consistency score (standard deviation)
+		if gamePoints, exists := yearlyGamePoints[year]; exists {
+			entry.ConsistencyScore = calculateStandardDeviation(gamePoints)
+		}
+		
+		// Reset worst game if it was never set (no games played)
+		if entry.WorstGame.Points == math.MaxFloat64 {
+			entry.WorstGame.Points = 0
 		}
 
-		// Get other player's box scores for comparison
-		var otherBoxScores []models.BoxScore
-		if err := database.DB.Where("player_id = ? AND year = ?", otherPlayer.ID, yearInt).Find(&otherBoxScores).Error; err != nil {
-			continue
+		// Only include years where player actually played (has non-zero stats)
+		hasStats := entry.TotalStats.PassingYards > 0 || entry.TotalStats.RushingYards > 0 ||
+			entry.TotalStats.Receptions > 0 || entry.TotalStats.FieldGoals > 0 ||
+			entry.TotalStats.ExtraPoints > 0 || entry.TotalFantasyPoints > 0
+
+		if hasStats {
+			annualStats = append(annualStats, *entry)
+		}
+	}
+
+	// Sort annual stats by year (descending)
+	for i := 0; i < len(annualStats)-1; i++ {
+		for j := i + 1; j < len(annualStats); j++ {
+			if annualStats[i].Year < annualStats[j].Year {
+				annualStats[i], annualStats[j] = annualStats[j], annualStats[i]
+			}
+		}
+	}
+
+	// Calculate overall best game, worst game, and consistency
+	var overallBestGame GamePerformance
+	var overallWorstGame GamePerformance = GamePerformance{Points: math.MaxFloat64}
+	var allGamePoints []float64
+
+	for _, boxScore := range boxScores {
+		allGamePoints = append(allGamePoints, boxScore.ActualPoints)
+		
+		if boxScore.ActualPoints > overallBestGame.Points {
+			overallBestGame = GamePerformance{
+				Points: boxScore.ActualPoints,
+				Year:   boxScore.Year,
+				Week:   boxScore.Week,
+			}
+		}
+		
+		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < overallWorstGame.Points {
+			overallWorstGame = GamePerformance{
+				Points: boxScore.ActualPoints,
+				Year:   boxScore.Year,
+				Week:   boxScore.Week,
+			}
+		}
+	}
+
+	// Reset worst game if it was never set
+	if overallWorstGame.Points == math.MaxFloat64 {
+		overallWorstGame.Points = 0
+	}
+
+	overallConsistencyScore := calculateStandardDeviation(allGamePoints)
+
+	// Build game log entries from box scores
+	var gameLog []GameLogEntry
+	for _, boxScore := range boxScores {
+		gameStats := PlayerStatsResponse{
+			PassingYards:   int(boxScore.GameStats.PassingYards),
+			PassingTDs:     int(boxScore.GameStats.PassingTDs),
+			Interceptions:  int(boxScore.GameStats.Interceptions),
+			RushingYards:   int(boxScore.GameStats.RushingYards),
+			RushingTDs:     int(boxScore.GameStats.RushingTDs),
+			Receptions:     int(boxScore.GameStats.Receptions),
+			ReceivingYards: int(boxScore.GameStats.ReceivingYards),
+			ReceivingTDs:   int(boxScore.GameStats.ReceivingTDs),
+			Fumbles:        int(boxScore.GameStats.Fumbles),
+			FieldGoals:     int(boxScore.GameStats.FieldGoals),
+			ExtraPoints:    int(boxScore.GameStats.ExtraPoints),
 		}
 
-		var otherTotalPoints float64
-		for _, bs := range otherBoxScores {
-			otherTotalPoints += bs.ActualPoints
+		gameLogEntry := GameLogEntry{
+			Week:            boxScore.Week,
+			Year:            boxScore.Year,
+			ActualPoints:    boxScore.ActualPoints,
+			ProjectedPoints: boxScore.ProjectedPoints,
+			Difference:      boxScore.ActualPoints - boxScore.ProjectedPoints,
+			StartedFlag:     boxScore.StartedFlag,
+			GameDate:        boxScore.GameDate.Format("2006-01-02"),
+			Stats:           gameStats,
 		}
-
-		if otherTotalPoints > totalFantasyPoints {
-			positionRank++
-		}
+		
+		gameLog = append(gameLog, gameLogEntry)
 	}
 
 	// Create response
-	response := gin.H{
-		"id":                   strconv.FormatUint(uint64(player.ID), 10),
-		"espnId":               strconv.FormatInt(player.ESPNID, 10),
-		"name":                 player.Name,
-		"position":             player.Position,
-		"team":                 player.Team,
-		"status":               player.Status,
-		"totalFantasyPoints":   totalFantasyPoints,
-		"totalProjectedPoints": totalProjectedPoints,
-		"difference":           difference,
-		"gamesPlayed":          gamesPlayed,
-		"avgFantasyPoints":     avgFantasyPoints,
-		"positionRank":         positionRank,
-		"totalStats":           totalStats,
+	response := PlayerDetailResponse{
+		ID:                   strconv.FormatUint(uint64(player.ID), 10),
+		ESPNID:               strconv.FormatInt(player.ESPNID, 10),
+		Name:                 player.Name,
+		Position:             player.Position,
+		Team:                 player.Team,
+		Status:               player.Status,
+		TotalFantasyPoints:   totalFantasyPoints,
+		TotalProjectedPoints: totalProjectedPoints,
+		Difference:           difference,
+		GamesPlayed:          gamesPlayed,
+		AvgFantasyPoints:     avgFantasyPoints,
+		PositionRank:         positionRank,
+		BestGame:             overallBestGame,
+		WorstGame:            overallWorstGame,
+		ConsistencyScore:     overallConsistencyScore,
+		TotalStats:           totalStats,
+		AnnualStats:          annualStats,
+		GameLog:              gameLog,
 	}
 
 	c.JSON(http.StatusOK, response)
