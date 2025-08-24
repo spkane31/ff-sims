@@ -157,13 +157,13 @@ func ShouldIncludeInPlayoffRecord(game models.Matchup, allSchedule []models.Matc
 	if game.GameType == "NONE" {
 		return false
 	}
-	
+
 	// Additional check: make sure the game is actually a playoff game by checking game type
 	gameType := GetPlayoffGameType(game, allSchedule)
-	
+
 	// Only count meaningful playoff games:
 	// - Championship games (finals)
-	// - Playoff bracket games (semifinals) 
+	// - Playoff bracket games (semifinals)
 	// - Third place games (verified third place matchup)
 	return gameType == PlayoffGameTypeChampionship ||
 		(gameType == PlayoffGameTypePlayoff && game.GameType == "WINNERS_BRACKET") ||

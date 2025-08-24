@@ -97,14 +97,14 @@ func GetTeamWeeklyProgression(db *gorm.DB, teamID uint, year uint) ([]WeeklyExpe
 func SaveWeeklyExpectedWins(db *gorm.DB, weeklyRecord *WeeklyExpectedWins) error {
 	// First, try to find an existing record
 	var existingRecord WeeklyExpectedWins
-	err := db.Where("team_id = ? AND year = ? AND week = ?", 
+	err := db.Where("team_id = ? AND year = ? AND week = ?",
 		weeklyRecord.TeamID, weeklyRecord.Year, weeklyRecord.Week).
 		First(&existingRecord).Error
-	
+
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
-	
+
 	if err == gorm.ErrRecordNotFound {
 		// Create new record
 		return db.Create(weeklyRecord).Error

@@ -1,5 +1,7 @@
 # TODO Items
 
+* [ ] Update Github Actions cron job
+
 * [ ] Transactions page
 
 * [ ] Draft data on team detail pagec
@@ -283,7 +285,7 @@ The system uses two main models:
 
 **`WeeklyExpectedWins`**: Stores week-by-week data with both cumulative and weekly values:
 - `ExpectedWins`: Cumulative expected wins through this week (can be > 1)
-- `WeeklyExpectedWins`: Expected wins for just this week (≤ 1) 
+- `WeeklyExpectedWins`: Expected wins for just this week (≤ 1)
 - `ActualWins`/`ActualLosses`: Cumulative actual performance
 - `WinLuck`: Difference between actual and expected wins
 - Includes opponent data, scores, and context
@@ -351,7 +353,7 @@ Provides REST endpoints for:
 ### Frontend Integration
 TypeScript interfaces mirror Go models for type safety across the full stack. Components can display:
 - Week-by-week expected wins progression
-- Season totals and luck analysis  
+- Season totals and luck analysis
 - Team performance trends and comparisons
 
 This implementation successfully provides fair team assessment by removing schedule luck from performance evaluation, enabling more accurate playoff predictions and historical analysis.

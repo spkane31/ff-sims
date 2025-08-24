@@ -48,12 +48,12 @@ func finalizeTeamSeasonExpectedWins(db *gorm.DB, team models.Team, year uint, fi
 		log.Printf("Failed to determine final week for team %d, year %d: %v", team.ID, year, err)
 		return err
 	}
-	
+
 	if teamFinalWeek == 0 {
 		log.Printf("No completed weeks found for team %d, year %d - skipping season finalization", team.ID, year)
 		return nil // Skip this team - no data to finalize
 	}
-	
+
 	// Get the final week's data - it contains all cumulative season totals
 	finalWeekData, err := models.GetWeeklyExpectedWins(db, team.ID, year, teamFinalWeek)
 	if err != nil || finalWeekData == nil {
@@ -138,9 +138,9 @@ func UpdateSeasonStandings(leagueID uint, year uint) error {
 type SeasonRankings struct {
 	ByExpectedWins []models.SeasonExpectedWins `json:"by_expected_wins"`
 	ByActualWins   []models.SeasonExpectedWins `json:"by_actual_wins"`
-	ByLuck         []models.SeasonExpectedWins `json:"by_luck"`          // Most lucky teams first
-	ByUnlucky      []models.SeasonExpectedWins `json:"by_unlucky"`       // Most unlucky teams first
-	ByStrength     []models.SeasonExpectedWins `json:"by_strength"`      // Hardest schedule first
+	ByLuck         []models.SeasonExpectedWins `json:"by_luck"`     // Most lucky teams first
+	ByUnlucky      []models.SeasonExpectedWins `json:"by_unlucky"`  // Most unlucky teams first
+	ByStrength     []models.SeasonExpectedWins `json:"by_strength"` // Hardest schedule first
 }
 
 func GetSeasonExpectedWinsRankings(leagueID uint, year uint) (*SeasonRankings, error) {
@@ -198,14 +198,14 @@ func GetSeasonExpectedWinsRankings(leagueID uint, year uint) (*SeasonRankings, e
 
 // CalculateLeagueLuckDistribution calculates how much luck affected the league
 type LuckDistribution struct {
-	TotalLuckVariance    float64 `json:"total_luck_variance"`     // How much luck affected outcomes
-	MostLuckyTeam        string  `json:"most_lucky_team"`         // Team name
-	MostLuckyLuck        float64 `json:"most_lucky_luck"`         // Luck value
-	MostUnluckyTeam      string  `json:"most_unlucky_team"`       // Team name  
-	MostUnluckyLuck      float64 `json:"most_unlucky_luck"`       // Luck value
-	LuckRange            float64 `json:"luck_range"`              // Difference between most/least lucky
-	PlayoffLuckImpact    int     `json:"playoff_luck_impact"`     // Teams that made playoffs due to luck
-	AverageLuckMagnitude float64 `json:"average_luck_magnitude"`  // Average absolute luck value
+	TotalLuckVariance    float64 `json:"total_luck_variance"`    // How much luck affected outcomes
+	MostLuckyTeam        string  `json:"most_lucky_team"`        // Team name
+	MostLuckyLuck        float64 `json:"most_lucky_luck"`        // Luck value
+	MostUnluckyTeam      string  `json:"most_unlucky_team"`      // Team name
+	MostUnluckyLuck      float64 `json:"most_unlucky_luck"`      // Luck value
+	LuckRange            float64 `json:"luck_range"`             // Difference between most/least lucky
+	PlayoffLuckImpact    int     `json:"playoff_luck_impact"`    // Teams that made playoffs due to luck
+	AverageLuckMagnitude float64 `json:"average_luck_magnitude"` // Average absolute luck value
 }
 
 func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistribution, error) {
@@ -224,27 +224,27 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 	}
 
 	distribution := &LuckDistribution{}
-	
+
 	// Find most lucky and unlucky teams
 	maxLuck := seasonRecords[0].WinLuck
 	minLuck := seasonRecords[0].WinLuck
 	maxLuckTeam := seasonRecords[0].Team.Owner
 	minLuckTeam := seasonRecords[0].Team.Owner
-	
+
 	var luckSum, luckSumAbs float64
-	
+
 	for _, record := range seasonRecords {
 		luck := record.WinLuck
 		luckSum += luck
 		luckSumAbs += abs(luck)
-		
+
 		if luck > maxLuck {
 			maxLuck = luck
 			if record.Team != nil {
 				maxLuckTeam = record.Team.Owner
 			}
 		}
-		
+
 		if luck < minLuck {
 			minLuck = luck
 			if record.Team != nil {
@@ -252,7 +252,7 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 			}
 		}
 	}
-	
+
 	// Calculate variance
 	mean := luckSum / float64(len(seasonRecords))
 	var variance float64
@@ -261,7 +261,7 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 		variance += diff * diff
 	}
 	variance /= float64(len(seasonRecords))
-	
+
 	distribution.TotalLuckVariance = variance
 	distribution.MostLuckyTeam = maxLuckTeam
 	distribution.MostLuckyLuck = maxLuck
@@ -269,9 +269,9 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 	distribution.MostUnluckyLuck = minLuck
 	distribution.LuckRange = maxLuck - minLuck
 	distribution.AverageLuckMagnitude = luckSumAbs / float64(len(seasonRecords))
-	
+
 	// TODO: Calculate playoff luck impact by comparing expected wins standings to actual playoff teams
-	
+
 	return distribution, nil
 }
 
@@ -283,15 +283,15 @@ func getTeamFinalWeek(db *gorm.DB, teamID uint, year uint, globalFinalWeek uint)
 		Where("team_id = ? AND year = ? AND week <= ?", teamID, year, globalFinalWeek).
 		Select("MAX(week)").
 		Scan(&maxWeek).Error
-	
+
 	if err != nil {
 		return 0, err
 	}
-	
+
 	if maxWeek == nil {
 		return 0, nil // No weeks found for this team
 	}
-	
+
 	return *maxWeek, nil
 }
 

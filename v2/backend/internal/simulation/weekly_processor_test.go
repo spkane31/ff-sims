@@ -119,20 +119,20 @@ func TestProcessWeeklyExpectedWins(t *testing.T) {
 
 	// Check that expected wins are calculated properly
 	for _, record := range weeklyRecords {
-		if record.ExpectedWins < 0 || record.ExpectedWins > float64(record.ActualWins + record.ActualLosses) {
+		if record.ExpectedWins < 0 || record.ExpectedWins > float64(record.ActualWins+record.ActualLosses) {
 			t.Errorf("Expected wins should be between 0 and total games for team %d, got %.3f", record.TeamID, record.ExpectedWins)
 		}
 		if record.WeeklyExpectedWins < 0 || record.WeeklyExpectedWins > 1 {
 			t.Errorf("Weekly expected wins should be between 0 and 1 for team %d, got %.3f", record.TeamID, record.WeeklyExpectedWins)
 		}
-		
+
 		// Check that weekly + cumulative relationship makes sense
 		if record.Week == 1 {
 			// For week 1, cumulative and weekly should be approximately equal since there's only one week
 			// Allow some tolerance for simulation variance
 			tolerance := 0.1
 			if record.ExpectedWins-record.WeeklyExpectedWins > tolerance || record.WeeklyExpectedWins-record.ExpectedWins > tolerance {
-				t.Errorf("Team %d week 1: cumulative expected wins (%.3f) should be close to weekly (%.3f)", 
+				t.Errorf("Team %d week 1: cumulative expected wins (%.3f) should be close to weekly (%.3f)",
 					record.TeamID, record.ExpectedWins, record.WeeklyExpectedWins)
 			}
 		}
@@ -253,7 +253,7 @@ func TestRecalculateWeeklyExpectedWins(t *testing.T) {
 	db := setupTestDB()
 	createTestData(db)
 
-	// Set the database connection for the module  
+	// Set the database connection for the module
 	originalDB := database.DB
 	database.DB = db
 	defer func() { database.DB = originalDB }()
@@ -338,13 +338,13 @@ func TestWeeklyExpectedWinsValues(t *testing.T) {
 		if record.WeeklyExpectedWins < 0.0 {
 			t.Errorf("Team %d: WeeklyExpectedWins should be ≥ 0, got %.3f", record.TeamID, record.WeeklyExpectedWins)
 		}
-		
+
 		// For week 1, ExpectedWins (cumulative) should equal WeeklyExpectedWins
 		if record.Week == 1 && record.ExpectedWins != record.WeeklyExpectedWins {
-			t.Errorf("Team %d: In week 1, ExpectedWins (%.3f) should equal WeeklyExpectedWins (%.3f)", 
+			t.Errorf("Team %d: In week 1, ExpectedWins (%.3f) should equal WeeklyExpectedWins (%.3f)",
 				record.TeamID, record.ExpectedWins, record.WeeklyExpectedWins)
 		}
-		
+
 		// ActualWins/ActualLosses are cumulative, so in week 1 they should be 0 or 1
 		if record.Week == 1 && record.ActualWins != 0 && record.ActualWins != 1 {
 			t.Errorf("Team %d: In week 1, ActualWins should be 0 or 1, got %d", record.TeamID, record.ActualWins)
@@ -352,11 +352,11 @@ func TestWeeklyExpectedWinsValues(t *testing.T) {
 		if record.Week == 1 && record.ActualLosses != 0 && record.ActualLosses != 1 {
 			t.Errorf("Team %d: In week 1, ActualLosses should be 0 or 1, got %d", record.TeamID, record.ActualLosses)
 		}
-		
+
 		// Each team should have exactly 1 game per week (cumulative in week 1)
-		if record.Week == 1 && record.ActualWins + record.ActualLosses != 1 {
-			t.Errorf("Team %d: In week 1, ActualWins + ActualLosses should equal 1, got %d + %d = %d", 
-				record.TeamID, record.ActualWins, record.ActualLosses, record.ActualWins + record.ActualLosses)
+		if record.Week == 1 && record.ActualWins+record.ActualLosses != 1 {
+			t.Errorf("Team %d: In week 1, ActualWins + ActualLosses should equal 1, got %d + %d = %d",
+				record.TeamID, record.ActualWins, record.ActualLosses, record.ActualWins+record.ActualLosses)
 		}
 	}
 }
@@ -400,13 +400,13 @@ func TestWeeklyProcessorMultipleWeeks(t *testing.T) {
 			if record.WeeklyExpectedWins < 0.0 {
 				t.Errorf("Week %d, Team %d: WeeklyExpectedWins should be ≥ 0, got %.3f", week, record.TeamID, record.WeeklyExpectedWins)
 			}
-			
+
 			// ExpectedWins (cumulative) should be >= WeeklyExpectedWins and should increase with weeks
 			if record.ExpectedWins < record.WeeklyExpectedWins {
-				t.Errorf("Week %d, Team %d: ExpectedWins (%.3f) should be >= WeeklyExpectedWins (%.3f)", 
+				t.Errorf("Week %d, Team %d: ExpectedWins (%.3f) should be >= WeeklyExpectedWins (%.3f)",
 					week, record.TeamID, record.ExpectedWins, record.WeeklyExpectedWins)
 			}
-			
+
 			// Verify the week field is correct
 			if record.Week != week {
 				t.Errorf("Expected week %d, got %d for record", week, record.Week)
@@ -428,19 +428,19 @@ func TestWeeklyProcessorMultipleWeeks(t *testing.T) {
 	// Each record should be for a different week and have cumulative behavior
 	if len(team1Records) >= 2 {
 		if team1Records[0].Week != 1 || team1Records[1].Week != 2 {
-			t.Errorf("Expected records for weeks 1 and 2, got weeks %d and %d", 
+			t.Errorf("Expected records for weeks 1 and 2, got weeks %d and %d",
 				team1Records[0].Week, team1Records[1].Week)
 		}
-		
+
 		// Cumulative ExpectedWins should increase or stay the same from week 1 to week 2
 		if team1Records[1].ExpectedWins < team1Records[0].ExpectedWins {
-			t.Errorf("Team 1: Expected wins should increase or stay same from week 1 (%.3f) to week 2 (%.3f)", 
+			t.Errorf("Team 1: Expected wins should increase or stay same from week 1 (%.3f) to week 2 (%.3f)",
 				team1Records[0].ExpectedWins, team1Records[1].ExpectedWins)
 		}
-		
+
 		// Cumulative ActualWins should increase or stay the same from week 1 to week 2
 		if team1Records[1].ActualWins < team1Records[0].ActualWins {
-			t.Errorf("Team 1: Actual wins should increase or stay same from week 1 (%d) to week 2 (%d)", 
+			t.Errorf("Team 1: Actual wins should increase or stay same from week 1 (%d) to week 2 (%d)",
 				team1Records[0].ActualWins, team1Records[1].ActualWins)
 		}
 	}
@@ -488,7 +488,7 @@ func TestWeeklyProcessorIdempotent(t *testing.T) {
 
 	// Should have the same number of records (no duplicates)
 	if len(firstRun) != len(secondRun) {
-		t.Errorf("Expected same number of records after second run. First: %d, Second: %d", 
+		t.Errorf("Expected same number of records after second run. First: %d, Second: %d",
 			len(firstRun), len(secondRun))
 	}
 
@@ -499,38 +499,38 @@ func TestWeeklyProcessorIdempotent(t *testing.T) {
 		for _, secondRecord := range secondRun {
 			if firstRecord.TeamID == secondRecord.TeamID {
 				found = true
-				
+
 				// Check that values are nearly identical
-				if absFloat(firstRecord.ExpectedWins - secondRecord.ExpectedWins) > tolerance {
-					t.Errorf("Team %d ExpectedWins changed: %.6f -> %.6f", 
+				if absFloat(firstRecord.ExpectedWins-secondRecord.ExpectedWins) > tolerance {
+					t.Errorf("Team %d ExpectedWins changed: %.6f -> %.6f",
 						firstRecord.TeamID, firstRecord.ExpectedWins, secondRecord.ExpectedWins)
 				}
-				
-				if absFloat(firstRecord.WeeklyExpectedWins - secondRecord.WeeklyExpectedWins) > tolerance {
-					t.Errorf("Team %d WeeklyExpectedWins changed: %.6f -> %.6f", 
+
+				if absFloat(firstRecord.WeeklyExpectedWins-secondRecord.WeeklyExpectedWins) > tolerance {
+					t.Errorf("Team %d WeeklyExpectedWins changed: %.6f -> %.6f",
 						firstRecord.TeamID, firstRecord.WeeklyExpectedWins, secondRecord.WeeklyExpectedWins)
 				}
-				
+
 				if firstRecord.ActualWins != secondRecord.ActualWins {
-					t.Errorf("Team %d ActualWins changed: %d -> %d", 
+					t.Errorf("Team %d ActualWins changed: %d -> %d",
 						firstRecord.TeamID, firstRecord.ActualWins, secondRecord.ActualWins)
 				}
-				
+
 				if firstRecord.ActualLosses != secondRecord.ActualLosses {
-					t.Errorf("Team %d ActualLosses changed: %d -> %d", 
+					t.Errorf("Team %d ActualLosses changed: %d -> %d",
 						firstRecord.TeamID, firstRecord.ActualLosses, secondRecord.ActualLosses)
 				}
-				
+
 				// Check that IDs are preserved (proof of update, not recreation)
 				if firstRecord.ID != secondRecord.ID {
-					t.Errorf("Team %d: Record ID changed from %d to %d (should be updated, not recreated)", 
+					t.Errorf("Team %d: Record ID changed from %d to %d (should be updated, not recreated)",
 						firstRecord.TeamID, firstRecord.ID, secondRecord.ID)
 				}
-				
+
 				break
 			}
 		}
-		
+
 		if !found {
 			t.Errorf("Team %d from first run not found in second run", firstRun[i].TeamID)
 		}

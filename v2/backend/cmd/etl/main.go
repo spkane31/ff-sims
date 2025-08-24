@@ -10,10 +10,10 @@ import (
 )
 
 var (
-	dataDir              string
+	dataDir               string
 	calculateExpectedWins bool
-	skipExpectedWins     bool
-	processYear          uint
+	skipExpectedWins      bool
+	processYear           uint
 )
 
 func main() {
@@ -42,12 +42,12 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			// Determine if we should calculate expected wins
 			doCalculateExpectedWins := !skipExpectedWins
-			
+
 			if calculateExpectedWins && skipExpectedWins {
 				logging.Errorf("Cannot use both --calculate-expected-wins and --skip-expected-wins flags")
 				os.Exit(1)
 			}
-			
+
 			if calculateExpectedWins {
 				// Only run expected wins calculation, skip normal ETL
 				if processYear > 0 {

@@ -1048,7 +1048,7 @@ func processExpectedWinsForYearWithRecalc(year uint) error {
 	return nil
 }
 
-// processExpectedWinsAllYearsWithRecalc processes expected wins for all years with forced recalculation  
+// processExpectedWinsAllYearsWithRecalc processes expected wins for all years with forced recalculation
 func processExpectedWinsAllYearsWithRecalc() error {
 	db := database.DB
 

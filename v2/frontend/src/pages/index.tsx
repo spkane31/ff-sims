@@ -12,8 +12,8 @@ type SortField =
   | "playoffRecord"
   | "pointsFor"
   | "pointsAgainst"
-  | "expectedWins"
-  | "expectedLosses";
+  | "expectedRecord"
+  | "luck";
 type SortDirection = "asc" | "desc";
 
 export default function Home() {
@@ -27,27 +27,31 @@ export default function Home() {
     async function fetchTeamsData() {
       try {
         setTeamsLoading(true);
-        
+
         // Fetch teams and expected wins data in parallel
         const [teamsResponse, expectedWinsResponse] = await Promise.all([
           teamsService.getAllTeams(),
-          expectedWinsService.getAllTimeExpectedWins().catch(() => ({ data: [] }))
+          expectedWinsService
+            .getAllTimeExpectedWins()
+            .catch(() => ({ data: [] })),
         ]);
 
         // Merge expected wins data with teams data
-        const teamsWithExpectedWins = teamsResponse.teams.map(team => {
-          const expectedWinsData = expectedWinsResponse.data.find(ew => 
-            ew.team_id.toString() === team.id || ew.owner === team.owner
+        const teamsWithExpectedWins = teamsResponse.teams.map((team) => {
+          const expectedWinsData = expectedWinsResponse.data.find(
+            (ew) => ew.team_id.toString() === team.id || ew.owner === team.owner
           );
 
           return {
             ...team,
-            expectedWins: expectedWinsData ? {
-              expectedWins: expectedWinsData.total_expected_wins,
-              expectedLosses: expectedWinsData.total_expected_losses,
-              winLuck: expectedWinsData.total_win_luck,
-              seasonsPlayed: expectedWinsData.seasons_played
-            } : undefined
+            expectedWins: expectedWinsData
+              ? {
+                  expectedWins: expectedWinsData.total_expected_wins,
+                  expectedLosses: expectedWinsData.total_expected_losses,
+                  winLuck: expectedWinsData.total_win_luck,
+                  seasonsPlayed: expectedWinsData.seasons_played,
+                }
+              : undefined,
           };
         });
 
@@ -125,13 +129,19 @@ export default function Home() {
           fieldA = a.points.against;
           fieldB = b.points.against;
           break;
-        case "expectedWins":
+        case "expectedRecord":
+          // Sort by expected wins
           fieldA = a.expectedWins?.expectedWins ?? 0;
           fieldB = b.expectedWins?.expectedWins ?? 0;
           break;
-        case "expectedLosses":
-          fieldA = a.expectedWins?.expectedLosses ?? 0;
-          fieldB = b.expectedWins?.expectedLosses ?? 0;
+        case "luck":
+          // Calculate luck as actual wins minus expected wins
+          const actualWinsA = a.record.wins;
+          const actualWinsB = b.record.wins;
+          const expectedWinsA = a.expectedWins?.expectedWins ?? 0;
+          const expectedWinsB = b.expectedWins?.expectedWins ?? 0;
+          fieldA = actualWinsA - expectedWinsA;
+          fieldB = actualWinsB - expectedWinsB;
           break;
         default:
           fieldA = a.owner.toLowerCase();
@@ -397,6 +407,12 @@ export default function Home() {
 
   const { winners, losers } = calculateWinnersAndLosers();
 
+  // Helper function to get ESPN ID by owner name
+  const getEspnIdByOwner = (ownerName: string): string | null => {
+    const team = teams.find((team) => team.owner === ownerName);
+    return team ? team.espnId : null;
+  };
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -480,40 +496,51 @@ export default function Home() {
                 {(scheduleLoading
                   ? [
                       {
-                        year: 2023,
+                        year: 2025,
                         owner: "Loading...",
                         record: "0-0",
                         points: 0,
                       },
                     ]
                   : winners
-                ).map((champion, index) => (
-                  <div
-                    key={champion.year}
-                    className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
-                      index === 0 ? "border-yellow-500" : "border-yellow-300"
-                    } hover:shadow-md transition-shadow`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-                          {champion.year} Champion
-                        </h3>
-                        <p className="text-blue-600 dark:text-blue-400 font-medium">
-                          {champion.owner}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-green-600 dark:text-green-400">
-                          {champion.record}
+                ).map((champion, index) => {
+                  const espnId = getEspnIdByOwner(champion.owner);
+                  return (
+                    <div
+                      key={champion.year}
+                      className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
+                        index === 0 ? "border-yellow-500" : "border-yellow-300"
+                      } hover:shadow-md transition-shadow`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+                            {champion.year} Champion
+                          </h3>
+                          {espnId ? (
+                            <Link href={`/teams/${espnId}`}>
+                              <p className="text-blue-600 dark:text-blue-400 font-medium hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors">
+                                {champion.owner}
+                              </p>
+                            </Link>
+                          ) : (
+                            <p className="text-blue-600 dark:text-blue-400 font-medium">
+                              {champion.owner}
+                            </p>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {champion.points.toLocaleString()} pts
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-green-600 dark:text-green-400">
+                            {champion.record}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {champion.points.toLocaleString()} pts
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -527,40 +554,51 @@ export default function Home() {
                 {(scheduleLoading
                   ? [
                       {
-                        year: 2023,
+                        year: 2025,
                         owner: "Loading...",
                         record: "0-0",
                         points: 0,
                       },
                     ]
                   : losers
-                ).map((lastPlace, index) => (
-                  <div
-                    key={lastPlace.year}
-                    className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
-                      index === 0 ? "border-red-500" : "border-red-300"
-                    } hover:shadow-md transition-shadow`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
-                          {lastPlace.year} Last Place
-                        </h3>
-                        <p className="text-red-600 dark:text-red-400 font-medium">
-                          {lastPlace.owner}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-red-600 dark:text-red-400">
-                          {lastPlace.record}
+                ).map((lastPlace, index) => {
+                  const espnId = getEspnIdByOwner(lastPlace.owner);
+                  return (
+                    <div
+                      key={lastPlace.year}
+                      className={`bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm border-l-4 ${
+                        index === 0 ? "border-red-500" : "border-red-300"
+                      } hover:shadow-md transition-shadow`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+                            {lastPlace.year} Last Place
+                          </h3>
+                          {espnId ? (
+                            <Link href={`/teams/${espnId}`}>
+                              <p className="text-red-600 dark:text-red-400 font-medium hover:text-red-800 dark:hover:text-red-300 hover:underline transition-colors">
+                                {lastPlace.owner}
+                              </p>
+                            </Link>
+                          ) : (
+                            <p className="text-red-600 dark:text-red-400 font-medium">
+                              {lastPlace.owner}
+                            </p>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {lastPlace.points.toLocaleString()} pts
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-red-600 dark:text-red-400">
+                            {lastPlace.record}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {lastPlace.points.toLocaleString()} pts
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -614,15 +652,15 @@ export default function Home() {
                         </th>
                         <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
-                          onClick={() => handleSort("expectedWins")}
+                          onClick={() => handleSort("expectedRecord")}
                         >
-                          Expected Wins{renderSortIcon("expectedWins")}
+                          Expected Record{renderSortIcon("expectedRecord")}
                         </th>
                         <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
-                          onClick={() => handleSort("expectedLosses")}
+                          onClick={() => handleSort("luck")}
                         >
-                          Expected Losses{renderSortIcon("expectedLosses")}
+                          Luck{renderSortIcon("luck")}
                         </th>
                       </tr>
                     </thead>
@@ -664,22 +702,34 @@ export default function Home() {
                             })}
                           </td>
                           <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                            {team.expectedWins?.expectedWins !== undefined 
-                              ? team.expectedWins.expectedWins.toLocaleString(undefined, {
+                            {team.expectedWins?.expectedWins !== undefined && team.expectedWins?.expectedLosses !== undefined
+                              ? `${team.expectedWins.expectedWins.toLocaleString(undefined, {
                                   minimumFractionDigits: 1,
                                   maximumFractionDigits: 1,
-                                })
-                              : "N/A"
-                            }
+                                })}-${team.expectedWins.expectedLosses.toLocaleString(undefined, {
+                                  minimumFractionDigits: 1,
+                                  maximumFractionDigits: 1,
+                                })}`
+                              : "N/A"}
                           </td>
-                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                            {team.expectedWins?.expectedLosses !== undefined 
-                              ? team.expectedWins.expectedLosses.toLocaleString(undefined, {
+                          <td className="px-4 py-3 text-sm text-center">
+                            {team.expectedWins?.expectedWins !== undefined ? (
+                              <span className={`${
+                                team.record.wins - team.expectedWins.expectedWins > 0
+                                  ? "text-green-600 dark:text-green-400"
+                                  : team.record.wins - team.expectedWins.expectedWins < 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-gray-600 dark:text-gray-300"
+                              }`}>
+                                {(team.record.wins - team.expectedWins.expectedWins).toLocaleString(undefined, {
                                   minimumFractionDigits: 1,
                                   maximumFractionDigits: 1,
-                                })
-                              : "N/A"
-                            }
+                                  signDisplay: "exceptZero"
+                                })}
+                              </span>
+                            ) : (
+                              <span className="text-gray-600 dark:text-gray-300">N/A</span>
+                            )}
                           </td>
                         </tr>
                       ))}

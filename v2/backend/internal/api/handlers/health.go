@@ -14,14 +14,14 @@ func HealthCheck(c *gin.Context) {
 		"BuildTime": version.BuildTime,
 		"status":    "healthy",
 	}
-	
+
 	// Add debug info if values are empty
 	if version.GitSHA == "" {
 		response["GitSHA"] = "not-set-during-build"
 	}
 	if version.BuildTime == "" {
-		response["BuildTime"] = "not-set-during-build"  
+		response["BuildTime"] = "not-set-during-build"
 	}
-	
+
 	c.JSON(http.StatusOK, response)
 }

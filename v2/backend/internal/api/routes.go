@@ -49,11 +49,11 @@ func SetupRouter(r *gin.Engine) {
 			leagues.GET("/:id/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
 			leagues.GET("/:id/expected-wins/rankings/:year", handlers.GetSeasonRankings)
 			leagues.GET("/:id/expected-wins/luck/:year", handlers.GetLuckDistribution)
-			
+
 			// NOTE: Removed POST endpoints for expected wins recalculation
 			// Use ETL scripts instead: --calculate-expected-wins flag
 		}
-		
+
 		// Teams endpoints (additional expected wins routes)
 		teams.GET("/:id/expected-wins/:year", handlers.GetTeamProgression)
 

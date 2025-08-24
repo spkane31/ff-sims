@@ -207,15 +207,15 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 
 	// Query to aggregate expected wins across all seasons for each team
 	var results []struct {
-		TeamID             uint    `json:"team_id"`
-		TeamName           string  `json:"team_name"`
-		Owner              string  `json:"owner"`
-		TotalExpectedWins  float64 `json:"total_expected_wins"`
+		TeamID              uint    `json:"team_id"`
+		TeamName            string  `json:"team_name"`
+		Owner               string  `json:"owner"`
+		TotalExpectedWins   float64 `json:"total_expected_wins"`
 		TotalExpectedLosses float64 `json:"total_expected_losses"`
-		TotalActualWins    int64   `json:"total_actual_wins"`
-		TotalActualLosses  int64   `json:"total_actual_losses"`
-		TotalWinLuck       float64 `json:"total_win_luck"`
-		SeasonsPlayed      int64   `json:"seasons_played"`
+		TotalActualWins     int64   `json:"total_actual_wins"`
+		TotalActualLosses   int64   `json:"total_actual_losses"`
+		TotalWinLuck        float64 `json:"total_win_luck"`
+		SeasonsPlayed       int64   `json:"seasons_played"`
 	}
 
 	err := db.Table("season_expected_wins").

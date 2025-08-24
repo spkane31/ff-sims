@@ -52,13 +52,13 @@ type PlayerStatsResponse struct {
 }
 
 type GameLogEntry struct {
-	Week            uint    `json:"week"`
-	Year            uint    `json:"year"`
-	ActualPoints    float64 `json:"actualPoints"`
-	ProjectedPoints float64 `json:"projectedPoints"`
-	Difference      float64 `json:"difference"`
-	StartedFlag     bool    `json:"startedFlag"`
-	GameDate        string  `json:"gameDate"`
+	Week            uint                `json:"week"`
+	Year            uint                `json:"year"`
+	ActualPoints    float64             `json:"actualPoints"`
+	ProjectedPoints float64             `json:"projectedPoints"`
+	Difference      float64             `json:"difference"`
+	StartedFlag     bool                `json:"startedFlag"`
+	GameDate        string              `json:"gameDate"`
 	Stats           PlayerStatsResponse `json:"stats"`
 }
 
@@ -69,15 +69,15 @@ type GamePerformance struct {
 }
 
 type AnnualStatsEntry struct {
-	Year                 uint             `json:"year"`
-	GamesPlayed          int              `json:"gamesPlayed"`
-	TotalFantasyPoints   float64          `json:"totalFantasyPoints"`
-	TotalProjectedPoints float64          `json:"totalProjectedPoints"`
-	AvgFantasyPoints     float64          `json:"avgFantasyPoints"`
-	Difference           float64          `json:"difference"`
-	BestGame             GamePerformance  `json:"bestGame"`
-	WorstGame            GamePerformance  `json:"worstGame"`
-	ConsistencyScore     float64          `json:"consistencyScore"` // Standard deviation
+	Year                 uint                `json:"year"`
+	GamesPlayed          int                 `json:"gamesPlayed"`
+	TotalFantasyPoints   float64             `json:"totalFantasyPoints"`
+	TotalProjectedPoints float64             `json:"totalProjectedPoints"`
+	AvgFantasyPoints     float64             `json:"avgFantasyPoints"`
+	Difference           float64             `json:"difference"`
+	BestGame             GamePerformance     `json:"bestGame"`
+	WorstGame            GamePerformance     `json:"worstGame"`
+	ConsistencyScore     float64             `json:"consistencyScore"` // Standard deviation
 	TotalStats           PlayerStatsResponse `json:"totalStats"`
 }
 
@@ -127,8 +127,8 @@ type PlayerSummaryResponse struct {
 
 // GetPlayers returns all players with optional filtering and pagination
 func GetPlayers(c *gin.Context) {
-	position := c.Query("position")       // Filter by position if provided
-	year := c.DefaultQuery("year", "all") // Default to all years for career stats
+	position := c.Query("position")                  // Filter by position if provided
+	year := c.DefaultQuery("year", "all")            // Default to all years for career stats
 	rank := c.DefaultQuery("rank", "fantasy_points") // Ranking method: fantasy_points, avg_points, projected_points, games_played, vs_projection
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
@@ -343,7 +343,7 @@ func GetPlayerByID(c *gin.Context) {
 
 	// Fetch all box scores for the player
 	year := c.DefaultQuery("year", "all")
-	
+
 	var boxScores []models.BoxScore
 	if year == "all" {
 		if err := database.DB.Where("player_id = ?", player.ID).
@@ -399,7 +399,7 @@ func GetPlayerByID(c *gin.Context) {
 	// Calculate annual statistics
 	yearlyStats := make(map[uint]*AnnualStatsEntry)
 	yearlyGamePoints := make(map[uint][]float64) // Track individual game scores for standard deviation
-	
+
 	for _, boxScore := range boxScores {
 		year := boxScore.Year
 		if yearlyStats[year] == nil {
@@ -422,10 +422,10 @@ func GetPlayerByID(c *gin.Context) {
 		entry.GamesPlayed++
 		entry.TotalFantasyPoints += boxScore.ActualPoints
 		entry.TotalProjectedPoints += boxScore.ProjectedPoints
-		
+
 		// Track individual game points
 		yearlyGamePoints[year] = append(yearlyGamePoints[year], boxScore.ActualPoints)
-		
+
 		// Update best game
 		if boxScore.ActualPoints > entry.BestGame.Points {
 			entry.BestGame = GamePerformance{
@@ -434,7 +434,7 @@ func GetPlayerByID(c *gin.Context) {
 				Week:   boxScore.Week,
 			}
 		}
-		
+
 		// Update worst game (exclude 0-point games which are likely bye weeks)
 		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < entry.WorstGame.Points {
 			entry.WorstGame = GamePerformance{
@@ -465,12 +465,12 @@ func GetPlayerByID(c *gin.Context) {
 			entry.AvgFantasyPoints = entry.TotalFantasyPoints / float64(entry.GamesPlayed)
 		}
 		entry.Difference = entry.TotalFantasyPoints - entry.TotalProjectedPoints
-		
+
 		// Calculate consistency score (standard deviation)
 		if gamePoints, exists := yearlyGamePoints[year]; exists {
 			entry.ConsistencyScore = calculateStandardDeviation(gamePoints)
 		}
-		
+
 		// Reset worst game if it was never set (no games played)
 		if entry.WorstGame.Points == math.MaxFloat64 {
 			entry.WorstGame.Points = 0
@@ -502,7 +502,7 @@ func GetPlayerByID(c *gin.Context) {
 
 	for _, boxScore := range boxScores {
 		allGamePoints = append(allGamePoints, boxScore.ActualPoints)
-		
+
 		if boxScore.ActualPoints > overallBestGame.Points {
 			overallBestGame = GamePerformance{
 				Points: boxScore.ActualPoints,
@@ -510,7 +510,7 @@ func GetPlayerByID(c *gin.Context) {
 				Week:   boxScore.Week,
 			}
 		}
-		
+
 		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < overallWorstGame.Points {
 			overallWorstGame = GamePerformance{
 				Points: boxScore.ActualPoints,
@@ -554,7 +554,7 @@ func GetPlayerByID(c *gin.Context) {
 			GameDate:        boxScore.GameDate.Format("2006-01-02"),
 			Stats:           gameStats,
 		}
-		
+
 		gameLog = append(gameLog, gameLogEntry)
 	}
 
@@ -589,7 +589,6 @@ func GetPlayerStats(c *gin.Context) {
 	// Optionally filter by week, season, etc.
 	week := c.DefaultQuery("week", "all")
 	season := c.DefaultQuery("season", "2023")
-
 
 	c.JSON(http.StatusOK, gin.H{
 		"stats": map[string]int{},
