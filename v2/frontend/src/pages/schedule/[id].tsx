@@ -2,6 +2,50 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useMatchupDetail } from "../../hooks/useMatchupDetail";
 import Link from "next/link";
+import { Player } from "../../services/scheduleService";
+
+// Helper function to find better lineup decisions
+function findBetterLineupDecisions(players: Player[]) {
+  const starters = players.filter((p) => p.slotPosition !== "BE" && p.slotPosition !== "IR" && p.slotPosition !== "");
+  const benchPlayers = players.filter((p) => p.slotPosition === "BE" || p.slotPosition === "IR");
+  
+  const betterDecisions: Array<{
+    benchPlayer: Player;
+    starterPlayer: Player;
+    pointsGained: number;
+  }> = [];
+
+  benchPlayers.forEach((benchPlayer) => {
+    // Find starters with matching positions who scored lower
+    const eligibleStarters = starters.filter((starter) => {
+      // Direct position match
+      if (benchPlayer.playerPosition === starter.playerPosition) {
+        return true;
+      }
+      
+      // FLEX eligibility - RB/WR/TE can be slotted into FLEX
+      if (starter.slotPosition === "RB/WR/TE" && 
+          (benchPlayer.playerPosition === "RB" || benchPlayer.playerPosition === "WR" || benchPlayer.playerPosition === "TE")) {
+        return true;
+      }
+      
+      return false;
+    });
+
+    // Find the lowest scoring eligible starter
+    const worstStarter = eligibleStarters.sort((a, b) => a.points - b.points)[0];
+    
+    if (worstStarter && benchPlayer.points > worstStarter.points) {
+      betterDecisions.push({
+        benchPlayer,
+        starterPlayer: worstStarter,
+        pointsGained: benchPlayer.points - worstStarter.points,
+      });
+    }
+  });
+
+  return betterDecisions.sort((a, b) => b.pointsGained - a.pointsGained);
+}
 
 export default function MatchupDetail() {
   const router = useRouter();
@@ -42,12 +86,6 @@ export default function MatchupDetail() {
 
   const { data } = matchupData;
   const { homeTeam, awayTeam, year, week } = data;
-  const matchupStatistics = {
-    pointDifferential: 7.3,
-    accuracyPercentage: 89,
-    playoffImplications: "High - Winner moves to first place in division",
-    winProbability: 62.5,
-  };
 
   // Calculate winner
   const homeWon = homeTeam.score > awayTeam.score;
@@ -141,15 +179,6 @@ export default function MatchupDetail() {
                   </span>
                 </div>
               )}
-
-              {!isCompleted && (
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Win Probability:{" "}
-                  <span className="font-medium">
-                    {matchupStatistics.winProbability}%
-                  </span>
-                </div>
-              )}
             </div>
 
             {/* Away Team */}
@@ -186,51 +215,6 @@ export default function MatchupDetail() {
           </div>
         </div>
 
-        {/* Game Statistics */}
-        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
-            Matchup Statistics
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Point Differential
-              </div>
-              <div className="text-xl font-semibold">
-                {matchupStatistics.pointDifferential.toFixed(1)}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Projection Accuracy
-              </div>
-              <div className="text-xl font-semibold">
-                {matchupStatistics.accuracyPercentage}%
-              </div>
-            </div>
-
-            <div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Playoff Implications
-              </div>
-              <div className="text-xl font-semibold">
-                {matchupStatistics.playoffImplications}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Win Probability
-              </div>
-              <div className="text-xl font-semibold">
-                {matchupStatistics.winProbability}%
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Team Lineups */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Home Team Lineup */}
@@ -247,7 +231,7 @@ export default function MatchupDetail() {
                       Player
                     </th>
                     <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Pos
+                      NFL Pos
                     </th>
                     <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Proj
@@ -267,18 +251,17 @@ export default function MatchupDetail() {
                       <tr
                         key={player.id}
                         className={`${
-                          !player.isStarter
+                          player.slotPosition === "BE" ||
+                          player.slotPosition === "IR"
                             ? "text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50"
                             : ""
                         }`}
                       >
                         <td className="py-2 px-3">
                           <div className="flex items-center">
-                            {!player.isStarter && (
-                              <span className="inline-block w-4 mr-2 text-gray-400">
-                                BN
-                              </span>
-                            )}
+                            <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
+                              {player.slotPosition || player.playerPosition}
+                            </span>
                             <span>{player.playerName}</span>
                           </div>
                         </td>
@@ -348,7 +331,7 @@ export default function MatchupDetail() {
                       Player
                     </th>
                     <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Pos
+                      NFL Pos
                     </th>
                     <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Proj
@@ -368,18 +351,17 @@ export default function MatchupDetail() {
                       <tr
                         key={player.id}
                         className={`${
-                          !player.isStarter
+                          player.slotPosition === "BE" ||
+                          player.slotPosition === "IR"
                             ? "text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50"
                             : ""
                         }`}
                       >
                         <td className="py-2 px-3">
                           <div className="flex items-center">
-                            {!player.isStarter && (
-                              <span className="inline-block w-4 mr-2 text-gray-400">
-                                BN
-                              </span>
-                            )}
+                            <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
+                              {player.slotPosition || player.playerPosition}
+                            </span>
                             <span>{player.playerName}</span>
                           </div>
                         </td>
@@ -448,7 +430,12 @@ export default function MatchupDetail() {
               <h3 className="text-lg font-medium mb-3">Top Performers</h3>
               <ul className="space-y-3">
                 {[...homeTeam.players, ...awayTeam.players]
-                  .filter((p) => p.isStarter)
+                  .filter(
+                    (p) =>
+                      p.slotPosition !== "BE" &&
+                      p.slotPosition !== "IR" &&
+                      p.slotPosition !== ""
+                  )
                   .sort((a, b) => b.points - a.points)
                   .slice(0, 3)
                   .map((player) => (
@@ -477,7 +464,12 @@ export default function MatchupDetail() {
               </h3>
               <ul className="space-y-3">
                 {[...homeTeam.players, ...awayTeam.players]
-                  .filter((p) => p.isStarter)
+                  .filter(
+                    (p) =>
+                      p.slotPosition !== "BE" &&
+                      p.slotPosition !== "IR" &&
+                      p.slotPosition !== ""
+                  )
                   .sort(
                     (a, b) =>
                       a.points -
@@ -528,15 +520,20 @@ export default function MatchupDetail() {
                 {homeTeam.name} Bench
               </h3>
 
-              {homeTeam.players.filter((p) => !p.isStarter).length > 0 ? (
+              {homeTeam.players.filter(
+                (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
+              ).length > 0 ? (
                 <>
                   <div className="mb-4">
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Total Points on Bench
+                      Bench Scoring
                     </div>
                     <div className="text-2xl font-semibold">
                       {homeTeam.players
-                        .filter((p) => !p.isStarter)
+                        .filter(
+                          (p) =>
+                            p.slotPosition === "BE" || p.slotPosition === "IR"
+                        )
                         .reduce((sum, p) => sum + p.points, 0)
                         .toFixed(1)}
                     </div>
@@ -544,7 +541,10 @@ export default function MatchupDetail() {
 
                   <ul className="space-y-2">
                     {homeTeam.players
-                      .filter((p) => !p.isStarter)
+                      .filter(
+                        (p) =>
+                          p.slotPosition === "BE" || p.slotPosition === "IR"
+                      )
                       .sort((a, b) => b.points - a.points)
                       .map((player) => (
                         <li
@@ -579,15 +579,20 @@ export default function MatchupDetail() {
                 {awayTeam.name} Bench
               </h3>
 
-              {awayTeam.players.filter((p) => !p.isStarter).length > 0 ? (
+              {awayTeam.players.filter(
+                (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
+              ).length > 0 ? (
                 <>
                   <div className="mb-4">
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Total Points on Bench
+                      Bench Scoring
                     </div>
                     <div className="text-2xl font-semibold">
                       {awayTeam.players
-                        .filter((p) => !p.isStarter)
+                        .filter(
+                          (p) =>
+                            p.slotPosition === "BE" || p.slotPosition === "IR"
+                        )
                         .reduce((sum, p) => sum + p.points, 0)
                         .toFixed(1)}
                     </div>
@@ -595,7 +600,10 @@ export default function MatchupDetail() {
 
                   <ul className="space-y-2">
                     {awayTeam.players
-                      .filter((p) => !p.isStarter)
+                      .filter(
+                        (p) =>
+                          p.slotPosition === "BE" || p.slotPosition === "IR"
+                      )
                       .sort((a, b) => b.points - a.points)
                       .map((player) => (
                         <li
@@ -622,6 +630,143 @@ export default function MatchupDetail() {
                   No bench players
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Better Lineup Decisions */}
+        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+            Better Lineup Decisions
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Home Team Better Decisions */}
+            <div>
+              <h3 className="text-lg font-medium mb-3">
+                {homeTeam.name} Missed Opportunities
+              </h3>
+              
+              {(() => {
+                const betterDecisions = findBetterLineupDecisions(homeTeam.players);
+                return betterDecisions.length > 0 ? (
+                  <>
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Total Points Left on Table
+                      </div>
+                      <div className="text-2xl font-semibold text-red-600">
+                        {betterDecisions.reduce((sum, decision) => sum + decision.pointsGained, 0).toFixed(1)}
+                      </div>
+                    </div>
+
+                    <ul className="space-y-3">
+                      {betterDecisions.map((decision) => (
+                        <li
+                          key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
+                          className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                Start{" "}
+                                <span className="text-green-600 font-semibold">
+                                  {decision.benchPlayer.playerName}
+                                </span>{" "}
+                                ({decision.benchPlayer.playerPosition})
+                              </div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                Instead of{" "}
+                                <span className="text-red-600 font-semibold">
+                                  {decision.starterPlayer.playerName}
+                                </span>{" "}
+                                ({decision.starterPlayer.slotPosition})
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {decision.benchPlayer.points.toFixed(1)} vs {decision.starterPlayer.points.toFixed(1)} pts
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-semibold text-green-600">
+                                +{decision.pointsGained.toFixed(1)}
+                              </div>
+                              <div className="text-xs text-gray-500">points</div>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <div className="text-gray-500 dark:text-gray-400 bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    Perfect lineup! No better decisions available.
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Away Team Better Decisions */}
+            <div>
+              <h3 className="text-lg font-medium mb-3">
+                {awayTeam.name} Missed Opportunities
+              </h3>
+              
+              {(() => {
+                const betterDecisions = findBetterLineupDecisions(awayTeam.players);
+                return betterDecisions.length > 0 ? (
+                  <>
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Total Points Left on Table
+                      </div>
+                      <div className="text-2xl font-semibold text-red-600">
+                        {betterDecisions.reduce((sum, decision) => sum + decision.pointsGained, 0).toFixed(1)}
+                      </div>
+                    </div>
+
+                    <ul className="space-y-3">
+                      {betterDecisions.map((decision) => (
+                        <li
+                          key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
+                          className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                Start{" "}
+                                <span className="text-green-600 font-semibold">
+                                  {decision.benchPlayer.playerName}
+                                </span>{" "}
+                                ({decision.benchPlayer.playerPosition})
+                              </div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                Instead of{" "}
+                                <span className="text-red-600 font-semibold">
+                                  {decision.starterPlayer.playerName}
+                                </span>{" "}
+                                ({decision.starterPlayer.slotPosition})
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {decision.benchPlayer.points.toFixed(1)} vs {decision.starterPlayer.points.toFixed(1)} pts
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-semibold text-green-600">
+                                +{decision.pointsGained.toFixed(1)}
+                              </div>
+                              <div className="text-xs text-gray-500">points</div>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <div className="text-gray-500 dark:text-gray-400 bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    Perfect lineup! No better decisions available.
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

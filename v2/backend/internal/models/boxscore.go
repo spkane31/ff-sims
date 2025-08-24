@@ -15,15 +15,17 @@ type BoxScore struct {
 
 	MatchupID   uint      `json:"matchup_id"`
 	PlayerID    uint      `json:"player_id"`
-	TeamID      uint      `json:"team_id"`       // The team the player was on for this matchup
+	TeamID      uint      `json:"team_id"` // The team the player was on for this matchup
 	Week        uint      `json:"week"`
 	Year        uint      `json:"year"`
 	Season      int       `json:"season"`
 	GameDate    time.Time `json:"game_date"`
 	StartedFlag bool      `json:"started_flag" gorm:"default:false"` // Whether player was in starting lineup
 
+	SlotPosition string `json:"slot_position"` // Position in fantasy lineup (e.g., "QB", "RB", etc.)
+
 	// Fantasy points
-	ActualPoints   float64 `json:"actual_points"`
+	ActualPoints    float64 `json:"actual_points"`
 	ProjectedPoints float64 `json:"projected_points"`
 
 	// Game stats (embedded from PlayerStats)

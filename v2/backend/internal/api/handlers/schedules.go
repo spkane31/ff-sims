@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sort"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -90,13 +91,13 @@ func GetSchedules(c *gin.Context) {
 
 	// Apply server-side filtering using playoff detection logic
 	filteredSchedule := utils.FilterPlayoffGames(schedule)
-	
+
 	// Further filter based on gameType query parameter
 	if gameTypeFilter != "" && gameTypeFilter != "all" {
 		var typeFilteredSchedule []models.Matchup
 		for _, matchup := range filteredSchedule {
 			playoffGameType := utils.GetPlayoffGameType(matchup, schedule)
-			
+
 			switch gameTypeFilter {
 			case "regular":
 				if playoffGameType == utils.PlayoffGameTypeRegular {
@@ -104,8 +105,8 @@ func GetSchedules(c *gin.Context) {
 				}
 			case "playoffs":
 				if playoffGameType == utils.PlayoffGameTypePlayoff ||
-				   playoffGameType == utils.PlayoffGameTypeChampionship ||
-				   playoffGameType == utils.PlayoffGameTypeThirdPlace {
+					playoffGameType == utils.PlayoffGameTypeChampionship ||
+					playoffGameType == utils.PlayoffGameTypeThirdPlace {
 					typeFilteredSchedule = append(typeFilteredSchedule, matchup)
 				}
 			}
@@ -117,7 +118,7 @@ func GetSchedules(c *gin.Context) {
 	resp.Data.Matchups = make([]Matchup, len(filteredSchedule))
 	for i, matchup := range filteredSchedule {
 		playoffGameType := utils.GetPlayoffGameType(matchup, schedule)
-		
+
 		resp.Data.Matchups[i] = Matchup{
 			ID:                 fmt.Sprintf("%d", matchup.ID),
 			Year:               matchup.Year,
@@ -158,12 +159,11 @@ type GetMatchupResponse struct {
 }
 
 type SingleMatchup struct {
-	ID                string            `json:"id"`
-	Year              uint              `json:"year"`
-	Week              uint              `json:"week"`
-	HomeTeam          TeamMatchup       `json:"homeTeam"`
-	AwayTeam          TeamMatchup       `json:"awayTeam"`
-	MatchupStatistics MatchupStatistics `json:"matchupStatistics"`
+	ID       string      `json:"id"`
+	Year     uint        `json:"year"`
+	Week     uint        `json:"week"`
+	HomeTeam TeamMatchup `json:"homeTeam"`
+	AwayTeam TeamMatchup `json:"awayTeam"`
 }
 
 type TeamMatchup struct {
@@ -174,13 +174,6 @@ type TeamMatchup struct {
 	Players        []BoxScorePlayer `json:"players"`
 }
 
-type MatchupStatistics struct {
-	PointDifferential  float64 `json:"pointDifferential"`
-	AccuracyPercentage float64 `json:"accuracyPercentage"`
-	PlayoffImplication string  `json:"playoffImplication"`
-	WinProbability     float64 `json:"winProbability"`
-}
-
 type BoxScorePlayer struct {
 	ID              string  `json:"id"`
 	PlayerName      string  `json:"playerName"`
@@ -189,7 +182,34 @@ type BoxScorePlayer struct {
 	Team            string  `json:"team"`
 	Points          float64 `json:"points"`
 	ProjectedPoints float64 `json:"projectedPoints"`
+	SlotPosition    string  `json:"slotPosition"`
 	IsStarter       bool    `json:"isStarter"`
+}
+
+// getPositionOrder returns the sort order for fantasy positions
+func getPositionOrder(position string) int {
+	switch position {
+	case "QB":
+		return 1
+	case "RB":
+		return 2
+	case "WR":
+		return 3
+	case "TE":
+		return 4
+	case "RB/WR/TE":
+		return 5
+	case "K":
+		return 6
+	case "D/ST", "DST":
+		return 7
+	case "BE":
+		return 8
+	case "IR":
+		return 9
+	default:
+		return 10
+	}
 }
 
 func GetMatchup(c *gin.Context) {
@@ -197,7 +217,7 @@ func GetMatchup(c *gin.Context) {
 	slog.Info("Fetching matchup", "id", id)
 
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(3)
 
 	matchups, matchupsErr := []models.Matchup{}, error(nil)
 	go func() {
@@ -207,11 +227,39 @@ func GetMatchup(c *gin.Context) {
 		}
 	}()
 
+	teams, teamsErr := []models.Team{}, error(nil)
+	go func() {
+		defer wg.Done()
+		if teamsErr = database.DB.Model(&models.Team{}).Find(&teams).Error; teamsErr != nil {
+			slog.Error("Failed to fetch teams from database", "error", teamsErr)
+		}
+	}()
+
+	boxScores, boxScoresErr := []models.BoxScore{}, error(nil)
+	go func() {
+		defer wg.Done()
+		if boxScoresErr = database.DB.Preload("Player").Where("matchup_id = ?", id).Find(&boxScores).Error; boxScoresErr != nil {
+			slog.Error("Failed to fetch box scores from database", "error", boxScoresErr)
+		}
+	}()
+
 	wg.Wait()
 
 	if matchupsErr != nil {
 		slog.Error("Error fetching matchup", "error", matchupsErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch matchup"})
+		return
+	}
+
+	if teamsErr != nil {
+		slog.Error("Error fetching teams", "error", teamsErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
+		return
+	}
+
+	if boxScoresErr != nil {
+		slog.Error("Error fetching box scores", "error", boxScoresErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch box scores"})
 		return
 	}
 
@@ -227,35 +275,80 @@ func GetMatchup(c *gin.Context) {
 		return
 	}
 
+	matchup := matchups[0]
+
+	// Find team names
+	homeTeamName := "Unknown Team"
+	awayTeamName := "Unknown Team"
+	for _, team := range teams {
+		if team.ID == matchup.HomeTeamID {
+			homeTeamName = team.Owner
+		}
+		if team.ID == matchup.AwayTeamID {
+			awayTeamName = team.Owner
+		}
+	}
+
+	// Separate box scores by team and calculate projected scores
+	var homeTeamPlayers []BoxScorePlayer
+	var awayTeamPlayers []BoxScorePlayer
+	var homeProjectedScore float64
+	var awayProjectedScore float64
+
+	for _, boxScore := range boxScores {
+		player := BoxScorePlayer{
+			ID:              fmt.Sprintf("%d", boxScore.PlayerID),
+			PlayerName:      boxScore.Player.Name,
+			PlayerPosition:  boxScore.Player.Position,
+			Status:          boxScore.Player.Status,
+			Team:            boxScore.Player.Team,
+			Points:          boxScore.ActualPoints,
+			ProjectedPoints: boxScore.ProjectedPoints,
+			SlotPosition:    boxScore.SlotPosition,
+			IsStarter:       boxScore.SlotPosition != "BE" && boxScore.SlotPosition != "IR" && boxScore.SlotPosition != "",
+		}
+
+		if boxScore.TeamID == matchup.HomeTeamID {
+			homeTeamPlayers = append(homeTeamPlayers, player)
+			// Only add projected points for starters (non-bench, non-IR players)
+			if player.IsStarter {
+				homeProjectedScore += boxScore.ProjectedPoints
+			}
+		} else if boxScore.TeamID == matchup.AwayTeamID {
+			awayTeamPlayers = append(awayTeamPlayers, player)
+			// Only add projected points for starters (non-bench, non-IR players)
+			if player.IsStarter {
+				awayProjectedScore += boxScore.ProjectedPoints
+			}
+		}
+	}
+
+	// Sort players by position order
+	sort.Slice(homeTeamPlayers, func(i, j int) bool {
+		return getPositionOrder(homeTeamPlayers[i].SlotPosition) < getPositionOrder(homeTeamPlayers[j].SlotPosition)
+	})
+	sort.Slice(awayTeamPlayers, func(i, j int) bool {
+		return getPositionOrder(awayTeamPlayers[i].SlotPosition) < getPositionOrder(awayTeamPlayers[j].SlotPosition)
+	})
+
 	resp := GetMatchupResponse{
 		Data: SingleMatchup{
 			ID:   id,
-			Year: matchups[0].Year,
-			Week: matchups[0].Week,
+			Year: matchup.Year,
+			Week: matchup.Week,
 			HomeTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchups[0].HomeTeamID),
-				Score:          matchups[0].HomeTeamFinalScore,
-				ProjectedScore: matchups[0].HomeTeamESPNProjectedScore,
-				Name:           "Team Alpha", // Placeholder, should be fetched from teams
-				Players: []BoxScorePlayer{
-					{ID: "101", PlayerName: "Patrick Mahomes", PlayerPosition: "QB", Team: "KC", Status: "Active", ProjectedPoints: 24.5, Points: 27.8, IsStarter: true},
-					{ID: "110", PlayerName: "DK Metcalf", PlayerPosition: "WR", Team: "SEA", Status: "Active", ProjectedPoints: 13.7, Points: 6.4, IsStarter: false},
-				},
+				ESPNID:         fmt.Sprintf("%d", matchup.HomeTeamID),
+				Score:          matchup.HomeTeamFinalScore,
+				ProjectedScore: homeProjectedScore,
+				Name:           homeTeamName,
+				Players:        homeTeamPlayers,
 			},
 			AwayTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchups[0].AwayTeamID),
-				Score:          matchups[0].AwayTeamFinalScore,
-				ProjectedScore: matchups[0].AwayTeamESPNProjectedScore,
-				Name:           "Team Omega", // Placeholder, should be fetched from teams
-				Players: []BoxScorePlayer{
-					{ID: "201", PlayerName: "Josh Allen", PlayerPosition: "QB", Team: "BUF", Status: "Active", ProjectedPoints: 23.8, Points: 20.2, IsStarter: true},
-				},
-			},
-			MatchupStatistics: MatchupStatistics{
-				PointDifferential:  matchups[0].HomeTeamFinalScore - matchups[0].AwayTeamFinalScore,
-				AccuracyPercentage: 85.0,                             // Placeholder value
-				PlayoffImplication: "High - every game is important", // Placeholder value
-				WinProbability:     0.75,                             // Placeholder value
+				ESPNID:         fmt.Sprintf("%d", matchup.AwayTeamID),
+				Score:          matchup.AwayTeamFinalScore,
+				ProjectedScore: awayProjectedScore,
+				Name:           awayTeamName,
+				Players:        awayTeamPlayers,
 			},
 		},
 	}

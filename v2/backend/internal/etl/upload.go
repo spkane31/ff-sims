@@ -447,6 +447,8 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		Week:      week,
 		Year:      year,
 
+		SlotPosition: player.SlotPosition,
+
 		ActualPoints:    player.Points,
 		ProjectedPoints: player.ProjectedPoints,
 		GameStats:       gameStats,
@@ -468,6 +470,7 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		// Box score exists, update its details
 		existingBoxScore.ActualPoints = player.Points
 		existingBoxScore.ProjectedPoints = player.ProjectedPoints
+		existingBoxScore.SlotPosition = player.SlotPosition
 		existingBoxScore.GameStats = models.PlayerStats{
 			PassingYards:   stats.Breakdown[PassingYards],
 			PassingTDs:     stats.Breakdown[PassingTouchdowns],

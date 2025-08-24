@@ -33,6 +33,7 @@ export interface Player {
   team: string;
   projectedPoints: number;
   points: number;
+  slotPosition: string;
   isStarter: boolean;
 }
 
@@ -54,12 +55,6 @@ export interface MatchupDetail {
     projectedScore: number;
     players: Player[];
   };
-  matchupStatistics: {
-    pointDifferential: number;
-    accuracyPercentage: number;
-    playoffImplications: string;
-    winProbability: number;
-  };
 }
 
 export interface BoxScorePlayer {
@@ -71,7 +66,25 @@ export interface BoxScorePlayer {
 }
 
 export interface GetMatchupDetailResponse {
-  data: MatchupDetail;
+  data: {
+    id: string;
+    year: number;
+    week: number;
+    homeTeam: {
+      id: string;
+      name: string;
+      score: number;
+      projectedScore: number;
+      players: Player[];
+    };
+    awayTeam: {
+      id: string;
+      name: string;
+      score: number;
+      projectedScore: number;
+      players: Player[];
+    };
+  };
 }
 
 /**
