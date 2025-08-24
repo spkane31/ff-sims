@@ -7,8 +7,6 @@ import {
   PlayerDetail,
   PlayerStats,
   GameLogEntry,
-  AnnualStatsEntry,
-  GamePerformance,
 } from "../../services/playersService";
 
 // Helper function to get position color
@@ -38,8 +36,10 @@ function filterGameLog(
   weekFilter: string
 ): GameLogEntry[] {
   return gameLog.filter((entry) => {
-    const yearMatch = yearFilter === "all" || entry.year.toString() === yearFilter;
-    const weekMatch = weekFilter === "all" || entry.week.toString() === weekFilter;
+    const yearMatch =
+      yearFilter === "all" || entry.year.toString() === yearFilter;
+    const weekMatch =
+      weekFilter === "all" || entry.week.toString() === weekFilter;
     return yearMatch && weekMatch;
   });
 }
@@ -326,7 +326,9 @@ export default function PlayerDetailPage() {
 
               {/* Annual Statistics Table */}
               <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">Annual Statistics</h2>
+                <h2 className="text-xl font-semibold mb-4">
+                  Annual Statistics
+                </h2>
                 {player.annualStats && player.annualStats.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
@@ -372,7 +374,9 @@ export default function PlayerDetailPage() {
                               </th>
                             </>
                           )}
-                          {(player.position === "RB" || player.position === "WR" || player.position === "TE") && (
+                          {(player.position === "RB" ||
+                            player.position === "WR" ||
+                            player.position === "TE") && (
                             <>
                               <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                 Rec
@@ -399,7 +403,14 @@ export default function PlayerDetailPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                         {player.annualStats.map((yearStats, index) => (
-                          <tr key={yearStats.year} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                          <tr
+                            key={yearStats.year}
+                            className={
+                              index % 2 === 0
+                                ? "bg-white dark:bg-gray-700"
+                                : "bg-gray-50 dark:bg-gray-800"
+                            }
+                          >
                             <td className="py-3 px-4 text-sm font-medium text-blue-600">
                               {yearStats.year}
                             </td>
@@ -415,12 +426,15 @@ export default function PlayerDetailPage() {
                             <td className="py-3 px-4 text-sm">
                               {yearStats.avgFantasyPoints.toFixed(1)}
                             </td>
-                            <td className={`py-3 px-4 text-sm font-medium ${
-                              yearStats.difference > 0 
-                                ? "text-green-600 dark:text-green-400" 
-                                : "text-red-600 dark:text-red-400"
-                            }`}>
-                              {yearStats.difference > 0 ? "+" : ""}{yearStats.difference.toFixed(1)}
+                            <td
+                              className={`py-3 px-4 text-sm font-medium ${
+                                yearStats.difference > 0
+                                  ? "text-green-600 dark:text-green-400"
+                                  : "text-red-600 dark:text-red-400"
+                              }`}
+                            >
+                              {yearStats.difference > 0 ? "+" : ""}
+                              {yearStats.difference.toFixed(1)}
                             </td>
                             <td className="py-3 px-4 text-sm">
                               <div className="font-medium text-green-600 dark:text-green-400">
@@ -443,12 +457,12 @@ export default function PlayerDetailPage() {
                                 {yearStats.consistencyScore.toFixed(1)}
                               </div>
                               <div className="text-xs text-gray-500">
-                                {yearStats.consistencyScore < 5 
-                                  ? "Very consistent" 
-                                  : yearStats.consistencyScore < 8 
-                                  ? "Consistent" 
-                                  : yearStats.consistencyScore < 12 
-                                  ? "Variable" 
+                                {yearStats.consistencyScore < 5
+                                  ? "Very consistent"
+                                  : yearStats.consistencyScore < 8
+                                  ? "Consistent"
+                                  : yearStats.consistencyScore < 12
+                                  ? "Variable"
                                   : "Inconsistent"}
                               </div>
                             </td>
@@ -465,7 +479,9 @@ export default function PlayerDetailPage() {
                                 </td>
                               </>
                             )}
-                            {(player.position === "RB" || player.position === "WR" || player.position === "TE") && (
+                            {(player.position === "RB" ||
+                              player.position === "WR" ||
+                              player.position === "TE") && (
                               <>
                                 <td className="py-3 px-4 text-sm">
                                   {yearStats.totalStats.receptions}
@@ -535,11 +551,13 @@ export default function PlayerDetailPage() {
                     <div className="flex justify-between">
                       <span>Worst Game:</span>
                       <span className="font-medium text-red-600 dark:text-red-400">
-                        {player.worstGame?.points >= 0 && player.worstGame.points < 1000 ? (
+                        {player.worstGame?.points >= 0 &&
+                        player.worstGame.points < 1000 ? (
                           <>
                             {player.worstGame.points.toFixed(1)} pts
                             <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {player.worstGame.year} Week {player.worstGame.week}
+                              {player.worstGame.year} Week{" "}
+                              {player.worstGame.week}
                             </div>
                           </>
                         ) : (
@@ -554,12 +572,12 @@ export default function PlayerDetailPage() {
                           <>
                             σ = {player.consistencyScore.toFixed(1)}
                             <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {player.consistencyScore < 5 
-                                ? "Very consistent" 
-                                : player.consistencyScore < 8 
-                                ? "Consistent" 
-                                : player.consistencyScore < 12 
-                                ? "Variable" 
+                              {player.consistencyScore < 5
+                                ? "Very consistent"
+                                : player.consistencyScore < 8
+                                ? "Consistent"
+                                : player.consistencyScore < 12
+                                ? "Variable"
                                 : "Inconsistent"}
                             </div>
                           </>
@@ -861,8 +879,12 @@ export default function PlayerDetailPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                     {(() => {
-                      const filteredGameLog = filterGameLog(player.gameLog || [], yearFilter, weekFilter);
-                      
+                      const filteredGameLog = filterGameLog(
+                        player.gameLog || [],
+                        yearFilter,
+                        weekFilter
+                      );
+
                       if (filteredGameLog.length === 0) {
                         return (
                           <tr>
@@ -870,8 +892,8 @@ export default function PlayerDetailPage() {
                               colSpan={7}
                               className="py-8 text-center text-gray-500 dark:text-gray-400"
                             >
-                              {player.gameLog?.length === 0 
-                                ? "No game log data available" 
+                              {player.gameLog?.length === 0
+                                ? "No game log data available"
                                 : "No games match the selected filters"}
                             </td>
                           </tr>
@@ -879,32 +901,42 @@ export default function PlayerDetailPage() {
                       }
 
                       return filteredGameLog.map((game, index) => (
-                        <tr key={`${game.year}-${game.week}`} className={index % 2 === 0 ? "bg-white dark:bg-gray-700" : "bg-gray-50 dark:bg-gray-800"}>
+                        <tr
+                          key={`${game.year}-${game.week}`}
+                          className={
+                            index % 2 === 0
+                              ? "bg-white dark:bg-gray-700"
+                              : "bg-gray-50 dark:bg-gray-800"
+                          }
+                        >
                           <td className="py-3 px-4 text-sm font-medium">
                             {game.week}
                           </td>
-                          <td className="py-3 px-4 text-sm">
-                            {game.year}
-                          </td>
+                          <td className="py-3 px-4 text-sm">{game.year}</td>
                           <td className="py-3 px-4 text-sm font-bold text-blue-600">
                             {game.actualPoints.toFixed(1)}
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-500">
                             {game.projectedPoints.toFixed(1)}
                           </td>
-                          <td className={`py-3 px-4 text-sm font-medium ${
-                            game.difference > 0 
-                              ? "text-green-600 dark:text-green-400" 
-                              : "text-red-600 dark:text-red-400"
-                          }`}>
-                            {game.difference > 0 ? "+" : ""}{game.difference.toFixed(1)}
+                          <td
+                            className={`py-3 px-4 text-sm font-medium ${
+                              game.difference > 0
+                                ? "text-green-600 dark:text-green-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {game.difference > 0 ? "+" : ""}
+                            {game.difference.toFixed(1)}
                           </td>
                           <td className="py-3 px-4 text-sm">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              game.startedFlag 
-                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" 
-                                : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                            }`}>
+                            <span
+                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                game.startedFlag
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                  : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                              }`}
+                            >
                               {game.startedFlag ? "Started" : "Bench"}
                             </span>
                           </td>
