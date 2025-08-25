@@ -98,7 +98,7 @@ func processDraftSelections(filePath string) error {
 
 		// Check if the draft selection already exists
 		var existingSelection models.DraftSelection
-		if err := database.DB.First(&existingSelection, "player_id = ? AND team_id = ? AND year = ?", selection.PlayerID, selection.OwnerESPNID, selection.Year).Error; err != nil {
+		if err := database.DB.First(&existingSelection, "player_id = ? AND team_id = ? AND year = ?", player.ID, entry.TeamID, selection.Year).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return fmt.Errorf("error checking existing draft selection for player ID %d and owner ESPN ID %d: %w", selection.PlayerID, selection.OwnerESPNID, err)
 			}

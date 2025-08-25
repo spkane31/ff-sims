@@ -89,7 +89,7 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     ? teamData.draftPicks.map((pick) => ({
         round: pick.round,
         pick: pick.pick,
-        overall: (pick.round - 1) * 10 + pick.pick, // Assuming 12 teams per round
+        overall: (pick.round - 1) * 12 + pick.pick, // Assuming 12 teams per round
         description: `${pick.round}${getOrdinalSuffix(pick.round)} Round (${
           pick.year
         })`,
@@ -1327,9 +1327,6 @@ export default function TeamDetail() {
                           >
                             {pick.player} ({pick.position})
                           </Link>
-                          <span className="ml-2 text-gray-500">
-                            (TODO: Implement player page)
-                          </span>
                         </td>
                       </tr>
                     ))}
