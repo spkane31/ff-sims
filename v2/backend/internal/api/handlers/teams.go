@@ -232,12 +232,21 @@ func GetTeamByID(c *gin.Context) {
 	// Transform draft picks data
 	var draftPicks []DraftPickResponse
 	for _, selection := range draftSelections {
+		teamOwner := ""
+		teamID := 0
+		if selection.Team != nil {
+			teamOwner = selection.Team.Owner
+			teamID = int(selection.Team.ESPNID)
+		}
+
 		draftPicks = append(draftPicks, DraftPickResponse{
+			PlayerID: fmt.Sprintf("%d", selection.PlayerID),
 			Round:    int(selection.Round),
 			Pick:     int(selection.Pick),
 			Player:   selection.PlayerName,
 			Position: selection.PlayerPosition,
-			Team:     "", // TODO: Add NFL team field to DraftSelection model
+			TeamID:   teamID,
+			Owner:    teamOwner,
 			Year:     int(selection.Year),
 		})
 
@@ -288,8 +297,14 @@ func GetTeamByID(c *gin.Context) {
 		var playersGained, playersLost []TransactionPlayer
 		var transactionType string
 		// var description string
-		var week int
+		var week uint
+		var year uint
 		for _, transaction := range group {
+			// Set week and year from the first transaction in the group
+			if week == 0 {
+				week = transaction.Week
+				year = transaction.Year
+			}
 			if transaction.TransactionType == "TRADED" {
 				transactionType = "Trade"
 				tradeDetails, exists := tradesGrouped[transaction.Date]
@@ -333,6 +348,8 @@ func GetTeamByID(c *gin.Context) {
 		transactionsResp = append(transactionsResp, TransactionResponse{
 			Type:          transactionType,
 			Date:          date,
+			Year:          year,
+			Week:          week,
 			PlayersGained: playersGained,
 			PlayersLost:   playersLost,
 		})
@@ -473,17 +490,21 @@ type PlayerResponse struct {
 }
 
 type DraftPickResponse struct {
+	PlayerID string `json:"player_id"`
 	Round    int    `json:"round"`
 	Pick     int    `json:"pick"`
 	Player   string `json:"player"`
 	Position string `json:"position"`
-	Team     string `json:"team"`
+	TeamID   int    `json:"team_id"`
+	Owner    string `json:"owner"`
 	Year     int    `json:"year"`
 }
 
 type TransactionResponse struct {
 	Type          string              `json:"type"` // "Trade", "Waiver", "Free Agent"
 	Date          time.Time           `json:"date"`
+	Year          uint                `json:"year"`
+	Week          uint                `json:"week"`
 	Description   string              `json:"description"`
 	PlayersGained []TransactionPlayer `json:"playersGained"`
 	PlayersLost   []TransactionPlayer `json:"playersLost"`

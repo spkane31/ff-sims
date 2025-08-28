@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Transaction, transactionsService } from '../services/transactionsService';
+import { Transaction, DraftPick, transactionsService } from '../services/transactionsService';
 
 interface UseTransactionsReturn {
   transactions: Transaction[];
@@ -64,4 +64,40 @@ export function useTransaction(transactionId: number) {
   }, [transactionId]);
 
   return { transaction, isLoading, error, refetch: fetchTransaction };
+}
+
+interface UseDraftPicksReturn {
+  draftPicks: DraftPick[];
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => Promise<void>;
+}
+
+/**
+ * Hook for fetching draft picks data
+ */
+export function useDraftPicks(year: number = 2024): UseDraftPicksReturn {
+  const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchDraftPicks = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await transactionsService.getDraftPicks(year);
+      setDraftPicks(data.draft_picks || []);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred while fetching draft picks'));
+      setDraftPicks([]); // Set empty array on error
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDraftPicks();
+  }, [year]);
+
+  return { draftPicks, isLoading, error, refetch: fetchDraftPicks };
 }

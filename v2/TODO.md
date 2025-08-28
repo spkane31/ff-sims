@@ -3,10 +3,10 @@
 * [ ] Update Github Actions cron job
 
 * [ ] Transactions page
+  * [X] Draft selections
 
-* [ ] Draft data on team detail pages
-
-* [ ] Strength-of-schedule measurement and important games coming up
+* [ ] Choose-your-own adventure of the next weeks games similar to previous website.
+  * [ ] Strength-of-schedule measurement and important games coming up
 
 ## Player Ranking Performance Optimization
 
@@ -113,3 +113,5 @@ ON CONFLICT (player_id, year) DO UPDATE SET ...;
 * [X] Store and display rosters for each game
 
 * [X] Expected wins on a seasonal basis
+
+* [X] Draft data on team detail pages

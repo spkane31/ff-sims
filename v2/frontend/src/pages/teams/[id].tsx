@@ -61,6 +61,8 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     id: string;
     type: string;
     date: string;
+    year: number;
+    week: number;
     description: string;
     playersGained: {
       id: string;
@@ -70,7 +72,6 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
       id: string;
       name: string;
     }[];
-    week: number;
   }[];
 } {
   // Convert API players to UI format
@@ -344,6 +345,7 @@ export default function TeamDetail() {
   // Add these state variables at the top of the TeamDetail function component
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [opponentFilter, setOpponentFilter] = useState<string>("all");
+  const [transactionYearFilter, setTransactionYearFilter] = useState<string>("all");
 
   // Add these state variables
   const [teamStats, setTeamStats] = useState<ReturnType<
@@ -1284,10 +1286,41 @@ export default function TeamDetail() {
           {activeTab === "draft" && (
             <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
               <h2 className="text-xl font-semibold mb-4">Draft Capital</h2>
+              
+              {/* Year Filter */}
+              <div className="flex flex-col md:flex-row gap-4 mb-6">
+                <div className="w-full md:w-auto">
+                  <label
+                    htmlFor="draft-year-filter"
+                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                  >
+                    Filter by Year
+                  </label>
+                  <select
+                    id="draft-year-filter"
+                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    value={transactionYearFilter}
+                    onChange={(e) => setTransactionYearFilter(e.target.value)}
+                  >
+                    <option value="all">All Years</option>
+                    {Array.from(new Set(team.draftPicks.map((pick) => pick.description.match(/\((\d{4})\)/)?.[1] || ""))).filter(Boolean)
+                      .sort((a, b) => parseInt(b) - parseInt(a))
+                      .map((year) => (
+                        <option key={`draft-year-${year}`} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
                   <thead className="bg-gray-50 dark:bg-gray-800">
                     <tr>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Year
+                      </th>
                       <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Round
                       </th>
@@ -1303,36 +1336,59 @@ export default function TeamDetail() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                    {team.draftPicks.map((pick, i) => (
-                      <tr
-                        key={i}
-                        className={
-                          i % 2 === 0 ? "" : "bg-gray-50 dark:bg-gray-700"
-                        }
-                      >
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {pick.round}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {pick.pick}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {pick.overall}
-                        </td>
-                        <td className="py-4 px-4">
-                          <Link
-                            href="#"
-                            onClick={(e) => e.preventDefault()}
-                            className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
+                    {team.draftPicks
+                      .filter((pick) => {
+                        if (transactionYearFilter === "all") return true;
+                        const pickYear = pick.description.match(/\((\d{4})\)/)?.[1];
+                        return pickYear === transactionYearFilter;
+                      })
+                      .map((pick, i) => {
+                        const pickYear = pick.description.match(/\((\d{4})\)/)?.[1] || "";
+                        return (
+                          <tr
+                            key={i}
+                            className={
+                              i % 2 === 0 ? "" : "bg-gray-50 dark:bg-gray-700"
+                            }
                           >
-                            {pick.player} ({pick.position})
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {pickYear}
+                            </td>
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {pick.round}
+                            </td>
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {pick.pick}
+                            </td>
+                            <td className="py-4 px-4 whitespace-nowrap">
+                              {pick.overall}
+                            </td>
+                            <td className="py-4 px-4">
+                              <Link
+                                href="#"
+                                onClick={(e) => e.preventDefault()}
+                                className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
+                              >
+                                {pick.player} ({pick.position})
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
+              
+              {/* Show message when no draft picks match the filter */}
+              {team.draftPicks.filter((pick) => {
+                if (transactionYearFilter === "all") return true;
+                const pickYear = pick.description.match(/\((\d{4})\)/)?.[1];
+                return pickYear === transactionYearFilter;
+              }).length === 0 && (
+                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                  No draft picks match the selected year filter.
+                </div>
+              )}
             </section>
           )}
 
@@ -1343,6 +1399,33 @@ export default function TeamDetail() {
 
               {team && team.transactions && team.transactions.length > 0 ? (
                 <div className="space-y-4">
+                  {/* Year Filter */}
+                  <div className="flex flex-col md:flex-row gap-4 mb-6">
+                    <div className="w-full md:w-auto">
+                      <label
+                        htmlFor="transaction-year-filter"
+                        className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                      >
+                        Filter by Year
+                      </label>
+                      <select
+                        id="transaction-year-filter"
+                        className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        value={transactionYearFilter}
+                        onChange={(e) => setTransactionYearFilter(e.target.value)}
+                      >
+                        <option value="all">All Years</option>
+                        {Array.from(new Set(team.transactions.map((transaction) => transaction.year)))
+                          .sort((a, b) => b - a)
+                          .map((year) => (
+                            <option key={`transaction-year-${year}`} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
                   {/* Filter buttons */}
                   <div className="flex flex-wrap gap-2 mb-6 justify-center sm:justify-start">
                     <button
@@ -1373,7 +1456,12 @@ export default function TeamDetail() {
 
                   {/* Transaction Cards */}
                   <div className="space-y-4">
-                    {team.transactions.map((transaction) => (
+                    {team.transactions
+                      .filter((transaction) => 
+                        transactionYearFilter === "all" || 
+                        transaction.year.toString() === transactionYearFilter
+                      )
+                      .map((transaction) => (
                       <div
                         key={transaction.id}
                         className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
@@ -1402,7 +1490,7 @@ export default function TeamDetail() {
                               {transaction.type}
                             </span>
                             <span className="sm:ml-3 text-gray-600 dark:text-gray-400 text-sm">
-                              {transaction.date} - Week {transaction.week}
+                              {transaction.date} - {transaction.year} Week {transaction.week}
                             </span>
                           </div>
                         </div>
@@ -1457,6 +1545,16 @@ export default function TeamDetail() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Show message when no transactions match the filter */}
+                  {team.transactions.filter((transaction) => 
+                    transactionYearFilter === "all" || 
+                    transaction.year.toString() === transactionYearFilter
+                  ).length === 0 && (
+                    <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                      No transactions match the selected year filter.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-6">
