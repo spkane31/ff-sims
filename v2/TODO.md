@@ -8,6 +8,8 @@
 * [ ] Choose-your-own adventure of the next weeks games similar to previous website.
   * [ ] Strength-of-schedule measurement and important games coming up
 
+* [ ] Use the Sleeper API to 
+
 ## Player Ranking Performance Optimization
 
 ### Problem

@@ -74,6 +74,8 @@ export interface Transaction {
   id: string;
   type: string;
   date: string;
+  year: number;
+  week: number;
   description: string;
   playersGained: {
     id: string;
@@ -83,7 +85,6 @@ export interface Transaction {
     id: string;
     name: string;
   }[];
-  week: number;
 }
 
 export interface ScheduleGame {
