@@ -302,7 +302,7 @@ def get_schedule(league: League, conn: "psycopg2.connection" = None, file_name: 
                     "away_team_final_score": matchup.away_score,
                     "home_team_espn_projected_score": matchup.home_projected,
                     "away_team_espn_projected_score": matchup.away_projected,
-                    "completed": league.current_week >= week,
+                    "completed": league.current_week >= week and matchup.home_score > 0 and matchup.away_score > 0,
                     "home_team_lineup": [
                         {
                             "slot_position": player.slot_position,
@@ -840,7 +840,7 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--year", type=int, default=2025)
     parser.add_argument(
         "--use-database",
         default=False,

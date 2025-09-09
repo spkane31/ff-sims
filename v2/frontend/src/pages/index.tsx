@@ -201,7 +201,19 @@ export default function Home() {
       new Set(scheduleData.map((game) => game.year))
     ).sort((a, b) => b - a);
 
-    const winners = years
+    // Filter years to only include completed seasons
+    // A season is complete if there are no incomplete regular season games (gameType = "NONE")
+    const completedYears = years.filter((year) => {
+      const regularSeasonGames = scheduleData.filter(
+        (game) => game.year === year && game.gameType === "NONE"
+      );
+      const incompleteRegularSeasonGames = regularSeasonGames.filter(
+        (game) => !game.completed
+      );
+      return incompleteRegularSeasonGames.length === 0;
+    });
+
+    const winners = completedYears
       .map((year) => {
         const yearGames = scheduleData.filter(
           (game) => game.year === year && game.completed
@@ -331,7 +343,7 @@ export default function Home() {
       })
       .filter((w) => w.owner);
 
-    const losers = years
+    const losers = completedYears
       .map((year) => {
         const yearGames = scheduleData.filter(
           (game) => game.year === year && game.completed

@@ -258,6 +258,10 @@ func processMatchups(filePath string) error {
 			return fmt.Errorf("away team with ESPN ID %d not found in database", matchup.AwayTeamID)
 		}
 
+		// A game is only completed if both teams have non-zero scores
+		// Games with both scores = 0 should not be considered completed
+		isCompleted := matchup.Completed && !(matchup.HomeTeamFinalScore == 0.0 && matchup.AwayTeamFinalScore == 0.0)
+
 		entry := &models.Matchup{
 			LeagueID:                   leagueID,
 			Week:                       uint(matchup.Week),
@@ -271,7 +275,7 @@ func processMatchups(filePath string) error {
 			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:                   matchup.GameType,
 
-			Completed: matchup.Completed,
+			Completed: isCompleted,
 			IsPlayoff: false, // TODO: implement playoff logic
 		}
 
@@ -296,7 +300,7 @@ func processMatchups(filePath string) error {
 			existingMatchup.AwayTeamFinalScore = matchup.AwayTeamFinalScore
 			existingMatchup.HomeTeamESPNProjectedScore = matchup.HomeTeamESPNProjectedScore
 			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamESPNProjectedScore
-			existingMatchup.Completed = matchup.Completed
+			existingMatchup.Completed = isCompleted // Use the same logic for updates
 			existingMatchup.GameType = matchup.GameType
 			existingMatchup.Week = uint(matchup.Week)
 			existingMatchup.Year = uint(matchup.Year)

@@ -3,7 +3,6 @@ package main
 import (
 	"backend/internal/etl"
 	"backend/internal/logging"
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -24,7 +23,7 @@ func main() {
 		Long:  "Extract, Transform, Load service for processing fantasy football data",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			logging.Infof("ETL service started")
-			logging.Infof(fmt.Sprintf("Using data directory: %s", dataDir))
+			logging.Infof("Using data directory: %s", dataDir)
 		},
 	}
 
@@ -56,13 +55,13 @@ func main() {
 					logging.Infof("Running expected wins calculation for all years")
 				}
 				if err := etl.ProcessExpectedWinsWithYear(processYear); err != nil {
-					logging.Errorf(fmt.Sprintf("Failed to calculate expected wins: %v", err))
+					logging.Errorf("Failed to calculate expected wins: %v", err)
 					os.Exit(1)
 				}
 			} else {
 				// Run normal ETL with expected wins flag
 				if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
-					logging.Errorf(fmt.Sprintf("Failed to upload data: %v", err))
+					logging.Errorf("Failed to upload data: %v", err)
 					os.Exit(1)
 				}
 			}
@@ -79,7 +78,7 @@ func main() {
 
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
-		logging.Errorf(fmt.Sprintf("Error executing command: %v", err))
+		logging.Errorf("Error executing command: %v", err)
 		os.Exit(1)
 	}
 }
