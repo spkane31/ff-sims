@@ -4,6 +4,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/models"
 	"backend/internal/simulation"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -251,7 +252,8 @@ func GetTeamProgression(c *gin.Context) {
 func GetAllTimeExpectedWins(c *gin.Context) {
 	db := database.DB
 
-	// Query to aggregate expected wins across all seasons for each team
+	// Query to aggregate expected wins from season_expected_wins (regular season only)
+	// This table contains final season totals calculated from regular season games only
 	var results []struct {
 		TeamID              uint    `json:"team_id"`
 		TeamName            string  `json:"team_name"`
@@ -264,23 +266,24 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 		SeasonsPlayed       int64   `json:"seasons_played"`
 	}
 
-	err := db.Table("season_expected_wins").
-		Select(`
+	err := db.Raw(`
+		SELECT
 			season_expected_wins.team_id,
 			teams.name as team_name,
 			teams.owner,
-			COALESCE(SUM(season_expected_wins.expected_wins), 0) as total_expected_wins,
-			COALESCE(SUM(season_expected_wins.expected_losses), 0) as total_expected_losses,
-			COALESCE(SUM(season_expected_wins.actual_wins), 0) as total_actual_wins,
-			COALESCE(SUM(season_expected_wins.actual_losses), 0) as total_actual_losses,
-			COALESCE(SUM(season_expected_wins.actual_wins) - SUM(season_expected_wins.expected_wins), 0) as total_win_luck,
+			SUM(season_expected_wins.expected_wins) as total_expected_wins,
+			SUM(season_expected_wins.expected_losses) as total_expected_losses,
+			SUM(season_expected_wins.actual_wins) as total_actual_wins,
+			SUM(season_expected_wins.actual_losses) as total_actual_losses,
+			SUM(season_expected_wins.actual_wins) - SUM(season_expected_wins.expected_wins) as total_win_luck,
 			COUNT(season_expected_wins.year) as seasons_played
-		`).
-		Joins("JOIN teams ON teams.id = season_expected_wins.team_id").
-		Where("season_expected_wins.deleted_at IS NULL AND teams.deleted_at IS NULL").
-		Group("season_expected_wins.team_id, teams.name, teams.owner").
-		Order("total_expected_wins DESC").
-		Scan(&results).Error
+		FROM season_expected_wins
+		JOIN teams ON teams.id = season_expected_wins.team_id
+		GROUP BY season_expected_wins.team_id, teams.name, teams.owner
+		ORDER BY total_expected_wins DESC
+	`).Scan(&results).Error
+
+	fmt.Println(results)
 
 	if err != nil {
 		slog.Error("Failed to fetch all-time expected wins", "error", err)

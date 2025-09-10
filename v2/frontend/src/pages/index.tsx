@@ -799,7 +799,7 @@ export default function Home() {
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("expectedRecord")}
                         >
-                          Expected Record{renderSortIcon("expectedRecord")}
+                          Expected Record (Regular Season){renderSortIcon("expectedRecord")}
                         </th>
                         <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
