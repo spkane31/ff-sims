@@ -13,12 +13,22 @@ import (
 
 // Expected Wins Response Types
 
+type WeeklyExpectedWinsWithLuck struct {
+	models.WeeklyExpectedWins
+	WinLuck float64 `json:"win_luck"`
+}
+
 type GetWeeklyExpectedWinsResponse struct {
-	Data []models.WeeklyExpectedWins `json:"data"`
+	Data []WeeklyExpectedWinsWithLuck `json:"data"`
+}
+
+type SeasonExpectedWinsWithLuck struct {
+	models.SeasonExpectedWins
+	WinLuck float64 `json:"win_luck"`
 }
 
 type GetSeasonExpectedWinsResponse struct {
-	Data []models.SeasonExpectedWins `json:"data"`
+	Data []SeasonExpectedWinsWithLuck `json:"data"`
 }
 
 type GetSeasonRankingsResponse struct {
@@ -30,7 +40,7 @@ type GetLuckDistributionResponse struct {
 }
 
 type GetTeamProgressionResponse struct {
-	Data []models.WeeklyExpectedWins `json:"data"`
+	Data []WeeklyExpectedWinsWithLuck `json:"data"`
 }
 
 type AllTimeExpectedWins struct {
@@ -82,7 +92,16 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, GetWeeklyExpectedWinsResponse{Data: data})
+		// Convert to response format with calculated win_luck
+		responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
+		for i, weekly := range data {
+			responseData[i] = WeeklyExpectedWinsWithLuck{
+				WeeklyExpectedWins: weekly,
+				WinLuck:            weekly.WinLuck(),
+			}
+		}
+
+		c.JSON(http.StatusOK, GetWeeklyExpectedWinsResponse{Data: responseData})
 	} else {
 		// Get all weeks for season progression
 		data, err := models.GetAllWeeklyExpectedWins(database.DB, leagueID, year)
@@ -92,7 +111,16 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, GetWeeklyExpectedWinsResponse{Data: data})
+		// Convert to response format with calculated win_luck
+		responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
+		for i, weekly := range data {
+			responseData[i] = WeeklyExpectedWinsWithLuck{
+				WeeklyExpectedWins: weekly,
+				WinLuck:            weekly.WinLuck(),
+			}
+		}
+
+		c.JSON(http.StatusOK, GetWeeklyExpectedWinsResponse{Data: responseData})
 	}
 }
 
@@ -118,7 +146,16 @@ func GetSeasonExpectedWins(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, GetSeasonExpectedWinsResponse{Data: data})
+	// Convert to response format with calculated win_luck
+	responseData := make([]SeasonExpectedWinsWithLuck, len(data))
+	for i, season := range data {
+		responseData[i] = SeasonExpectedWinsWithLuck{
+			SeasonExpectedWins: season,
+			WinLuck:            season.WinLuck(),
+		}
+	}
+
+	c.JSON(http.StatusOK, GetSeasonExpectedWinsResponse{Data: responseData})
 }
 
 // GetSeasonRankings returns teams ranked by various expected wins metrics
@@ -193,7 +230,16 @@ func GetTeamProgression(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, GetTeamProgressionResponse{Data: data})
+	// Convert to response format with calculated win_luck
+	responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
+	for i, weekly := range data {
+		responseData[i] = WeeklyExpectedWinsWithLuck{
+			WeeklyExpectedWins: weekly,
+			WinLuck:            weekly.WinLuck(),
+		}
+	}
+
+	c.JSON(http.StatusOK, GetTeamProgressionResponse{Data: responseData})
 }
 
 // NOTE: Management/Admin endpoints for recalculation have been removed
@@ -227,7 +273,7 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 			COALESCE(SUM(season_expected_wins.expected_losses), 0) as total_expected_losses,
 			COALESCE(SUM(season_expected_wins.actual_wins), 0) as total_actual_wins,
 			COALESCE(SUM(season_expected_wins.actual_losses), 0) as total_actual_losses,
-			COALESCE(SUM(season_expected_wins.win_luck), 0) as total_win_luck,
+			COALESCE(SUM(season_expected_wins.actual_wins) - SUM(season_expected_wins.expected_wins), 0) as total_win_luck,
 			COUNT(season_expected_wins.year) as seasons_played
 		`).
 		Joins("JOIN teams ON teams.id = season_expected_wins.team_id").

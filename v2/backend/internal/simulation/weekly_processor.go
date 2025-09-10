@@ -167,7 +167,6 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		ActualWins:           cumulativeActualWins,         // Cumulative actual wins through this week
 		ActualLosses:         cumulativeActualLosses,       // Cumulative actual losses through this week
 		WeeklyActualWin:      weeklyWin,
-		WinLuck:              float64(cumulativeActualWins) - teamCumulativeResult.ExpectedWins,
 		StrengthOfSchedule:   teamCumulativeResult.StrengthOfSchedule,
 		WeeklyWinProbability: weeklyExpectedWins, // Use weekly expected wins as win probability for this week
 		TeamScore:            teamScore,

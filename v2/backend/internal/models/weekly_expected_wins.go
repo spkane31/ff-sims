@@ -31,7 +31,6 @@ type WeeklyExpectedWins struct {
 	WeeklyActualWin bool `json:"weekly_actual_win"` // Did they win this week
 
 	// Metrics
-	WinLuck              float64 `json:"win_luck"`               // ActualWins - ExpectedWins
 	StrengthOfSchedule   float64 `json:"strength_of_schedule"`   // Average opponent strength
 	WeeklyWinProbability float64 `json:"weekly_win_probability"` // Win probability for this week's matchup
 
@@ -45,6 +44,11 @@ type WeeklyExpectedWins struct {
 	Team         *Team   `json:"team,omitempty"`
 	OpponentTeam *Team   `json:"opponent_team,omitempty" gorm:"foreignKey:OpponentTeamID"`
 	League       *League `json:"-"`
+}
+
+// WinLuck calculates luck as actual wins minus expected wins
+func (w *WeeklyExpectedWins) WinLuck() float64 {
+	return float64(w.ActualWins) - w.ExpectedWins
 }
 
 // GetWeeklyExpectedWins returns weekly expected wins for a specific team, year, and week
@@ -162,9 +166,25 @@ func GetFinalRegularSeasonWeek(db *gorm.DB, leagueID uint, year uint) (uint, err
 		return 0, err
 	}
 
-	if maxWeek == nil {
-		return 0, nil // No completed regular season weeks found
+	if maxWeek != nil {
+		return *maxWeek, nil
 	}
 
-	return *maxWeek, nil
+	// If no completed games exist, check if we have weekly expected wins data
+	// This handles cases where expected wins were calculated but games aren't marked as completed
+	var weeklyMaxWeek *uint
+	err = db.Model(&WeeklyExpectedWins{}).
+		Where("league_id = ? AND year = ?", leagueID, year).
+		Select("MAX(week)").
+		Scan(&weeklyMaxWeek).Error
+
+	if err != nil {
+		return 0, err
+	}
+
+	if weeklyMaxWeek == nil {
+		return 0, nil // No completed regular season weeks found and no weekly data
+	}
+
+	return *weeklyMaxWeek, nil
 }

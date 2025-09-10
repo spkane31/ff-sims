@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
-import { expectedWinsService } from "../services/expectedWinsService";
+import { expectedWinsService, CurrentSeasonStanding } from "../services/expectedWinsService";
 import { useSchedule } from "../hooks/useSchedule";
 import { Matchup } from "@/types/models";
 
@@ -19,6 +19,8 @@ type SortDirection = "asc" | "desc";
 export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
+  const [currentStandings, setCurrentStandings] = useState<CurrentSeasonStanding[]>([]);
+  const [standingsLoading, setStandingsLoading] = useState(true);
   const [sortField, setSortField] = useState<SortField>("regularSeasonRecord");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const { schedule, isLoading: scheduleLoading } = useSchedule();
@@ -64,6 +66,22 @@ export default function Home() {
     }
 
     fetchTeamsData();
+  }, []);
+
+  useEffect(() => {
+    async function fetchCurrentStandings() {
+      try {
+        setStandingsLoading(true);
+        const standingsResponse = await expectedWinsService.getCurrentSeasonStandings(2025);
+        setCurrentStandings(standingsResponse.standings);
+      } catch (error) {
+        console.error("Error fetching current standings:", error);
+      } finally {
+        setStandingsLoading(false);
+      }
+    }
+
+    fetchCurrentStandings();
   }, []);
 
   const handleSort = (field: SortField) => {
@@ -135,13 +153,9 @@ export default function Home() {
           fieldB = b.expectedWins?.expectedWins ?? 0;
           break;
         case "luck":
-          // Calculate luck as actual wins minus expected wins
-          const actualWinsA = a.record.wins;
-          const actualWinsB = b.record.wins;
-          const expectedWinsA = a.expectedWins?.expectedWins ?? 0;
-          const expectedWinsB = b.expectedWins?.expectedWins ?? 0;
-          fieldA = actualWinsA - expectedWinsA;
-          fieldB = actualWinsB - expectedWinsB;
+          // Use pre-calculated luck from backend
+          fieldA = a.expectedWins?.winLuck ?? 0;
+          fieldB = b.expectedWins?.winLuck ?? 0;
           break;
         default:
           fieldA = a.owner.toLowerCase();
@@ -190,7 +204,7 @@ export default function Home() {
         awayScore: game.awayScore,
         homeProjectedScore: game.homeProjectedScore,
         awayProjectedScore: game.awayProjectedScore,
-        completed: game.homeScore > 0 || game.awayScore > 0,
+        completed: game.completed || (game.homeScore > 0 && game.awayScore > 0),
         homeTeam: game.homeTeam,
         awayTeam: game.awayTeam,
         gameType: game.gameType,
@@ -203,7 +217,14 @@ export default function Home() {
 
     // Filter years to only include completed seasons
     // A season is complete if there are no incomplete regular season games (gameType = "NONE")
+    // Also exclude the current year (2025) which is still in progress
+    const currentYear = 2025;
     const completedYears = years.filter((year) => {
+      // Exclude current year from being considered "complete"
+      if (year >= currentYear) {
+        return false;
+      }
+      
       const regularSeasonGames = scheduleData.filter(
         (game) => game.year === year && game.gameType === "NONE"
       );
@@ -495,6 +516,118 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Current Season Standings */}
+        <section className="py-6">
+          <h2 className="text-2xl font-semibold mb-6">2025 Season Standings</h2>
+          {standingsLoading ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <p>Loading current standings...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Rank
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Owner
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Record
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Points For
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Points Against
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Expected Wins
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Luck
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  {currentStandings.map((standing, index) => (
+                    <tr
+                      key={standing.team_id}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <Link
+                          href={`/teams/${standing.espn_id}`}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+                        >
+                          {standing.owner}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {standing.record.wins}-{standing.record.losses}
+                        {standing.record.ties > 0 ? `-${standing.record.ties}` : ""}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {standing.points.scored.toLocaleString(undefined, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {standing.points.against.toLocaleString(undefined, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {standing.expected_wins !== undefined && standing.expected_losses !== undefined
+                          ? `${standing.expected_wins.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}-${standing.expected_losses.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}`
+                          : "N/A"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center">
+                        {standing.win_luck !== undefined ? (
+                          <span className={`${
+                            standing.win_luck > 0
+                              ? "text-green-600 dark:text-green-400"
+                              : standing.win_luck < 0
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-gray-600 dark:text-gray-300"
+                          }`}>
+                            {standing.win_luck.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                              signDisplay: "exceptZero"
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-600 dark:text-gray-300">N/A</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {currentStandings.length === 0 && (
+                <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                  No standings data available for 2025 season yet.
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Hall of Fame & Wall of Shame Section */}
         <section className="py-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -725,15 +858,15 @@ export default function Home() {
                               : "N/A"}
                           </td>
                           <td className="px-4 py-3 text-sm text-center">
-                            {team.expectedWins?.expectedWins !== undefined ? (
+                            {team.expectedWins?.winLuck !== undefined ? (
                               <span className={`${
-                                team.record.wins - team.expectedWins.expectedWins > 0
+                                team.expectedWins.winLuck > 0
                                   ? "text-green-600 dark:text-green-400"
-                                  : team.record.wins - team.expectedWins.expectedWins < 0
+                                  : team.expectedWins.winLuck < 0
                                   ? "text-red-600 dark:text-red-400"
                                   : "text-gray-600 dark:text-gray-300"
                               }`}>
-                                {(team.record.wins - team.expectedWins.expectedWins).toLocaleString(undefined, {
+                                {team.expectedWins.winLuck.toLocaleString(undefined, {
                                   minimumFractionDigits: 1,
                                   maximumFractionDigits: 1,
                                   signDisplay: "exceptZero"

@@ -20,6 +20,7 @@ func SetupRouter(r *gin.Engine) {
 			teams.GET("", handlers.GetTeams)
 			teams.GET("/:id", handlers.GetTeamByID)
 			teams.GET("/all-time-expected-wins", handlers.GetAllTimeExpectedWins)
+			teams.GET("/standings/:year", handlers.GetCurrentSeasonStandings)
 		}
 
 		// Players endpoints

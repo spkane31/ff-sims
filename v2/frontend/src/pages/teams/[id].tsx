@@ -6,6 +6,8 @@ import {
   teamsService,
   TeamDetail as TeamDetailType,
 } from "../../services/teamsService";
+import TeamExpectedWinsPanel from "../../components/TeamExpectedWinsPanel";
+import { useSeasonExpectedWins } from "../../hooks/useExpectedWins";
 
 // Type definitions for the legacy UI components
 interface Player {
@@ -341,6 +343,17 @@ export default function TeamDetail() {
   > | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [, setError] = useState<string | null>(null);
+  
+  // Expected wins data - using current year 2025 and league ID 345674 (default backend league)
+  const currentYear = 2025;
+  const leagueId = 345674;
+  const teamId = parseInt(id as string) || 0;
+  
+  const {
+    seasonData: expectedWinsSeasonData,
+    isLoading: isSeasonLoading,
+    error: seasonError,
+  } = useSeasonExpectedWins(leagueId, currentYear);
 
   // Add these state variables at the top of the TeamDetail function component
   const [yearFilter, setYearFilter] = useState<string>("all");
@@ -417,6 +430,12 @@ export default function TeamDetail() {
             We could not find a team with the requested ID. Please check the URL
             and try again.
           </p>
+          {seasonError && (
+            <div className="mt-2">
+              <p className="text-sm">Expected wins data error:</p>
+              <p className="text-xs">• {seasonError.message}</p>
+            </div>
+          )}
           <Link
             href="/teams"
             className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
@@ -517,6 +536,14 @@ export default function TeamDetail() {
           {/* Overview Tab */}
           {activeTab === "overview" && (
             <>
+              {/* Expected Wins Panel */}
+              <TeamExpectedWinsPanel 
+                teamId={teamId}
+                seasonData={expectedWinsSeasonData.filter(team => team.team_id === teamId)}
+                isLoading={isSeasonLoading}
+                currentYear={currentYear}
+              />
+
               <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
                 <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

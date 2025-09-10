@@ -54,12 +54,32 @@ func finalizeTeamSeasonExpectedWins(db *gorm.DB, team models.Team, year uint, fi
 		return nil // Skip this team - no data to finalize
 	}
 
-	// Get the final week's data - it contains all cumulative season totals
-	finalWeekData, err := models.GetWeeklyExpectedWins(db, team.ID, year, teamFinalWeek)
-	if err != nil || finalWeekData == nil {
-		log.Printf("No weekly data found for team %d, year %d, week %d", team.ID, year, teamFinalWeek)
+	// Get all weekly data up to the final week to calculate proper cumulative totals
+	allWeeklyData, err := models.GetTeamWeeklyProgression(db, team.ID, year)
+	if err != nil || len(allWeeklyData) == 0 {
+		log.Printf("No weekly progression data found for team %d, year %d", team.ID, year)
 		return err
 	}
+	
+	// Calculate proper cumulative totals from all weekly data
+	var cumulativeExpectedWins, cumulativeExpectedLosses float64
+	var cumulativeActualWins, cumulativeActualLosses int
+	var lastStrengthOfSchedule float64
+	
+	for _, weekData := range allWeeklyData {
+		if weekData.Week <= teamFinalWeek {
+			cumulativeExpectedWins += weekData.WeeklyExpectedWins
+			cumulativeExpectedLosses += weekData.WeeklyExpectedLosses
+			if weekData.WeeklyActualWin {
+				cumulativeActualWins++
+			} else {
+				cumulativeActualLosses++
+			}
+			lastStrengthOfSchedule = weekData.StrengthOfSchedule // Use the most recent SOS
+		}
+	}
+	
+	// Win luck is calculated on-demand in API responses (actual_wins - expected_wins)
 
 	// Calculate season aggregates using the team's actual final week
 	seasonStats, err := models.CalculateSeasonAggregates(db, team.ID, year, teamFinalWeek)
@@ -70,18 +90,17 @@ func finalizeTeamSeasonExpectedWins(db *gorm.DB, team models.Team, year uint, fi
 	// Get playoff and standing info
 	playoffMade, finalStanding := models.GetTeamSeasonOutcome(db, team.ID, year)
 
-	// Create season record using final week's cumulative data
+	// Create season record using calculated cumulative data
 	seasonRecord := &models.SeasonExpectedWins{
 		TeamID:               team.ID,
 		Year:                 year,
 		LeagueID:             team.LeagueID,
 		FinalWeek:            teamFinalWeek,
-		ExpectedWins:         finalWeekData.ExpectedWins,   // Already cumulative
-		ExpectedLosses:       finalWeekData.ExpectedLosses, // Already cumulative
-		ActualWins:           finalWeekData.ActualWins,     // Already cumulative
-		ActualLosses:         finalWeekData.ActualLosses,   // Already cumulative
-		WinLuck:              finalWeekData.WinLuck,        // Already calculated correctly
-		StrengthOfSchedule:   finalWeekData.StrengthOfSchedule,
+		ExpectedWins:         cumulativeExpectedWins,
+		ExpectedLosses:       cumulativeExpectedLosses,
+		ActualWins:           cumulativeActualWins,
+		ActualLosses:         cumulativeActualLosses,
+		StrengthOfSchedule:   lastStrengthOfSchedule,
 		TotalPointsFor:       seasonStats.TotalPointsFor,
 		TotalPointsAgainst:   seasonStats.TotalPointsAgainst,
 		AveragePointsFor:     seasonStats.AveragePointsFor,
@@ -225,16 +244,17 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 
 	distribution := &LuckDistribution{}
 
-	// Find most lucky and unlucky teams
-	maxLuck := seasonRecords[0].WinLuck
-	minLuck := seasonRecords[0].WinLuck
+	// Calculate luck on-demand for each team (actual_wins - expected_wins)
+	firstLuck := float64(seasonRecords[0].ActualWins) - seasonRecords[0].ExpectedWins
+	maxLuck := firstLuck
+	minLuck := firstLuck
 	maxLuckTeam := seasonRecords[0].Team.Owner
 	minLuckTeam := seasonRecords[0].Team.Owner
 
 	var luckSum, luckSumAbs float64
 
 	for _, record := range seasonRecords {
-		luck := record.WinLuck
+		luck := float64(record.ActualWins) - record.ExpectedWins
 		luckSum += luck
 		luckSumAbs += abs(luck)
 
@@ -257,7 +277,8 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 	mean := luckSum / float64(len(seasonRecords))
 	var variance float64
 	for _, record := range seasonRecords {
-		diff := record.WinLuck - mean
+		luck := float64(record.ActualWins) - record.ExpectedWins
+		diff := luck - mean
 		variance += diff * diff
 	}
 	variance /= float64(len(seasonRecords))

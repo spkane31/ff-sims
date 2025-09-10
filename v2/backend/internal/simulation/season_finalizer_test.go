@@ -75,9 +75,9 @@ func TestGetSeasonExpectedWinsRankings(t *testing.T) {
 
 	// Create some season records first
 	seasonRecords := []models.SeasonExpectedWins{
-		{TeamID: 1, Year: 2024, LeagueID: 1, ExpectedWins: 8.5, ActualWins: 9, WinLuck: 0.5},
-		{TeamID: 2, Year: 2024, LeagueID: 1, ExpectedWins: 7.2, ActualWins: 6, WinLuck: -1.2},
-		{TeamID: 3, Year: 2024, LeagueID: 1, ExpectedWins: 6.8, ActualWins: 7, WinLuck: 0.2},
+		{TeamID: 1, Year: 2024, LeagueID: 1, ExpectedWins: 8.5, ActualWins: 9},
+		{TeamID: 2, Year: 2024, LeagueID: 1, ExpectedWins: 7.2, ActualWins: 6},
+		{TeamID: 3, Year: 2024, LeagueID: 1, ExpectedWins: 6.8, ActualWins: 7},
 	}
 
 	for _, record := range seasonRecords {
@@ -112,9 +112,9 @@ func TestCalculateLeagueLuckDistribution(t *testing.T) {
 
 	// Create season records with varying luck
 	seasonRecords := []models.SeasonExpectedWins{
-		{TeamID: 1, Year: 2024, LeagueID: 1, WinLuck: 2.0, Team: &models.Team{Owner: "Owner A"}},
-		{TeamID: 2, Year: 2024, LeagueID: 1, WinLuck: -1.5, Team: &models.Team{Owner: "Owner B"}},
-		{TeamID: 3, Year: 2024, LeagueID: 1, WinLuck: 0.5, Team: &models.Team{Owner: "Owner C"}},
+		{TeamID: 1, Year: 2024, LeagueID: 1, Team: &models.Team{Owner: "Owner A"}},
+		{TeamID: 2, Year: 2024, LeagueID: 1, Team: &models.Team{Owner: "Owner B"}},
+		{TeamID: 3, Year: 2024, LeagueID: 1, Team: &models.Team{Owner: "Owner C"}},
 	}
 
 	for _, record := range seasonRecords {

@@ -24,7 +24,6 @@ type SeasonExpectedWins struct {
 	ExpectedLosses     float64 `json:"expected_losses"`
 	ActualWins         int     `json:"actual_wins"`
 	ActualLosses       int     `json:"actual_losses"`
-	WinLuck            float64 `json:"win_luck"`
 	StrengthOfSchedule float64 `json:"strength_of_schedule"`
 
 	// Performance metrics
@@ -40,6 +39,11 @@ type SeasonExpectedWins struct {
 	// Relationships
 	Team   *Team   `json:"team,omitempty"`
 	League *League `json:"-"`
+}
+
+// WinLuck calculates luck as actual wins minus expected wins
+func (s *SeasonExpectedWins) WinLuck() float64 {
+	return float64(s.ActualWins) - s.ExpectedWins
 }
 
 // SeasonAggregates holds calculated season statistics
@@ -73,9 +77,26 @@ func GetTeamSeasonExpectedWins(db *gorm.DB, teamID uint, year uint) (*SeasonExpe
 	return &seasonExpectedWins, nil
 }
 
-// SaveSeasonExpectedWins saves or updates a season expected wins record
+// SaveSeasonExpectedWins saves or updates a season expected wins record (idempotent)
 func SaveSeasonExpectedWins(db *gorm.DB, seasonRecord *SeasonExpectedWins) error {
-	return db.Save(seasonRecord).Error
+	// First, try to find an existing record
+	var existingRecord SeasonExpectedWins
+	err := db.Where("team_id = ? AND year = ?", seasonRecord.TeamID, seasonRecord.Year).
+		First(&existingRecord).Error
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+
+	if err == gorm.ErrRecordNotFound {
+		// Create new record
+		return db.Create(seasonRecord).Error
+	} else {
+		// Update existing record - preserve the ID and timestamps
+		seasonRecord.ID = existingRecord.ID
+		seasonRecord.CreatedAt = existingRecord.CreatedAt
+		return db.Save(seasonRecord).Error
+	}
 }
 
 // CalculateSeasonAggregates calculates total and average points for a team's season

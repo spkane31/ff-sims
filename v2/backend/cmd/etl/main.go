@@ -9,10 +9,9 @@ import (
 )
 
 var (
-	dataDir               string
-	calculateExpectedWins bool
-	skipExpectedWins      bool
-	processYear           uint
+	dataDir          string
+	skipExpectedWins bool
+	processYear      uint
 )
 
 func main() {
@@ -29,9 +28,6 @@ func main() {
 
 	// Add global flags
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "./data", "Directory containing data files")
-	rootCmd.PersistentFlags().BoolVar(&calculateExpectedWins, "calculate-expected-wins", false, "Only calculate expected wins after ETL")
-	rootCmd.PersistentFlags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
-	rootCmd.PersistentFlags().UintVar(&processYear, "year", 0, "Specific year to process for expected wins (0 = all years, starting with most recent)")
 
 	// Upload command
 	uploadCmd := &cobra.Command{
@@ -42,34 +38,37 @@ func main() {
 			// Determine if we should calculate expected wins
 			doCalculateExpectedWins := !skipExpectedWins
 
-			if calculateExpectedWins && skipExpectedWins {
-				logging.Errorf("Cannot use both --calculate-expected-wins and --skip-expected-wins flags")
+			// Run normal ETL with expected wins flag
+			if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
+				logging.Errorf("Failed to upload data: %v", err)
 				os.Exit(1)
-			}
-
-			if calculateExpectedWins {
-				// Only run expected wins calculation, skip normal ETL
-				if processYear > 0 {
-					logging.Infof("Running expected wins calculation for year %d only", processYear)
-				} else {
-					logging.Infof("Running expected wins calculation for all years")
-				}
-				if err := etl.ProcessExpectedWinsWithYear(processYear); err != nil {
-					logging.Errorf("Failed to calculate expected wins: %v", err)
-					os.Exit(1)
-				}
-			} else {
-				// Run normal ETL with expected wins flag
-				if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
-					logging.Errorf("Failed to upload data: %v", err)
-					os.Exit(1)
-				}
 			}
 		},
 	}
+	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
+
+	// Expected wins command
+	xwinsCmd := &cobra.Command{
+		Use:   "xwins",
+		Short: "Calculate expected wins",
+		Long:  "Calculate expected wins for fantasy football teams based on their performance",
+		Run: func(cmd *cobra.Command, args []string) {
+			if processYear > 0 {
+				logging.Infof("Running expected wins calculation for year %d only", processYear)
+			} else {
+				logging.Infof("Running expected wins calculation for all years")
+			}
+			if err := etl.ProcessExpectedWinsWithYear(processYear); err != nil {
+				logging.Errorf("Failed to calculate expected wins: %v", err)
+				os.Exit(1)
+			}
+		},
+	}
+	xwinsCmd.Flags().UintVar(&processYear, "year", 0, "Specific year to process for expected wins (0 = all years, starting with most recent)")
 
 	// Add commands to root
 	rootCmd.AddCommand(uploadCmd)
+	rootCmd.AddCommand(xwinsCmd)
 
 	rootCmd.SilenceUsage = true // Suppress usage message on error
 

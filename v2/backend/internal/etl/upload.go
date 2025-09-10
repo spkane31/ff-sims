@@ -1039,15 +1039,13 @@ func processExpectedWinsForYearWithRecalc(year uint) error {
 		logging.Infof("Successfully processed expected wins for year %d, week %d", year, week)
 	}
 
-	// Check if the regular season is complete and finalize
-	if simulation.IsRegularSeasonComplete(db, leagueID, year) {
-		logging.Infof("Regular season complete for year %d, finalizing season expected wins", year)
-		err = simulation.FinalizeSeasonExpectedWins(leagueID, year)
-		if err != nil {
-			return fmt.Errorf("failed to finalize season expected wins for year %d: %w", year, err)
-		}
-		logging.Infof("Successfully finalized season expected wins for year %d", year)
+	// Always finalize season expected wins to show current season stats
+	logging.Infof("Finalizing season expected wins for year %d", year)
+	err = simulation.FinalizeSeasonExpectedWins(leagueID, year)
+	if err != nil {
+		return fmt.Errorf("failed to finalize season expected wins for year %d: %w", year, err)
 	}
+	logging.Infof("Successfully finalized season expected wins for year %d", year)
 
 	return nil
 }

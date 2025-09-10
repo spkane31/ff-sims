@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -513,6 +514,161 @@ type TransactionResponse struct {
 type TransactionPlayer struct {
 	ID   uint   `json:"id"`
 	Name string `json:"name"`
+}
+
+// GetCurrentSeasonStandings returns current season standings with expected wins
+// GET /api/teams/standings/{year}
+func GetCurrentSeasonStandings(c *gin.Context) {
+	yearParam := c.Param("year")
+	year, err := strconv.ParseUint(yearParam, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year"})
+		return
+	}
+	yearUint := uint(year)
+
+	// Fetch all teams
+	var allTeams []models.Team
+	if err := database.DB.Find(&allTeams).Error; err != nil {
+		slog.Error("Failed to fetch teams from database", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
+		return
+	}
+
+	// Fetch current year's matchups
+	var matchups []models.Matchup
+	if err := database.DB.Where("year = ? AND completed = true", yearUint).Find(&matchups).Error; err != nil {
+		slog.Error("Failed to fetch matchups", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch matchups"})
+		return
+	}
+
+	// Get all weekly expected wins data for the year and aggregate by team
+	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, 345674, yearUint) // Assuming league ID 1
+	if err != nil && err.Error() != "record not found" {
+		slog.Error("Failed to fetch weekly expected wins", "error", err)
+	}
+
+	// Create expected wins map for quick lookup - sum up weekly expected wins for each team
+	type TeamExpectedWinsSummary struct {
+		TotalExpectedWins   float64
+		TotalExpectedLosses float64
+		TotalActualWins     int
+		TotalActualLosses   int
+		WeekCount           int
+	}
+
+	expectedWinsMap := make(map[uint]*TeamExpectedWinsSummary)
+	for _, ew := range weeklyExpectedWins {
+		if _, exists := expectedWinsMap[ew.TeamID]; !exists {
+			expectedWinsMap[ew.TeamID] = &TeamExpectedWinsSummary{}
+		}
+
+		summary := expectedWinsMap[ew.TeamID]
+		// Sum the weekly expected wins (not cumulative - use WeeklyExpectedWins field)
+		summary.TotalExpectedWins += ew.WeeklyExpectedWins
+		summary.TotalExpectedLosses += ew.WeeklyExpectedLosses
+		if ew.WeeklyActualWin {
+			summary.TotalActualWins++
+		} else {
+			summary.TotalActualLosses++
+		}
+		summary.WeekCount++
+	}
+
+	// Build standings response
+	var standings []CurrentSeasonStandingResponse
+	for _, team := range allTeams {
+		// Skip dummy teams
+		if team.ESPNID == 2 || team.ESPNID == 8 {
+			continue
+		}
+
+		standing := CurrentSeasonStandingResponse{
+			TeamID:   team.ID,
+			ESPNID:   fmt.Sprintf("%d", team.ESPNID),
+			Owner:    team.Owner,
+			TeamName: team.Name,
+			Record:   TeamRecord{Wins: 0, Losses: 0, Ties: 0},
+			Points:   TeamPoints{Scored: 0, Against: 0},
+		}
+
+		// Calculate record and points from matchups
+		for _, matchup := range matchups {
+			if matchup.GameType != "NONE" {
+				continue // Only regular season games
+			}
+
+			if matchup.HomeTeamID == team.ID {
+				standing.Points.Scored += matchup.HomeTeamFinalScore
+				standing.Points.Against += matchup.AwayTeamFinalScore
+				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
+					standing.Record.Wins++
+				} else if matchup.HomeTeamFinalScore < matchup.AwayTeamFinalScore {
+					standing.Record.Losses++
+				} else {
+					standing.Record.Ties++
+				}
+			} else if matchup.AwayTeamID == team.ID {
+				standing.Points.Scored += matchup.AwayTeamFinalScore
+				standing.Points.Against += matchup.HomeTeamFinalScore
+				if matchup.AwayTeamFinalScore > matchup.HomeTeamFinalScore {
+					standing.Record.Wins++
+				} else if matchup.AwayTeamFinalScore < matchup.HomeTeamFinalScore {
+					standing.Record.Losses++
+				} else {
+					standing.Record.Ties++
+				}
+			}
+		}
+
+		// Add expected wins data if available (using aggregated weekly data)
+		if summary, exists := expectedWinsMap[team.ID]; exists {
+			standing.ExpectedWins = &summary.TotalExpectedWins
+			standing.ExpectedLosses = &summary.TotalExpectedLosses
+			winLuck := float64(standing.Record.Wins) - summary.TotalExpectedWins
+			standing.WinLuck = &winLuck
+		}
+
+		standings = append(standings, standing)
+	}
+
+	// Sort by wins, then by points scored
+	slices.SortStableFunc(standings, func(a, b CurrentSeasonStandingResponse) int {
+		if a.Record.Wins != b.Record.Wins {
+			return b.Record.Wins - a.Record.Wins
+		}
+		if a.Points.Scored != b.Points.Scored {
+			if a.Points.Scored < b.Points.Scored {
+				return 1
+			}
+			return -1
+		}
+		return 0
+	})
+
+	c.JSON(http.StatusOK, GetCurrentSeasonStandingsResponse{
+		Year:      yearUint,
+		Standings: standings,
+	})
+}
+
+// Response types for current season standings
+type GetCurrentSeasonStandingsResponse struct {
+	Year      uint                            `json:"year"`
+	Standings []CurrentSeasonStandingResponse `json:"standings"`
+}
+
+type CurrentSeasonStandingResponse struct {
+	TeamID         uint       `json:"team_id"`
+	ESPNID         string     `json:"espn_id"`
+	Owner          string     `json:"owner"`
+	TeamName       string     `json:"team_name"`
+	Record         TeamRecord `json:"record"`
+	Points         TeamPoints `json:"points"`
+	ExpectedWins   *float64   `json:"expected_wins,omitempty"`
+	ExpectedLosses *float64   `json:"expected_losses,omitempty"`
+	WinLuck        *float64   `json:"win_luck,omitempty"`
 }
 
 // CreateTeam creates a new team
