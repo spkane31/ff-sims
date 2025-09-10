@@ -347,7 +347,7 @@ export default function TeamDetail() {
   // Expected wins data - using current year 2025 and league ID 345674 (default backend league)
   const currentYear = 2025;
   const leagueId = 345674;
-  const teamId = parseInt(id as string) || 0;
+  const [internalTeamId, setInternalTeamId] = useState<number>(0);
   
   const {
     seasonData: expectedWinsSeasonData,
@@ -380,6 +380,9 @@ export default function TeamDetail() {
 
         // Use teamsService to fetch detailed team data
         const teamData = await teamsService.getTeamDetail(id as string);
+
+        // Set the internal team ID for expected wins filtering
+        setInternalTeamId(parseInt(teamData.id));
 
         // Map API data to the format expected by the UI
         const mappedTeam = mapApiDataToUiFormat(teamData);
@@ -538,8 +541,8 @@ export default function TeamDetail() {
             <>
               {/* Expected Wins Panel */}
               <TeamExpectedWinsPanel 
-                teamId={teamId}
-                seasonData={expectedWinsSeasonData.filter(team => team.team_id === teamId)}
+                teamId={internalTeamId}
+                seasonData={expectedWinsSeasonData.filter(team => team.team_id === internalTeamId)}
                 isLoading={isSeasonLoading}
                 currentYear={currentYear}
               />

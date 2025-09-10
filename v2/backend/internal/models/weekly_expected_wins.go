@@ -120,11 +120,6 @@ func SaveWeeklyExpectedWins(db *gorm.DB, weeklyRecord *WeeklyExpectedWins) error
 	}
 }
 
-// DeleteWeeklyExpectedWins deletes weekly expected wins records for recalculation
-func DeleteWeeklyExpectedWins(db *gorm.DB, leagueID uint, year uint, week uint) error {
-	return db.Where("league_id = ? AND year = ? AND week = ?", leagueID, year, week).
-		Delete(&WeeklyExpectedWins{}).Error
-}
 
 // GetLastCompletedWeek returns the most recent week with completed games for a league
 func GetLastCompletedWeek(db *gorm.DB, leagueID uint, year uint) (uint, error) {
@@ -154,37 +149,3 @@ func IsWeekProcessed(db *gorm.DB, leagueID uint, year uint, week uint) (bool, er
 	return count > 0, err
 }
 
-// GetFinalRegularSeasonWeek determines the last regular season week (excludes playoffs)
-func GetFinalRegularSeasonWeek(db *gorm.DB, leagueID uint, year uint) (uint, error) {
-	var maxWeek *uint
-	err := db.Model(&Matchup{}).
-		Where("league_id = ? AND year = ? AND game_type = ? AND completed = true", leagueID, year, "NONE").
-		Select("MAX(week)").
-		Scan(&maxWeek).Error
-
-	if err != nil {
-		return 0, err
-	}
-
-	if maxWeek != nil {
-		return *maxWeek, nil
-	}
-
-	// If no completed games exist, check if we have weekly expected wins data
-	// This handles cases where expected wins were calculated but games aren't marked as completed
-	var weeklyMaxWeek *uint
-	err = db.Model(&WeeklyExpectedWins{}).
-		Where("league_id = ? AND year = ?", leagueID, year).
-		Select("MAX(week)").
-		Scan(&weeklyMaxWeek).Error
-
-	if err != nil {
-		return 0, err
-	}
-
-	if weeklyMaxWeek == nil {
-		return 0, nil // No completed regular season weeks found and no weekly data
-	}
-
-	return *weeklyMaxWeek, nil
-}

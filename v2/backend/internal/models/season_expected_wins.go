@@ -65,17 +65,6 @@ func GetSeasonExpectedWinsData(db *gorm.DB, leagueID uint, year uint) ([]SeasonE
 	return results, err
 }
 
-// GetTeamSeasonExpectedWins returns season expected wins for a specific team and year
-func GetTeamSeasonExpectedWins(db *gorm.DB, teamID uint, year uint) (*SeasonExpectedWins, error) {
-	var seasonExpectedWins SeasonExpectedWins
-	err := db.Where("team_id = ? AND year = ?", teamID, year).
-		Preload("Team").
-		First(&seasonExpectedWins).Error
-	if err != nil {
-		return nil, err
-	}
-	return &seasonExpectedWins, nil
-}
 
 // SaveSeasonExpectedWins saves or updates a season expected wins record (idempotent)
 func SaveSeasonExpectedWins(db *gorm.DB, seasonRecord *SeasonExpectedWins) error {
@@ -184,22 +173,3 @@ func GetTeamSeasonOutcome(db *gorm.DB, teamID uint, year uint) (bool, int) {
 	return playoffMade, finalStanding
 }
 
-// GetHistoricalSeasonExpectedWins returns season expected wins for a team across multiple years
-func GetHistoricalSeasonExpectedWins(db *gorm.DB, teamID uint, startYear uint, endYear uint) ([]SeasonExpectedWins, error) {
-	var results []SeasonExpectedWins
-	err := db.Where("team_id = ? AND year >= ? AND year <= ?", teamID, startYear, endYear).
-		Preload("Team").
-		Order("year DESC").
-		Find(&results).Error
-	return results, err
-}
-
-// GetLeagueSeasonRankings returns teams ranked by expected wins for a specific season
-func GetLeagueSeasonRankings(db *gorm.DB, leagueID uint, year uint) ([]SeasonExpectedWins, error) {
-	var results []SeasonExpectedWins
-	err := db.Where("league_id = ? AND year = ?", leagueID, year).
-		Preload("Team").
-		Order("expected_wins DESC, total_points_for DESC").
-		Find(&results).Error
-	return results, err
-}

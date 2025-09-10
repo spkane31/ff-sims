@@ -218,38 +218,6 @@ func findTeamMatchupForWeek(matchups []models.Matchup, week uint) *models.Matchu
 	return nil
 }
 
-// RecalculateWeeklyExpectedWins recalculates expected wins for all weeks in a season
-func RecalculateWeeklyExpectedWins(leagueID uint, year uint) error {
-	db := database.DB
-
-	// Get the range of weeks to recalculate
-	var minWeek, maxWeek uint
-	err := db.Model(&models.Matchup{}).
-		Where("league_id = ? AND year = ? AND completed = true", leagueID, year).
-		Select("MIN(week) as min_week, MAX(week) as max_week").
-		Row().Scan(&minWeek, &maxWeek)
-	if err != nil {
-		return err
-	}
-
-	// Delete existing records for recalculation
-	err = db.Where("league_id = ? AND year = ?", leagueID, year).
-		Delete(&models.WeeklyExpectedWins{}).Error
-	if err != nil {
-		return err
-	}
-
-	// Recalculate week by week
-	for week := minWeek; week <= maxWeek; week++ {
-		err := ProcessWeeklyExpectedWins(leagueID, year, week)
-		if err != nil {
-			log.Printf("Failed to recalculate week %d for league %d, year %d: %v", week, leagueID, year, err)
-			// Continue with other weeks
-		}
-	}
-
-	return nil
-}
 
 // IsRegularSeasonComplete checks if the regular season is complete for a league/year
 func IsRegularSeasonComplete(db *gorm.DB, leagueID uint, year uint) bool {

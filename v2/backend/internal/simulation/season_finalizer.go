@@ -8,31 +8,40 @@ import (
 	"gorm.io/gorm"
 )
 
-// FinalizeSeasonExpectedWins creates season totals from the final regular season week
+// FinalizeSeasonExpectedWins creates season totals from existing weekly expected wins data
 func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 	db := database.DB
 
-	// 1. Determine final regular season week (exclude playoffs)
-	finalWeek, err := models.GetFinalRegularSeasonWeek(db, leagueID, year)
-	if err != nil {
-		return err
-	}
+	// 1. Check if we have any weekly expected wins data for this league/year
+	var weeklyCount int64
+	db.Model(&models.WeeklyExpectedWins{}).
+		Where("league_id = ? AND year = ?", leagueID, year).
+		Count(&weeklyCount)
 
-	if finalWeek == 0 {
-		log.Printf("No completed regular season games found for league %d, year %d", leagueID, year)
+	if weeklyCount == 0 {
+		log.Printf("No weekly expected wins data found for league %d, year %d", leagueID, year)
 		return nil
 	}
 
-	// 2. Get all teams for this league
-	teams, err := models.GetAllTeamsByLeague(db, leagueID)
-	if err != nil {
-		return err
+	log.Printf("Found %d weekly expected wins records for league %d, year %d. Creating season aggregates.", weeklyCount, leagueID, year)
+
+	// 2. Get all teams that have weekly data for this league/year
+	var teamIDs []uint
+	db.Model(&models.WeeklyExpectedWins{}).
+		Where("league_id = ? AND year = ?", leagueID, year).
+		Distinct("team_id").
+		Pluck("team_id", &teamIDs)
+
+	if len(teamIDs) == 0 {
+		log.Printf("No teams found with weekly expected wins data for league %d, year %d", leagueID, year)
+		return nil
 	}
 
-	for _, team := range teams {
-		err := finalizeTeamSeasonExpectedWins(db, team, year, finalWeek)
+	// 3. Process each team
+	for _, teamID := range teamIDs {
+		err := finalizeTeamSeasonFromWeeklyData(db, teamID, leagueID, year)
 		if err != nil {
-			log.Printf("Failed to finalize season expected wins for team %d: %v", team.ID, err)
+			log.Printf("Failed to finalize season expected wins for team %d: %v", teamID, err)
 			// Continue with other teams even if one fails
 		}
 	}
@@ -40,62 +49,54 @@ func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 	return nil
 }
 
-// finalizeTeamSeasonExpectedWins creates season totals for a single team
-func finalizeTeamSeasonExpectedWins(db *gorm.DB, team models.Team, year uint, finalWeek uint) error {
-	// Find the latest week this team actually has data for
-	teamFinalWeek, err := getTeamFinalWeek(db, team.ID, year, finalWeek)
-	if err != nil {
-		log.Printf("Failed to determine final week for team %d, year %d: %v", team.ID, year, err)
-		return err
-	}
-
-	if teamFinalWeek == 0 {
-		log.Printf("No completed weeks found for team %d, year %d - skipping season finalization", team.ID, year)
-		return nil // Skip this team - no data to finalize
-	}
-
-	// Get all weekly data up to the final week to calculate proper cumulative totals
-	allWeeklyData, err := models.GetTeamWeeklyProgression(db, team.ID, year)
+// finalizeTeamSeasonFromWeeklyData creates season totals by aggregating existing weekly data
+func finalizeTeamSeasonFromWeeklyData(db *gorm.DB, teamID uint, leagueID uint, year uint) error {
+	// Get all weekly data for this team/year
+	allWeeklyData, err := models.GetTeamWeeklyProgression(db, teamID, year)
 	if err != nil || len(allWeeklyData) == 0 {
-		log.Printf("No weekly progression data found for team %d, year %d", team.ID, year)
+		log.Printf("No weekly progression data found for team %d, year %d", teamID, year)
 		return err
 	}
-	
-	// Calculate proper cumulative totals from all weekly data
-	var cumulativeExpectedWins, cumulativeExpectedLosses float64
-	var cumulativeActualWins, cumulativeActualLosses int
-	var lastStrengthOfSchedule float64
-	
-	for _, weekData := range allWeeklyData {
-		if weekData.Week <= teamFinalWeek {
-			cumulativeExpectedWins += weekData.WeeklyExpectedWins
-			cumulativeExpectedLosses += weekData.WeeklyExpectedLosses
-			if weekData.WeeklyActualWin {
-				cumulativeActualWins++
-			} else {
-				cumulativeActualLosses++
-			}
-			lastStrengthOfSchedule = weekData.StrengthOfSchedule // Use the most recent SOS
+
+	// Find the latest week with data (this is our "final week")
+	finalWeek := uint(0)
+	var finalWeekData *models.WeeklyExpectedWins
+	for i := range allWeeklyData {
+		if allWeeklyData[i].Week > finalWeek {
+			finalWeek = allWeeklyData[i].Week
+			finalWeekData = &allWeeklyData[i]
 		}
 	}
-	
-	// Win luck is calculated on-demand in API responses (actual_wins - expected_wins)
 
-	// Calculate season aggregates using the team's actual final week
-	seasonStats, err := models.CalculateSeasonAggregates(db, team.ID, year, teamFinalWeek)
+	if finalWeekData == nil {
+		log.Printf("No final week data found for team %d, year %d", teamID, year)
+		return nil
+	}
+
+	// The final week record already contains cumulative totals, so we can use them directly
+	cumulativeExpectedWins := finalWeekData.ExpectedWins
+	cumulativeExpectedLosses := finalWeekData.ExpectedLosses
+	cumulativeActualWins := finalWeekData.ActualWins
+	cumulativeActualLosses := finalWeekData.ActualLosses
+	lastStrengthOfSchedule := finalWeekData.StrengthOfSchedule
+
+	// Calculate season aggregates for points
+	seasonStats, err := models.CalculateSeasonAggregates(db, teamID, year, finalWeek)
 	if err != nil {
-		return err
+		log.Printf("Failed to calculate season aggregates for team %d, year %d: %v", teamID, year, err)
+		// Create empty stats if calculation fails
+		seasonStats = &models.SeasonAggregates{}
 	}
 
 	// Get playoff and standing info
-	playoffMade, finalStanding := models.GetTeamSeasonOutcome(db, team.ID, year)
+	playoffMade, finalStanding := models.GetTeamSeasonOutcome(db, teamID, year)
 
-	// Create season record using calculated cumulative data
+	// Create season record using the aggregated data
 	seasonRecord := &models.SeasonExpectedWins{
-		TeamID:               team.ID,
+		TeamID:               teamID,
 		Year:                 year,
-		LeagueID:             team.LeagueID,
-		FinalWeek:            teamFinalWeek,
+		LeagueID:             leagueID,
+		FinalWeek:            finalWeek,
 		ExpectedWins:         cumulativeExpectedWins,
 		ExpectedLosses:       cumulativeExpectedLosses,
 		ActualWins:           cumulativeActualWins,
@@ -109,49 +110,13 @@ func finalizeTeamSeasonExpectedWins(db *gorm.DB, team models.Team, year uint, fi
 		FinalStanding:        finalStanding,
 	}
 
+	log.Printf("Creating season record for team %d, year %d: %.2f expected wins, %d actual wins", 
+		teamID, year, cumulativeExpectedWins, cumulativeActualWins)
+
 	return models.SaveSeasonExpectedWins(db, seasonRecord)
 }
 
-// RecalculateSeasonExpectedWins recalculates season expected wins for all teams
-func RecalculateSeasonExpectedWins(leagueID uint, year uint) error {
-	db := database.DB
 
-	// Delete existing season records for recalculation
-	err := db.Where("league_id = ? AND year = ?", leagueID, year).
-		Delete(&models.SeasonExpectedWins{}).Error
-	if err != nil {
-		return err
-	}
-
-	// Recalculate season totals
-	return FinalizeSeasonExpectedWins(leagueID, year)
-}
-
-// UpdateSeasonStandings updates final standings for all teams in a season
-// This should be called after playoffs are complete
-func UpdateSeasonStandings(leagueID uint, year uint) error {
-	db := database.DB
-
-	// Get all season expected wins records for this league/year
-	var seasonRecords []models.SeasonExpectedWins
-	err := db.Where("league_id = ? AND year = ?", leagueID, year).
-		Order("actual_wins DESC, total_points_for DESC").
-		Find(&seasonRecords).Error
-	if err != nil {
-		return err
-	}
-
-	// Update standings (1st place, 2nd place, etc.)
-	for i, record := range seasonRecords {
-		record.FinalStanding = i + 1
-		err := models.SaveSeasonExpectedWins(db, &record)
-		if err != nil {
-			log.Printf("Failed to update standing for team %d: %v", record.TeamID, err)
-		}
-	}
-
-	return nil
-}
 
 // GetSeasonExpectedWinsRankings returns teams ranked by various metrics
 type SeasonRankings struct {
@@ -296,25 +261,6 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 	return distribution, nil
 }
 
-// getTeamFinalWeek finds the latest week that a specific team has weekly expected wins data
-// This handles cases where teams might not have data for the global final week
-func getTeamFinalWeek(db *gorm.DB, teamID uint, year uint, globalFinalWeek uint) (uint, error) {
-	var maxWeek *uint
-	err := db.Model(&models.WeeklyExpectedWins{}).
-		Where("team_id = ? AND year = ? AND week <= ?", teamID, year, globalFinalWeek).
-		Select("MAX(week)").
-		Scan(&maxWeek).Error
-
-	if err != nil {
-		return 0, err
-	}
-
-	if maxWeek == nil {
-		return 0, nil // No weeks found for this team
-	}
-
-	return *maxWeek, nil
-}
 
 // Helper function for absolute value
 func abs(x float64) float64 {

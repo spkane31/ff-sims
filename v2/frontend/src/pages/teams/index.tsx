@@ -43,8 +43,6 @@ export default function Teams() {
 
   // Calculate league statistics from schedule data
   const leagueStats = useMemo(() => {
-    console.log("Schedule Data:", schedule);
-    console.log("Teams Data:", teams);
     if (!schedule?.data?.matchups || !teams) {
       return {
         highestScore: { score: 0, teamName: "", week: 0 },
@@ -161,8 +159,6 @@ export default function Teams() {
       completedGames: completedMatchups.length,
     };
   }, [schedule, teams]);
-
-  console.log("League Stats:", leagueStats);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {

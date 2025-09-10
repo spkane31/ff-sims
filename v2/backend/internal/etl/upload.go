@@ -883,11 +883,6 @@ func processExpectedWinsAfterETL() error {
 }
 
 // ProcessExpectedWinsOnly runs only the expected wins calculation without ETL
-func ProcessExpectedWinsOnly() error {
-	return ProcessExpectedWinsWithYear(0)
-}
-
-// ProcessExpectedWinsWithYear runs expected wins calculation for a specific year or all years
 func ProcessExpectedWinsWithYear(year uint) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -908,102 +903,6 @@ func ProcessExpectedWinsWithYear(year uint) error {
 	}
 }
 
-// processExpectedWinsForYear processes expected wins for a specific year
-func processExpectedWinsForYear(year uint) error {
-	db := database.DB
-
-	// Find the most recent completed week for this league and year
-	lastCompletedWeek, err := models.GetLastCompletedWeek(db, leagueID, year)
-	if err != nil || lastCompletedWeek == 0 {
-		logging.Infof("No completed weeks found for year %d", year)
-		return nil
-	}
-
-	logging.Infof("Processing year %d through week %d", year, lastCompletedWeek)
-
-	// Process all weeks from 1 to lastCompletedWeek
-	for week := uint(1); week <= lastCompletedWeek; week++ {
-		// Check if this week has been processed
-		processed, err := models.IsWeekProcessed(db, leagueID, year, week)
-		if err != nil {
-			return fmt.Errorf("failed to check if week %d is processed for year %d: %w", week, year, err)
-		}
-
-		if processed {
-			logging.Infof("Week %d for year %d already processed, skipping", week, year)
-			continue
-		}
-
-		// Process this week
-		logging.Infof("Processing expected wins for year %d, week %d", year, week)
-		err = simulation.ProcessWeeklyExpectedWins(leagueID, year, week)
-		if err != nil {
-			return fmt.Errorf("failed to process weekly expected wins for year %d, week %d: %w", year, week, err)
-		}
-
-		logging.Infof("Successfully processed expected wins for year %d, week %d", year, week)
-	}
-
-	// Check if the regular season is complete and needs finalization
-	if simulation.IsRegularSeasonComplete(db, leagueID, year) {
-		// Check if season is already finalized
-		var seasonCount int64
-		db.Model(&models.SeasonExpectedWins{}).
-			Where("league_id = ? AND year = ?", leagueID, year).
-			Count(&seasonCount)
-
-		if seasonCount == 0 {
-			logging.Infof("Regular season complete for year %d, finalizing season expected wins", year)
-			err = simulation.FinalizeSeasonExpectedWins(leagueID, year)
-			if err != nil {
-				return fmt.Errorf("failed to finalize season expected wins for year %d: %w", year, err)
-			}
-			logging.Infof("Successfully finalized season expected wins for year %d", year)
-		} else {
-			logging.Infof("Season already finalized for year %d", year)
-		}
-	}
-
-	return nil
-}
-
-// processExpectedWinsAllYears processes expected wins for all years, starting with most recent
-func processExpectedWinsAllYears() error {
-	db := database.DB
-
-	// Get all years that have matchup data, ordered by most recent first
-	var years []uint
-	err := db.Model(&models.Matchup{}).
-		Where("league_id = ?", leagueID).
-		Distinct("year").
-		Order("year DESC").
-		Pluck("year", &years).Error
-	if err != nil {
-		return fmt.Errorf("failed to get years with matchup data: %w", err)
-	}
-
-	if len(years) == 0 {
-		logging.Infof("No years with matchup data found")
-		return nil
-	}
-
-	logging.Infof("Found %d years to process: %v", len(years), years)
-
-	// Process each year, starting with most recent
-	for _, year := range years {
-		logging.Infof("Processing year %d", year)
-		err := processExpectedWinsForYear(year)
-		if err != nil {
-			logging.Warnf("Failed to process year %d: %v", year, err)
-			// Continue with other years instead of failing completely
-			continue
-		}
-		logging.Infof("Successfully completed processing for year %d", year)
-	}
-
-	logging.Infof("Completed processing expected wins for all years")
-	return nil
-}
 
 // processExpectedWinsForYearWithRecalc processes expected wins for a specific year with forced recalculation
 func processExpectedWinsForYearWithRecalc(year uint) error {
@@ -1016,20 +915,9 @@ func processExpectedWinsForYearWithRecalc(year uint) error {
 		return nil
 	}
 
-	logging.Infof("Recalculating expected wins for year %d through week %d", year, lastCompletedWeek)
+	logging.Infof("Processing/updating expected wins for year %d through week %d", year, lastCompletedWeek)
 
-	// Clear existing weekly and season data for recalculation
-	err = db.Where("league_id = ? AND year = ?", leagueID, year).Delete(&models.WeeklyExpectedWins{}).Error
-	if err != nil {
-		return fmt.Errorf("failed to clear weekly expected wins for year %d: %w", year, err)
-	}
-
-	err = db.Where("league_id = ? AND year = ?", leagueID, year).Delete(&models.SeasonExpectedWins{}).Error
-	if err != nil {
-		return fmt.Errorf("failed to clear season expected wins for year %d: %w", year, err)
-	}
-
-	// Process all weeks from 1 to lastCompletedWeek
+	// Process all weeks from 1 to lastCompletedWeek (upserts will handle existing data)
 	for week := uint(1); week <= lastCompletedWeek; week++ {
 		logging.Infof("Processing expected wins for year %d, week %d", year, week)
 		err = simulation.ProcessWeeklyExpectedWins(leagueID, year, week)

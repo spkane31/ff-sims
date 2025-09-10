@@ -17,7 +17,6 @@ interface TeamExpectedWinsStats {
   currentActualWins: number;
   winLuck: number;
   strengthOfSchedule: number;
-  weeklyAvgExpectedWins: number;
   luckiestWeek: { week: number; luck: number } | null;
   unluckiestWeek: { week: number; luck: number } | null;
 }
@@ -31,14 +30,11 @@ function calculateTeamExpectedWinsStats(
 
   if (seasonStats) {
     // Use season data when available
-    // Assume a typical fantasy season is around 14-17 weeks for weekly average calculation
-    const estimatedWeeks = 14;
     return {
       currentExpectedWins: seasonStats.expected_wins,
       currentActualWins: seasonStats.actual_wins,
       winLuck: seasonStats.win_luck,
       strengthOfSchedule: seasonStats.strength_of_schedule,
-      weeklyAvgExpectedWins: seasonStats.expected_wins / estimatedWeeks,
       luckiestWeek: null, // No weekly breakdown from season data
       unluckiestWeek: null,
     };
@@ -50,7 +46,6 @@ function calculateTeamExpectedWinsStats(
       currentActualWins: 0,
       winLuck: 0,
       strengthOfSchedule: 0,
-      weeklyAvgExpectedWins: 0,
       luckiestWeek: null,
       unluckiestWeek: null,
     };
@@ -58,14 +53,6 @@ function calculateTeamExpectedWinsStats(
 
   // Get the most recent week's data for current stats
   const latestWeek = progressionData[progressionData.length - 1];
-
-  // Calculate weekly average expected wins
-  const totalWeeklyExpectedWins = progressionData.reduce(
-    (sum, week) => sum + week.weekly_expected_wins,
-    0
-  );
-  const weeklyAvgExpectedWins =
-    totalWeeklyExpectedWins / progressionData.length;
 
   // Find luckiest and unluckiest weeks (highest and lowest weekly win probability that resulted in opposite outcome)
   let luckiestWeek: { week: number; luck: number } | null = null;
@@ -90,7 +77,6 @@ function calculateTeamExpectedWinsStats(
     currentActualWins: latestWeek.actual_wins,
     winLuck: latestWeek.win_luck,
     strengthOfSchedule: latestWeek.strength_of_schedule,
-    weeklyAvgExpectedWins,
     luckiestWeek,
     unluckiestWeek,
   };
@@ -186,19 +172,7 @@ export default function TeamExpectedWinsPanel({
       </div>
 
       {/* Additional Insights */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Weekly Average
-          </h3>
-          <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400">
-            {stats.weeklyAvgExpectedWins.toFixed(2)}
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            Expected wins per week
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {stats.luckiestWeek && (
           <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
             <h3 className="text-sm font-medium text-green-700 dark:text-green-300 mb-2">
