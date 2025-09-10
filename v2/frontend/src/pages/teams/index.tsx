@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useTeams } from "../../hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
 import ExpectedWinsBanner from "../../components/ExpectedWinsBanner";
-import ExpectedWinsChart from "../../components/ExpectedWinsChart";
-import { useSeasonExpectedWins, useWeeklyExpectedWins } from "../../hooks/useExpectedWins";
+import {
+  useSeasonExpectedWins,
+  useWeeklyExpectedWins,
+} from "../../hooks/useExpectedWins";
 
 type SortField =
   | "rank"
@@ -27,7 +29,7 @@ export default function Teams() {
   } = useSchedule();
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  
+
   // Expected wins data - using league ID 345674 (default backend league) and current year 2025
   const currentYear = 2025;
   const leagueId = 345674;
@@ -36,11 +38,8 @@ export default function Teams() {
     isLoading: isExpectedWinsLoading,
     error: expectedWinsError,
   } = useSeasonExpectedWins(leagueId, currentYear);
-  const {
-    weeklyData: expectedWinsWeeklyData,
-    isLoading: isWeeklyExpectedWinsLoading,
-    error: weeklyExpectedWinsError,
-  } = useWeeklyExpectedWins(leagueId, currentYear);
+  const { weeklyData: expectedWinsWeeklyData, error: weeklyExpectedWinsError } =
+    useWeeklyExpectedWins(leagueId, currentYear);
 
   // Calculate league statistics from schedule data
   const leagueStats = useMemo(() => {
@@ -237,7 +236,12 @@ export default function Teams() {
   };
 
   if (error || scheduleError || expectedWinsError || weeklyExpectedWinsError) {
-    console.error("Error loading data:", { error, scheduleError, expectedWinsError, weeklyExpectedWinsError });
+    console.error("Error loading data:", {
+      error,
+      scheduleError,
+      expectedWinsError,
+      weeklyExpectedWinsError,
+    });
     return (
       <Layout>
         <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
@@ -263,13 +267,12 @@ export default function Teams() {
           </p>
 
           {/* Expected Wins Banner */}
-          <ExpectedWinsBanner 
-            seasonData={expectedWinsSeasonData} 
+          <ExpectedWinsBanner
+            seasonData={expectedWinsSeasonData}
             weeklyData={expectedWinsWeeklyData}
             isLoading={isExpectedWinsLoading}
             currentYear={currentYear}
           />
-
 
           <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-6">Standings</h2>

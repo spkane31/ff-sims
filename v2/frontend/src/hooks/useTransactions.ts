@@ -1,5 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Transaction, DraftPick, transactionsService } from '../services/transactionsService';
+import { useState, useEffect, useCallback } from "react";
+import {
+  Transaction,
+  DraftPick,
+  transactionsService,
+} from "../services/transactionsService";
 
 interface UseTransactionsReturn {
   transactions: Transaction[];
@@ -16,22 +20,26 @@ export function useTransactions(): UseTransactionsReturn {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await transactionsService.getAllTransactions();
       setTransactions(data.transactions);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching transactions'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching transactions")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [fetchTransactions]);
 
   return { transactions, isLoading, error, refetch: fetchTransactions };
 }
@@ -44,24 +52,28 @@ export function useTransaction(transactionId: number) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTransaction = async () => {
+  const fetchTransaction = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await transactionsService.getTransactionById(transactionId);
       setTransaction(data.transactions[0] || null); // Assuming the API returns an array
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching transaction'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching transaction")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [transactionId]);
 
   useEffect(() => {
     if (transactionId) {
       fetchTransaction();
     }
-  }, [transactionId]);
+  }, [transactionId, fetchTransaction]);
 
   return { transaction, isLoading, error, refetch: fetchTransaction };
 }
@@ -81,23 +93,27 @@ export function useDraftPicks(year: number = 2024): UseDraftPicksReturn {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchDraftPicks = async () => {
+  const fetchDraftPicks = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await transactionsService.getDraftPicks(year);
       setDraftPicks(data.draft_picks || []);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching draft picks'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching draft picks")
+      );
       setDraftPicks([]); // Set empty array on error
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [year]);
 
   useEffect(() => {
     fetchDraftPicks();
-  }, [year]);
+  }, [fetchDraftPicks]);
 
   return { draftPicks, isLoading, error, refetch: fetchDraftPicks };
 }

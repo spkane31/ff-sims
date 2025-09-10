@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Team, teamsService } from '../services/teamsService';
+import { useState, useEffect, useCallback } from "react";
+import { Team, teamsService } from "../services/teamsService";
 
 interface UseTeamsReturn {
   teams: Team[];
@@ -16,22 +16,26 @@ export function useTeams(): UseTeamsReturn {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTeams = async () => {
+  const fetchTeams = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await teamsService.getAllTeams();
       setTeams(data.teams);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching teams'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching teams")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTeams();
-  }, []);
+  }, [fetchTeams]);
 
   return { teams, isLoading, error, refetch: fetchTeams };
 }
@@ -44,24 +48,28 @@ export function useTeam(teamId: number) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTeam = async () => {
+  const fetchTeam = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await teamsService.getTeamById(teamId);
       setTeam(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching team'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching team")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [teamId]);
 
   useEffect(() => {
     if (teamId) {
       fetchTeam();
     }
-  }, [teamId]);
+  }, [teamId, fetchTeam]);
 
   return { team, isLoading, error, refetch: fetchTeam };
 }

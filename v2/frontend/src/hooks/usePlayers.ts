@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Player, playerService } from '../services/playerService';
+import { useState, useEffect, useCallback } from "react";
+import { Player, playerService } from "../services/playerService";
 
 /**
  * Hook for fetching all players
@@ -9,22 +9,26 @@ export function usePlayers(year?: string | number) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchPlayers = async () => {
+  const fetchPlayers = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await playerService.getAllPlayers(year);
       setPlayers(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching players'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching players")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [year]);
 
   useEffect(() => {
     fetchPlayers();
-  }, [year]);
+  }, [fetchPlayers]);
 
   return { players, isLoading, error, refetch: fetchPlayers };
 }
@@ -37,24 +41,28 @@ export function useTeamPlayers(teamId: number) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchTeamPlayers = async () => {
+  const fetchTeamPlayers = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await playerService.getTeamPlayers(teamId);
       setPlayers(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching team players'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching team players")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [teamId]);
 
   useEffect(() => {
     if (teamId) {
       fetchTeamPlayers();
     }
-  }, [teamId]);
+  }, [teamId, fetchTeamPlayers]);
 
   return { players, isLoading, error, refetch: fetchTeamPlayers };
 }
@@ -67,22 +75,26 @@ export function useDraft(year?: number) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchDraft = async () => {
+  const fetchDraft = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await playerService.getDraft(year);
       setDraftData(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('An error occurred while fetching draft data'));
+      setError(
+        err instanceof Error
+          ? err
+          : new Error("An error occurred while fetching draft data")
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [year]);
 
   useEffect(() => {
     fetchDraft();
-  }, [year]);
+  }, [fetchDraft]);
 
   return { draftData, isLoading, error, refetch: fetchDraft };
 }
