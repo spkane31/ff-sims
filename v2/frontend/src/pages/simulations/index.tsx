@@ -10,7 +10,7 @@ export default function Simulations() {
   const [results, setResults] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [iterations, setIterations] = useState(5000);
-  const [startWeek, setStartWeek] = useState("current");
+  const [startWeek, setStartWeek] = useState("");
 
   // New state for dynamic week options
   const [availableWeeks, setAvailableWeeks] = useState<number[]>([]);
@@ -46,27 +46,23 @@ export default function Simulations() {
         // Convert to the format expected by the simulator for the default year
         const schedule = await fetchScheduleDataForYear(defaultYear);
 
-        // Filter schedule to only include regular season weeks (gameType === "NONE")
-        // We don't simulate playoff games
-        const regularSeasonSchedule = schedule.filter((week) =>
-          week.every((matchup) => matchup.gameType === "NONE")
-        );
+        // Get all available weeks from the full schedule
+        // The simulator will handle filtering out playoff games at the matchup level
+        const allWeeks = schedule.map((_, index) => index + 1);
+        setAvailableWeeks(allWeeks);
 
-        // Get all available weeks from regular season schedule
-        const regularSeasonWeeks = regularSeasonSchedule.map(
-          (_, index) => index + 1
-        );
-        setAvailableWeeks(regularSeasonWeeks);
-
-        // Find current week (first week with incomplete games) within regular season
-        const currentWeekIndex = regularSeasonSchedule.findIndex((week) =>
+        // Find current week (first week with incomplete games) in the full schedule
+        const currentWeekIndex = schedule.findIndex((week) =>
           week.some((matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
           currentWeekIndex === -1
-            ? regularSeasonWeeks.length
+            ? allWeeks.length
             : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
+        
+        // Set the default startWeek to the current week
+        setStartWeek(detectedCurrentWeek.toString());
 
         setScheduleLoaded(true);
       } catch (err) {
@@ -87,26 +83,23 @@ export default function Simulations() {
         setScheduleLoaded(false);
         const schedule = await fetchScheduleDataForYear(selectedYear);
 
-        // Filter schedule to only include regular season weeks
-        const regularSeasonSchedule = schedule.filter((week: Matchup[]) =>
-          week.every((matchup: Matchup) => matchup.gameType === "NONE")
-        );
+        // Get all available weeks from the full schedule
+        // The simulator will handle filtering out playoff games at the matchup level
+        const allWeeks = schedule.map((_: Matchup[], index: number) => index + 1);
+        setAvailableWeeks(allWeeks);
 
-        // Get all available weeks from regular season schedule
-        const regularSeasonWeeks = regularSeasonSchedule.map(
-          (_: Matchup[], index: number) => index + 1
-        );
-        setAvailableWeeks(regularSeasonWeeks);
-
-        // Find current week (first week with incomplete games) within regular season
-        const currentWeekIndex = regularSeasonSchedule.findIndex((week: Matchup[]) =>
+        // Find current week (first week with incomplete games) in the full schedule
+        const currentWeekIndex = schedule.findIndex((week: Matchup[]) =>
           week.some((matchup: Matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
           currentWeekIndex === -1
-            ? regularSeasonWeeks.length
+            ? allWeeks.length
             : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
+        
+        // Set the default startWeek to the current week
+        setStartWeek(detectedCurrentWeek.toString());
 
         setScheduleLoaded(true);
       } catch (err) {
@@ -150,12 +143,60 @@ export default function Simulations() {
         });
       });
 
+      // Ensure we have a full regular season (weeks 1-14) for simulation
+      // If we're missing future weeks, create placeholder incomplete matchups
+      const completedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
+      const lastCompletedWeek = completedWeeks[completedWeeks.length - 1] || 0;
+      
+      // Get all unique teams from completed matchups to generate future matchups
+      const teams = new Set<number>();
+      const teamNames = new Map<number, string>();
+      
+      yearMatchups.forEach((matchup) => {
+        teams.add(matchup.homeTeamESPNID);
+        teams.add(matchup.awayTeamESPNID);
+        teamNames.set(matchup.homeTeamESPNID, matchup.homeTeamName);
+        teamNames.set(matchup.awayTeamESPNID, matchup.awayTeamName);
+      });
+
+      const teamList = Array.from(teams);
+      
+      // Generate incomplete matchups for remaining regular season weeks (up to week 14)
+      for (let week = lastCompletedWeek + 1; week <= 14; week++) {
+        if (!weekMap.has(week)) {
+          weekMap.set(week, []);
+          
+          // Create placeholder matchups for this week
+          // This is a simple pairing - in reality, you'd want the actual schedule pattern
+          // But for simulation purposes, we just need to ensure all teams play
+          for (let i = 0; i < teamList.length; i += 2) {
+            if (i + 1 < teamList.length) {
+              const homeTeamId = teamList[i];
+              const awayTeamId = teamList[i + 1];
+              
+              weekMap.get(week)?.push({
+                homeTeamName: teamNames.get(homeTeamId) || `Team ${homeTeamId}`,
+                awayTeamName: teamNames.get(awayTeamId) || `Team ${awayTeamId}`,
+                homeTeamESPNID: homeTeamId,
+                awayTeamESPNID: awayTeamId,
+                homeTeamFinalScore: 0,
+                awayTeamFinalScore: 0,
+                completed: false,
+                week: week,
+                gameType: "NONE",
+              });
+            }
+          }
+        }
+      }
+
       // Convert map to ordered array by week
       const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
       sortedWeeks.forEach((week) => {
         const weekGames = weekMap.get(week) || [];
         schedule.push(weekGames);
       });
+      
       return schedule;
     } catch (error) {
       console.error("Error fetching schedule data for year:", error);
@@ -178,16 +219,7 @@ export default function Simulations() {
       const schedule = await fetchScheduleDataForYear(selectedYear);
 
       // Parse the start week value
-      let startWeekNum = 1;
-      if (startWeek === "current") {
-        // Find the current week based on completed games
-        startWeekNum = schedule.findIndex((week) =>
-          week.some((matchup) => !matchup.completed)
-        );
-        if (startWeekNum === 0) startWeekNum = schedule.length; // All games completed
-      } else {
-        startWeekNum = parseInt(startWeek);
-      }
+      const startWeekNum = parseInt(startWeek);
 
       // Create and run the simulator with the new constructor
       const sim = new Simulator(schedule, startWeekNum);
@@ -293,9 +325,6 @@ export default function Simulations() {
                   disabled={!scheduleLoaded}
                   className="w-full md:w-64 px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="current">
-                    Current Week ({scheduleLoaded ? currentWeek : "..."})
-                  </option>
                   {availableWeeks.map((week) => (
                     <option key={week} value={week.toString()}>
                       Week {week}
@@ -452,6 +481,9 @@ export default function Simulations() {
                           Playoff %
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Champion %
+                        </th>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Last Place %
                         </th>
                       </tr>
@@ -517,6 +549,21 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap">
                               <span
                                 className={`font-medium ${
+                                  team.playoffResult.length > 0 && team.playoffResult[0] > 0.15
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.playoffResult.length > 0 && team.playoffResult[0] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.playoffResult.length > 0
+                                  ? (team.playoffResult[0] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              <span
+                                className={`font-medium ${
                                   team.lastPlaceOdds > 0.5
                                     ? "text-red-600 dark:text-red-400"
                                     : team.lastPlaceOdds > 0.25
@@ -534,10 +581,10 @@ export default function Simulations() {
                 </div>
               </div>
 
-              {/* Additional detailed results section */}
+              {/* Championship and Playoff Results */}
               <div>
                 <h3 className="text-lg font-medium mb-2">
-                  Championship Odds (Regular Season Finish)
+                  Championship Odds
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -547,16 +594,112 @@ export default function Simulations() {
                           Team
                         </th>
                         <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          1st
+                          Champion
                         </th>
                         <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          2nd
+                          Runner-up
                         </th>
                         <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          3rd
+                          3rd Place
                         </th>
                         <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Last
+                          4th Place
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {simulationResults
+                        .filter(
+                          (team) =>
+                            team.teamName !== "League Average" && team.id !== -1
+                        )
+                        .sort((a, b) => {
+                          // Sort by championship odds (1st place in playoffs)
+                          const aChampOdds = a.playoffResult.length > 0 ? a.playoffResult[0] : 0;
+                          const bChampOdds = b.playoffResult.length > 0 ? b.playoffResult[0] : 0;
+                          return bChampOdds - aChampOdds;
+                        })
+                        .map((team, index) => (
+                          <tr
+                            key={team.id}
+                            className={
+                              index % 2 === 0
+                                ? "bg-white dark:bg-gray-800"
+                                : "bg-gray-50 dark:bg-gray-700"
+                            }
+                          >
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              {team.teamName}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              <span
+                                className={`font-medium ${
+                                  team.playoffResult.length > 0 && team.playoffResult[0] > 0.2
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.playoffResult.length > 0 && team.playoffResult[0] > 0.1
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.playoffResult.length > 0
+                                  ? (team.playoffResult[0] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.playoffResult.length > 1
+                                ? (team.playoffResult[1] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.playoffResult.length > 2
+                                ? (team.playoffResult[2] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.playoffResult.length > 3
+                                ? (team.playoffResult[3] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Regular Season Finish */}
+              <div>
+                <h3 className="text-lg font-medium mb-2">
+                  Regular Season Finish
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-800">
+                      <tr>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Team
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          1st Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          2nd Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          3rd Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          4th Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          5th Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          6th Seed
+                        </th>
+                        <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Last Place
                         </th>
                       </tr>
                     </thead>
@@ -580,24 +723,53 @@ export default function Simulations() {
                               {team.teamName}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 0
-                                ? (team.regularSeasonResult[0] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 0 && team.regularSeasonResult[0] > 0.2
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 0 && team.regularSeasonResult[0] > 0.1
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 0
+                                  ? (team.regularSeasonResult[0] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 1
-                                ? (team.regularSeasonResult[1] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 1 && team.regularSeasonResult[1] > 0.15
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 1 && team.regularSeasonResult[1] > 0.08
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 1
+                                  ? (team.regularSeasonResult[1] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               {team.regularSeasonResult.length > 2
-                                ? (team.regularSeasonResult[2] * 100).toFixed(
-                                    1
-                                  ) + "%"
+                                ? (team.regularSeasonResult[2] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regularSeasonResult.length > 3
+                                ? (team.regularSeasonResult[3] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regularSeasonResult.length > 4
+                                ? (team.regularSeasonResult[4] * 100).toFixed(1) + "%"
+                                : "0.0%"}
+                            </td>
+                            <td className="py-2 px-4 whitespace-nowrap text-center">
+                              {team.regularSeasonResult.length > 5
+                                ? (team.regularSeasonResult[5] * 100).toFixed(1) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">

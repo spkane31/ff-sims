@@ -52,16 +52,14 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		return nil // No matchups for this team yet
 	}
 
-	// Convert to pointers for CalculateExpectedWins function
+	// For strength of schedule calculation, we still need the cumulative results
 	cumulativeMatchupPointers := convertMatchupsToPointers(teamMatchupsThrough)
-
-	// Calculate cumulative expected wins through this week
 	cumulativeResults, err := CalculateExpectedWins(cumulativeMatchupPointers)
 	if err != nil {
 		return err
 	}
 
-	// Find this team's cumulative result
+	// Find this team's cumulative result (mainly for strength of schedule)
 	var teamCumulativeResult *ExpectedWinsResult
 	for _, r := range cumulativeResults {
 		if r.TeamID == team.ID {
@@ -137,13 +135,14 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		if err == nil && prevWeek != nil {
 			prevWeekActualWins = prevWeek.ActualWins
 			prevWeekActualLosses = prevWeek.ActualLosses
-			prevCumulativeExpectedWins = prevWeek.ExpectedWins + weeklyExpectedWins
-			prevCumulativeExpectedLosses = prevWeek.ExpectedLosses + (1.0 - weeklyExpectedWins)
+			prevCumulativeExpectedWins = prevWeek.ExpectedWins
+			prevCumulativeExpectedLosses = prevWeek.ExpectedLosses
 		}
-	} else {
-		prevCumulativeExpectedWins = weeklyExpectedWins
-		prevCumulativeExpectedLosses = 1.0 - weeklyExpectedWins
 	}
+
+	// Calculate cumulative expected wins by adding this week's expected wins to previous weeks
+	cumulativeExpectedWins := prevCumulativeExpectedWins + weeklyExpectedWins
+	cumulativeExpectedLosses := prevCumulativeExpectedLosses + (1.0 - weeklyExpectedWins)
 
 	// Calculate cumulative actual wins/losses
 	cumulativeActualWins := prevWeekActualWins
@@ -160,12 +159,12 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		Week:                 week,
 		Year:                 year,
 		LeagueID:             team.LeagueID,
-		ExpectedWins:         prevCumulativeExpectedWins,   // Cumulative expected wins through this week
-		WeeklyExpectedWins:   weeklyExpectedWins,           // Expected wins for just this week (0-1)
-		ExpectedLosses:       prevCumulativeExpectedLosses, // Cumulative expected losses through this week
-		WeeklyExpectedLosses: 1.0 - weeklyExpectedWins,     // Expected losses for just this week (0-1)
-		ActualWins:           cumulativeActualWins,         // Cumulative actual wins through this week
-		ActualLosses:         cumulativeActualLosses,       // Cumulative actual losses through this week
+		ExpectedWins:         cumulativeExpectedWins,   // Cumulative expected wins through this week
+		WeeklyExpectedWins:   weeklyExpectedWins,       // Expected wins for just this week (0-1)
+		ExpectedLosses:       cumulativeExpectedLosses, // Cumulative expected losses through this week
+		WeeklyExpectedLosses: 1.0 - weeklyExpectedWins, // Expected losses for just this week (0-1)
+		ActualWins:           cumulativeActualWins,     // Cumulative actual wins through this week
+		ActualLosses:         cumulativeActualLosses,   // Cumulative actual losses through this week
 		WeeklyActualWin:      weeklyWin,
 		StrengthOfSchedule:   teamCumulativeResult.StrengthOfSchedule,
 		WeeklyWinProbability: weeklyExpectedWins, // Use weekly expected wins as win probability for this week

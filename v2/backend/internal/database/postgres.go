@@ -66,6 +66,8 @@ func runMigrations() error {
 		&models.DraftSelection{},
 		&models.Transaction{},
 		&models.BoxScore{},
+		&models.WeeklyExpectedWins{},
+		&models.SeasonExpectedWins{},
 	)
 
 	if err != nil {
