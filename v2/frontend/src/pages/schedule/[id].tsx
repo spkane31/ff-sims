@@ -8,7 +8,7 @@ import { Player } from "../../services/scheduleService";
 function findBetterLineupDecisions(players: Player[]) {
   const starters = players.filter((p) => p.slotPosition !== "BE" && p.slotPosition !== "IR" && p.slotPosition !== "");
   const benchPlayers = players.filter((p) => p.slotPosition === "BE" || p.slotPosition === "IR");
-  
+
   const betterDecisions: Array<{
     benchPlayer: Player;
     starterPlayer: Player;
@@ -22,19 +22,19 @@ function findBetterLineupDecisions(players: Player[]) {
       if (benchPlayer.playerPosition === starter.playerPosition) {
         return true;
       }
-      
+
       // FLEX eligibility - RB/WR/TE can be slotted into FLEX
-      if (starter.slotPosition === "RB/WR/TE" && 
+      if (starter.slotPosition === "RB/WR/TE" &&
           (benchPlayer.playerPosition === "RB" || benchPlayer.playerPosition === "WR" || benchPlayer.playerPosition === "TE")) {
         return true;
       }
-      
+
       return false;
     });
 
     // Find the lowest scoring eligible starter
     const worstStarter = eligibleStarters.sort((a, b) => a.points - b.points)[0];
-    
+
     if (worstStarter && benchPlayer.points > worstStarter.points) {
       betterDecisions.push({
         benchPlayer,
@@ -85,7 +85,7 @@ export default function MatchupDetail() {
   const matchupData = matchup;
 
   const { data } = matchupData;
-  const { homeTeam, awayTeam, year, week } = data;
+  const { homeTeam, awayTeam, year, week, homeTeamESPNID, awayTeamESPNID } = data;
 
   // Calculate winner
   const homeWon = homeTeam.score > awayTeam.score;
@@ -129,7 +129,11 @@ export default function MatchupDetail() {
                 homeWon ? "bg-green-50 dark:bg-green-900/20 p-4 rounded-lg" : ""
               }`}
             >
-              <div className="text-xl font-semibold mb-1">{homeTeam.name}</div>
+              <div className="text-xl font-semibold mb-1">
+                <Link href={`/teams/${homeTeamESPNID}`} className="hover:text-blue-600 transition-colors">
+                  {homeTeam.name}
+                </Link>
+              </div>
               <div
                 className={`text-4xl font-bold mb-2 ${
                   homeWon ? "text-green-600 dark:text-green-400" : ""
@@ -187,7 +191,11 @@ export default function MatchupDetail() {
                 awayWon ? "bg-green-50 dark:bg-green-900/20 p-4 rounded-lg" : ""
               }`}
             >
-              <div className="text-xl font-semibold mb-1">{awayTeam.name}</div>
+              <div className="text-xl font-semibold mb-1">
+                <Link href={`/teams/${awayTeamESPNID}`} className="hover:text-blue-600 transition-colors">
+                  {awayTeam.name}
+                </Link>
+              </div>
               <div
                 className={`text-4xl font-bold mb-2 ${
                   awayWon ? "text-green-600 dark:text-green-400" : ""
@@ -262,7 +270,9 @@ export default function MatchupDetail() {
                             <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
                               {player.slotPosition || player.playerPosition}
                             </span>
-                            <span>{player.playerName}</span>
+                            <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                              {player.playerName}
+                            </Link>
                           </div>
                         </td>
                         <td className="py-2 px-3">{player.playerPosition}</td>
@@ -362,7 +372,9 @@ export default function MatchupDetail() {
                             <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
                               {player.slotPosition || player.playerPosition}
                             </span>
-                            <span>{player.playerName}</span>
+                            <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                              {player.playerName}
+                            </Link>
                           </div>
                         </td>
                         <td className="py-2 px-3">{player.playerPosition}</td>
@@ -444,7 +456,11 @@ export default function MatchupDetail() {
                       className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg"
                     >
                       <div>
-                        <div className="font-medium">{player.playerName}</div>
+                        <div className="font-medium">
+                          <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                            {player.playerName}
+                          </Link>
+                        </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
                           {player.playerPosition} · {player.team}
                         </div>
@@ -485,7 +501,11 @@ export default function MatchupDetail() {
                         className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg"
                       >
                         <div>
-                          <div className="font-medium">{player.playerName}</div>
+                          <div className="font-medium">
+                          <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                            {player.playerName}
+                          </Link>
+                        </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
                             {player.playerPosition} · {player.team}
                           </div>
@@ -553,7 +573,9 @@ export default function MatchupDetail() {
                         >
                           <div>
                             <span className="font-medium">
-                              {player.playerName}
+                              <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                                {player.playerName}
+                              </Link>
                             </span>
                             <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
                               {player.playerPosition}
@@ -612,7 +634,9 @@ export default function MatchupDetail() {
                         >
                           <div>
                             <span className="font-medium">
-                              {player.playerName}
+                              <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                                {player.playerName}
+                              </Link>
                             </span>
                             <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
                               {player.playerPosition}
@@ -646,7 +670,7 @@ export default function MatchupDetail() {
               <h3 className="text-lg font-medium mb-3">
                 {homeTeam.name} Missed Opportunities
               </h3>
-              
+
               {(() => {
                 const betterDecisions = findBetterLineupDecisions(homeTeam.players);
                 return betterDecisions.length > 0 ? (
@@ -670,16 +694,16 @@ export default function MatchupDetail() {
                             <div className="flex-1">
                               <div className="text-sm font-medium">
                                 Start{" "}
-                                <span className="text-green-600 font-semibold">
+                                <Link href={`/players/${decision.benchPlayer.id}`} className="text-green-600 font-semibold hover:text-green-700 transition-colors">
                                   {decision.benchPlayer.playerName}
-                                </span>{" "}
+                                </Link>{" "}
                                 ({decision.benchPlayer.playerPosition})
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
-                                <span className="text-red-600 font-semibold">
+                                <Link href={`/players/${decision.starterPlayer.id}`} className="text-red-600 font-semibold hover:text-red-700 transition-colors">
                                   {decision.starterPlayer.playerName}
-                                </span>{" "}
+                                </Link>{" "}
                                 ({decision.starterPlayer.slotPosition})
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
@@ -710,7 +734,7 @@ export default function MatchupDetail() {
               <h3 className="text-lg font-medium mb-3">
                 {awayTeam.name} Missed Opportunities
               </h3>
-              
+
               {(() => {
                 const betterDecisions = findBetterLineupDecisions(awayTeam.players);
                 return betterDecisions.length > 0 ? (
@@ -734,16 +758,16 @@ export default function MatchupDetail() {
                             <div className="flex-1">
                               <div className="text-sm font-medium">
                                 Start{" "}
-                                <span className="text-green-600 font-semibold">
+                                <Link href={`/players/${decision.benchPlayer.id}`} className="text-green-600 font-semibold hover:text-green-700 transition-colors">
                                   {decision.benchPlayer.playerName}
-                                </span>{" "}
+                                </Link>{" "}
                                 ({decision.benchPlayer.playerPosition})
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
-                                <span className="text-red-600 font-semibold">
+                                <Link href={`/players/${decision.starterPlayer.id}`} className="text-red-600 font-semibold hover:text-red-700 transition-colors">
                                   {decision.starterPlayer.playerName}
-                                </span>{" "}
+                                </Link>{" "}
                                 ({decision.starterPlayer.slotPosition})
                               </div>
                               <div className="text-xs text-gray-500 mt-1">

@@ -70,6 +70,8 @@ export interface GetMatchupDetailResponse {
     id: string;
     year: number;
     week: number;
+    homeTeamESPNID: number;
+    awayTeamESPNID: number;
     homeTeam: {
       id: string;
       name: string;
@@ -95,7 +97,8 @@ export const scheduleService = {
    * Get the full schedule
    */
   getFullSchedule: async (gameType?: string): Promise<GetMatchupsResponse> => {
-    const params = gameType && gameType !== "all" ? `?gameType=${gameType}` : "";
+    const params =
+      gameType && gameType !== "all" ? `?gameType=${gameType}` : "";
     return apiClient.get<GetMatchupsResponse>(`/schedules${params}`);
   },
 

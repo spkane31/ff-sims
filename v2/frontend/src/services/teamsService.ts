@@ -98,6 +98,7 @@ export interface ScheduleGame {
   result: string; // "W", "L", "T", or "Upcoming"
   completed: boolean;
   isPlayoff: boolean;
+  matchupId?: string; // Add matchup ID for linking to schedule detail page
 }
 
 export interface TeamDetail {

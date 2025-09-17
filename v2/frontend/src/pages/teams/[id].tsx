@@ -39,6 +39,7 @@ interface Game {
   score: string;
   isHome: boolean;
   isPlayoff?: boolean; // Add isPlayoff field
+  matchupId?: string; // Add matchup ID for linking to schedule detail page
 }
 
 // This mapping function converts API data to UI component format
@@ -134,6 +135,7 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
     isHome: game.isHome,
     opponentESPNID: game.opponentESPNID, // Add opponent ESPN ID
     isPlayoff: game.isPlayoff, // Add isPlayoff field
+    matchupId: game.matchupId, // Add matchup ID for linking
   }));
 
   // Pass through the transactions directly
@@ -343,12 +345,12 @@ export default function TeamDetail() {
   > | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [, setError] = useState<string | null>(null);
-  
+
   // Expected wins data - using current year 2025 and league ID 345674 (default backend league)
   const currentYear = 2025;
   const leagueId = 345674;
   const [internalTeamId, setInternalTeamId] = useState<number>(0);
-  
+
   const {
     seasonData: expectedWinsSeasonData,
     isLoading: isSeasonLoading,
@@ -358,7 +360,8 @@ export default function TeamDetail() {
   // Add these state variables at the top of the TeamDetail function component
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [opponentFilter, setOpponentFilter] = useState<string>("all");
-  const [transactionYearFilter, setTransactionYearFilter] = useState<string>("all");
+  const [transactionYearFilter, setTransactionYearFilter] =
+    useState<string>("all");
 
   // Add these state variables
   const [teamStats, setTeamStats] = useState<ReturnType<
@@ -540,9 +543,11 @@ export default function TeamDetail() {
           {activeTab === "overview" && (
             <>
               {/* Expected Wins Panel */}
-              <TeamExpectedWinsPanel 
+              <TeamExpectedWinsPanel
                 teamId={internalTeamId}
-                seasonData={expectedWinsSeasonData.filter(team => team.team_id === internalTeamId)}
+                seasonData={expectedWinsSeasonData.filter(
+                  (team) => team.team_id === internalTeamId
+                )}
                 isLoading={isSeasonLoading}
                 currentYear={currentYear}
               />
@@ -1247,51 +1252,101 @@ export default function TeamDetail() {
                     return b.week - a.week; // Most recent week first
                   })
                   .map((game, i) => (
-                    <div
-                      key={i}
-                      className={`p-4 rounded-lg border ${
-                        game.result === "W"
-                          ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800"
-                          : game.result === "L"
-                          ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
-                          : "border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700"
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium">
-                          Week {game.week} ({game.year})
-                        </span>
-                        {game.result !== "-" && (
-                          <span
-                            className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white ${
-                              game.result === "W"
-                                ? "bg-green-500"
-                                : game.result === "L"
-                                ? "bg-red-500"
-                                : "bg-yellow-500"
-                            }`}
-                          >
-                            {game.result}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mb-2">
-                        <span className="text-gray-500 dark:text-gray-400">
-                          {game.isHome ? "vs" : "@"}
-                        </span>
-                        <span className="ml-2 font-medium">
-                          {game.opponent}
-                        </span>
-                      </div>
-                      <div>
-                        {game.result !== "-" ? (
-                          <span>{game.score}</span>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">
-                            Upcoming
-                          </span>
-                        )}
-                      </div>
+                    <div key={i}>
+                      {game.matchupId ? (
+                        <Link
+                          href={`/schedule/${game.matchupId}`}
+                          className={`block p-4 rounded-lg border cursor-pointer hover:shadow-md transition-shadow duration-200 ${
+                            game.result === "W"
+                              ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 hover:border-green-300"
+                              : game.result === "L"
+                              ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 hover:border-red-300"
+                              : "border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 hover:border-gray-300"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium">
+                              Week {game.week} ({game.year})
+                            </span>
+                            {game.result !== "-" && (
+                              <span
+                                className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white ${
+                                  game.result === "W"
+                                    ? "bg-green-500"
+                                    : game.result === "L"
+                                    ? "bg-red-500"
+                                    : "bg-yellow-500"
+                                }`}
+                              >
+                                {game.result}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mb-2">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              {game.isHome ? "vs" : "@"}
+                            </span>
+                            <span className="ml-2 font-medium">
+                              {game.opponent}
+                            </span>
+                          </div>
+                          <div>
+                            {game.result !== "-" ? (
+                              <span>{game.score}</span>
+                            ) : (
+                              <span className="text-gray-500 dark:text-gray-400">
+                                Upcoming
+                              </span>
+                            )}
+                          </div>
+                        </Link>
+                      ) : (
+                        <div
+                          className={`p-4 rounded-lg border ${
+                            game.result === "W"
+                              ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800"
+                              : game.result === "L"
+                              ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
+                              : "border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium">
+                              Week {game.week} ({game.year})
+                            </span>
+                            {game.result !== "-" && (
+                              <span
+                                className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white ${
+                                  game.result === "W"
+                                    ? "bg-green-500"
+                                    : game.result === "L"
+                                    ? "bg-red-500"
+                                    : "bg-yellow-500"
+                                }`}
+                              >
+                                {game.result}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mb-2">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              {game.isHome ? "vs" : "@"}
+                            </span>
+                            <span className="ml-2 font-medium">
+                              {game.opponent}
+                            </span>
+                          </div>
+                          <div>
+                            {game.result !== "-" ? (
+                              <span>{game.score}</span>
+                            ) : (
+                              <span className="text-gray-500 dark:text-gray-400">
+                                Upcoming
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
@@ -1316,7 +1371,7 @@ export default function TeamDetail() {
           {activeTab === "draft" && (
             <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
               <h2 className="text-xl font-semibold mb-4">Draft Capital</h2>
-              
+
               {/* Year Filter */}
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="w-full md:w-auto">
@@ -1333,7 +1388,15 @@ export default function TeamDetail() {
                     onChange={(e) => setTransactionYearFilter(e.target.value)}
                   >
                     <option value="all">All Years</option>
-                    {Array.from(new Set(team.draftPicks.map((pick) => pick.description.match(/\((\d{4})\)/)?.[1] || ""))).filter(Boolean)
+                    {Array.from(
+                      new Set(
+                        team.draftPicks.map(
+                          (pick) =>
+                            pick.description.match(/\((\d{4})\)/)?.[1] || ""
+                        )
+                      )
+                    )
+                      .filter(Boolean)
                       .sort((a, b) => parseInt(b) - parseInt(a))
                       .map((year) => (
                         <option key={`draft-year-${year}`} value={year}>
@@ -1369,11 +1432,13 @@ export default function TeamDetail() {
                     {team.draftPicks
                       .filter((pick) => {
                         if (transactionYearFilter === "all") return true;
-                        const pickYear = pick.description.match(/\((\d{4})\)/)?.[1];
+                        const pickYear =
+                          pick.description.match(/\((\d{4})\)/)?.[1];
                         return pickYear === transactionYearFilter;
                       })
                       .map((pick, i) => {
-                        const pickYear = pick.description.match(/\((\d{4})\)/)?.[1] || "";
+                        const pickYear =
+                          pick.description.match(/\((\d{4})\)/)?.[1] || "";
                         return (
                           <tr
                             key={i}
@@ -1408,7 +1473,7 @@ export default function TeamDetail() {
                   </tbody>
                 </table>
               </div>
-              
+
               {/* Show message when no draft picks match the filter */}
               {team.draftPicks.filter((pick) => {
                 if (transactionYearFilter === "all") return true;
@@ -1442,13 +1507,24 @@ export default function TeamDetail() {
                         id="transaction-year-filter"
                         className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                         value={transactionYearFilter}
-                        onChange={(e) => setTransactionYearFilter(e.target.value)}
+                        onChange={(e) =>
+                          setTransactionYearFilter(e.target.value)
+                        }
                       >
                         <option value="all">All Years</option>
-                        {Array.from(new Set(team.transactions.map((transaction) => transaction.year)))
+                        {Array.from(
+                          new Set(
+                            team.transactions.map(
+                              (transaction) => transaction.year
+                            )
+                          )
+                        )
                           .sort((a, b) => b - a)
                           .map((year) => (
-                            <option key={`transaction-year-${year}`} value={year}>
+                            <option
+                              key={`transaction-year-${year}`}
+                              value={year}
+                            >
                               {year}
                             </option>
                           ))}
@@ -1487,17 +1563,18 @@ export default function TeamDetail() {
                   {/* Transaction Cards */}
                   <div className="space-y-4">
                     {team.transactions
-                      .filter((transaction) => 
-                        transactionYearFilter === "all" || 
-                        transaction.year.toString() === transactionYearFilter
+                      .filter(
+                        (transaction) =>
+                          transactionYearFilter === "all" ||
+                          transaction.year.toString() === transactionYearFilter
                       )
                       .map((transaction) => (
-                      <div
-                        key={transaction.id}
-                        className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
-                      >
                         <div
-                          className={`px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0
+                          key={transaction.id}
+                          className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
+                        >
+                          <div
+                            className={`px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0
                           ${
                             transaction.type.toLowerCase() === "draft"
                               ? "bg-purple-50 dark:bg-purple-900/20"
@@ -1505,10 +1582,10 @@ export default function TeamDetail() {
                               ? "bg-blue-50 dark:bg-blue-900/20"
                               : "bg-green-50 dark:bg-green-900/20"
                           }`}
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full w-fit
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full w-fit
                               ${
                                 transaction.type.toLowerCase() === "draft"
                                   ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
@@ -1516,70 +1593,72 @@ export default function TeamDetail() {
                                   ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                                   : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                               }`}
-                            >
-                              {transaction.type}
-                            </span>
-                            <span className="sm:ml-3 text-gray-600 dark:text-gray-400 text-sm">
-                              {transaction.date} - {transaction.year} Week {transaction.week}
-                            </span>
+                              >
+                                {transaction.type}
+                              </span>
+                              <span className="sm:ml-3 text-gray-600 dark:text-gray-400 text-sm">
+                                {transaction.date} - {transaction.year} Week{" "}
+                                {transaction.week}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="p-4">
+                            <p className="mb-4">{transaction.description}</p>
+
+                            <div className="space-y-4 sm:space-y-0 sm:grid sm:grid-cols-1 lg:grid-cols-2 sm:gap-4">
+                              {transaction.playersGained &&
+                                transaction.playersGained.length > 0 && (
+                                  <div>
+                                    <h4 className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
+                                      Players Gained:
+                                    </h4>
+                                    <ul className="list-disc list-inside space-y-1">
+                                      {transaction.playersGained.map(
+                                        (player, idx) => (
+                                          <li key={idx} className="text-sm">
+                                            {typeof player === "object"
+                                              ? player.name ||
+                                                JSON.stringify(player)
+                                              : player}
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+
+                              {transaction.playersLost &&
+                                transaction.playersLost.length > 0 && (
+                                  <div>
+                                    <h4 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
+                                      Players Lost:
+                                    </h4>
+                                    <ul className="list-disc list-inside space-y-1">
+                                      {transaction.playersLost.map(
+                                        (player, idx) => (
+                                          <li key={idx} className="text-sm">
+                                            {typeof player === "object"
+                                              ? player.name ||
+                                                JSON.stringify(player)
+                                              : player}
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                            </div>
                           </div>
                         </div>
-
-                        <div className="p-4">
-                          <p className="mb-4">{transaction.description}</p>
-
-                          <div className="space-y-4 sm:space-y-0 sm:grid sm:grid-cols-1 lg:grid-cols-2 sm:gap-4">
-                            {transaction.playersGained &&
-                              transaction.playersGained.length > 0 && (
-                                <div>
-                                  <h4 className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
-                                    Players Gained:
-                                  </h4>
-                                  <ul className="list-disc list-inside space-y-1">
-                                    {transaction.playersGained.map(
-                                      (player, idx) => (
-                                        <li key={idx} className="text-sm">
-                                          {typeof player === "object"
-                                            ? player.name ||
-                                              JSON.stringify(player)
-                                            : player}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-
-                            {transaction.playersLost &&
-                              transaction.playersLost.length > 0 && (
-                                <div>
-                                  <h4 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
-                                    Players Lost:
-                                  </h4>
-                                  <ul className="list-disc list-inside space-y-1">
-                                    {transaction.playersLost.map(
-                                      (player, idx) => (
-                                        <li key={idx} className="text-sm">
-                                          {typeof player === "object"
-                                            ? player.name ||
-                                              JSON.stringify(player)
-                                            : player}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
 
                   {/* Show message when no transactions match the filter */}
-                  {team.transactions.filter((transaction) => 
-                    transactionYearFilter === "all" || 
-                    transaction.year.toString() === transactionYearFilter
+                  {team.transactions.filter(
+                    (transaction) =>
+                      transactionYearFilter === "all" ||
+                      transaction.year.toString() === transactionYearFilter
                   ).length === 0 && (
                     <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                       No transactions match the selected year filter.

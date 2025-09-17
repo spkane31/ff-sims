@@ -427,6 +427,7 @@ func GetTeamByID(c *gin.Context) {
 			Result:         result,
 			Completed:      matchup.Completed,
 			IsPlayoff:      isPlayoff,
+			MatchupID:      fmt.Sprintf("%d", matchup.ID),
 		})
 	}
 
@@ -478,6 +479,7 @@ type ScheduleGameResponse struct {
 	Result         string  `json:"result"` // "W", "L", "T", or "Upcoming"
 	Completed      bool    `json:"completed"`
 	IsPlayoff      bool    `json:"isPlayoff"`
+	MatchupID      string  `json:"matchupId"` // Add matchup ID for linking to schedule detail page
 }
 
 type PlayerResponse struct {

@@ -161,11 +161,13 @@ type GetMatchupResponse struct {
 }
 
 type SingleMatchup struct {
-	ID       string      `json:"id"`
-	Year     uint        `json:"year"`
-	Week     uint        `json:"week"`
-	HomeTeam TeamMatchup `json:"homeTeam"`
-	AwayTeam TeamMatchup `json:"awayTeam"`
+	ID             string      `json:"id"`
+	Year           uint        `json:"year"`
+	Week           uint        `json:"week"`
+	HomeTeamESPNID uint        `json:"homeTeamESPNID"`
+	AwayTeamESPNID uint        `json:"awayTeamESPNID"`
+	HomeTeam       TeamMatchup `json:"homeTeam"`
+	AwayTeam       TeamMatchup `json:"awayTeam"`
 }
 
 type TeamMatchup struct {
@@ -279,15 +281,19 @@ func GetMatchup(c *gin.Context) {
 
 	matchup := matchups[0]
 
-	// Find team names
+	// Find team names and ESPN IDs
 	homeTeamName := "Unknown Team"
 	awayTeamName := "Unknown Team"
+	homeTeamESPNID := uint(0)
+	awayTeamESPNID := uint(0)
 	for _, team := range teams {
 		if team.ID == matchup.HomeTeamID {
 			homeTeamName = team.Owner
+			homeTeamESPNID = team.ESPNID
 		}
 		if team.ID == matchup.AwayTeamID {
 			awayTeamName = team.Owner
+			awayTeamESPNID = team.ESPNID
 		}
 	}
 
@@ -335,18 +341,20 @@ func GetMatchup(c *gin.Context) {
 
 	resp := GetMatchupResponse{
 		Data: SingleMatchup{
-			ID:   id,
-			Year: matchup.Year,
-			Week: matchup.Week,
+			ID:             id,
+			Year:           matchup.Year,
+			Week:           matchup.Week,
+			HomeTeamESPNID: homeTeamESPNID,
+			AwayTeamESPNID: awayTeamESPNID,
 			HomeTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchup.HomeTeamID),
+				ESPNID:         fmt.Sprintf("%d", homeTeamESPNID),
 				Score:          matchup.HomeTeamFinalScore,
 				ProjectedScore: homeProjectedScore,
 				Name:           homeTeamName,
 				Players:        homeTeamPlayers,
 			},
 			AwayTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", matchup.AwayTeamID),
+				ESPNID:         fmt.Sprintf("%d", awayTeamESPNID),
 				Score:          matchup.AwayTeamFinalScore,
 				ProjectedScore: awayProjectedScore,
 				Name:           awayTeamName,
