@@ -502,54 +502,56 @@ type Team struct {
 }
 
 // processTeams processes teams data
-func processTeams(filePath string) error {
+func processTeams(filePath string) ([]*models.Team, error) {
 	logging.Infof("Processing teams data from: %s", filePath)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read teams file %s: %w", filePath, err)
+		return nil, fmt.Errorf("failed to read teams file %s: %w", filePath, err)
 	}
 
 	teams := []Team{}
 	if err := json.Unmarshal(data, &teams); err != nil {
-		return fmt.Errorf("failed to unmarshal teams data from %s: %w", filePath, err)
+		return nil, fmt.Errorf("failed to unmarshal teams data from %s: %w", filePath, err)
 	}
 	logging.Infof("Successfully processed %d teams from %s", len(teams), filePath)
 
+	createdTeams := []*models.Team{}
 	for _, team := range teams {
 		logging.Infof("Team - ESPN ID: %d, Owner: %s, Nickname: %s, Year: %d",
 			team.ESPNID, team.Owner, team.Nickname, team.Year)
-
-		teamRecord := &models.Team{
-			LeagueID: leagueID,
-			ESPNID:   uint(team.ESPNID),
-		}
 
 		// Check if team already exists
 		var existingTeam models.Team
 		if err := database.DB.First(&existingTeam, "espn_id = ?", team.ESPNID).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
-				return fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
+				return nil, fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
 			// Team does not exist, create a new one
-			teamRecord.Name = team.Nickname
-			teamRecord.Owner = team.Owner
-			if createErr := database.DB.Session(&gorm.Session{}).Create(teamRecord).Error; createErr != nil {
-				return fmt.Errorf("error creating new team with ESPN ID %d: %w", team.ESPNID, createErr)
+			newTeam := &models.Team{
+				LeagueID: leagueID,
+				ESPNID:   uint(team.ESPNID),
+				Name:     team.Nickname,
+				Owner:    team.Owner,
 			}
-			logging.Infof("Created new team: %+v", teamRecord)
+			if createErr := database.DB.Session(&gorm.Session{}).Create(newTeam).Error; createErr != nil {
+				return nil, fmt.Errorf("error creating new team with ESPN ID %d: %w", team.ESPNID, createErr)
+			}
+			logging.Infof("Created new team: %+v", newTeam)
+			createdTeams = append(createdTeams, newTeam)
 		} else {
 			// Team exists, update its details
 			existingTeam.Name = team.Nickname
 			existingTeam.Owner = team.Owner
 			if err := database.DB.Save(&existingTeam).Error; err != nil {
-				return fmt.Errorf("error updating existing team with ESPN ID %d: %w", team.ESPNID, err)
+				return nil, fmt.Errorf("error updating existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
 			logging.Infof("Updated existing team: %+v", existingTeam)
+			createdTeams = append(createdTeams, &existingTeam)
 		}
 	}
 
-	return nil
+	return createdTeams, nil
 }
 
 // Transaction represents a fantasy football transaction record
@@ -739,6 +741,7 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 	// Regex to extract file type from filename (pattern: {type}_{year}.json)
 	re := regexp.MustCompile(`^(.+)_\d{4}\.json$`)
 
+	var createdTeams []*models.Team
 	// First have to create the teams
 	for _, file := range files {
 		if file.IsDir() {
@@ -755,12 +758,13 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		}
 
 		fileType := matches[1]
-		fileType = strings.Replace(fileType, "-", "_", -1) // Normalize for switch statement
+		fileType = strings.ReplaceAll(fileType, "-", "_") // Normalize for switch statement
 
 		if fileType == "teams" {
 			logging.Infof("Processing teams file: %s", filePath)
-			if processErr := processTeams(filePath); processErr != nil {
-				return fmt.Errorf("error processing file %s: %w", filePath, processErr)
+			createdTeams, err = processTeams(filePath)
+			if err != nil {
+				return fmt.Errorf("error processing file %s: %w", filePath, err)
 			}
 		}
 	}
@@ -785,14 +789,16 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		// Process based on file type
 		var processErr error
 		switch fileType {
-		case "box_score_players":
-			processErr = processBoxScorePlayers(filePath)
-		case "draft_selections":
-			processErr = processDraftSelections(filePath)
-		case "matchups":
-			processErr = processMatchups(filePath)
-		case "transactions":
-			processErr = processTransactions(filePath)
+		// case "box_score_players":
+		// 	processErr = processBoxScorePlayers(filePath)
+		// case "draft_selections":
+		// 	processErr = processDraftSelections(filePath)
+		// case "matchups":
+		// 	processErr = processMatchups(filePath)
+		// case "transactions":
+		// 	processErr = processTransactions(filePath)
+		case "pure_matchups":
+			processErr = processPureMatchups(filePath, createdTeams)
 		default:
 			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue
@@ -814,6 +820,95 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		logging.Infof("Skipping expected wins calculations (disabled by flag)")
 	}
 
+	return nil
+}
+
+type SimpleMatchup struct {
+	Week           int    `json:"week"`
+	Year           int    `json:"year"`
+	GameType       string `json:"game_type"`
+	IsPlayoff      bool   `json:"is_playoff"`
+	HomeTeamESPNID int64  `json:"home_team_espn_id"`
+	AwayTeamESPNID int64  `json:"away_team_espn_id"`
+	Completed      bool   `json:"completed"`
+}
+
+func processPureMatchups(filePath string, createdTeams []*models.Team) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read pure matchups file %s: %w", filePath, err)
+	}
+
+	matchups := []SimpleMatchup{}
+	if err := json.Unmarshal(data, &matchups); err != nil {
+		return fmt.Errorf("failed to unmarshal pure matchups data from %s: %w", filePath, err)
+	}
+
+	for _, createdTeam := range createdTeams {
+		logging.Infof("Created Team - ID: %d, ESPN ID: %d, Name: %s, Owner: %s",
+			createdTeam.ID, createdTeam.ESPNID, createdTeam.Name, createdTeam.Owner)
+	}
+
+	for _, matchup := range matchups {
+		logging.Infof("Pure Matchup - Week: %d, Year: %d, Home Team ESPN ID: %d, Away Team ESPN ID: %d, Completed: %t, Game Type: %s, Is Playoff: %t",
+			matchup.Week, matchup.Year, matchup.HomeTeamESPNID, matchup.AwayTeamESPNID,
+			matchup.Completed, matchup.GameType, matchup.IsPlayoff)
+
+		entry := &models.Matchup{
+			LeagueID:  leagueID,
+			Week:      uint(matchup.Week),
+			Year:      uint(matchup.Year),
+			Season:    int(matchup.Year),
+			Completed: matchup.Completed,
+			GameType:  matchup.GameType,
+			IsPlayoff: matchup.IsPlayoff,
+		}
+		// Look up team IDs from createdTeams
+		for _, team := range createdTeams {
+			if team.ESPNID == uint(matchup.HomeTeamESPNID) {
+				entry.HomeTeamID = team.ID
+			}
+			if team.ESPNID == uint(matchup.AwayTeamESPNID) {
+				entry.AwayTeamID = team.ID
+			}
+		}
+
+		if entry.HomeTeamID == 0 {
+			return fmt.Errorf("home team with ESPN ID %d not found in database", matchup.HomeTeamESPNID)
+		}
+		if entry.AwayTeamID == 0 {
+			return fmt.Errorf("away team with ESPN ID %d not found in database", matchup.AwayTeamESPNID)
+		}
+
+		// Create or update the matchup in the database
+		var existingMatchup models.Matchup
+		err := database.DB.Where("home_team_id = ? AND away_team_id = ? AND week = ? AND year = ?",
+			entry.HomeTeamID, entry.AwayTeamID, entry.Week, entry.Year).First(&existingMatchup).Error
+
+		if err != nil {
+			if err != gorm.ErrRecordNotFound {
+				return fmt.Errorf("error checking existing pure matchup for home team ID %d and away team ID %d: %w",
+					entry.HomeTeamID, entry.AwayTeamID, err)
+			}
+			// Matchup does not exist, create a new one
+			if createErr := database.DB.Create(entry).Error; createErr != nil {
+				return fmt.Errorf("error creating new pure matchup for home team ID %d: %w", entry.HomeTeamID, createErr)
+			}
+			logging.Infof("Created new pure matchup: %s", entry)
+		} else {
+			// Matchup exists, update its details
+			existingMatchup.Completed = entry.Completed
+			existingMatchup.GameType = entry.GameType
+			existingMatchup.IsPlayoff = entry.IsPlayoff
+
+			if err := database.DB.Save(&existingMatchup).Error; err != nil {
+				return fmt.Errorf("error updating existing pure matchup for home team ID %d: %w", entry.HomeTeamID, err)
+			}
+			logging.Infof("Updated existing pure matchup: %s", existingMatchup)
+		}
+	}
+
+	logging.Infof("Successfully processed %d pure matchups from %s", len(matchups), filePath)
 	return nil
 }
 
@@ -902,7 +997,6 @@ func ProcessExpectedWinsWithYear(year uint) error {
 		return processExpectedWinsAllYearsWithRecalc()
 	}
 }
-
 
 // processExpectedWinsForYearWithRecalc processes expected wins for a specific year with forced recalculation
 func processExpectedWinsForYearWithRecalc(year uint) error {

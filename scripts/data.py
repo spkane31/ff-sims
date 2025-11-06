@@ -128,52 +128,69 @@ def get_schedule(league: League, file_name: str) -> None:
     )
 
     logging.info(f"Creating matchups based on {league.year}")
+    pure_matchups = []
     matchups_data = []
     box_score_data = []
 
     for week in range(1, 18):
         logging.info(f"Year: {league.year}\tWeek: {week}")
-        if week > league.current_week and datetime.now().year == league.year:
-            break
+        # if week > league.current_week and datetime.now().year == league.year:
+        #     break
         if league.year < 2019:
-            for matchup in league.scoreboard(week=week):
-                if not hasattr(matchup, "away_team") or not hasattr(matchup, "home_team"):
+            for box_score in league.scoreboard(week=week):
+                if not hasattr(box_score, "away_team") or not hasattr(box_score, "home_team"):
                     break
 
-                matchup_info = {
-                    "week": week,
-                    "year": league.year,
-                    "game_type": matchup.matchup_type,
-                    "is_playoff": matchup.is_playoff,
-                    "home_team_espn_id": matchup.home_team.team_id,
-                    "away_team_espn_id": matchup.away_team.team_id,
-                    "home_team_final_score": matchup.home_score,
-                    "away_team_final_score": matchup.away_score,
-                    "home_team_espn_projected_score": -1,
-                    "away_team_espn_projected_score": -1,
-                    "completed": True,
-                }
-
-                matchups_data.append(matchup_info)
+                matchups_data.append(
+                    {
+                        "week": week,
+                        "year": league.year,
+                        "game_type": box_score.matchup_type,
+                        "is_playoff": box_score.is_playoff,
+                        "home_team_espn_id": box_score.home_team.team_id,
+                        "away_team_espn_id": box_score.away_team.team_id,
+                        "home_team_final_score": box_score.home_score,
+                        "away_team_final_score": box_score.away_score,
+                        "home_team_espn_projected_score": -1,
+                        "away_team_espn_projected_score": -1,
+                        "completed": True,
+                    }
+                )
 
         else:
+            # Have to use the scoreboard to get the schedule for all active weeks, then the
+            # box_scores to get the box score data
+            for scoreboard_matchup in league.scoreboard(week=week):
+                pure_matchups.append(
+                    {
+                        "week": week,
+                        "year": league.year,
+                        "game_type": scoreboard_matchup.matchup_type,
+                        "is_playoff": scoreboard_matchup.is_playoff,
+                        "home_team_espn_id": scoreboard_matchup.home_team.team_id,
+                        "away_team_espn_id": scoreboard_matchup.away_team.team_id,
+                        "completed": scoreboard_matchup.home_score > 0 and scoreboard_matchup.away_score > 0,
+                    }
+                )
+
             # box_scores func only works for the current year
-            for matchup in league.box_scores(week=week):
-                if matchup.away_team == 0 or matchup.home_team == 0:
+            for box_score in league.box_scores(week=week):
+                logging.info(f"Processing box score: {box_score}")
+                if box_score.away_team == 0 or box_score.home_team == 0:
                     continue
 
                 matchup_info = {
                     "week": week,
                     "year": league.year,
-                    "game_type": matchup.matchup_type,
-                    "is_playoff": matchup.is_playoff,
-                    "home_team_espn_id": matchup.home_team.team_id,
-                    "away_team_espn_id": matchup.away_team.team_id,
-                    "home_team_final_score": matchup.home_score,
-                    "away_team_final_score": matchup.away_score,
-                    "home_team_espn_projected_score": matchup.home_projected,
-                    "away_team_espn_projected_score": matchup.away_projected,
-                    "completed": league.current_week >= week and matchup.home_score > 0 and matchup.away_score > 0,
+                    "game_type": box_score.matchup_type,
+                    "is_playoff": box_score.is_playoff,
+                    "home_team_espn_id": box_score.home_team.team_id,
+                    "away_team_espn_id": box_score.away_team.team_id,
+                    "home_team_final_score": box_score.home_score,
+                    "away_team_final_score": box_score.away_score,
+                    "home_team_espn_projected_score": box_score.home_projected,
+                    "away_team_espn_projected_score": box_score.away_projected,
+                    "completed": league.current_week >= week and box_score.home_score > 0 and box_score.away_score > 0,
                     "home_team_lineup": [
                         {
                             "slot_position": player.slot_position,
@@ -198,7 +215,7 @@ def get_schedule(league: League, file_name: str) -> None:
                             "percent_started": player.percent_started,
                             "stats": player.stats,
                         }
-                        for player in matchup.home_lineup
+                        for player in box_score.home_lineup
                     ],
                     "away_team_lineup": [
                         {
@@ -224,18 +241,18 @@ def get_schedule(league: League, file_name: str) -> None:
                             "percent_started": player.percent_started,
                             "stats": player.stats,
                         }
-                        for player in matchup.away_lineup
+                        for player in box_score.away_lineup
                     ],
                 }
 
                 matchups_data.append(matchup_info)
 
-                home_team_id = matchup.home_team.team_id
-                away_team_id = matchup.away_team.team_id
+                home_team_id = box_score.home_team.team_id
+                away_team_id = box_score.away_team.team_id
 
                 if league.year == datetime.now().year and week < league.current_week:
                     # Collect box score data for players
-                    for player in matchup.home_lineup:
+                    for player in box_score.home_lineup:
                         player_info = {
                             "player_name": player.name,
                             "player_id": player.playerId,
@@ -249,7 +266,7 @@ def get_schedule(league: League, file_name: str) -> None:
                         }
                         box_score_data.append(player_info)
 
-                    for player in matchup.away_lineup:
+                    for player in box_score.away_lineup:
                         player_info = {
                             "player_name": player.name,
                             "player_id": player.playerId,
@@ -273,6 +290,11 @@ def get_schedule(league: League, file_name: str) -> None:
             box_score_file = file_name.replace("matchups", "box_score_players")
             with open(box_score_file, "w") as f:
                 json.dump(box_score_data, f, indent=2)
+
+        if pure_matchups:
+            pure_matchups_file = file_name.replace("matchups", "pure_matchups")
+            with open(pure_matchups_file, "w") as f:
+                json.dump(pure_matchups, f, indent=2)
 
     return None
 
@@ -321,51 +343,37 @@ def get_simple_draft(
     return None
 
 
-def update_active_players(
-    league: League,
-    conn: "psycopg2.connection" = None,
-) -> None:
+def update_active_players(league: League, conn: "psycopg2.connection") -> None:
     """get_all_players will get the scores for all players from a given year"""
     logging.info(f"Getting all players for {league.year}")
 
-    # Get all player IDs from the database
-    if conn is None:
-        logging.warning("conn must not be None to fetch all players")
-        return
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT espn_id, position FROM players WHERE status != 'inactive'")
 
-    cursor = conn.cursor()
+        all_players_espn_ids = [[row[0], row[1]] for row in cursor.fetchall()]
 
-    cursor.execute("SELECT espn_id, position FROM players WHERE status != 'inactive'")
+        logging.info(f"Found {len(all_players_espn_ids)} players in the database")
 
-    all_players_espn_ids = [[row[0], row[1]] for row in cursor.fetchall()]
+        for combo in all_players_espn_ids:
+            espn_id, position = combo[0], combo[1]
+            p = league.player_info(playerId=espn_id)
 
-    logging.info(f"Found {len(all_players_espn_ids)} players in the database")
+            if p is None:
+                logging.info(f"Marking player {espn_id} as inactive")
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE players SET status = 'inactive' WHERE espn_id = %s", (espn_id,))
+                    conn.commit()
+                continue
 
-    for combo in all_players_espn_ids:
-        espn_id, position = combo[0], combo[1]
-        p = league.player_info(playerId=espn_id)
-
-        if p is None:
-            logging.info(f"Marking player {espn_id} as inactive")
-            with conn.cursor() as cur:
-                cur.execute("UPDATE players SET status = 'inactive' WHERE espn_id = %s", (espn_id,))
-                conn.commit()
-            continue
-
-        # Convert to dict and print
-        if p.position != position:
-            logging.info(f"Updating player {espn_id} position from {position} to {p.position}")
-            with conn.cursor() as cur:
-                cur.execute("UPDATE players SET position = %s WHERE espn_id = %s", (p.position, espn_id))
+            if p.position != position:
+                logging.info(f"Updating player {espn_id} position from {position} to {p.position}")
+                cursor.execute("UPDATE players SET position = %s WHERE espn_id = %s", (p.position, espn_id))
                 conn.commit()
 
     return
 
 
-def get_all_transactions(
-    league: League,
-    file_name: str = None,
-) -> None:
+def get_all_transactions(league: League, file_name: str) -> None:
     """get_all_transactions will get all transactions for a given league"""
     logging.info(f"Getting all transactions for {league.year}")
 
@@ -464,8 +472,8 @@ if __name__ == "__main__":
 
     with conn:
         get_schedule(league, file_name=matchups_file)
-        get_simple_draft(league, file_name=draft_file)
-        get_all_transactions(league, file_name=transactions_file)
-        update_active_players(league, conn=conn)
+        # get_simple_draft(league, file_name=draft_file)
+        # get_all_transactions(league, file_name=transactions_file)
+        # update_active_players(league, conn=conn)
 
     logging.info(f"Completed in {round(time.time() - start, 2)} seconds")

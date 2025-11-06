@@ -36,6 +36,10 @@ type Team struct {
 	DraftSelections []DraftSelection  `json:"draft_selections,omitempty" gorm:"foreignKey:TeamID"`
 }
 
+func (t *Team) String() string {
+	return fmt.Sprintf("Team(ID=%d, Name=%s, Owner=%s, ESPNID=%d, LeagueID=%d, Year=%d)", t.ID, t.Name, t.Owner, t.ESPNID, t.LeagueID, t.Year)
+}
+
 // AfterCreate hook is triggered after creating a new team
 func (t *Team) AfterCreate(tx *gorm.DB) error {
 	// When a team is first created, add the initial name to history

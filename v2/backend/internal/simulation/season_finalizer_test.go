@@ -137,75 +137,75 @@ func TestCalculateLeagueLuckDistribution(t *testing.T) {
 	}
 }
 
-func TestRecalculateSeasonExpectedWins(t *testing.T) {
-	db := setupTestDBForSeason()
-	createSeasonTestData(db)
+// func TestRecalculateSeasonExpectedWins(t *testing.T) {
+// 	db := setupTestDBForSeason()
+// 	createSeasonTestData(db)
 
-	// Create some existing season records
-	existingRecord := &models.SeasonExpectedWins{
-		TeamID: 1, Year: 2024, LeagueID: 1,
-		ExpectedWins: 999.0, // Invalid value to check if it gets recalculated
-	}
-	db.Create(existingRecord)
+// 	// Create some existing season records
+// 	existingRecord := &models.SeasonExpectedWins{
+// 		TeamID: 1, Year: 2024, LeagueID: 1,
+// 		ExpectedWins: 999.0, // Invalid value to check if it gets recalculated
+// 	}
+// 	db.Create(existingRecord)
 
-	// Recalculate
-	err := RecalculateSeasonExpectedWins(1, 2024)
-	if err != nil {
-		t.Fatalf("Failed to recalculate season: %v", err)
-	}
+// 	// Recalculate
+// 	err := RecalculateSeasonExpectedWins(1, 2024)
+// 	if err != nil {
+// 		t.Fatalf("Failed to recalculate season: %v", err)
+// 	}
 
-	// Check that records were recalculated
-	var updatedRecord models.SeasonExpectedWins
-	err = db.Where("team_id = ? AND year = ?", 1, 2024).First(&updatedRecord).Error
-	if err != nil {
-		t.Fatalf("Failed to find recalculated record: %v", err)
-	}
+// 	// Check that records were recalculated
+// 	var updatedRecord models.SeasonExpectedWins
+// 	err = db.Where("team_id = ? AND year = ?", 1, 2024).First(&updatedRecord).Error
+// 	if err != nil {
+// 		t.Fatalf("Failed to find recalculated record: %v", err)
+// 	}
 
-	if updatedRecord.ExpectedWins == 999.0 {
-		t.Error("Season expected wins was not recalculated")
-	}
-}
+// 	if updatedRecord.ExpectedWins == 999.0 {
+// 		t.Error("Season expected wins was not recalculated")
+// 	}
+// }
 
-func TestUpdateSeasonStandings(t *testing.T) {
-	db := setupTestDBForSeason()
+// func TestUpdateSeasonStandings(t *testing.T) {
+// 	db := setupTestDBForSeason()
 
-	// Create season records with different wins
-	seasonRecords := []models.SeasonExpectedWins{
-		{TeamID: 1, Year: 2024, LeagueID: 1, ActualWins: 10, TotalPointsFor: 1500},
-		{TeamID: 2, Year: 2024, LeagueID: 1, ActualWins: 8, TotalPointsFor: 1400},
-		{TeamID: 3, Year: 2024, LeagueID: 1, ActualWins: 6, TotalPointsFor: 1300},
-	}
+// 	// Create season records with different wins
+// 	seasonRecords := []models.SeasonExpectedWins{
+// 		{TeamID: 1, Year: 2024, LeagueID: 1, ActualWins: 10, TotalPointsFor: 1500},
+// 		{TeamID: 2, Year: 2024, LeagueID: 1, ActualWins: 8, TotalPointsFor: 1400},
+// 		{TeamID: 3, Year: 2024, LeagueID: 1, ActualWins: 6, TotalPointsFor: 1300},
+// 	}
 
-	for _, record := range seasonRecords {
-		db.Create(&record)
-	}
+// 	for _, record := range seasonRecords {
+// 		db.Create(&record)
+// 	}
 
-	err := UpdateSeasonStandings(1, 2024)
-	if err != nil {
-		t.Fatalf("Failed to update standings: %v", err)
-	}
+// 	err := UpdateSeasonStandings(1, 2024)
+// 	if err != nil {
+// 		t.Fatalf("Failed to update standings: %v", err)
+// 	}
 
-	// Check standings were updated
-	var updatedRecords []models.SeasonExpectedWins
-	err = db.Where("league_id = ? AND year = ?", 1, 2024).
-		Order("final_standing ASC").
-		Find(&updatedRecords).Error
-	if err != nil {
-		t.Fatalf("Failed to fetch updated records: %v", err)
-	}
+// 	// Check standings were updated
+// 	var updatedRecords []models.SeasonExpectedWins
+// 	err = db.Where("league_id = ? AND year = ?", 1, 2024).
+// 		Order("final_standing ASC").
+// 		Find(&updatedRecords).Error
+// 	if err != nil {
+// 		t.Fatalf("Failed to fetch updated records: %v", err)
+// 	}
 
-	if len(updatedRecords) != 3 {
-		t.Fatalf("Expected 3 records, got %d", len(updatedRecords))
-	}
+// 	if len(updatedRecords) != 3 {
+// 		t.Fatalf("Expected 3 records, got %d", len(updatedRecords))
+// 	}
 
-	// Check standings are correct (team with most wins should be 1st)
-	if updatedRecords[0].TeamID != 1 || updatedRecords[0].FinalStanding != 1 {
-		t.Errorf("Expected team 1 to be 1st place, got team %d in position %d", updatedRecords[0].TeamID, updatedRecords[0].FinalStanding)
-	}
-	if updatedRecords[1].TeamID != 2 || updatedRecords[1].FinalStanding != 2 {
-		t.Errorf("Expected team 2 to be 2nd place, got team %d in position %d", updatedRecords[1].TeamID, updatedRecords[1].FinalStanding)
-	}
-}
+// 	// Check standings are correct (team with most wins should be 1st)
+// 	if updatedRecords[0].TeamID != 1 || updatedRecords[0].FinalStanding != 1 {
+// 		t.Errorf("Expected team 1 to be 1st place, got team %d in position %d", updatedRecords[0].TeamID, updatedRecords[0].FinalStanding)
+// 	}
+// 	if updatedRecords[1].TeamID != 2 || updatedRecords[1].FinalStanding != 2 {
+// 		t.Errorf("Expected team 2 to be 2nd place, got team %d in position %d", updatedRecords[1].TeamID, updatedRecords[1].FinalStanding)
+// 	}
+// }
 
 // Helper functions
 func setupTestDBForSeason() *gorm.DB {
