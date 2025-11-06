@@ -38,6 +38,8 @@ type Matchup struct {
 	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
 	GameType           string           `json:"gameType"`
 	PlayoffGameType    string           `json:"playoffGameType"`
+	Completed          bool             `json:"completed"`
+	IsPlayoff          bool             `json:"isPlayoff"`
 }
 
 // GetPlayers returns all players with optional filtering
@@ -54,13 +56,13 @@ func GetSchedules(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if year == "" {
-			// Exclude games where both home and away scores are 0 (not truly completed games)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("completed = true AND NOT (home_team_final_score = 0 AND away_team_final_score = 0)").Find(&schedule).Error; scheduleErr != nil {
+			// Fetch all matchups (completed and future)
+			if scheduleErr = database.DB.Model(&models.Matchup{}).Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		} else {
-			// Exclude games where both home and away scores are 0 (not truly completed games)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ? AND completed = true AND NOT (home_team_final_score = 0 AND away_team_final_score = 0)", year).Find(&schedule).Error; scheduleErr != nil {
+			// Fetch all matchups for the year (completed and future)
+			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ?", year).Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		}
@@ -131,6 +133,8 @@ func GetSchedules(c *gin.Context) {
 			AwayProjectedScore: matchup.AwayTeamESPNProjectedScore,
 			GameType:           matchup.GameType,
 			PlayoffGameType:    string(playoffGameType),
+			Completed:          matchup.Completed && !(matchup.HomeTeamFinalScore == 0 && matchup.AwayTeamFinalScore == 0),
+			IsPlayoff:          matchup.IsPlayoff,
 		}
 
 		for _, team := range teams {

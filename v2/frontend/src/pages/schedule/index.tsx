@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Layout from "../../components/Layout";
 import { useSchedule } from "../../hooks/useSchedule";
 import { Matchup } from "@/types/models";
@@ -14,40 +14,41 @@ export default function Schedule() {
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedGameType, setSelectedGameType] = useState<string>("all");
-  const { schedule, isLoading, error } = useSchedule({ gameType: selectedGameType });
+  const [showFutureMatchups, setShowFutureMatchups] = useState<boolean>(false);
+  const { schedule, isLoading, error } = useSchedule({
+    gameType: selectedGameType,
+  });
 
   // Server-side filtering now handles playoff detection
 
   // Transform API data - server now handles filtering
   const scheduleData: Matchup[] =
     !isLoading && schedule
-      ? schedule.data.matchups
-          .flat()
-          .map((game) => ({
-            leagueId: 1, // TODO: this might not be necessary
-            id: game.id,
-            createdAt: "2023-10-01T00:00:00Z",
-            updatedAt: "2023-10-01T00:00:00Z",
-            season: game.year,
-            year: game.year,
-            week: game.week,
-            homeTeamId: game.homeTeamId || 0,
-            awayTeamId: game.awayTeamId || 0,
-            homeTeamESPNID: game.homeTeamESPNID || 0,
-            awayTeamESPNID: game.awayTeamESPNID || 0,
-            homeTeamName: game.homeTeamName,
-            awayTeamName: game.awayTeamName,
-            homeScore: game.homeScore,
-            awayScore: game.awayScore,
-            homeProjectedScore: game.homeProjectedScore,
-            awayProjectedScore: game.awayProjectedScore,
-            completed: game.homeScore > 0 || game.awayScore > 0,
-            homeTeam: game.homeTeam,
-            awayTeam: game.awayTeam,
-            gameType: game.gameType,
-            playoffGameType: game.playoffGameType,
-            isPlayoff: game.isPlayoff || false,
-          }))
+      ? schedule.data.matchups.flat().map((game) => ({
+          leagueId: 1, // TODO: this might not be necessary
+          id: game.id,
+          createdAt: "2023-10-01T00:00:00Z",
+          updatedAt: "2023-10-01T00:00:00Z",
+          season: game.year,
+          year: game.year,
+          week: game.week,
+          homeTeamId: game.homeTeamId || 0,
+          awayTeamId: game.awayTeamId || 0,
+          homeTeamESPNID: game.homeTeamESPNID || 0,
+          awayTeamESPNID: game.awayTeamESPNID || 0,
+          homeTeamName: game.homeTeamName,
+          awayTeamName: game.awayTeamName,
+          homeScore: game.homeScore,
+          awayScore: game.awayScore,
+          homeProjectedScore: game.homeProjectedScore,
+          awayProjectedScore: game.awayProjectedScore,
+          completed: game.homeScore > 0 || game.awayScore > 0,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          gameType: game.gameType,
+          playoffGameType: game.playoffGameType,
+          isPlayoff: game.isPlayoff || false,
+        }))
       : [];
 
   const weeks: number[] = Array.from(
@@ -82,25 +83,124 @@ export default function Schedule() {
     const weekMatch =
       selectedWeek === "all" || game.week.toString() === selectedWeek;
 
-    // Game type filtering is now handled server-side via the useSchedule hook
-    return yearMatch && weekMatch;
+    // Apply future matchup filter
+    // If showFutureMatchups is OFF (default): only show completed games
+    // If showFutureMatchups is ON: show all games (completed and future)
+    const futureMatch = showFutureMatchups ? true : game.completed;
+
+    // Game type filtering is handled server-side via the useSchedule hook
+    return yearMatch && weekMatch && futureMatch;
   });
 
-  // Strength of schedule data
-  // This would ideally be calculated based on actual team data
-  const remainingStrength: TeamStrength[] = [
-    { team: "Team A", difficulty: "Hard", strengthPercentage: 80 },
-    { team: "Team B", difficulty: "Easy", strengthPercentage: 65 },
-    { team: "Team C", difficulty: "Hard", strengthPercentage: 50 },
-    { team: "Team D", difficulty: "Easy", strengthPercentage: 35 },
-  ];
+  // Calculate strength of schedule client-side from schedule data
+  const { overallStrength, remainingStrength } = useMemo(() => {
+    if (!scheduleData || scheduleData.length === 0) {
+      return { overallStrength: [], remainingStrength: [] };
+    }
 
-  const overallStrength: TeamStrength[] = [
-    { team: "Team A", difficulty: "Hard", strengthPercentage: 70 },
-    { team: "Team B", difficulty: "Med", strengthPercentage: 60 },
-    { team: "Team C", difficulty: "Easy", strengthPercentage: 50 },
-    { team: "Team D", difficulty: "Hard", strengthPercentage: 40 },
-  ];
+    // Determine the target year for calculations
+    const targetYear = selectedYear !== "all" ? parseInt(selectedYear) : Math.max(...scheduleData.map(g => g.year));
+
+    // Filter to regular season games only for the target year
+    const regularSeasonGames = scheduleData.filter(
+      g => g.year === targetYear && !g.isPlayoff && g.gameType === "NONE"
+    );
+
+    if (regularSeasonGames.length === 0) {
+      return { overallStrength: [], remainingStrength: [] };
+    }
+
+    // Get all unique teams
+    const teams = new Set<string>();
+    regularSeasonGames.forEach(game => {
+      teams.add(game.homeTeamName);
+      teams.add(game.awayTeamName);
+    });
+
+    // Calculate win percentage for each team from completed games
+    const teamWinPct: Record<string, { wins: number; losses: number; pct: number }> = {};
+    teams.forEach(team => {
+      const completedGames = regularSeasonGames.filter(
+        g => g.completed && (g.homeTeamName === team || g.awayTeamName === team)
+      );
+
+      let wins = 0;
+      let losses = 0;
+
+      completedGames.forEach(game => {
+        if (game.homeTeamName === team) {
+          if (game.homeScore > game.awayScore) wins++;
+          else if (game.homeScore < game.awayScore) losses++;
+        } else {
+          if (game.awayScore > game.homeScore) wins++;
+          else if (game.awayScore < game.homeScore) losses++;
+        }
+      });
+
+      const total = wins + losses;
+      teamWinPct[team] = {
+        wins,
+        losses,
+        pct: total > 0 ? wins / total : 0.5 // Default to 0.5 if no games played
+      };
+    });
+
+    // Calculate SOS for each team - average opponent win percentage
+    const calculateSOS = (games: Matchup[]) => {
+      const teamSOS: Record<string, { totalOppPct: number; oppCount: number }> = {};
+
+      games.forEach(game => {
+        const homeTeam = game.homeTeamName;
+        const awayTeam = game.awayTeamName;
+
+        // Initialize
+        if (!teamSOS[homeTeam]) teamSOS[homeTeam] = { totalOppPct: 0, oppCount: 0 };
+        if (!teamSOS[awayTeam]) teamSOS[awayTeam] = { totalOppPct: 0, oppCount: 0 };
+
+        // Add opponent's win percentage
+        teamSOS[homeTeam].totalOppPct += teamWinPct[awayTeam]?.pct ?? 0.5;
+        teamSOS[homeTeam].oppCount++;
+
+        teamSOS[awayTeam].totalOppPct += teamWinPct[homeTeam]?.pct ?? 0.5;
+        teamSOS[awayTeam].oppCount++;
+      });
+
+      return teamSOS;
+    };
+
+    // Calculate overall SOS (all games)
+    const overallSOS = calculateSOS(regularSeasonGames);
+
+    // Calculate remaining SOS (future games only)
+    const futureGames = regularSeasonGames.filter(g => !g.completed);
+    const remainingSOS = calculateSOS(futureGames);
+
+    // Convert to display format
+    const convertToStrength = (sosData: Record<string, { totalOppPct: number; oppCount: number }>): TeamStrength[] => {
+      return Object.entries(sosData)
+        .map(([team, data]) => {
+          const avgOppPct = data.oppCount > 0 ? data.totalOppPct / data.oppCount : 0.5;
+          const strengthPercentage = Math.round(avgOppPct * 100);
+
+          let difficulty: "Easy" | "Med" | "Hard";
+          if (strengthPercentage >= 55) {
+            difficulty = "Hard";
+          } else if (strengthPercentage >= 45) {
+            difficulty = "Med";
+          } else {
+            difficulty = "Easy";
+          }
+
+          return { team, difficulty, strengthPercentage };
+        })
+        .sort((a, b) => b.strengthPercentage - a.strengthPercentage);
+    };
+
+    return {
+      overallStrength: convertToStrength(overallSOS),
+      remainingStrength: convertToStrength(remainingSOS)
+    };
+  }, [scheduleData, selectedYear]);
 
   // Helper function to get color based on difficulty
   const getDifficultyColor = (
@@ -130,68 +230,157 @@ export default function Schedule() {
             league.
           </p>
 
+          <div className="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-semibold mb-4">Strength of Schedule</h2>
+            {isLoading ? (
+              <div className="flex items-center justify-center h-40">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="ml-2">Loading schedule data...</span>
+              </div>
+            ) : overallStrength.length === 0 ? (
+              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                No strength of schedule data available for the selected year. Make sure future matchups are loaded.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Remaining</h3>
+                  <div className="flex items-center mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                    <span className="w-40">Team</span>
+                    <span className="flex-1 ml-3">Schedule Difficulty</span>
+                    <span className="w-20 text-right ml-3">Opp Win %</span>
+                  </div>
+                  <div className="space-y-3">
+                    {remainingStrength.map(
+                      ({ team, difficulty, strengthPercentage }) => (
+                        <div key={team} className="flex items-center">
+                          <span className="w-40 text-sm truncate">{team}</span>
+                          <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
+                            <div
+                              className={`h-full ${getDifficultyColor(difficulty)}`}
+                              style={{ width: `${strengthPercentage}%` }}
+                            ></div>
+                          </div>
+                          <span className="w-20 text-right text-sm ml-3">
+                            {strengthPercentage}%
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Season Overall</h3>
+                  <div className="flex items-center mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                    <span className="w-40">Team</span>
+                    <span className="flex-1 ml-3">Schedule Difficulty</span>
+                    <span className="w-20 text-right ml-3">Opp Win %</span>
+                  </div>
+                  <div className="space-y-3">
+                    {overallStrength.map(
+                      ({ team, difficulty, strengthPercentage }) => (
+                        <div key={team} className="flex items-center">
+                          <span className="w-40 text-sm truncate">{team}</span>
+                          <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
+                            <div
+                              className={`h-full ${getDifficultyColor(difficulty)}`}
+                              style={{ width: `${strengthPercentage}%` }}
+                            ></div>
+                          </div>
+                          <span className="w-20 text-right text-sm ml-3">
+                            {strengthPercentage}%
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
               <h2 className="text-xl font-semibold mb-3 md:mb-0">Matchups</h2>
 
-              <div className="w-full md:w-auto space-y-4 md:space-y-0 md:space-x-4">
-                <label
-                  htmlFor="yearFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Year
-                </label>
-                <select
-                  id="yearFilter"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Years</option>
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  htmlFor="weekFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Week
-                </label>
-                <select
-                  id="weekFilter"
-                  value={selectedWeek}
-                  onChange={(e) => setSelectedWeek(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Weeks</option>
-                  {weeks.map((week) => (
-                    <option key={week} value={week}>
-                      Week {week}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  htmlFor="gameTypeFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Game Type
-                </label>
-                <select
-                  id="gameTypeFilter"
-                  value={selectedGameType}
-                  onChange={(e) => setSelectedGameType(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Games</option>
-                  <option value="regular">Regular Season</option>
-                  <option value="playoffs">Playoffs</option>
-                </select>
+              <div className="w-full md:w-auto flex flex-col md:flex-row gap-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="showFutureMatchups"
+                    checked={showFutureMatchups}
+                    onChange={(e) => setShowFutureMatchups(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    disabled={isLoading}
+                  />
+                  <label
+                    htmlFor="showFutureMatchups"
+                    className="text-sm font-medium text-gray-900 dark:text-gray-300"
+                  >
+                    Show future matchups
+                  </label>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4">
+                  <label
+                    htmlFor="yearFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Year
+                  </label>
+                  <select
+                    id="yearFilter"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    disabled={isLoading}
+                  >
+                    <option value="all">All Years</option>
+                    {years.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    htmlFor="weekFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Week
+                  </label>
+                  <select
+                    id="weekFilter"
+                    value={selectedWeek}
+                    onChange={(e) => setSelectedWeek(e.target.value)}
+                    className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    disabled={isLoading}
+                  >
+                    <option value="all">All Weeks</option>
+                    {weeks.map((week) => (
+                      <option key={week} value={week}>
+                        Week {week}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    htmlFor="gameTypeFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Game Type
+                  </label>
+                  <select
+                    id="gameTypeFilter"
+                    value={selectedGameType}
+                    onChange={(e) => setSelectedGameType(e.target.value)}
+                    className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    disabled={isLoading}
+                  >
+                    <option value="all">All Games</option>
+                    <option value="regular">Regular Season</option>
+                    <option value="playoffs">Playoffs</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -343,55 +532,6 @@ export default function Schedule() {
                 </table>
               </div>
             )}
-          </div>
-        </section>
-
-        <section className="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Strength of Schedule</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-lg font-medium mb-3">Remaining</h3>
-              <div className="space-y-3">
-                {remainingStrength.map(
-                  ({ team, difficulty, strengthPercentage }) => (
-                    <div key={team} className="flex items-center">
-                      <span className="w-20 text-sm">{team}</span>
-                      <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${getDifficultyColor(difficulty)}`}
-                          style={{ width: `${strengthPercentage}%` }}
-                        ></div>
-                      </div>
-                      <span className="w-14 text-right text-sm">
-                        {difficulty}
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium mb-3">Season Overall</h3>
-              <div className="space-y-3">
-                {overallStrength.map(
-                  ({ team, difficulty, strengthPercentage }) => (
-                    <div key={team} className="flex items-center">
-                      <span className="w-20 text-sm">{team}</span>
-                      <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${getDifficultyColor(difficulty)}`}
-                          style={{ width: `${strengthPercentage}%` }}
-                        ></div>
-                      </div>
-                      <span className="w-14 text-right text-sm">
-                        {difficulty}
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
           </div>
         </section>
       </div>

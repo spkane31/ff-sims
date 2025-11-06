@@ -321,6 +321,7 @@ func simulateRandomSchedule(teamWeeklyScores map[uint]map[uint]float64, teamIDs 
 }
 
 // calculateStrengthOfSchedule calculates opponent strength for each team
+// This now includes both completed and future games to give full season SOS
 func calculateStrengthOfSchedule(schedule []*models.Matchup, actualStats map[uint]struct {
 	ActualWins   int
 	ActualLosses int
@@ -330,28 +331,37 @@ func calculateStrengthOfSchedule(schedule []*models.Matchup, actualStats map[uin
 	opponentCounts := make(map[uint]int)
 
 	for _, matchup := range schedule {
-		if !matchup.Completed {
-			continue
-		}
-
-		// Only include regular season games
+		// Only include regular season games (both completed and future)
 		if matchup.IsPlayoff || matchup.GameType != "NONE" {
 			continue
 		}
 
-		// Calculate opponent win rates
+		// Calculate opponent win rates based on completed games
+		// For future games, we still use the opponent's current win rate
 		homeOpponentStats := actualStats[matchup.AwayTeamID]
 		awayOpponentStats := actualStats[matchup.HomeTeamID]
 
+		// For home team: add away team's win rate
 		if homeOpponentStats.TotalGames > 0 {
 			opponentWinRate := float64(homeOpponentStats.ActualWins) / float64(homeOpponentStats.TotalGames)
 			strengthOfSchedule[matchup.HomeTeamID] += opponentWinRate
 			opponentCounts[matchup.HomeTeamID]++
+		} else if !matchup.Completed {
+			// Future game against team with no completed games yet
+			// Count the game but use 0.5 as neutral win rate
+			strengthOfSchedule[matchup.HomeTeamID] += 0.5
+			opponentCounts[matchup.HomeTeamID]++
 		}
 
+		// For away team: add home team's win rate
 		if awayOpponentStats.TotalGames > 0 {
 			opponentWinRate := float64(awayOpponentStats.ActualWins) / float64(awayOpponentStats.TotalGames)
 			strengthOfSchedule[matchup.AwayTeamID] += opponentWinRate
+			opponentCounts[matchup.AwayTeamID]++
+		} else if !matchup.Completed {
+			// Future game against team with no completed games yet
+			// Count the game but use 0.5 as neutral win rate
+			strengthOfSchedule[matchup.AwayTeamID] += 0.5
 			opponentCounts[matchup.AwayTeamID]++
 		}
 	}
