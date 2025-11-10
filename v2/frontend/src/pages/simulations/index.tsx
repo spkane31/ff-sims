@@ -576,7 +576,7 @@ export default function Simulations() {
                         )}
                       </div>
 
-                      {matchStats.percentage < 0.1 &&
+                      {matchStats.percentage < 0.5 &&
                         selectedResults.size > 0 && (
                           <div className="mb-4 p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-400 dark:border-orange-600 rounded-lg shadow-md">
                             <div className="flex items-center">
@@ -587,7 +587,7 @@ export default function Simulations() {
                                   dreaming partner!
                                 </p>
                                 <p className="text-xs text-orange-700 dark:text-orange-300 mt-1">
-                                  Less than 1 in 1,000 simulations match your
+                                  Less than 1 in 200 simulations match your
                                   picks. Might want to reconsider your
                                   strategy...
                                 </p>

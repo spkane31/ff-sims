@@ -543,8 +543,8 @@ if __name__ == "__main__":
 
     with conn:
         get_schedule(league, file_name=matchups_file)
-        # get_simple_draft(league, file_name=draft_file)
-        # get_all_transactions(league, file_name=transactions_file)
-        # update_active_players(league, conn=conn)
+        get_simple_draft(league, file_name=draft_file)
+        get_all_transactions(league, file_name=transactions_file)
+        update_active_players(league, conn=conn)
 
     logging.info(f"Completed in {round(time.time() - start, 2)} seconds")

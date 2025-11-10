@@ -783,9 +783,7 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 			continue
 		}
 
-		fileType := matches[1]
-		fileType = strings.Replace(fileType, "-", "_", -1) // Normalize for switch statement
-
+		fileType := strings.ReplaceAll(matches[1], "-", "_")
 		// Process based on file type
 		var processErr error
 		switch fileType {

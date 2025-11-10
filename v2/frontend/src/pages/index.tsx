@@ -6,6 +6,8 @@ import { expectedWinsService, CurrentSeasonStanding } from "../services/expected
 import { useSchedule } from "../hooks/useSchedule";
 import { useStrengthOfSchedule } from "../hooks/useStrengthOfSchedule";
 import { Matchup } from "@/types/models";
+import InteractiveSimulation from "../components/InteractiveSimulation";
+import { Schedule as SimSchedule, Matchup as SimMatchup } from "../types/simulation";
 
 type SortField =
   | "owner"
@@ -695,6 +697,70 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* Interactive Simulation Section */}
+        {!scheduleLoading && schedule?.data?.matchups && (() => {
+          // Convert schedule data to the format expected by InteractiveSimulation
+          const simSchedule: SimSchedule = [];
+          const weekMap = new Map<number, SimMatchup[]>();
+          const currentYear = 2025;
+
+          // Filter for current year only
+          const currentYearMatchups = schedule.data.matchups.filter(
+            (m) => m.year === currentYear
+          );
+
+          currentYearMatchups.forEach((matchup) => {
+            if (!weekMap.has(matchup.week)) {
+              weekMap.set(matchup.week, []);
+            }
+
+            weekMap.get(matchup.week)!.push({
+              homeTeamName: matchup.homeTeamName,
+              awayTeamName: matchup.awayTeamName,
+              homeTeamESPNID: matchup.homeTeamESPNID || 0,
+              awayTeamESPNID: matchup.awayTeamESPNID || 0,
+              homeTeamFinalScore: matchup.homeScore,
+              awayTeamFinalScore: matchup.awayScore,
+              completed: matchup.homeScore > 0 || matchup.awayScore > 0,
+              week: matchup.week,
+              gameType: matchup.gameType || "NONE",
+            });
+          });
+
+          // Convert map to ordered array by week
+          const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
+          sortedWeeks.forEach((week) => {
+            const weekGames = weekMap.get(week) || [];
+            simSchedule.push(weekGames);
+          });
+
+          // Find the current week (first week with incomplete games)
+          const currentWeekIndex = simSchedule.findIndex((week) =>
+            week.some((matchup) => !matchup.completed)
+          );
+          const startWeek =
+            currentWeekIndex === -1 ? simSchedule.length : currentWeekIndex + 1;
+
+          return (
+            <section className="py-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+                  Playoff Predictor
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  Explore different scenarios for the rest of the season and see how they affect playoff chances.
+                </p>
+                <InteractiveSimulation
+                  schedule={simSchedule}
+                  startWeek={startWeek}
+                  iterations={5000}
+                  autoRun={true}
+                />
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Hall of Fame & Wall of Shame Section */}
         <section className="py-6">
