@@ -1,4 +1,5 @@
 scripts/venv
+scripts/test.yaml
 .env
 **/log.out
 **/history.json
