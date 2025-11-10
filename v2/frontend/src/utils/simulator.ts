@@ -5,6 +5,8 @@ import {
   Schedule,
   SingleTeamResult,
   TeamScoringData,
+  SimulationIteration,
+  MatchupOutcome,
 } from "../types/simulation";
 
 class SingleSeasonResults {
@@ -201,6 +203,7 @@ export class Simulator {
   idToOwner: Map<number, string>;
   epsilon: number = 0;
   previousStepFinalStandings: TeamScoringData[] | null = null;
+  iterations: SimulationIteration[] = []; // Store all simulation iterations
 
   constructor(schedule: Schedule, startWeek: number = 1) {
     this.schedule = schedule;
@@ -459,6 +462,9 @@ export class Simulator {
       this.leagueStats
     );
 
+    // Store matchup outcomes for this iteration
+    const matchupOutcomes: MatchupOutcome[] = [];
+
     if (this.simulations > 0) {
       this.previousStepFinalStandings = this.getTeamScoringData();
     }
@@ -480,6 +486,16 @@ export class Simulator {
           if (matchup.completed) {
             const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
             const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
+
+            const winnerId = homeScore > awayScore ? matchup.homeTeamESPNID : matchup.awayTeamESPNID;
+
+            // Store matchup outcome
+            matchupOutcomes.push({
+              week: currentWeek,
+              homeTeamId: matchup.homeTeamESPNID,
+              awayTeamId: matchup.awayTeamESPNID,
+              winnerId: winnerId,
+            });
 
             if (homeScore > awayScore) {
               singleSeasonResults.teamWin(matchup.homeTeamESPNID);
@@ -536,6 +552,16 @@ export class Simulator {
                 this.leagueStats.stdDev
               );
 
+          const winnerId = homeScore > awayScore ? matchup.homeTeamESPNID : matchup.awayTeamESPNID;
+
+          // Store matchup outcome
+          matchupOutcomes.push({
+            week: currentWeek,
+            homeTeamId: matchup.homeTeamESPNID,
+            awayTeamId: matchup.awayTeamESPNID,
+            winnerId: winnerId,
+          });
+
           if (homeScore > awayScore) {
             singleSeasonResults.teamWin(matchup.homeTeamESPNID);
             singleSeasonResults.teamLoss(matchup.awayTeamESPNID);
@@ -560,7 +586,11 @@ export class Simulator {
 
     singleSeasonResults.setFinalRankings();
 
-    console.log("Single season results:", singleSeasonResults.results);
+    // Store this iteration
+    this.iterations.push({
+      matchupOutcomes: matchupOutcomes,
+      teamResults: new Map(singleSeasonResults.results),
+    });
 
     // Update results with single season results
     singleSeasonResults.results.forEach((value, key) => {
@@ -613,6 +643,124 @@ export class Simulator {
 
   getTeamStats(teamID: number): TeamStats | undefined {
     return this.teamStats.get(teamID);
+  }
+
+  // Filter simulations based on selected matchup outcomes
+  filterIterationsByMatchups(
+    selectedMatchups: Map<string, number> // key: "week-homeTeamId-awayTeamId", value: winnerId
+  ): SimulationIteration[] {
+    if (selectedMatchups.size === 0) {
+      return this.iterations;
+    }
+
+    return this.iterations.filter((iteration) => {
+      // Check if all selected matchups match this iteration
+      for (const [matchupKey, expectedWinnerId] of selectedMatchups.entries()) {
+        const parts = matchupKey.split("-");
+        const week = parseInt(parts[0]);
+        const homeTeamId = parseInt(parts[1]);
+        const awayTeamId = parseInt(parts[2]);
+
+        // Find this matchup in the iteration
+        const matchupOutcome = iteration.matchupOutcomes.find(
+          (outcome) =>
+            outcome.week === week &&
+            outcome.homeTeamId === homeTeamId &&
+            outcome.awayTeamId === awayTeamId
+        );
+
+        // If matchup not found or winner doesn't match, filter out this iteration
+        if (!matchupOutcome || matchupOutcome.winnerId !== expectedWinnerId) {
+          return false;
+        }
+      }
+
+      // All selected matchups match
+      return true;
+    });
+  }
+
+  // Calculate team scoring data from filtered iterations
+  getFilteredTeamScoringData(
+    selectedMatchups: Map<string, number>
+  ): { data: TeamScoringData[]; matchingCount: number } {
+    const filteredIterations = this.filterIterationsByMatchups(selectedMatchups);
+    const matchingCount = filteredIterations.length;
+
+    if (matchingCount === 0) {
+      return {
+        data: [],
+        matchingCount: 0,
+      };
+    }
+
+    // Aggregate results from filtered iterations
+    const aggregatedResults = new Map<number, Results>();
+
+    // Initialize aggregated results for each team
+    this.teamStats.forEach((_, teamId) => {
+      aggregatedResults.set(teamId, new Results());
+    });
+
+    // Sum up results from all filtered iterations
+    filteredIterations.forEach((iteration) => {
+      iteration.teamResults.forEach((teamResult, teamId) => {
+        const aggregated = aggregatedResults.get(teamId);
+        if (aggregated) {
+          aggregated.addSingleSeasonResults(teamResult);
+        }
+      });
+    });
+
+    // Convert aggregated results to TeamScoringData
+    const data: TeamScoringData[] = [];
+    aggregatedResults.forEach((result, teamId) => {
+      const teamStats = this.teamStats.get(teamId);
+      const teamName = this.idToOwner.get(teamId);
+
+      if (teamStats && teamName) {
+        data.push({
+          id: teamId,
+          teamName,
+          average: teamStats.average,
+          stdDev: teamStats.std_dev,
+          wins: matchingCount === 0 ? 0.0 : result.wins / matchingCount,
+          losses: matchingCount === 0 ? 0.0 : result.losses / matchingCount,
+          pointsFor: matchingCount === 0 ? 0.0 : result.pointsFor / matchingCount,
+          pointsAgainst:
+            matchingCount === 0 ? 0.0 : result.pointsAgainst / matchingCount,
+          playoffOdds:
+            matchingCount === 0 ? 0.0 : result.madePlayoffs / matchingCount,
+          lastPlaceOdds:
+            matchingCount === 0 ? 0.0 : result.lastPlace / matchingCount,
+          regularSeasonResult:
+            matchingCount === 0
+              ? new Array(10).fill(0)
+              : result.regularSeasonResult.map((num) => num / matchingCount),
+          playoffResult:
+            matchingCount === 0
+              ? new Array(10).fill(0)
+              : result.playoffResult.map((num) => num / matchingCount),
+        });
+      }
+    });
+
+    // Sort by playoff odds
+    data.sort((a, b) => {
+      if (a.playoffOdds !== b.playoffOdds) {
+        return b.playoffOdds - a.playoffOdds;
+      } else if (a.lastPlaceOdds !== b.lastPlaceOdds) {
+        return b.lastPlaceOdds - a.lastPlaceOdds;
+      } else if (a.wins !== b.wins) {
+        return b.wins - a.wins;
+      }
+      return b.average - a.average;
+    });
+
+    return {
+      data,
+      matchingCount,
+    };
   }
 }
 

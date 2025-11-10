@@ -92,7 +92,7 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing pure matchup for home team ID %d: %w", entry.HomeTeamID, err)
 			}
-			logging.Infof("Updated existing pure matchup: %s", existingMatchup)
+			logging.Infof("Updated existing pure matchup: %s", existingMatchup.String())
 		}
 	}
 
