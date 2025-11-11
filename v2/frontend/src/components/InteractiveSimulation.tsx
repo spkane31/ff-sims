@@ -201,6 +201,16 @@ export default function InteractiveSimulation({
     return "";
   };
 
+  // Inverted color logic for last place odds (low = good, high = bad)
+  const getDefaultLastPlaceOddsColor = (percentage: number): string => {
+    if (percentage < 30) {
+      return "text-green-600 dark:text-green-400";
+    } else if (percentage > 70) {
+      return "text-red-600 dark:text-red-400";
+    }
+    return "";
+  };
+
   const getNewOddsColor = (
     newPercentage: number,
     defaultPercentage: number
@@ -212,6 +222,21 @@ export default function InteractiveSimulation({
       return "text-green-600 dark:text-green-400";
     } else {
       return "text-red-600 dark:text-red-400";
+    }
+  };
+
+  // Inverted color logic for last place odds (decrease = good, increase = bad)
+  const getNewLastPlaceOddsColor = (
+    newPercentage: number,
+    defaultPercentage: number
+  ): string => {
+    const diff = newPercentage - defaultPercentage;
+    if (Math.abs(diff) <= 3) {
+      return ""; // No color for minimal change
+    } else if (diff > 3) {
+      return "text-red-600 dark:text-red-400"; // Increase is bad
+    } else {
+      return "text-green-600 dark:text-green-400"; // Decrease is good
     }
   };
 
@@ -448,7 +473,7 @@ export default function InteractiveSimulation({
 
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`font-medium ${getDefaultOddsColor(
+                        className={`font-medium ${getDefaultLastPlaceOddsColor(
                           team.lastPlaceOdds * 100
                         )}`}
                       >
@@ -460,7 +485,7 @@ export default function InteractiveSimulation({
                       <span
                         className={`font-medium ${
                           filteredTeam
-                            ? getNewOddsColor(
+                            ? getNewLastPlaceOddsColor(
                                 filteredTeam.lastPlaceOdds * 100,
                                 team.lastPlaceOdds * 100
                               )
