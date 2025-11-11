@@ -1,16 +1,12 @@
-.PHONY: build clean run etl migrate deduplicate
+.PHONY: build clean run etl migrate deduplicate help
 
-help:
-	@echo "Makefile for backend"
-	@echo "Available targets:"
-	@echo "  build - Build the backend binaries"
-	@echo "  run - Build and run the backend server"
-	@echo "  clean - Remove built binaries"
-	@echo "  etl - Run the ETL process"
-	@echo "  migrate - Run all database migration files (requires DATABASE_URL)"
-	@echo "  deduplicate - Remove duplicate records from database"
+help: ## Show this help message
+	@echo 'Makefile for backend'
+	@echo ''
+	@echo 'Available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build:
+build: ## Build the backend binaries
 	@echo "Building the backend..."
 	@go build -o bin/backend \
 		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
@@ -19,19 +15,19 @@ build:
 		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
 		./cmd/etl
 
-run: build
+run: build ## Build and run the backend server
 	@echo "Running the backend..."
 	@./bin/backend
 
-clean:
+clean: ## Remove built binaries
 	@echo "Cleaning up..."
 	@rm -rf bin
 
-etl: build
+etl: build ## Run the ETL process
 	@echo "Running ETL process..."
 	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
 
-migrate:
+migrate: ## Run all database migration files (requires DATABASE_URL)
 	@echo "Running database migrations..."
 	@if [ -z "$(DATABASE_URL)" ]; then \
 		echo "ERROR: DATABASE_URL environment variable is not set"; \
@@ -45,6 +41,6 @@ migrate:
 	done
 	@echo "All migrations applied successfully"
 
-deduplicate:
+deduplicate: ## Remove duplicate records from database
 	@echo "Running deduplication process..."
 	@go run ./cmd/deduplicate

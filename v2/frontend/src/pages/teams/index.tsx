@@ -92,7 +92,6 @@ export default function Teams() {
     let totalScores = 0;
 
     completedMatchups.forEach((matchup) => {
-      console.log("Processing Matchup:", matchup);
       const homeScore = matchup.homeScore;
       const awayScore = matchup.awayScore;
       const margin = Math.abs(homeScore - awayScore);

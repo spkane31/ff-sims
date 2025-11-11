@@ -399,9 +399,6 @@ export default function TeamDetail() {
           // Calculate year-by-year records
           const yearRecords = calculateYearByYearRecords(mappedTeam.schedule);
           setYearByYearRecords(yearRecords);
-
-          console.log("Team stats calculated:", stats);
-          console.log("Year-by-year records:", yearRecords);
         }
       } catch (err) {
         console.error("Error fetching team data:", err);

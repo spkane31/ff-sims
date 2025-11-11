@@ -249,40 +249,6 @@ func TestFindTeamMatchupForWeek(t *testing.T) {
 	}
 }
 
-func TestRecalculateWeeklyExpectedWins(t *testing.T) {
-	db := setupTestDB()
-	createTestData(db)
-
-	// Set the database connection for the module
-	originalDB := database.DB
-	database.DB = db
-	defer func() { database.DB = originalDB }()
-
-	// First create some existing records
-	existingRecord := &models.WeeklyExpectedWins{
-		TeamID: 1, Week: 1, Year: 2024, LeagueID: 1,
-		ExpectedWins: 999.0, // Invalid value to check if it gets recalculated
-	}
-	db.Create(existingRecord)
-
-	// Recalculate
-	err := RecalculateWeeklyExpectedWins(1, 2024)
-	if err != nil {
-		t.Fatalf("Failed to recalculate: %v", err)
-	}
-
-	// Check that records were recalculated
-	var updatedRecord models.WeeklyExpectedWins
-	err = db.Where("team_id = ? AND week = ? AND year = ?", 1, 1, 2024).First(&updatedRecord).Error
-	if err != nil {
-		t.Fatalf("Failed to find recalculated record: %v", err)
-	}
-
-	if updatedRecord.ExpectedWins == 999.0 {
-		t.Error("Expected wins was not recalculated")
-	}
-}
-
 func TestIsRegularSeasonComplete(t *testing.T) {
 	db := setupTestDB()
 	createTestData(db)

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../services/teamsService";
 import { expectedWinsService, CurrentSeasonStanding } from "../services/expectedWinsService";
 import { useSchedule } from "../hooks/useSchedule";
+import { useStrengthOfSchedule } from "../hooks/useStrengthOfSchedule";
 import { Matchup } from "@/types/models";
+import InteractiveSimulation from "../components/InteractiveSimulation";
+import { Schedule as SimSchedule, Matchup as SimMatchup } from "../types/simulation";
 
 type SortField =
   | "owner"
@@ -440,10 +443,59 @@ export default function Home() {
 
   const { winners, losers } = calculateWinnersAndLosers();
 
+  // Transform schedule data for SOS calculation
+  const scheduleDataForSOS = useMemo(() => {
+    if (scheduleLoading || !schedule?.data?.matchups) {
+      return undefined;
+    }
+
+    return schedule.data.matchups.flat().map((game) => ({
+      leagueId: 1,
+      id: game.id,
+      createdAt: "2023-10-01T00:00:00Z",
+      updatedAt: "2023-10-01T00:00:00Z",
+      season: game.year,
+      year: game.year,
+      week: game.week,
+      homeTeamId: game.homeTeamId || 0,
+      awayTeamId: game.awayTeamId || 0,
+      homeTeamESPNID: game.homeTeamESPNID || 0,
+      awayTeamESPNID: game.awayTeamESPNID || 0,
+      homeTeamName: game.homeTeamName,
+      awayTeamName: game.awayTeamName,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+      homeProjectedScore: game.homeProjectedScore,
+      awayProjectedScore: game.awayProjectedScore,
+      completed: game.completed || (game.homeScore > 0 && game.awayScore > 0),
+      homeTeam: game.homeTeam,
+      awayTeam: game.awayTeam,
+      gameType: game.gameType,
+      playoffGameType: game.playoffGameType,
+      isPlayoff: game.isPlayoff || false,
+    }));
+  }, [schedule, scheduleLoading]);
+
+  // Calculate strength of schedule for current season (2025) using custom hook
+  const { overallStrength, remainingStrength } = useStrengthOfSchedule(scheduleDataForSOS, 2025);
+
   // Helper function to get ESPN ID by owner name
   const getEspnIdByOwner = (ownerName: string): string | null => {
     const team = teams.find((team) => team.owner === ownerName);
     return team ? team.espnId : null;
+  };
+
+  // Helper function to get SOS for a team by owner name
+  // Note: The SOS data is keyed by owner names (from schedule data's homeTeamName/awayTeamName)
+  const getSOSByOwner = (ownerName: string): { overall: number | null; remaining: number | null } => {
+    // The SOS calculation uses owner names as the team key, so match directly by owner name
+    const overallData = overallStrength.find((s) => s.team === ownerName);
+    const remainingData = remainingStrength.find((s) => s.team === ownerName);
+
+    return {
+      overall: overallData?.strengthPercentage ?? null,
+      remaining: remainingData?.strengthPercentage ?? null,
+    };
   };
 
   return (
@@ -550,6 +602,12 @@ export default function Home() {
                     <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
                       Luck
                     </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Overall SOS %
+                    </th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Remaining SOS %
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -615,6 +673,18 @@ export default function Home() {
                           <span className="text-gray-600 dark:text-gray-300">N/A</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {(() => {
+                          const sos = getSOSByOwner(standing.owner);
+                          return sos.overall !== null ? `${sos.overall}%` : "N/A";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                        {(() => {
+                          const sos = getSOSByOwner(standing.owner);
+                          return sos.remaining !== null ? `${sos.remaining}%` : "N/A";
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -627,6 +697,70 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* Interactive Simulation Section */}
+        {!scheduleLoading && schedule?.data?.matchups && (() => {
+          // Convert schedule data to the format expected by InteractiveSimulation
+          const simSchedule: SimSchedule = [];
+          const weekMap = new Map<number, SimMatchup[]>();
+          const currentYear = 2025;
+
+          // Filter for current year only
+          const currentYearMatchups = schedule.data.matchups.filter(
+            (m) => m.year === currentYear
+          );
+
+          currentYearMatchups.forEach((matchup) => {
+            if (!weekMap.has(matchup.week)) {
+              weekMap.set(matchup.week, []);
+            }
+
+            weekMap.get(matchup.week)!.push({
+              homeTeamName: matchup.homeTeamName,
+              awayTeamName: matchup.awayTeamName,
+              homeTeamESPNID: matchup.homeTeamESPNID || 0,
+              awayTeamESPNID: matchup.awayTeamESPNID || 0,
+              homeTeamFinalScore: matchup.homeScore,
+              awayTeamFinalScore: matchup.awayScore,
+              completed: matchup.homeScore > 0 || matchup.awayScore > 0,
+              week: matchup.week,
+              gameType: matchup.gameType || "NONE",
+            });
+          });
+
+          // Convert map to ordered array by week
+          const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
+          sortedWeeks.forEach((week) => {
+            const weekGames = weekMap.get(week) || [];
+            simSchedule.push(weekGames);
+          });
+
+          // Find the current week (first week with incomplete games)
+          const currentWeekIndex = simSchedule.findIndex((week) =>
+            week.some((matchup) => !matchup.completed)
+          );
+          const startWeek =
+            currentWeekIndex === -1 ? simSchedule.length : currentWeekIndex + 1;
+
+          return (
+            <section className="py-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+                  Playoff Predictor
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  Explore different scenarios for the rest of the season and see how they affect playoff chances.
+                </p>
+                <InteractiveSimulation
+                  schedule={simSchedule}
+                  startWeek={startWeek}
+                  iterations={5000}
+                  autoRun={true}
+                />
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Hall of Fame & Wall of Shame Section */}
         <section className="py-6">

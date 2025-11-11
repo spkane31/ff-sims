@@ -52,9 +52,15 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		return nil // No matchups for this team yet
 	}
 
-	// For strength of schedule calculation, we still need the cumulative results
-	cumulativeMatchupPointers := convertMatchupsToPointers(teamMatchupsThrough)
-	cumulativeResults, err := CalculateExpectedWins(cumulativeMatchupPointers)
+	// Get all matchups for the full season (including future games) for SOS calculation
+	allTeamMatchups, err := GetAllTeamMatchupsForYear(db, team.ID, year)
+	if err != nil {
+		return err
+	}
+
+	// For strength of schedule calculation, use all season matchups (completed and future)
+	allMatchupPointers := convertMatchupsToPointers(allTeamMatchups)
+	cumulativeResults, err := CalculateExpectedWins(allMatchupPointers)
 	if err != nil {
 		return err
 	}
@@ -193,6 +199,16 @@ func GetTeamMatchupsThroughWeek(db *gorm.DB, teamID uint, year uint, throughWeek
 	var matchups []models.Matchup
 	err := db.Where("(home_team_id = ? OR away_team_id = ?) AND year = ? AND week <= ? AND completed = true AND game_type = ?",
 		teamID, teamID, year, throughWeek, "NONE").
+		Order("week ASC").
+		Find(&matchups).Error
+	return matchups, err
+}
+
+// GetAllTeamMatchupsForYear returns all regular season matchups (completed and future) for a team for the entire year
+func GetAllTeamMatchupsForYear(db *gorm.DB, teamID uint, year uint) ([]models.Matchup, error) {
+	var matchups []models.Matchup
+	err := db.Where("(home_team_id = ? OR away_team_id = ?) AND year = ? AND game_type = ?",
+		teamID, teamID, year, "NONE").
 		Order("week ASC").
 		Find(&matchups).Error
 	return matchups, err

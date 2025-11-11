@@ -25,6 +25,17 @@ export default function Simulations() {
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
     []
   );
+  const [simulator, setSimulator] = useState<Simulator | null>(null);
+
+  // Interactive "Choose Your Own Results" state
+  const [remainingMatchups, setRemainingMatchups] = useState<
+    Map<number, Matchup[]>
+  >(new Map());
+  const [selectedResults, setSelectedResults] = useState<Map<string, number>>(
+    new Map()
+  ); // key: "week-homeTeamId-awayTeamId", value: winning team ID
+  const [filteredResults, setFilteredResults] = useState<TeamScoringData[]>([]);
+  const [matchingSimCount, setMatchingSimCount] = useState<number>(iterations);
 
   // New useEffect to load schedule and determine available weeks/years
   useEffect(() => {
@@ -56,11 +67,9 @@ export default function Simulations() {
           week.some((matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
-          currentWeekIndex === -1
-            ? allWeeks.length
-            : currentWeekIndex + 1;
+          currentWeekIndex === -1 ? allWeeks.length : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
-        
+
         // Set the default startWeek to the current week
         setStartWeek(detectedCurrentWeek.toString());
 
@@ -77,7 +86,7 @@ export default function Simulations() {
   // Separate useEffect to handle year changes
   useEffect(() => {
     if (selectedYear === null) return;
-    
+
     const loadScheduleForYear = async () => {
       try {
         setScheduleLoaded(false);
@@ -85,7 +94,9 @@ export default function Simulations() {
 
         // Get all available weeks from the full schedule
         // The simulator will handle filtering out playoff games at the matchup level
-        const allWeeks = schedule.map((_: Matchup[], index: number) => index + 1);
+        const allWeeks = schedule.map(
+          (_: Matchup[], index: number) => index + 1
+        );
         setAvailableWeeks(allWeeks);
 
         // Find current week (first week with incomplete games) in the full schedule
@@ -93,11 +104,9 @@ export default function Simulations() {
           week.some((matchup: Matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
-          currentWeekIndex === -1
-            ? allWeeks.length
-            : currentWeekIndex + 1;
+          currentWeekIndex === -1 ? allWeeks.length : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
-        
+
         // Set the default startWeek to the current week
         setStartWeek(detectedCurrentWeek.toString());
 
@@ -147,11 +156,11 @@ export default function Simulations() {
       // If we're missing future weeks, create placeholder incomplete matchups
       const completedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
       const lastCompletedWeek = completedWeeks[completedWeeks.length - 1] || 0;
-      
+
       // Get all unique teams from completed matchups to generate future matchups
       const teams = new Set<number>();
       const teamNames = new Map<number, string>();
-      
+
       yearMatchups.forEach((matchup) => {
         teams.add(matchup.homeTeamESPNID);
         teams.add(matchup.awayTeamESPNID);
@@ -160,12 +169,12 @@ export default function Simulations() {
       });
 
       const teamList = Array.from(teams);
-      
+
       // Generate incomplete matchups for remaining regular season weeks (up to week 14)
       for (let week = lastCompletedWeek + 1; week <= 14; week++) {
         if (!weekMap.has(week)) {
           weekMap.set(week, []);
-          
+
           // Create placeholder matchups for this week
           // This is a simple pairing - in reality, you'd want the actual schedule pattern
           // But for simulation purposes, we just need to ensure all teams play
@@ -173,7 +182,7 @@ export default function Simulations() {
             if (i + 1 < teamList.length) {
               const homeTeamId = teamList[i];
               const awayTeamId = teamList[i + 1];
-              
+
               weekMap.get(week)?.push({
                 homeTeamName: teamNames.get(homeTeamId) || `Team ${homeTeamId}`,
                 awayTeamName: teamNames.get(awayTeamId) || `Team ${awayTeamId}`,
@@ -196,7 +205,7 @@ export default function Simulations() {
         const weekGames = weekMap.get(week) || [];
         schedule.push(weekGames);
       });
-      
+
       return schedule;
     } catch (error) {
       console.error("Error fetching schedule data for year:", error);
@@ -204,6 +213,110 @@ export default function Simulations() {
     }
   };
 
+  const handleMatchupClick = (
+    matchup: Matchup,
+    teamId: number,
+    opponentId: number
+  ) => {
+    const matchupKey = `${matchup.week}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+
+    setSelectedResults((prev) => {
+      const newResults = new Map(prev);
+      const currentWinner = newResults.get(matchupKey);
+
+      // Cycle through states: no-action -> win (teamId) -> loss (opponentId) -> no-action
+      if (currentWinner === undefined) {
+        // No action -> Win (set current team as winner)
+        newResults.set(matchupKey, teamId);
+      } else if (currentWinner === teamId) {
+        // Win -> Loss (set opponent as winner)
+        newResults.set(matchupKey, opponentId);
+      } else {
+        // Loss -> No action (remove entry)
+        newResults.delete(matchupKey);
+      }
+
+      // Update filtered results based on new selections
+      if (simulator) {
+        const filtered = simulator.getFilteredTeamScoringData(newResults);
+        setFilteredResults(filtered.data);
+        setMatchingSimCount(filtered.matchingCount);
+      }
+
+      return newResults;
+    });
+  };
+
+  const getMatchupState = (
+    matchup: Matchup,
+    teamId: number
+  ): "win" | "loss" | "none" => {
+    const matchupKey = `${matchup.week}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+    const winner = selectedResults.get(matchupKey);
+
+    if (winner === undefined) return "none";
+    if (winner === teamId) return "win";
+    return "loss";
+  };
+
+  const calculateMatchingSimulations = (): {
+    matching: number;
+    total: number;
+    percentage: number;
+  } => {
+    const percentage = (matchingSimCount / iterations) * 100;
+    return {
+      matching: matchingSimCount,
+      total: iterations,
+      percentage: percentage,
+    };
+  };
+
+  const handleResetSelections = () => {
+    setSelectedResults(new Map());
+    setFilteredResults(simulationResults);
+    setMatchingSimCount(iterations);
+  };
+
+  const extractRemainingMatchups = (
+    schedule: Schedule,
+    startWeek: number
+  ): Map<number, Matchup[]> => {
+    const teamMatchups = new Map<number, Matchup[]>();
+    const maxWeeksToShow = 4; // Limit to 4 weeks for UI readability
+    const endWeek = startWeek + maxWeeksToShow - 1;
+
+    schedule.forEach((week, weekIndex) => {
+      const currentWeek = weekIndex + 1;
+
+      // Only process weeks from startWeek up to 4 weeks ahead, skip playoff games
+      if (currentWeek >= startWeek && currentWeek <= endWeek) {
+        week.forEach((matchup) => {
+          // Skip playoff games
+          if (matchup.gameType !== "NONE") {
+            return;
+          }
+
+          const homeTeamId = matchup.homeTeamESPNID;
+          const awayTeamId = matchup.awayTeamESPNID;
+
+          // Add matchup to home team's list
+          if (!teamMatchups.has(homeTeamId)) {
+            teamMatchups.set(homeTeamId, []);
+          }
+          teamMatchups.get(homeTeamId)!.push(matchup);
+
+          // Add matchup to away team's list
+          if (!teamMatchups.has(awayTeamId)) {
+            teamMatchups.set(awayTeamId, []);
+          }
+          teamMatchups.get(awayTeamId)!.push(matchup);
+        });
+      }
+    });
+
+    return teamMatchups;
+  };
 
   const handleSimulation = async () => {
     if (selectedYear === null) {
@@ -231,11 +344,18 @@ export default function Simulations() {
 
       // Update state with results
       setSimulationResults(sim.getTeamScoringData());
+      setSimulator(sim); // Store the simulator instance
+      setFilteredResults(sim.getTeamScoringData()); // Initialize with all results
+      setMatchingSimCount(iterations); // Initialize with total iterations
       setResults(
         `Simulation completed for ${selectedYear} season with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
           6
         )})`
       );
+
+      // Extract remaining matchups for interactive visualization
+      const matchupsByTeam = extractRemainingMatchups(schedule, startWeekNum);
+      setRemainingMatchups(matchupsByTeam);
     } catch (err) {
       setError("Failed to run simulation");
       console.error("Simulation error:", err);
@@ -407,6 +527,285 @@ export default function Simulations() {
             <div className="space-y-6">
               <p className="text-green-600 font-medium">{results}</p>
 
+              {/* Interactive "Choose Your Own Results" Section */}
+              {remainingMatchups.size > 0 &&
+                (() => {
+                  // Extract all unique weeks from remaining matchups and sort them
+                  const allWeeksSet = new Set<number>();
+                  remainingMatchups.forEach((matchups) => {
+                    matchups.forEach((matchup) => {
+                      allWeeksSet.add(matchup.week);
+                    });
+                  });
+                  const sortedWeeks = Array.from(allWeeksSet).sort(
+                    (a, b) => a - b
+                  );
+
+                  // Calculate matching simulations
+                  const matchStats = calculateMatchingSimulations();
+
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium">
+                          Choose Your Own Results
+                        </h3>
+                        {selectedResults.size > 0 && (
+                          <button
+                            onClick={handleResetSelections}
+                            className="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                          >
+                            Reset All
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        Click on matchups to select winners and see how results
+                        affect playoff odds
+                      </p>
+                      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                          Matching Simulations:{" "}
+                          {matchStats.matching.toLocaleString()}/
+                          {matchStats.total.toLocaleString()} (
+                          {matchStats.percentage.toFixed(1)}%)
+                        </p>
+                        {selectedResults.size > 0 && (
+                          <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                            {selectedResults.size} game
+                            {selectedResults.size !== 1 ? "s" : ""} selected
+                          </p>
+                        )}
+                      </div>
+
+                      {matchStats.percentage < 0.5 &&
+                        selectedResults.size > 0 && (
+                          <div className="mb-4 p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-400 dark:border-orange-600 rounded-lg shadow-md">
+                            <div className="flex items-center">
+                              <span className="text-2xl mr-3">🎲</span>
+                              <div>
+                                <p className="text-sm font-bold text-orange-900 dark:text-orange-200">
+                                  This is a very unlikely scenario, keep
+                                  dreaming partner!
+                                </p>
+                                <p className="text-xs text-orange-700 dark:text-orange-300 mt-1">
+                                  Less than 1 in 200 simulations match your
+                                  picks. Might want to reconsider your
+                                  strategy...
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-800">
+                            <tr>
+                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Team
+                              </th>
+                              {sortedWeeks.map((week) => (
+                                <th
+                                  key={week}
+                                  className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32"
+                                >
+                                  Week {week}
+                                </th>
+                              ))}
+                              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Playoff Odds
+                                <br />
+                                <span className="text-[10px] font-normal">
+                                  (Default)
+                                </span>
+                              </th>
+                              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Playoff Odds
+                                <br />
+                                <span className="text-[10px] font-normal">
+                                  (New)
+                                </span>
+                              </th>
+                              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Last Place Odds
+                                <br />
+                                <span className="text-[10px] font-normal">
+                                  (Default)
+                                </span>
+                              </th>
+                              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Last Place Odds
+                                <br />
+                                <span className="text-[10px] font-normal">
+                                  (New)
+                                </span>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            {simulationResults
+                              .filter(
+                                (team) =>
+                                  team.teamName !== "League Average" &&
+                                  team.id !== -1
+                              )
+                              .sort((a, b) => b.playoffOdds - a.playoffOdds)
+                              .map((team, index) => {
+                                const teamMatchups =
+                                  remainingMatchups.get(team.id) || [];
+
+                                // Find the filtered result for this team
+                                const filteredTeam = filteredResults.find(
+                                  (t) => t.id === team.id
+                                );
+
+                                return (
+                                  <tr
+                                    key={team.id}
+                                    className={
+                                      index % 2 === 0
+                                        ? "bg-white dark:bg-gray-800"
+                                        : "bg-gray-50 dark:bg-gray-700"
+                                    }
+                                  >
+                                    {/* Team Name */}
+                                    <td className="py-3 px-4 whitespace-nowrap font-medium">
+                                      {team.teamName}
+                                    </td>
+
+                                    {/* Remaining Matchups - one cell per week */}
+                                    {sortedWeeks.map((week) => {
+                                      // Find the matchup for this team in this week
+                                      const matchup = teamMatchups.find(
+                                        (m) => m.week === week
+                                      );
+
+                                      if (!matchup) {
+                                        return (
+                                          <td
+                                            key={week}
+                                            className="py-3 px-4 text-center w-32"
+                                          >
+                                            <div className="text-gray-400 text-xs">
+                                              -
+                                            </div>
+                                          </td>
+                                        );
+                                      }
+
+                                      const isHomeTeam =
+                                        matchup.homeTeamESPNID === team.id;
+                                      const opponentId = isHomeTeam
+                                        ? matchup.awayTeamESPNID
+                                        : matchup.homeTeamESPNID;
+                                      const opponent = isHomeTeam
+                                        ? matchup.awayTeamName
+                                        : matchup.homeTeamName;
+
+                                      const state = getMatchupState(
+                                        matchup,
+                                        team.id
+                                      );
+
+                                      // Determine button styling based on state
+                                      let buttonClasses =
+                                        "w-full px-2 py-2 rounded-md transition-colors cursor-pointer border ";
+                                      let textClasses = "text-xs";
+
+                                      if (state === "win") {
+                                        buttonClasses +=
+                                          "bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 hover:bg-green-200 dark:hover:bg-green-900/50";
+                                        textClasses +=
+                                          " text-green-800 dark:text-green-200";
+                                      } else if (state === "loss") {
+                                        buttonClasses +=
+                                          "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50";
+                                        textClasses +=
+                                          " text-red-800 dark:text-red-200";
+                                      } else {
+                                        buttonClasses +=
+                                          "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/50";
+                                        textClasses +=
+                                          " text-gray-700 dark:text-gray-300";
+                                      }
+
+                                      return (
+                                        <td
+                                          key={week}
+                                          className="py-3 px-4 text-center w-32"
+                                        >
+                                          <button
+                                            onClick={() =>
+                                              handleMatchupClick(
+                                                matchup,
+                                                team.id,
+                                                opponentId
+                                              )
+                                            }
+                                            className={buttonClasses}
+                                          >
+                                            <div className={textClasses}>
+                                              <div className="font-semibold">
+                                                Week {matchup.week}
+                                              </div>
+                                              <div className="truncate">
+                                                {isHomeTeam ? "vs" : "@"}{" "}
+                                                {opponent}
+                                              </div>
+                                            </div>
+                                          </button>
+                                        </td>
+                                      );
+                                    })}
+
+                                    {/* Default Playoff Odds */}
+                                    <td className="py-3 px-4 text-center">
+                                      <span className="font-medium">
+                                        {(team.playoffOdds * 100).toFixed(1)}%
+                                      </span>
+                                    </td>
+
+                                    {/* New Playoff Odds */}
+                                    <td className="py-3 px-4 text-center">
+                                      <span className="font-medium">
+                                        {filteredTeam
+                                          ? (
+                                              filteredTeam.playoffOdds * 100
+                                            ).toFixed(1)
+                                          : "0.0"}
+                                        %
+                                      </span>
+                                    </td>
+
+                                    {/* Default Last Place Odds */}
+                                    <td className="py-3 px-4 text-center">
+                                      <span className="font-medium">
+                                        {(team.lastPlaceOdds * 100).toFixed(1)}%
+                                      </span>
+                                    </td>
+
+                                    {/* New Last Place Odds */}
+                                    <td className="py-3 px-4 text-center">
+                                      <span className="font-medium">
+                                        {filteredTeam
+                                          ? (
+                                              filteredTeam.lastPlaceOdds * 100
+                                            ).toFixed(1)
+                                          : "0.0"}
+                                        %
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
               <div>
                 <h3 className="text-lg font-medium mb-2">Playoff Odds</h3>
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-md shadow-sm">
@@ -549,15 +948,18 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap">
                               <span
                                 className={`font-medium ${
-                                  team.playoffResult.length > 0 && team.playoffResult[0] > 0.15
+                                  team.playoffResult.length > 0 &&
+                                  team.playoffResult[0] > 0.15
                                     ? "text-green-600 dark:text-green-400"
-                                    : team.playoffResult.length > 0 && team.playoffResult[0] > 0.05
+                                    : team.playoffResult.length > 0 &&
+                                      team.playoffResult[0] > 0.05
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-gray-600 dark:text-gray-400"
                                 }`}
                               >
                                 {team.playoffResult.length > 0
-                                  ? (team.playoffResult[0] * 100).toFixed(1) + "%"
+                                  ? (team.playoffResult[0] * 100).toFixed(1) +
+                                    "%"
                                   : "0.0%"}
                               </span>
                             </td>
@@ -583,9 +985,7 @@ export default function Simulations() {
 
               {/* Championship and Playoff Results */}
               <div>
-                <h3 className="text-lg font-medium mb-2">
-                  Championship Odds
-                </h3>
+                <h3 className="text-lg font-medium mb-2">Championship Odds</h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-800">
@@ -615,8 +1015,10 @@ export default function Simulations() {
                         )
                         .sort((a, b) => {
                           // Sort by championship odds (1st place in playoffs)
-                          const aChampOdds = a.playoffResult.length > 0 ? a.playoffResult[0] : 0;
-                          const bChampOdds = b.playoffResult.length > 0 ? b.playoffResult[0] : 0;
+                          const aChampOdds =
+                            a.playoffResult.length > 0 ? a.playoffResult[0] : 0;
+                          const bChampOdds =
+                            b.playoffResult.length > 0 ? b.playoffResult[0] : 0;
                           return bChampOdds - aChampOdds;
                         })
                         .map((team, index) => (
@@ -634,15 +1036,18 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span
                                 className={`font-medium ${
-                                  team.playoffResult.length > 0 && team.playoffResult[0] > 0.2
+                                  team.playoffResult.length > 0 &&
+                                  team.playoffResult[0] > 0.2
                                     ? "text-green-600 dark:text-green-400"
-                                    : team.playoffResult.length > 0 && team.playoffResult[0] > 0.1
+                                    : team.playoffResult.length > 0 &&
+                                      team.playoffResult[0] > 0.1
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-gray-600 dark:text-gray-400"
                                 }`}
                               >
                                 {team.playoffResult.length > 0
-                                  ? (team.playoffResult[0] * 100).toFixed(1) + "%"
+                                  ? (team.playoffResult[0] * 100).toFixed(1) +
+                                    "%"
                                   : "0.0%"}
                               </span>
                             </td>
@@ -725,51 +1130,67 @@ export default function Simulations() {
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span
                                 className={`font-medium ${
-                                  team.regularSeasonResult.length > 0 && team.regularSeasonResult[0] > 0.2
+                                  team.regularSeasonResult.length > 0 &&
+                                  team.regularSeasonResult[0] > 0.2
                                     ? "text-green-600 dark:text-green-400"
-                                    : team.regularSeasonResult.length > 0 && team.regularSeasonResult[0] > 0.1
+                                    : team.regularSeasonResult.length > 0 &&
+                                      team.regularSeasonResult[0] > 0.1
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-gray-600 dark:text-gray-400"
                                 }`}
                               >
                                 {team.regularSeasonResult.length > 0
-                                  ? (team.regularSeasonResult[0] * 100).toFixed(1) + "%"
+                                  ? (team.regularSeasonResult[0] * 100).toFixed(
+                                      1
+                                    ) + "%"
                                   : "0.0%"}
                               </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span
                                 className={`font-medium ${
-                                  team.regularSeasonResult.length > 1 && team.regularSeasonResult[1] > 0.15
+                                  team.regularSeasonResult.length > 1 &&
+                                  team.regularSeasonResult[1] > 0.15
                                     ? "text-green-600 dark:text-green-400"
-                                    : team.regularSeasonResult.length > 1 && team.regularSeasonResult[1] > 0.08
+                                    : team.regularSeasonResult.length > 1 &&
+                                      team.regularSeasonResult[1] > 0.08
                                     ? "text-yellow-600 dark:text-yellow-400"
                                     : "text-gray-600 dark:text-gray-400"
                                 }`}
                               >
                                 {team.regularSeasonResult.length > 1
-                                  ? (team.regularSeasonResult[1] * 100).toFixed(1) + "%"
+                                  ? (team.regularSeasonResult[1] * 100).toFixed(
+                                      1
+                                    ) + "%"
                                   : "0.0%"}
                               </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               {team.regularSeasonResult.length > 2
-                                ? (team.regularSeasonResult[2] * 100).toFixed(1) + "%"
+                                ? (team.regularSeasonResult[2] * 100).toFixed(
+                                    1
+                                  ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               {team.regularSeasonResult.length > 3
-                                ? (team.regularSeasonResult[3] * 100).toFixed(1) + "%"
+                                ? (team.regularSeasonResult[3] * 100).toFixed(
+                                    1
+                                  ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               {team.regularSeasonResult.length > 4
-                                ? (team.regularSeasonResult[4] * 100).toFixed(1) + "%"
+                                ? (team.regularSeasonResult[4] * 100).toFixed(
+                                    1
+                                  ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               {team.regularSeasonResult.length > 5
-                                ? (team.regularSeasonResult[5] * 100).toFixed(1) + "%"
+                                ? (team.regularSeasonResult[5] * 100).toFixed(
+                                    1
+                                  ) + "%"
                                 : "0.0%"}
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">

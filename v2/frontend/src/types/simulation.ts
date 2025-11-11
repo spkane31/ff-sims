@@ -78,3 +78,17 @@ export interface SimulationParams {
   startWeek: string | number;
   useActualResults: boolean;
 }
+
+// Store matchup outcome for a single iteration
+export interface MatchupOutcome {
+  week: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  winnerId: number;
+}
+
+// Store all matchup outcomes for a single simulation iteration
+export interface SimulationIteration {
+  matchupOutcomes: MatchupOutcome[];
+  teamResults: Map<number, SingleTeamResult>;
+}

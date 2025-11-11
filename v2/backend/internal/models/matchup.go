@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -42,6 +43,10 @@ type Matchup struct {
 	AwayTeam   *Team       `json:"away_team,omitempty" gorm:"foreignKey:AwayTeamID"`
 	BoxScores  []BoxScore  `json:"box_scores,omitempty" gorm:"foreignKey:MatchupID"`
 	SimResults []SimResult `json:"-"`
+}
+
+func (m *Matchup) String() string {
+	return fmt.Sprintf("Matchup(ID=%d, Week=%d, Year=%d, HomeTeamID=%d, AwayTeamID=%d, HomeScore=%.2f, AwayScore=%.2f, Completed=%t)", m.ID, m.Week, m.Year, m.HomeTeamID, m.AwayTeamID, m.HomeTeamFinalScore, m.AwayTeamFinalScore, m.Completed)
 }
 
 // GetMatchupsByWeek returns all matchups for a specific week and year
