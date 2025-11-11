@@ -8,9 +8,7 @@ import {
 /**
  * Hook for fetching the full schedule
  */
-export function useSchedule(options?: {
-  gameType?: string;
-}) {
+export function useSchedule(options?: { gameType?: string }) {
   const [schedule, setSchedule] = useState<GetScheduleResponse>({
     data: { matchups: [] },
   });
@@ -21,9 +19,7 @@ export function useSchedule(options?: {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getFullSchedule(
-        options?.gameType
-      );
+      const data = await scheduleService.getFullSchedule(options?.gameType);
       setSchedule(data);
     } catch (err) {
       setError(
@@ -39,8 +35,6 @@ export function useSchedule(options?: {
   useEffect(() => {
     fetchSchedule();
   }, [fetchSchedule]);
-
-  console.log("useSchedule schedule:", schedule);
 
   return { schedule, isLoading, error, refetch: fetchSchedule };
 }

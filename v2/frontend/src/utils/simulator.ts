@@ -224,10 +224,6 @@ export class Simulator {
   }
 
   private calculateStatsFromSchedule(): void {
-    console.log(
-      `Calculating stats from schedule. StartWeek: ${this.startWeek}`
-    );
-
     // Map to store all scores for each team
     const teamScores = new Map<number, number[]>();
     const teamOwners = new Map<number, string>();
@@ -235,21 +231,14 @@ export class Simulator {
     // Process completed games up to startWeek
     this.schedule.forEach((week, weekIndex) => {
       const currentWeek = weekIndex + 1;
-      console.log(
-        `Processing week ${currentWeek}, startWeek is ${this.startWeek}`
-      );
 
       // Fix: Only use data before startWeek for calculating averages
       if (currentWeek >= this.startWeek) {
-        console.log(
-          `Skipping week ${currentWeek} as it's >= startWeek ${this.startWeek}`
-        );
         return;
       }
 
       week.forEach((matchup) => {
         if (!matchup.completed) {
-          console.log(`Skipping incomplete matchup in week ${currentWeek}`);
           return;
         }
 
@@ -257,10 +246,6 @@ export class Simulator {
         const awayTeamId = matchup.awayTeamESPNID;
         const homeScore = matchup.homeTeamFinalScore;
         const awayScore = matchup.awayTeamFinalScore;
-
-        console.log(
-          `Processing matchup: Team ${homeTeamId} (type: ${typeof homeTeamId}) (${homeScore}) vs Team ${awayTeamId} (type: ${typeof awayTeamId}) (${awayScore})`
-        );
 
         // Validate team IDs
         if (
@@ -308,17 +293,8 @@ export class Simulator {
       });
     });
 
-    console.log(
-      `Found ${teamScores.size} teams with game data:`,
-      Array.from(teamScores.keys())
-    );
-
     // If no completed games before startWeek, we need to process ALL teams from the schedule
     if (teamScores.size === 0) {
-      console.log(
-        "No completed games found before startWeek, processing all teams from schedule"
-      );
-
       // Get all teams from the entire schedule
       this.schedule.forEach((week) => {
         week.forEach((matchup) => {
@@ -351,14 +327,11 @@ export class Simulator {
       });
     }
 
-    console.log(`Final team count: ${teamScores.size}`);
-
     // Calculate team stats
     teamScores.forEach((scores, teamId) => {
       if (scores.length === 0) {
         // If no completed games, use league average as fallback
         this.teamStats.set(teamId, { average: 100, std_dev: 15 });
-        console.log(`Team ${teamId}: No games, using default stats (100, 15)`);
       } else {
         const average =
           scores.reduce((sum, score) => sum + score, 0) / scores.length;
@@ -368,11 +341,6 @@ export class Simulator {
         const std_dev = Math.sqrt(variance);
 
         this.teamStats.set(teamId, { average, std_dev });
-        console.log(
-          `Team ${teamId}: ${scores.length} games, avg: ${average.toFixed(
-            2
-          )}, std: ${std_dev.toFixed(2)}`
-        );
       }
 
       this.results.set(teamId, new Results());
@@ -396,20 +364,10 @@ export class Simulator {
       const leagueStdDev = Math.sqrt(leagueVariance);
 
       this.leagueStats = { mean: leagueMean, stdDev: leagueStdDev };
-      console.log(
-        `League stats: mean ${leagueMean.toFixed(
-          2
-        )}, std ${leagueStdDev.toFixed(2)}`
-      );
     } else {
       // Default league stats if no data
       this.leagueStats = { mean: 100, stdDev: 15 };
-      console.log("Using default league stats (100, 15)");
     }
-
-    console.log(
-      `Final teamStats size: ${this.teamStats.size}, results size: ${this.results.size}`
-    );
   }
 
   getTeamScoringData(): TeamScoringData[] {
@@ -472,11 +430,6 @@ export class Simulator {
     this.schedule.forEach((week, weekIndex) => {
       week.forEach((matchup) => {
         if (matchup.gameType !== "NONE") {
-          console.log(
-            `Skipping matchup in week ${weekIndex + 1} due to game type: ${
-              matchup.gameType
-            }`
-          );
           return;
         }
         const currentWeek = weekIndex + 1;
@@ -487,7 +440,10 @@ export class Simulator {
             const homeScore = parseFloat(matchup.homeTeamFinalScore.toString());
             const awayScore = parseFloat(matchup.awayTeamFinalScore.toString());
 
-            const winnerId = homeScore > awayScore ? matchup.homeTeamESPNID : matchup.awayTeamESPNID;
+            const winnerId =
+              homeScore > awayScore
+                ? matchup.homeTeamESPNID
+                : matchup.awayTeamESPNID;
 
             // Store matchup outcome
             matchupOutcomes.push({
@@ -552,7 +508,10 @@ export class Simulator {
                 this.leagueStats.stdDev
               );
 
-          const winnerId = homeScore > awayScore ? matchup.homeTeamESPNID : matchup.awayTeamESPNID;
+          const winnerId =
+            homeScore > awayScore
+              ? matchup.homeTeamESPNID
+              : matchup.awayTeamESPNID;
 
           // Store matchup outcome
           matchupOutcomes.push({
@@ -681,10 +640,12 @@ export class Simulator {
   }
 
   // Calculate team scoring data from filtered iterations
-  getFilteredTeamScoringData(
-    selectedMatchups: Map<string, number>
-  ): { data: TeamScoringData[]; matchingCount: number } {
-    const filteredIterations = this.filterIterationsByMatchups(selectedMatchups);
+  getFilteredTeamScoringData(selectedMatchups: Map<string, number>): {
+    data: TeamScoringData[];
+    matchingCount: number;
+  } {
+    const filteredIterations =
+      this.filterIterationsByMatchups(selectedMatchups);
     const matchingCount = filteredIterations.length;
 
     if (matchingCount === 0) {
@@ -726,7 +687,8 @@ export class Simulator {
           stdDev: teamStats.std_dev,
           wins: matchingCount === 0 ? 0.0 : result.wins / matchingCount,
           losses: matchingCount === 0 ? 0.0 : result.losses / matchingCount,
-          pointsFor: matchingCount === 0 ? 0.0 : result.pointsFor / matchingCount,
+          pointsFor:
+            matchingCount === 0 ? 0.0 : result.pointsFor / matchingCount,
           pointsAgainst:
             matchingCount === 0 ? 0.0 : result.pointsAgainst / matchingCount,
           playoffOdds:
