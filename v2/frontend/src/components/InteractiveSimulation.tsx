@@ -2,11 +2,39 @@ import { useState, useEffect } from "react";
 import { Simulator } from "../utils/simulator";
 import { Schedule, Matchup, TeamScoringData } from "../types/simulation";
 
+interface PivotalGame {
+  week: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  totalSwing: number;
+  homeTeamWinScenario: {
+    homePlayoffOdds: number;
+    awayPlayoffOdds: number;
+    homeLastPlaceOdds: number;
+    awayLastPlaceOdds: number;
+  };
+  awayTeamWinScenario: {
+    homePlayoffOdds: number;
+    awayPlayoffOdds: number;
+    homeLastPlaceOdds: number;
+    awayLastPlaceOdds: number;
+  };
+  defaultOdds: {
+    homePlayoffOdds: number;
+    awayPlayoffOdds: number;
+    homeLastPlaceOdds: number;
+    awayLastPlaceOdds: number;
+  };
+}
+
 interface InteractiveSimulationProps {
   schedule: Schedule;
   startWeek: number;
   iterations?: number;
   autoRun?: boolean;
+  onPivotalGamesCalculated?: (games: PivotalGame[]) => void;
 }
 
 export default function InteractiveSimulation({
@@ -14,6 +42,7 @@ export default function InteractiveSimulation({
   startWeek,
   iterations = 5000,
   autoRun = false,
+  onPivotalGamesCalculated,
 }: InteractiveSimulationProps) {
   const [simulator, setSimulator] = useState<Simulator | null>(null);
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
@@ -55,6 +84,12 @@ export default function InteractiveSimulation({
       // Extract remaining matchups
       const matchupsByTeam = extractRemainingMatchups(schedule, startWeek);
       setRemainingMatchups(matchupsByTeam);
+
+      // Calculate pivotal games
+      if (onPivotalGamesCalculated) {
+        const pivotalGames = sim.getMostImportantMatchups(3);
+        onPivotalGamesCalculated(pivotalGames);
+      }
 
       setSimulationComplete(true);
     } catch (error) {

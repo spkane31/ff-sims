@@ -160,6 +160,11 @@ type PlayerLineup struct {
 	Stats           map[string]WeeklyStats `json:"stats"`
 }
 
+func (p PlayerLineup) String() string {
+	return fmt.Sprintf("PlayerLineup(Name=%s, ID=%d, SlotPosition=%s, Points=%.2f, ProjectedPoints=%.2f, OnByeWeek=%t)",
+		p.PlayerName, p.PlayerID, p.SlotPosition, p.Points, p.ProjectedPoints, p.OnByeWeek)
+}
+
 type WeeklyStats struct {
 	ProjectedPoints    float64                   `json:"projected_points"`
 	ProjectedBreakdown map[BreakdownKeys]float64 `json:"projected_breakdown"`
@@ -487,7 +492,7 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		if err := database.DB.Save(&existingBoxScore).Error; err != nil {
 			return fmt.Errorf("error updating existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
-		logging.Infof("Updated existing box score for player %s (ID %d)", player.PlayerName, playerRecord.ID)
+		logging.Infof("Updated existing box score for player %v", player)
 	}
 
 	logging.Infof("Processed player lineup for %s (ID %d)", player.PlayerName, player.PlayerID)

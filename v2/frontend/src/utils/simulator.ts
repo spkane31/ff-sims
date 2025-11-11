@@ -604,6 +604,215 @@ export class Simulator {
     return this.teamStats.get(teamID);
   }
 
+  // Get the N most important upcoming matchups based on playoff/last place odds swing
+  getMostImportantMatchups(
+    n: number = 3
+  ): Array<{
+    week: number;
+    homeTeamId: number;
+    awayTeamId: number;
+    homeTeamName: string;
+    awayTeamName: string;
+    totalSwing: number;
+    homeTeamWinScenario: {
+      homePlayoffOdds: number;
+      awayPlayoffOdds: number;
+      homeLastPlaceOdds: number;
+      awayLastPlaceOdds: number;
+    };
+    awayTeamWinScenario: {
+      homePlayoffOdds: number;
+      awayPlayoffOdds: number;
+      homeLastPlaceOdds: number;
+      awayLastPlaceOdds: number;
+    };
+    defaultOdds: {
+      homePlayoffOdds: number;
+      awayPlayoffOdds: number;
+      homeLastPlaceOdds: number;
+      awayLastPlaceOdds: number;
+    };
+  }> {
+    if (this.iterations.length === 0) {
+      return [];
+    }
+
+    // Get all unique upcoming matchups (from startWeek onwards)
+    const upcomingMatchups = new Map<
+      string,
+      {
+        week: number;
+        homeTeamId: number;
+        awayTeamId: number;
+        homeTeamName: string;
+        awayTeamName: string;
+      }
+    >();
+
+    this.schedule.forEach((week, weekIndex) => {
+      const currentWeek = weekIndex + 1;
+
+      if (currentWeek >= this.startWeek) {
+        week.forEach((matchup) => {
+          if (matchup.gameType !== "NONE") {
+            return;
+          }
+
+          const matchupKey = `${currentWeek}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+          upcomingMatchups.set(matchupKey, {
+            week: currentWeek,
+            homeTeamId: matchup.homeTeamESPNID,
+            awayTeamId: matchup.awayTeamESPNID,
+            homeTeamName: matchup.homeTeamName,
+            awayTeamName: matchup.awayTeamName,
+          });
+        });
+      }
+    });
+
+    // Calculate default odds (no filtering)
+    const defaultData = this.getTeamScoringData();
+    const defaultOddsMap = new Map<
+      number,
+      { playoffOdds: number; lastPlaceOdds: number }
+    >();
+    defaultData.forEach((team) => {
+      defaultOddsMap.set(team.id, {
+        playoffOdds: team.playoffOdds,
+        lastPlaceOdds: team.lastPlaceOdds,
+      });
+    });
+
+    // Analyze each matchup
+    const matchupImportance: Array<{
+      week: number;
+      homeTeamId: number;
+      awayTeamId: number;
+      homeTeamName: string;
+      awayTeamName: string;
+      totalSwing: number;
+      homeTeamWinScenario: {
+        homePlayoffOdds: number;
+        awayPlayoffOdds: number;
+        homeLastPlaceOdds: number;
+        awayLastPlaceOdds: number;
+      };
+      awayTeamWinScenario: {
+        homePlayoffOdds: number;
+        awayPlayoffOdds: number;
+        homeLastPlaceOdds: number;
+        awayLastPlaceOdds: number;
+      };
+      defaultOdds: {
+        homePlayoffOdds: number;
+        awayPlayoffOdds: number;
+        homeLastPlaceOdds: number;
+        awayLastPlaceOdds: number;
+      };
+    }> = [];
+
+    upcomingMatchups.forEach((matchup, matchupKey) => {
+      // Scenario 1: Home team wins
+      const homeWinFilter = new Map<string, number>();
+      homeWinFilter.set(matchupKey, matchup.homeTeamId);
+      const homeWinData = this.getFilteredTeamScoringData(homeWinFilter);
+
+      // Scenario 2: Away team wins
+      const awayWinFilter = new Map<string, number>();
+      awayWinFilter.set(matchupKey, matchup.awayTeamId);
+      const awayWinData = this.getFilteredTeamScoringData(awayWinFilter);
+
+      // Skip if either scenario has too few matching iterations
+      if (
+        homeWinData.matchingCount < 10 ||
+        awayWinData.matchingCount < 10
+      ) {
+        return;
+      }
+
+      // Find team data in both scenarios
+      const homeTeamHomeWin = homeWinData.data.find(
+        (t) => t.id === matchup.homeTeamId
+      );
+      const awayTeamHomeWin = homeWinData.data.find(
+        (t) => t.id === matchup.awayTeamId
+      );
+      const homeTeamAwayWin = awayWinData.data.find(
+        (t) => t.id === matchup.homeTeamId
+      );
+      const awayTeamAwayWin = awayWinData.data.find(
+        (t) => t.id === matchup.awayTeamId
+      );
+
+      if (
+        !homeTeamHomeWin ||
+        !awayTeamHomeWin ||
+        !homeTeamAwayWin ||
+        !awayTeamAwayWin
+      ) {
+        return;
+      }
+
+      // Get default odds
+      const homeDefaultOdds = defaultOddsMap.get(matchup.homeTeamId);
+      const awayDefaultOdds = defaultOddsMap.get(matchup.awayTeamId);
+
+      if (!homeDefaultOdds || !awayDefaultOdds) {
+        return;
+      }
+
+      // Calculate total swing (sum of absolute changes for both teams, both metrics)
+      const homePlayoffSwing =
+        Math.abs(homeTeamHomeWin.playoffOdds - homeTeamAwayWin.playoffOdds);
+      const awayPlayoffSwing =
+        Math.abs(awayTeamHomeWin.playoffOdds - awayTeamAwayWin.playoffOdds);
+      const homeLastPlaceSwing =
+        Math.abs(
+          homeTeamHomeWin.lastPlaceOdds - homeTeamAwayWin.lastPlaceOdds
+        );
+      const awayLastPlaceSwing =
+        Math.abs(
+          awayTeamHomeWin.lastPlaceOdds - awayTeamAwayWin.lastPlaceOdds
+        );
+
+      const totalSwing =
+        homePlayoffSwing +
+        awayPlayoffSwing +
+        homeLastPlaceSwing +
+        awayLastPlaceSwing;
+
+      matchupImportance.push({
+        week: matchup.week,
+        homeTeamId: matchup.homeTeamId,
+        awayTeamId: matchup.awayTeamId,
+        homeTeamName: matchup.homeTeamName,
+        awayTeamName: matchup.awayTeamName,
+        totalSwing,
+        homeTeamWinScenario: {
+          homePlayoffOdds: homeTeamHomeWin.playoffOdds,
+          awayPlayoffOdds: awayTeamHomeWin.playoffOdds,
+          homeLastPlaceOdds: homeTeamHomeWin.lastPlaceOdds,
+          awayLastPlaceOdds: awayTeamHomeWin.lastPlaceOdds,
+        },
+        awayTeamWinScenario: {
+          homePlayoffOdds: homeTeamAwayWin.playoffOdds,
+          awayPlayoffOdds: awayTeamAwayWin.playoffOdds,
+          homeLastPlaceOdds: homeTeamAwayWin.lastPlaceOdds,
+          awayLastPlaceOdds: awayTeamAwayWin.lastPlaceOdds,
+        },
+        defaultOdds: {
+          homePlayoffOdds: homeDefaultOdds.playoffOdds,
+          awayPlayoffOdds: awayDefaultOdds.playoffOdds,
+          homeLastPlaceOdds: homeDefaultOdds.lastPlaceOdds,
+          awayLastPlaceOdds: awayDefaultOdds.lastPlaceOdds,
+        },
+      });
+    });
+
+    // Sort by total swing (descending) and return top N
+    return matchupImportance.sort((a, b) => b.totalSwing - a.totalSwing).slice(0, n);
+  }
+
   // Filter simulations based on selected matchup outcomes
   filterIterationsByMatchups(
     selectedMatchups: Map<string, number> // key: "week-homeTeamId-awayTeamId", value: winnerId

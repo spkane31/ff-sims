@@ -4,11 +4,13 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import List, Dict
+from typing import Dict, List
 
+import psycopg2
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League
-import psycopg2
+
+from src.models import League as DataLeague
 
 
 load_dotenv(find_dotenv())
@@ -42,9 +44,7 @@ def upsert_teams(
     team_data = [
         {
             "espn_id": team.team_id,
-            "owner": " ".join(
-                [team.owners[0]["firstName"], team.owners[0]["lastName"]]
-            ),
+            "owner": " ".join([team.owners[0]["firstName"], team.owners[0]["lastName"]]),
             "team_name": team.team_name,
             "year": year,
         }
@@ -147,8 +147,7 @@ def get_schedule(league: League, file_name: str) -> None:
                         "is_playoff": scoreboard_matchup.is_playoff,
                         "home_team_espn_id": scoreboard_matchup.home_team.team_id,
                         "away_team_espn_id": scoreboard_matchup.away_team.team_id,
-                        "completed": scoreboard_matchup.home_score > 0
-                        and scoreboard_matchup.away_score > 0,
+                        "completed": scoreboard_matchup.home_score > 0 and scoreboard_matchup.away_score > 0,
                     }
                 )
 
@@ -161,14 +160,8 @@ def get_schedule(league: League, file_name: str) -> None:
                 prev_week_matchups = pure_matchups_by_week[-1]
 
                 # Create sets of (home_team_espn_id, away_team_espn_id) tuples for comparison
-                prev_teams = {
-                    (m["home_team_espn_id"], m["away_team_espn_id"])
-                    for m in prev_week_matchups
-                }
-                curr_teams = {
-                    (m["home_team_espn_id"], m["away_team_espn_id"])
-                    for m in week_matchups
-                }
+                prev_teams = {(m["home_team_espn_id"], m["away_team_espn_id"]) for m in prev_week_matchups}
+                curr_teams = {(m["home_team_espn_id"], m["away_team_espn_id"]) for m in week_matchups}
 
                 if prev_teams != curr_teams:
                     pure_matchups_by_week.append(week_matchups)
@@ -179,9 +172,7 @@ def get_schedule(league: League, file_name: str) -> None:
             break
         if league.year < 2019:
             for box_score in league.scoreboard(week=week):
-                if not hasattr(box_score, "away_team") or not hasattr(
-                    box_score, "home_team"
-                ):
+                if not hasattr(box_score, "away_team") or not hasattr(box_score, "home_team"):
                     break
 
                 matchups_data.append(
@@ -221,9 +212,7 @@ def get_schedule(league: League, file_name: str) -> None:
                     "away_team_final_score": box_score.away_score,
                     "home_team_espn_projected_score": box_score.home_projected,
                     "away_team_espn_projected_score": box_score.away_projected,
-                    "completed": league.current_week >= week
-                    and box_score.home_score > 0
-                    and box_score.away_score > 0,
+                    "completed": league.current_week >= week and box_score.home_score > 0 and box_score.away_score > 0,
                     "home_team_lineup": [
                         {
                             "slot_position": player.slot_position,
@@ -314,9 +303,7 @@ def get_schedule(league: League, file_name: str) -> None:
                         box_score_data.append(player_info)
 
     # Flatten the grouped matchups
-    pure_matchups = [
-        matchup for week_matchups in pure_matchups_by_week for matchup in week_matchups
-    ]
+    pure_matchups = [matchup for week_matchups in pure_matchups_by_week for matchup in week_matchups]
 
     # Write matchup data to file if filename provided
     if file_name is not None:
@@ -348,9 +335,7 @@ def get_simple_draft(
 
     for pick in league.draft:
         try:
-            logging.info(
-                f"Processing draft pick: {pick.playerName} (ID: {pick.playerId})"
-            )
+            logging.info(f"Processing draft pick: {pick.playerName} (ID: {pick.playerId})")
 
             player_info = league.player_info(playerId=pick.playerId)
 
@@ -388,9 +373,7 @@ def update_active_players(league: League, conn: "psycopg2.connection") -> None:
     logging.info(f"Getting all players for {league.year}")
 
     with conn.cursor() as cursor:
-        cursor.execute(
-            "SELECT espn_id, position FROM players WHERE status != 'inactive'"
-        )
+        cursor.execute("SELECT espn_id, position FROM players WHERE status != 'inactive'")
 
         all_players_espn_ids = [[row[0], row[1]] for row in cursor.fetchall()]
 
@@ -411,9 +394,7 @@ def update_active_players(league: League, conn: "psycopg2.connection") -> None:
                 continue
 
             if p.position != position:
-                logging.info(
-                    f"Updating player {espn_id} position from {position} to {p.position}"
-                )
+                logging.info(f"Updating player {espn_id} position from {position} to {p.position}")
                 cursor.execute(
                     "UPDATE players SET position = %s WHERE espn_id = %s",
                     (p.position, espn_id),
@@ -479,12 +460,6 @@ def get_all_transactions(league: League, file_name: str) -> None:
 
 
 if __name__ == "__main__":
-    # from src.models._league import League as DataLeague
-
-    # l = DataLeague(345674)
-    # l.to_yaml("test.yaml")
-
-    # exit(0)
     start = time.time()
     logging.info("Scraping fantasy football data from ESPN")
 
@@ -514,19 +489,20 @@ if __name__ == "__main__":
         exit(1)
 
     # This was done manually but have to iterate through each year to load data
-    league = League(
-        league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False
-    )
+    league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
     logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
+
+    # This was done manually but have to iterate through each year to load data
+    DataLeague.from_espn_league(league).to_yaml("test.yaml")
+
+    # exit(0)
 
     conn = psycopg2.connect(DATABASE_URL)
 
     # Define file paths for outputs
     teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")
     matchups_file = os.path.join(args.output_dir, f"matchups_{args.year}.json")
-    box_score_file = os.path.join(
-        args.output_dir, f"box_score_players_{args.year}.json"
-    )
+    box_score_file = os.path.join(args.output_dir, f"box_score_players_{args.year}.json")
     draft_file = os.path.join(args.output_dir, f"draft_selections_{args.year}.json")
     transactions_file = os.path.join(args.output_dir, f"transactions_{args.year}.json")
 

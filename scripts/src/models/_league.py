@@ -1,14 +1,16 @@
-from dataclasses import dataclass, asdict
-import yaml
 import os
+from dataclasses import asdict, dataclass
 from typing import Optional
+
+import yaml
 from espn_api.football import League as ESPNLeague
 
 
 @dataclass
 class Team:
-    id: int
     espn_id: int
+    name: str
+    owner: list[str]
 
 
 @dataclass
@@ -30,10 +32,7 @@ class League:
     id: int
     teams: list[Team]
     schedule: Schedule
-    __league: ESPNLeague
-    __espn_s2: str
-    __espn_swid: str
-    settings: dict
+    # settings: dict
 
     def __init__(
         self,
@@ -44,15 +43,21 @@ class League:
         schedule: Optional[Schedule] = None,
     ):
         self.id = id
-        self.__espn_s2 = espn_s2
-        self.__espn_swid = espn_swid
-        self.__league = ESPNLeague(
-            league_id=id, espn_s2=espn_s2, swid=espn_swid, debug=False, year=2025
-        )
         self.teams = teams if teams is not None else []
         self.schedule = schedule if schedule is not None else Schedule()
+        # self.settings = self.__league.settings
 
-        self.settings = self.__league.settings
+    @classmethod
+    def from_espn_league(cls, espn_league: ESPNLeague) -> "League":
+        teams = [
+            Team(
+                espn_id=team.team_id,
+                name=team.team_name,
+                owner=[f"{owner['firstName']} {owner['lastName']}".rstrip(" ").lstrip(" ") for owner in team.owners],
+            )
+            for team in espn_league.teams
+        ]
+        return League(id=espn_league.league_id, teams=teams)
 
     def to_yaml(self, file_name: str) -> None:
         with open(file=file_name, mode="w") as f:
@@ -61,12 +66,7 @@ class League:
 
     def add_team(self, team: Team) -> None:
         # Check if a team w/ same id / espn_id already exists
-        if (
-            len(
-                [t for t in self.teams if t.espn_id == team.espn_id and t.id == team.id]
-            )
-            > 0
-        ):
+        if len([t for t in self.teams if t.espn_id == team.espn_id and t.id == team.id]) > 0:
             return
 
         self.teams.append(team)

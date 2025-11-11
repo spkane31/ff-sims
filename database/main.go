@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -44,6 +45,10 @@ type DraftSelection struct {
 	Pick           uint
 	Year           uint
 	OwnerESPNID    uint
+}
+
+func (d DraftSelection) String() string {
+	return fmt.Sprintf("DraftSelection(PlayerName=%s, PlayerPosition=%s, TeamID=%d, PlayerID=%d, Round=%d, Pick=%d, Year=%d, OwnerESPNID=%d)", d.PlayerName, d.PlayerPosition, d.TeamID, d.PlayerID, d.Round, d.Pick, d.Year, d.OwnerESPNID)
 }
 
 type BoxScorePlayer struct {
