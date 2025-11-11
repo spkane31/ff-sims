@@ -283,12 +283,14 @@ export default function Simulations() {
     startWeek: number
   ): Map<number, Matchup[]> => {
     const teamMatchups = new Map<number, Matchup[]>();
+    const maxWeeksToShow = 4; // Limit to 4 weeks for UI readability
+    const endWeek = startWeek + maxWeeksToShow - 1;
 
     schedule.forEach((week, weekIndex) => {
       const currentWeek = weekIndex + 1;
 
-      // Only process weeks from startWeek onwards and skip playoff games
-      if (currentWeek >= startWeek) {
+      // Only process weeks from startWeek up to 4 weeks ahead, skip playoff games
+      if (currentWeek >= startWeek && currentWeek <= endWeek) {
         week.forEach((matchup) => {
           // Skip playoff games
           if (matchup.gameType !== "NONE") {

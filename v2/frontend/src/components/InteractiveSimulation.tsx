@@ -69,11 +69,14 @@ export default function InteractiveSimulation({
     startWeek: number
   ): Map<number, Matchup[]> => {
     const teamMatchups = new Map<number, Matchup[]>();
+    const maxWeeksToShow = 4; // Limit to 4 weeks for UI readability
+    const endWeek = startWeek + maxWeeksToShow - 1;
 
     schedule.forEach((week, weekIndex) => {
       const currentWeek = weekIndex + 1;
 
-      if (currentWeek >= startWeek) {
+      // Only include matchups from startWeek up to 4 weeks ahead
+      if (currentWeek >= startWeek && currentWeek <= endWeek) {
         week.forEach((matchup) => {
           if (matchup.gameType !== "NONE") {
             return;
