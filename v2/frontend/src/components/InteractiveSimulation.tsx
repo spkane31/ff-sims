@@ -286,7 +286,8 @@ export default function InteractiveSimulation({
       <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
         <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
           Matching Simulations: {matchStats.matching.toLocaleString()}/
-          {matchStats.total.toLocaleString()} ({matchStats.percentage.toFixed(1)}
+          {matchStats.total.toLocaleString()} (
+          {matchStats.percentage.toFixed(1)}
           %)
         </p>
         {selectedResults.size > 0 && (
@@ -354,8 +355,7 @@ export default function InteractiveSimulation({
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {simulationResults
               .filter(
-                (team) =>
-                  team.teamName !== "League Average" && team.id !== -1
+                (team) => team.teamName !== "League Average" && team.id !== -1
               )
               .sort((a, b) => b.playoffOdds - a.playoffOdds)
               .map((team, index) => {
@@ -378,23 +378,17 @@ export default function InteractiveSimulation({
                     </td>
 
                     {sortedWeeks.map((week) => {
-                      const matchup = teamMatchups.find(
-                        (m) => m.week === week
-                      );
+                      const matchup = teamMatchups.find((m) => m.week === week);
 
                       if (!matchup) {
                         return (
-                          <td
-                            key={week}
-                            className="py-3 px-4 text-center w-32"
-                          >
+                          <td key={week} className="py-3 px-4 text-center w-32">
                             <div className="text-gray-400 text-xs">-</div>
                           </td>
                         );
                       }
 
-                      const isHomeTeam =
-                        matchup.homeTeamESPNID === team.id;
+                      const isHomeTeam = matchup.homeTeamESPNID === team.id;
                       const opponentId = isHomeTeam
                         ? matchup.awayTeamESPNID
                         : matchup.homeTeamESPNID;

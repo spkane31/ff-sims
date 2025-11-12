@@ -12,7 +12,6 @@ from espn_api.football import League
 
 from src.models import League as DataLeague
 
-
 load_dotenv(find_dotenv())
 
 logging.basicConfig(
@@ -495,7 +494,7 @@ if __name__ == "__main__":
     # This was done manually but have to iterate through each year to load data
     DataLeague.from_espn_league(league).to_yaml("test.yaml")
 
-    # exit(0)
+    exit(0)
 
     conn = psycopg2.connect(DATABASE_URL)
 
