@@ -203,12 +203,13 @@ export default function InteractiveSimulation({
 
   // Inverted color logic for last place odds (low = good, high = bad)
   const getDefaultLastPlaceOddsColor = (percentage: number): string => {
-    if (percentage < 30) {
+    if (percentage < 5) {
       return "text-green-600 dark:text-green-400";
-    } else if (percentage > 70) {
+    } else if (percentage >= 5 && percentage <= 20) {
+      return "text-yellow-600 dark:text-yellow-400";
+    } else {
       return "text-red-600 dark:text-red-400";
     }
-    return "";
   };
 
   const getNewOddsColor = (
