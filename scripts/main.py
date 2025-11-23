@@ -492,9 +492,9 @@ if __name__ == "__main__":
     logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
 
     # This was done manually but have to iterate through each year to load data
-    DataLeague.from_espn_league(league).to_yaml("test.yaml")
+    # DataLeague.from_espn_league(league).to_yaml("test.yaml")
 
-    exit(0)
+    # exit(0)
 
     conn = psycopg2.connect(DATABASE_URL)
 

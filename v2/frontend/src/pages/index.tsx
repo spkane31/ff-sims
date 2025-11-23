@@ -788,7 +788,7 @@ export default function Home() {
                   <InteractiveSimulation
                     schedule={simSchedule}
                     startWeek={startWeek}
-                    iterations={5000}
+                    iterations={10000}
                     autoRun={true}
                     onPivotalGamesCalculated={setPivotalGames}
                   />

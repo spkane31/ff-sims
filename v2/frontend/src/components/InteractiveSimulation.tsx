@@ -40,7 +40,7 @@ interface InteractiveSimulationProps {
 export default function InteractiveSimulation({
   schedule,
   startWeek,
-  iterations = 5000,
+  iterations = 10000,
   autoRun = false,
   onPivotalGamesCalculated,
 }: InteractiveSimulationProps) {

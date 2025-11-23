@@ -9,7 +9,7 @@ export default function Simulations() {
   const [simulating, setSimulating] = useState(false);
   const [results, setResults] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [iterations, setIterations] = useState(5000);
+  const [iterations, setIterations] = useState(10000);
   const [startWeek, setStartWeek] = useState("");
 
   // New state for dynamic week options
