@@ -123,35 +123,6 @@ export default function Teams() {
       }
     });
 
-    // Debug: Compare records
-    if (filteredTeams && filteredTeams.length > 0) {
-      console.log("=== Record Comparison ===");
-      filteredTeams.forEach((team) => {
-        const h2hRecord = records.get(team.espnId);
-        let h2hWins = 0;
-        let h2hLosses = 0;
-
-        if (h2hRecord) {
-          h2hRecord.forEach((record) => {
-            h2hWins += record.wins;
-            h2hLosses += record.losses;
-          });
-        }
-
-        const standingsWins = team.record.wins + team.playoffRecord.wins;
-        const standingsLosses = team.record.losses + team.playoffRecord.losses;
-
-        console.log(`${team.owner}:`);
-        console.log(`  Standings: ${standingsWins}-${standingsLosses}`);
-        console.log(`  Head-to-Head Grid: ${h2hWins}-${h2hLosses}`);
-        console.log(
-          `  Difference: ${standingsWins - h2hWins} wins, ${
-            standingsLosses - h2hLosses
-          } losses`
-        );
-      });
-    }
-
     return records;
   }, [schedule, filteredTeams]);
 
@@ -295,12 +266,12 @@ export default function Teams() {
               fieldB = b.name;
               break;
             case "wins":
-              fieldA = a.record.wins;
-              fieldB = b.record.wins;
+              fieldA = adjustedRecords.get(a.espnId)?.wins ?? 0;
+              fieldB = adjustedRecords.get(b.espnId)?.wins ?? 0;
               break;
             case "losses":
-              fieldA = a.record.losses;
-              fieldB = b.record.losses;
+              fieldA = adjustedRecords.get(a.espnId)?.losses ?? 0;
+              fieldB = adjustedRecords.get(b.espnId)?.losses ?? 0;
               break;
             case "pf":
               fieldA = a.points.scored;
@@ -408,13 +379,13 @@ export default function Teams() {
                         className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
                         onClick={() => handleSort("pf")}
                       >
-                        PF {renderSortIcon("pf")}
+                        PF / G {renderSortIcon("pf")}
                       </th>
                       <th
                         className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
                         onClick={() => handleSort("pa")}
                       >
-                        PA {renderSortIcon("pa")}
+                        PA / G {renderSortIcon("pa")}
                       </th>
                       <th
                         className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
@@ -463,24 +434,84 @@ export default function Teams() {
                           {adjustedRecords.get(team.espnId)?.losses ?? 0}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.scored.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {(() => {
+                            const wins =
+                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                            const losses =
+                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                            const totalGames = wins + losses;
+                            const avgPF =
+                              totalGames > 0
+                                ? team.points.scored / totalGames
+                                : 0;
+                            const avgFormatted = avgPF.toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            );
+                            const totalFormatted =
+                              team.points.scored.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              });
+                            return `${avgFormatted} (${totalFormatted})`;
+                          })()}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.points.against.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {(() => {
+                            const wins =
+                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                            const losses =
+                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                            const totalGames = wins + losses;
+                            const avgPA =
+                              totalGames > 0
+                                ? team.points.against / totalGames
+                                : 0;
+                            const avgFormatted = avgPA.toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            );
+                            const totalFormatted =
+                              team.points.against.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              });
+                            return `${avgFormatted} (${totalFormatted})`;
+                          })()}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {(
-                            team.points.scored - team.points.against
-                          ).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {(() => {
+                            const wins =
+                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                            const losses =
+                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                            const totalGames = wins + losses;
+                            const totalDiff =
+                              team.points.scored - team.points.against;
+                            const avgDiff =
+                              totalGames > 0 ? totalDiff / totalGames : 0;
+                            const avgSign = avgDiff > 0 ? "+" : "";
+                            const totalSign = totalDiff > 0 ? "+" : "";
+                            const avgFormatted = Math.abs(
+                              avgDiff
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            });
+                            const totalFormatted = Math.abs(
+                              totalDiff
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            });
+                            return `${avgSign}${avgFormatted} (${totalSign}${totalFormatted})`;
+                          })()}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">

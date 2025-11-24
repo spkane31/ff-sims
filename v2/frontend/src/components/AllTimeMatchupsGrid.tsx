@@ -7,7 +7,10 @@ interface Team {
 
 interface AllTimeMatchupsGridProps {
   teams?: Team[];
-  headToHeadRecords?: Map<string, Map<string, { wins: number; losses: number }>>;
+  headToHeadRecords?: Map<
+    string,
+    Map<string, { wins: number; losses: number }>
+  >;
 }
 
 export default function AllTimeMatchupsGrid({
@@ -72,7 +75,9 @@ export default function AllTimeMatchupsGrid({
   };
 
   // Calculate total record for a team (as row team - their wins/losses against all opponents)
-  const getRowTotal = (teamESPNId: string): { wins: number; losses: number } => {
+  const getRowTotal = (
+    teamESPNId: string
+  ): { wins: number; losses: number } => {
     if (!headToHeadRecords) {
       return { wins: 0, losses: 0 };
     }
@@ -92,7 +97,9 @@ export default function AllTimeMatchupsGrid({
   };
 
   // Calculate total record for a team (as column team - how all opponents did against them)
-  const getColTotal = (teamESPNId: string): { wins: number; losses: number } => {
+  const getColTotal = (
+    teamESPNId: string
+  ): { wins: number; losses: number } => {
     if (!headToHeadRecords) {
       return { wins: 0, losses: 0 };
     }
