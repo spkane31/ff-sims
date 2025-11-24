@@ -3,6 +3,7 @@ import Layout from "../../components/Layout";
 import Link from "next/link";
 import { useTeams } from "../../hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
+import AllTimeMatchupsGrid from "../../components/AllTimeMatchupsGrid";
 
 type SortField =
   | "rank"
@@ -24,6 +25,135 @@ export default function Teams() {
   } = useSchedule();
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  const filteredTeams = useMemo(
+    () =>
+      teams?.filter(
+        (team) =>
+          !team.owner.includes("Knapp") && !team.owner.includes("Landry")
+      ),
+    [teams]
+  );
+
+  // Calculate adjusted records (excluding games against filtered-out teams)
+  const adjustedRecords = useMemo(() => {
+    if (!schedule?.data?.matchups || !filteredTeams) {
+      return new Map<string, { wins: number; losses: number }>();
+    }
+
+    const records = new Map<string, { wins: number; losses: number }>();
+
+    // Initialize records for all teams
+    filteredTeams.forEach((team) => {
+      records.set(team.espnId, { wins: 0, losses: 0 });
+    });
+
+    // Count wins/losses only against teams in filteredTeams
+    schedule.data.matchups.forEach((matchup) => {
+      if (matchup.homeScore > 0 || matchup.awayScore > 0) {
+        const homeId = matchup.homeTeamESPNID.toString();
+        const awayId = matchup.awayTeamESPNID.toString();
+
+        // Only count if both teams are in filteredTeams
+        if (records.has(homeId) && records.has(awayId)) {
+          if (matchup.homeScore > matchup.awayScore) {
+            records.get(homeId)!.wins++;
+            records.get(awayId)!.losses++;
+          } else if (matchup.awayScore > matchup.homeScore) {
+            records.get(awayId)!.wins++;
+            records.get(homeId)!.losses++;
+          }
+        }
+      }
+    });
+
+    return records;
+  }, [schedule, filteredTeams]);
+
+  // Calculate head-to-head records between teams
+  const headToHeadRecords = useMemo(() => {
+    if (!schedule?.data?.matchups || !filteredTeams) {
+      return new Map<string, Map<string, { wins: number; losses: number }>>();
+    }
+
+    // Create a map: teamESPNId -> (opponentESPNId -> {wins, losses})
+    const records = new Map<
+      string,
+      Map<string, { wins: number; losses: number }>
+    >();
+
+    // Initialize records for all teams
+    filteredTeams.forEach((team) => {
+      records.set(team.espnId, new Map());
+    });
+
+    // Process all completed matchups (including playoffs)
+    schedule.data.matchups.forEach((matchup) => {
+      if (matchup.homeScore > 0 || matchup.awayScore > 0) {
+        const homeId = matchup.homeTeamESPNID.toString();
+        const awayId = matchup.awayTeamESPNID.toString();
+
+        // Skip if either team is not in filteredTeams
+        if (!records.has(homeId) || !records.has(awayId)) {
+          return;
+        }
+
+        // Initialize records if they don't exist
+        if (!records.get(homeId)?.has(awayId)) {
+          records.get(homeId)?.set(awayId, { wins: 0, losses: 0 });
+        }
+        if (!records.get(awayId)?.has(homeId)) {
+          records.get(awayId)?.set(homeId, { wins: 0, losses: 0 });
+        }
+
+        // Determine winner and update records
+        if (matchup.homeScore > matchup.awayScore) {
+          // Home team won
+          const homeRecord = records.get(homeId)?.get(awayId);
+          const awayRecord = records.get(awayId)?.get(homeId);
+          if (homeRecord) homeRecord.wins++;
+          if (awayRecord) awayRecord.losses++;
+        } else if (matchup.awayScore > matchup.homeScore) {
+          // Away team won
+          const homeRecord = records.get(homeId)?.get(awayId);
+          const awayRecord = records.get(awayId)?.get(homeId);
+          if (homeRecord) homeRecord.losses++;
+          if (awayRecord) awayRecord.wins++;
+        }
+      }
+    });
+
+    // Debug: Compare records
+    if (filteredTeams && filteredTeams.length > 0) {
+      console.log("=== Record Comparison ===");
+      filteredTeams.forEach((team) => {
+        const h2hRecord = records.get(team.espnId);
+        let h2hWins = 0;
+        let h2hLosses = 0;
+
+        if (h2hRecord) {
+          h2hRecord.forEach((record) => {
+            h2hWins += record.wins;
+            h2hLosses += record.losses;
+          });
+        }
+
+        const standingsWins = team.record.wins + team.playoffRecord.wins;
+        const standingsLosses = team.record.losses + team.playoffRecord.losses;
+
+        console.log(`${team.owner}:`);
+        console.log(`  Standings: ${standingsWins}-${standingsLosses}`);
+        console.log(`  Head-to-Head Grid: ${h2hWins}-${h2hLosses}`);
+        console.log(
+          `  Difference: ${standingsWins - h2hWins} wins, ${
+            standingsLosses - h2hLosses
+          } losses`
+        );
+      });
+    }
+
+    return records;
+  }, [schedule, filteredTeams]);
 
   // Calculate league statistics from schedule data
   const leagueStats = useMemo(() => {
@@ -151,10 +281,6 @@ export default function Teams() {
       setSortDirection("asc");
     }
   };
-
-  const filteredTeams = teams?.filter(
-    (team) => !team.owner.includes("Knapp") && !team.owner.includes("Landry")
-  );
 
   const sortedTeams =
     isLoading || !filteredTeams
@@ -331,10 +457,10 @@ export default function Teams() {
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.wins + team.playoffRecord.wins}
+                          {adjustedRecords.get(team.espnId)?.wins ?? 0}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.losses + team.playoffRecord.losses}
+                          {adjustedRecords.get(team.espnId)?.losses ?? 0}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {team.points.scored.toLocaleString(undefined, {
@@ -382,6 +508,13 @@ export default function Teams() {
               </div>
             )}
           </div>
+        </section>
+
+        <section>
+          <AllTimeMatchupsGrid
+            teams={filteredTeams}
+            headToHeadRecords={headToHeadRecords}
+          />
         </section>
 
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">

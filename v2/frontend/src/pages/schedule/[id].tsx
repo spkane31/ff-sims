@@ -6,8 +6,15 @@ import { Player } from "../../services/scheduleService";
 
 // Helper function to find better lineup decisions
 function findBetterLineupDecisions(players: Player[]) {
-  const starters = players.filter((p) => p.slotPosition !== "BE" && p.slotPosition !== "IR" && p.slotPosition !== "");
-  const benchPlayers = players.filter((p) => p.slotPosition === "BE" || p.slotPosition === "IR");
+  const starters = players.filter(
+    (p) =>
+      p.slotPosition !== "BE" &&
+      p.slotPosition !== "IR" &&
+      p.slotPosition !== ""
+  );
+  const benchPlayers = players.filter(
+    (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
+  );
 
   const betterDecisions: Array<{
     benchPlayer: Player;
@@ -24,8 +31,12 @@ function findBetterLineupDecisions(players: Player[]) {
       }
 
       // FLEX eligibility - RB/WR/TE can be slotted into FLEX
-      if (starter.slotPosition === "RB/WR/TE" &&
-          (benchPlayer.playerPosition === "RB" || benchPlayer.playerPosition === "WR" || benchPlayer.playerPosition === "TE")) {
+      if (
+        starter.slotPosition === "RB/WR/TE" &&
+        (benchPlayer.playerPosition === "RB" ||
+          benchPlayer.playerPosition === "WR" ||
+          benchPlayer.playerPosition === "TE")
+      ) {
         return true;
       }
 
@@ -33,7 +44,9 @@ function findBetterLineupDecisions(players: Player[]) {
     });
 
     // Find the lowest scoring eligible starter
-    const worstStarter = eligibleStarters.sort((a, b) => a.points - b.points)[0];
+    const worstStarter = eligibleStarters.sort(
+      (a, b) => a.points - b.points
+    )[0];
 
     if (worstStarter && benchPlayer.points > worstStarter.points) {
       betterDecisions.push({
@@ -85,7 +98,8 @@ export default function MatchupDetail() {
   const matchupData = matchup;
 
   const { data } = matchupData;
-  const { homeTeam, awayTeam, year, week, homeTeamESPNID, awayTeamESPNID } = data;
+  const { homeTeam, awayTeam, year, week, homeTeamESPNID, awayTeamESPNID } =
+    data;
 
   // Calculate winner
   const homeWon = homeTeam.score > awayTeam.score;
@@ -130,7 +144,10 @@ export default function MatchupDetail() {
               }`}
             >
               <div className="text-xl font-semibold mb-1">
-                <Link href={`/teams/${homeTeamESPNID}`} className="hover:text-blue-600 transition-colors">
+                <Link
+                  href={`/teams/${homeTeamESPNID}`}
+                  className="hover:text-blue-600 transition-colors"
+                >
                   {homeTeam.name}
                 </Link>
               </div>
@@ -154,9 +171,6 @@ export default function MatchupDetail() {
                   </span>
                 )}
               </div>
-              {homeWon && isCompleted && (
-                <div className="mt-2 text-green-600 font-medium">WINNER</div>
-              )}
             </div>
 
             {/* Matchup Status */}
@@ -192,7 +206,10 @@ export default function MatchupDetail() {
               }`}
             >
               <div className="text-xl font-semibold mb-1">
-                <Link href={`/teams/${awayTeamESPNID}`} className="hover:text-blue-600 transition-colors">
+                <Link
+                  href={`/teams/${awayTeamESPNID}`}
+                  className="hover:text-blue-600 transition-colors"
+                >
                   {awayTeam.name}
                 </Link>
               </div>
@@ -216,9 +233,6 @@ export default function MatchupDetail() {
                   </span>
                 )}
               </div>
-              {awayWon && isCompleted && (
-                <div className="mt-2 text-green-600 font-medium">WINNER</div>
-              )}
             </div>
           </div>
         </div>
@@ -270,7 +284,10 @@ export default function MatchupDetail() {
                             <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
                               {player.slotPosition || player.playerPosition}
                             </span>
-                            <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:text-blue-600 transition-colors"
+                            >
                               {player.playerName}
                             </Link>
                           </div>
@@ -372,7 +389,10 @@ export default function MatchupDetail() {
                             <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
                               {player.slotPosition || player.playerPosition}
                             </span>
-                            <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:text-blue-600 transition-colors"
+                            >
                               {player.playerName}
                             </Link>
                           </div>
@@ -457,7 +477,10 @@ export default function MatchupDetail() {
                     >
                       <div>
                         <div className="font-medium">
-                          <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                          <Link
+                            href={`/players/${player.id}`}
+                            className="hover:text-blue-600 transition-colors"
+                          >
                             {player.playerName}
                           </Link>
                         </div>
@@ -502,10 +525,13 @@ export default function MatchupDetail() {
                       >
                         <div>
                           <div className="font-medium">
-                          <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
-                            {player.playerName}
-                          </Link>
-                        </div>
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:text-blue-600 transition-colors"
+                            >
+                              {player.playerName}
+                            </Link>
+                          </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
                             {player.playerPosition} · {player.team}
                           </div>
@@ -573,7 +599,10 @@ export default function MatchupDetail() {
                         >
                           <div>
                             <span className="font-medium">
-                              <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                              <Link
+                                href={`/players/${player.id}`}
+                                className="hover:text-blue-600 transition-colors"
+                              >
                                 {player.playerName}
                               </Link>
                             </span>
@@ -634,7 +663,10 @@ export default function MatchupDetail() {
                         >
                           <div>
                             <span className="font-medium">
-                              <Link href={`/players/${player.id}`} className="hover:text-blue-600 transition-colors">
+                              <Link
+                                href={`/players/${player.id}`}
+                                className="hover:text-blue-600 transition-colors"
+                              >
                                 {player.playerName}
                               </Link>
                             </span>
@@ -672,7 +704,9 @@ export default function MatchupDetail() {
               </h3>
 
               {(() => {
-                const betterDecisions = findBetterLineupDecisions(homeTeam.players);
+                const betterDecisions = findBetterLineupDecisions(
+                  homeTeam.players
+                );
                 return betterDecisions.length > 0 ? (
                   <>
                     <div className="mb-4">
@@ -680,7 +714,12 @@ export default function MatchupDetail() {
                         Total Points Left on Table
                       </div>
                       <div className="text-2xl font-semibold text-red-600">
-                        {betterDecisions.reduce((sum, decision) => sum + decision.pointsGained, 0).toFixed(1)}
+                        {betterDecisions
+                          .reduce(
+                            (sum, decision) => sum + decision.pointsGained,
+                            0
+                          )
+                          .toFixed(1)}
                       </div>
                     </div>
 
@@ -694,27 +733,36 @@ export default function MatchupDetail() {
                             <div className="flex-1">
                               <div className="text-sm font-medium">
                                 Start{" "}
-                                <Link href={`/players/${decision.benchPlayer.id}`} className="text-green-600 font-semibold hover:text-green-700 transition-colors">
+                                <Link
+                                  href={`/players/${decision.benchPlayer.id}`}
+                                  className="text-green-600 font-semibold hover:text-green-700 transition-colors"
+                                >
                                   {decision.benchPlayer.playerName}
                                 </Link>{" "}
                                 ({decision.benchPlayer.playerPosition})
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
-                                <Link href={`/players/${decision.starterPlayer.id}`} className="text-red-600 font-semibold hover:text-red-700 transition-colors">
+                                <Link
+                                  href={`/players/${decision.starterPlayer.id}`}
+                                  className="text-red-600 font-semibold hover:text-red-700 transition-colors"
+                                >
                                   {decision.starterPlayer.playerName}
                                 </Link>{" "}
                                 ({decision.starterPlayer.slotPosition})
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
-                                {decision.benchPlayer.points.toFixed(1)} vs {decision.starterPlayer.points.toFixed(1)} pts
+                                {decision.benchPlayer.points.toFixed(1)} vs{" "}
+                                {decision.starterPlayer.points.toFixed(1)} pts
                               </div>
                             </div>
                             <div className="text-right">
                               <div className="text-lg font-semibold text-green-600">
                                 +{decision.pointsGained.toFixed(1)}
                               </div>
-                              <div className="text-xs text-gray-500">points</div>
+                              <div className="text-xs text-gray-500">
+                                points
+                              </div>
                             </div>
                           </div>
                         </li>
@@ -736,7 +784,9 @@ export default function MatchupDetail() {
               </h3>
 
               {(() => {
-                const betterDecisions = findBetterLineupDecisions(awayTeam.players);
+                const betterDecisions = findBetterLineupDecisions(
+                  awayTeam.players
+                );
                 return betterDecisions.length > 0 ? (
                   <>
                     <div className="mb-4">
@@ -744,7 +794,12 @@ export default function MatchupDetail() {
                         Total Points Left on Table
                       </div>
                       <div className="text-2xl font-semibold text-red-600">
-                        {betterDecisions.reduce((sum, decision) => sum + decision.pointsGained, 0).toFixed(1)}
+                        {betterDecisions
+                          .reduce(
+                            (sum, decision) => sum + decision.pointsGained,
+                            0
+                          )
+                          .toFixed(1)}
                       </div>
                     </div>
 
@@ -758,27 +813,36 @@ export default function MatchupDetail() {
                             <div className="flex-1">
                               <div className="text-sm font-medium">
                                 Start{" "}
-                                <Link href={`/players/${decision.benchPlayer.id}`} className="text-green-600 font-semibold hover:text-green-700 transition-colors">
+                                <Link
+                                  href={`/players/${decision.benchPlayer.id}`}
+                                  className="text-green-600 font-semibold hover:text-green-700 transition-colors"
+                                >
                                   {decision.benchPlayer.playerName}
                                 </Link>{" "}
                                 ({decision.benchPlayer.playerPosition})
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
-                                <Link href={`/players/${decision.starterPlayer.id}`} className="text-red-600 font-semibold hover:text-red-700 transition-colors">
+                                <Link
+                                  href={`/players/${decision.starterPlayer.id}`}
+                                  className="text-red-600 font-semibold hover:text-red-700 transition-colors"
+                                >
                                   {decision.starterPlayer.playerName}
                                 </Link>{" "}
                                 ({decision.starterPlayer.slotPosition})
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
-                                {decision.benchPlayer.points.toFixed(1)} vs {decision.starterPlayer.points.toFixed(1)} pts
+                                {decision.benchPlayer.points.toFixed(1)} vs{" "}
+                                {decision.starterPlayer.points.toFixed(1)} pts
                               </div>
                             </div>
                             <div className="text-right">
                               <div className="text-lg font-semibold text-green-600">
                                 +{decision.pointsGained.toFixed(1)}
                               </div>
-                              <div className="text-xs text-gray-500">points</div>
+                              <div className="text-xs text-gray-500">
+                                points
+                              </div>
                             </div>
                           </div>
                         </li>
