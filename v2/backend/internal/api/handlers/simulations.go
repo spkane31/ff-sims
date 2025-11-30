@@ -26,14 +26,6 @@ type TeamStats struct {
 }
 
 func GetStats(c *gin.Context) {
-	// Handler logic for getting simulation stats
-
-	type Stats struct {
-		TeamID        string  `json:"team_id"`
-		AveragePoints float64 `json:"average_points"`
-		StdDevPoints  float64 `json:"std_dev_points"`
-	}
-
 	var matchups []models.Matchup
 
 	err := database.DB.Model(&models.Matchup{}).Select([]string{
@@ -64,9 +56,6 @@ func GetStats(c *gin.Context) {
 	teamScoresMap := make(map[uint][]float64)
 
 	for _, matchup := range matchups {
-		// homeTeamID := fmt.Sprintf("%d", matchup.HomeTeamID)
-		// awayTeamID := fmt.Sprintf("%d", matchup.AwayTeamID)
-
 		if _, exists := teamScoresMap[matchup.HomeTeamID]; !exists {
 			teamScoresMap[matchup.HomeTeamID] = []float64{matchup.HomeTeamFinalScore}
 		} else {

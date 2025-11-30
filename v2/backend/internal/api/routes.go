@@ -46,17 +46,15 @@ func SetupRouter(r *gin.Engine) {
 		// Leagues endpoints
 		leagues := api.Group("/leagues")
 		{
+			leagues.GET("", handlers.GetLeagues)
 			// League-wide properties
 			leagues.GET("/years", handlers.GetLeagueYears)
-			
+
 			// Expected wins endpoints
 			leagues.GET("/:id/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
 			leagues.GET("/:id/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
 			leagues.GET("/:id/expected-wins/rankings/:year", handlers.GetSeasonRankings)
 			leagues.GET("/:id/expected-wins/luck/:year", handlers.GetLuckDistribution)
-
-			// NOTE: Removed POST endpoints for expected wins recalculation
-			// Use ETL scripts instead: --calculate-expected-wins flag
 		}
 
 		// Teams endpoints (additional expected wins routes)
@@ -69,5 +67,35 @@ func SetupRouter(r *gin.Engine) {
 			// sim.POST("/run", handlers.RunSimulation)
 			// sim.GET("/results/:id", handlers.GetSimulationResults)
 		}
+	}
+}
+
+func SetupMultiLeagueRouter(r *gin.Engine) {
+	api := r.Group("/:id")
+	{
+		// Teams endpoints
+		teams := api.Group("/teams")
+		{
+			teams.GET("", handlers.GetTeams)
+			teams.GET("/:id", handlers.GetTeamByID)
+		}
+	}
+
+	schedules := api.Group("/schedules")
+	{
+		schedules.GET("", handlers.GetSchedules)
+		schedules.GET("/:id", handlers.GetMatchup)
+	}
+
+	transactions := api.Group("/transactions")
+	{
+		transactions.GET("", handlers.GetTransactions)
+		transactions.GET("/draft-picks", handlers.GetDraftPicks)
+	}
+
+	// Simulation endpoints
+	sim := api.Group("/simulations")
+	{
+		sim.GET("/stats", handlers.GetStats)
 	}
 }

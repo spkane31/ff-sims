@@ -33,15 +33,16 @@ type League struct {
 
 // RosterSettings defines the roster composition requirements
 type RosterSettings struct {
-	QB   int `json:"qb" gorm:"default:1"`
-	RB   int `json:"rb" gorm:"default:2"`
-	WR   int `json:"wr" gorm:"default:2"`
-	TE   int `json:"te" gorm:"default:1"`
-	FLEX int `json:"flex" gorm:"default:1"` // RB/WR/TE
-	K    int `json:"k" gorm:"default:1"`
-	DST  int `json:"dst" gorm:"default:1"`
-	BN   int `json:"bn" gorm:"default:6"` // Bench spots
-	IR   int `json:"ir" gorm:"default:1"` // Injured reserve
+	QB        int `json:"qb" gorm:"default:1"`
+	RB        int `json:"rb" gorm:"default:2"`
+	WR        int `json:"wr" gorm:"default:2"`
+	TE        int `json:"te" gorm:"default:1"`
+	FLEX      int `json:"flex" gorm:"default:1"`      // RB/WR/TE
+	SUPERFLEX int `json:"superflex" gorm:"default:0"` // QB/RB/WR/TE
+	K         int `json:"k" gorm:"default:1"`
+	DST       int `json:"dst" gorm:"default:1"`
+	BN        int `json:"bn" gorm:"default:6"` // Bench spots
+	IR        int `json:"ir" gorm:"default:1"` // Injured reserve
 }
 
 // ScoringSettings defines how fantasy points are calculated

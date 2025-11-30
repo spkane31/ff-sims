@@ -48,24 +48,3 @@ type Matchup struct {
 func (m *Matchup) String() string {
 	return fmt.Sprintf("Matchup(ID=%d, Week=%d, Year=%d, HomeTeamID=%d, AwayTeamID=%d, HomeScore=%.2f, AwayScore=%.2f, Completed=%t)", m.ID, m.Week, m.Year, m.HomeTeamID, m.AwayTeamID, m.HomeTeamFinalScore, m.AwayTeamFinalScore, m.Completed)
 }
-
-// GetMatchupsByWeek returns all matchups for a specific week and year
-func GetMatchupsByWeek(db *gorm.DB, leagueID uint, week uint, year uint) ([]Matchup, error) {
-	var matchups []Matchup
-	err := db.Where("league_id = ? AND week = ? AND year = ?", leagueID, week, year).Find(&matchups).Error
-	return matchups, err
-}
-
-// GetTeamMatchups returns all matchups for a specific team (either home or away)
-func GetTeamMatchups(db *gorm.DB, teamID uint, year uint) ([]Matchup, error) {
-	var matchups []Matchup
-	err := db.Where("(home_team_id = ? OR away_team_id = ?) AND year = ?", teamID, teamID, year).Find(&matchups).Error
-	return matchups, err
-}
-
-// LoadFullMatchup loads a matchup with all related box scores and team information
-func LoadFullMatchup(db *gorm.DB, matchupID uint) (*Matchup, error) {
-	var matchup Matchup
-	err := db.Preload("HomeTeam").Preload("AwayTeam").Preload("BoxScores.Player").Where("id = ?", matchupID).First(&matchup).Error
-	return &matchup, err
-}
