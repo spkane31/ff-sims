@@ -23,9 +23,13 @@ clean: ## Remove built binaries
 	@echo "Cleaning up..."
 	@rm -rf bin
 
-etl: build ## Run the ETL process
+etl: ## Run the ETL process
 	@echo "Running ETL process..."
 	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
+
+sleeper: ## Run the Sleeper data ingestion process
+	@echo "Running Sleeper data ingestion..."
+	@go run ./cmd/sleeperetl
 
 migrate: ## Run all database migration files (requires DATABASE_URL)
 	@echo "Running database migrations..."

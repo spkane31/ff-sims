@@ -68,6 +68,11 @@ func runMigrations() error {
 		&models.BoxScore{},
 		&models.WeeklyExpectedWins{},
 		&models.SeasonExpectedWins{},
+		// Sleeper models
+		&models.SleeperLeague{},
+		&models.SleeperUser{},
+		&models.SleeperTransaction{},
+		&models.SleeperDraftPick{},
 	)
 
 	if err != nil {
