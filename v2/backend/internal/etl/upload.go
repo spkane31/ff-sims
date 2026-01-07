@@ -116,7 +116,7 @@ func processDraftSelections(filePath string) error {
 			if err := database.DB.Save(&existingSelection).Error; err != nil {
 				return fmt.Errorf("error updating existing draft selection for player ID %d: %w", selection.PlayerID, err)
 			}
-			logging.Infof("Updated existing draft selection: %+v", existingSelection)
+			logging.Infof("Updated existing draft selection: %s", existingSelection)
 		}
 	}
 
@@ -314,7 +314,7 @@ func processMatchups(filePath string) error {
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamID, err)
 			}
-			logging.Infof("Updated existing matchup: %+v", existingMatchup)
+			logging.Infof("Updated existing matchup: %s", existingMatchup)
 		}
 
 		if existingMatchup.ID == 0 {

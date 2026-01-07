@@ -45,7 +45,7 @@ type Matchup struct {
 	SimResults []SimResult `json:"-"`
 }
 
-func (m *Matchup) String() string {
+func (m Matchup) String() string {
 	return fmt.Sprintf("Matchup(ID=%d, Week=%d, Year=%d, HomeTeamID=%d, AwayTeamID=%d, HomeScore=%.2f, AwayScore=%.2f, Completed=%t)", m.ID, m.Week, m.Year, m.HomeTeamID, m.AwayTeamID, m.HomeTeamFinalScore, m.AwayTeamFinalScore, m.Completed)
 }
 

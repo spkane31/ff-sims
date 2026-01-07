@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -25,6 +26,10 @@ type DraftSelection struct {
 	Team   *Team   `json:"team,omitempty"`
 	Player *Player `json:"player,omitempty"`
 	League *League `json:"league,omitempty"`
+}
+
+func (ds *DraftSelection) String() string {
+	return fmt.Sprintf("%s (Round %d, Pick %d)", ds.PlayerName, ds.Round, ds.Pick)
 }
 
 // Transaction represents various team transactions like adding/dropping/trading players
