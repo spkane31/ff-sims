@@ -19,40 +19,7 @@ We are in the process of migrating from writing data to multiple JSON files (in 
 
 The following features are currently implemented in `main.py` but **NOT YET** in the YAML-based `League` model:
 
-### 1. Matchup/Boxscore Fields
-**Location:** `_league.py:34-70`
-
-The current `Matchup` and `Boxscore` classes are missing:
-- `game_type` - String indicating matchup type (e.g., "NONE", "PLAYOFF")
-- `is_playoff` - Boolean flag for playoff games
-
-**Reference:** `main.py:149-150, 185-186, 210-211`
-
----
-
-### 2. Enhanced PlayerBoxscore Data
-**Location:** `_league.py:42-59`
-
-The current `PlayerBoxscore` class only has 7 basic fields. Missing 12 additional fields:
-
-- `pro_opponent` - NFL opponent
-- `pro_pos_rank` - Position ranking
-- `game_played` - Percentage of game played
-- `game_date` - Date/time of NFL game
-- `active_status` - Active/inactive status
-- `eligible_slots` - List of eligible lineup slots
-- `on_team_id` - ESPN team ID player is on
-- `injured` - Injury flag
-- `injury_status` - Injury status string
-- `percent_owned` - Ownership percentage
-- `percent_started` - Start percentage
-- `stats` - Raw stats dictionary
-
-**Reference:** `main.py:220-242, 246-268`
-
----
-
-### 3. Draft Pick Enhancement
+### 1. Draft Pick Enhancement
 **Location:** `_league.py:143-158`
 
 The current `DraftPick` class is missing:
@@ -63,7 +30,7 @@ The current `DraftPick` class is missing:
 
 ---
 
-### 4. Transaction Enhancement
+### 2. Transaction Enhancement
 **Location:** `_league.py:194-253`
 
 The current `Action` and `Transaction` classes are missing:
@@ -76,7 +43,7 @@ The current `Action` and `Transaction` classes are missing:
 
 ---
 
-### 5. Separate Data Collections
+### 3. Separate Data Collections
 
 `main.py` generates three separate outputs from schedule data:
 1. **Pure Matchups** - Just matchup pairings without scores (`pure_matchups_{year}.json`)
@@ -89,7 +56,7 @@ The current `Schedule` class combines matchups and boxscores but doesn't separat
 
 ---
 
-### 6. Year Filtering Logic
+### 4. Year Filtering Logic
 
 `main.py` has special handling for different years:
 - **Years < 2019:** Uses different data retrieval approach (lines 176-195)
@@ -100,7 +67,7 @@ This logic is **not reflected** in `Schedule.from_espn_league()` at `_league.py:
 
 ---
 
-### 7. Current Week Filter Bug
+### 5. Current Week Filter Bug
 **Location:** `_league.py:115`
 
 Potential logic error in current week filtering:
@@ -125,13 +92,13 @@ This should skip future weeks and only process completed weeks.
 | Basic Teams | ✅ | ✅ | Complete |
 | Basic Matchups | ✅ | ✅ | Complete |
 | game_type/is_playoff | ✅ | ✅ | Complete |
+| Enhanced player boxscore | ✅ | ✅ | Complete |
 | Basic Draft | ✅ | ✅ | Complete |
 | Draft player details | ✅ | ❌ | **Missing** |
 | Basic Transactions | ✅ | ✅ | Complete |
 | Transaction player details | ✅ | ❌ | **Missing** |
 | Transaction year field | ✅ | ❌ | **Missing** |
 | Transaction year validation | ✅ | ❌ | **Missing** |
-| Enhanced player boxscore | ✅ | ❌ | **Missing** |
 | Pure matchups separation | ✅ | ❌ | **Missing** |
 | Box score player dataset | ✅ | ❌ | **Missing** |
 | Year-specific logic (<2019) | ✅ | ❌ | **Missing** |
@@ -174,14 +141,13 @@ This will generate a single YAML file containing all league data.
 
 To complete the YAML migration:
 
-1. Add missing fields to dataclasses in `_league.py`
-2. Update class methods to populate new fields from ESPN API
+1. Add draft player details (player_name, player_position)
+2. Add transaction enhancements (player details, year field, year validation)
 3. Add year-specific logic to `Schedule.from_espn_league()` (handle pre-2019 data)
 4. Fix current week filtering logic bug at line 115
 5. Decide on structure for "pure matchups" vs full boxscores
-6. Add transaction year validation (2024+ only)
-7. Test YAML output matches JSON data completeness
-8. Update main.py to use YAML approach
+6. Test YAML output matches JSON data completeness
+7. Update main.py to use YAML approach
 
 ---
 

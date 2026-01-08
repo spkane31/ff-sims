@@ -47,9 +47,26 @@ class PlayerBoxscore(Player):
     points: float
     projected_points: float
     on_bye: bool = False
+    pro_opponent: str = None
+    pro_pos_rank: int = None
+    game_played: int = None
+    game_date: str = None
+    active_status: str = None
+    eligible_slots: list[str] = None
+    on_team_id: int = None
+    injured: bool = False
+    injury_status: str = None
+    percent_owned: float = None
+    percent_started: float = None
+    stats: dict = None
 
     @classmethod
     def from_espn_player_boxscore(cls, espn_player_boxscore: BoxPlayer) -> "PlayerBoxscore":
+        # Handle game_date formatting with conditional check
+        game_date = None
+        if hasattr(espn_player_boxscore, "game_date") and espn_player_boxscore.game_date:
+            game_date = espn_player_boxscore.game_date.strftime("%Y-%m-%d %H:%M:%S")
+
         return PlayerBoxscore(
             espn_id=espn_player_boxscore.playerId,
             name=espn_player_boxscore.name,
@@ -58,6 +75,18 @@ class PlayerBoxscore(Player):
             points=espn_player_boxscore.points,
             projected_points=espn_player_boxscore.projected_points,
             on_bye=espn_player_boxscore.on_bye_week,
+            pro_opponent=espn_player_boxscore.pro_opponent,
+            pro_pos_rank=espn_player_boxscore.pro_pos_rank,
+            game_played=espn_player_boxscore.game_played,
+            game_date=game_date,
+            active_status=espn_player_boxscore.active_status,
+            eligible_slots=espn_player_boxscore.eligibleSlots,
+            on_team_id=espn_player_boxscore.onTeamId,
+            injured=espn_player_boxscore.injured,
+            injury_status=espn_player_boxscore.injuryStatus,
+            percent_owned=espn_player_boxscore.percent_owned,
+            percent_started=espn_player_boxscore.percent_started,
+            stats=espn_player_boxscore.stats,
         )
 
 
