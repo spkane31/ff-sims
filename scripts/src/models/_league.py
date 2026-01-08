@@ -253,6 +253,7 @@ class Transaction:
         return merged_transactions
 
 
+
 @dataclass
 class League:
     id: int
@@ -302,6 +303,11 @@ class League:
             transactions=Transaction.from_espn_league(espn_league),
             draft=Draft.from_espn_league(espn_league),
         )
+
+
+    @classmethod
+    def from_sleeper_league(cls, id: int) -> "League":
+        raise NotImplementedError("Sleeper league integration is not yet implemented.")
 
     def to_yaml(self, file_name: str) -> None:
         with open(file=file_name, mode="w") as f:
