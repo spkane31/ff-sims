@@ -39,24 +39,24 @@ export interface TransactionsResponse {
  */
 export const transactionsService = {
   /**
-   * Get all draft picks
+   * Get all draft picks for a specific league
    */
-  getDraftPicks: async (year: number = 2024, leagueId: number = 345674): Promise<DraftPicksResponse> => {
-    return apiClient.get<DraftPicksResponse>(`/transactions/draft-picks?year=${year}&league_id=${leagueId}`);
+  getDraftPicks: async (leagueId: string, year: number = 2024): Promise<DraftPicksResponse> => {
+    return apiClient.get<DraftPicksResponse>(`/league/${leagueId}/transactions/draft-picks?year=${year}`);
   },
 
   /**
-   * Get all transactions
+   * Get all transactions for a specific league
    */
-  getAllTransactions: async (): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>('/transactions');
+  getAllTransactions: async (leagueId: string): Promise<TransactionsResponse> => {
+    return apiClient.get<TransactionsResponse>(`/league/${leagueId}/transactions`);
   },
 
   /**
-   * Get a single transaction by ID
+   * Get a single transaction by ID for a specific league
    */
-  getTransactionById: async (transactionId: number): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>(`/transactions/${transactionId}`);
+  getTransactionById: async (leagueId: string, transactionId: number): Promise<TransactionsResponse> => {
+    return apiClient.get<TransactionsResponse>(`/league/${leagueId}/transactions/${transactionId}`);
   },
 
 };

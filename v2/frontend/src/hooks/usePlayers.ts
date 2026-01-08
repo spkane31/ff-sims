@@ -4,16 +4,21 @@ import { Player, playerService } from "../services/playerService";
 /**
  * Hook for fetching all players
  */
-export function usePlayers(year?: string | number) {
+export function usePlayers(leagueId?: string, year?: string | number) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchPlayers = useCallback(async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await playerService.getAllPlayers(year);
+      const data = await playerService.getAllPlayers(leagueId, year);
       setPlayers(data);
     } catch (err) {
       setError(
@@ -24,7 +29,7 @@ export function usePlayers(year?: string | number) {
     } finally {
       setIsLoading(false);
     }
-  }, [year]);
+  }, [leagueId, year]);
 
   useEffect(() => {
     fetchPlayers();
@@ -36,16 +41,21 @@ export function usePlayers(year?: string | number) {
 /**
  * Hook for fetching a team's players
  */
-export function useTeamPlayers(teamId: number) {
+export function useTeamPlayers(leagueId: string | undefined, teamId: number) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeamPlayers = useCallback(async () => {
+    if (!leagueId || !teamId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await playerService.getTeamPlayers(teamId);
+      const data = await playerService.getTeamPlayers(leagueId, teamId);
       setPlayers(data);
     } catch (err) {
       setError(
@@ -56,13 +66,13 @@ export function useTeamPlayers(teamId: number) {
     } finally {
       setIsLoading(false);
     }
-  }, [teamId]);
+  }, [leagueId, teamId]);
 
   useEffect(() => {
-    if (teamId) {
+    if (leagueId && teamId) {
       fetchTeamPlayers();
     }
-  }, [teamId, fetchTeamPlayers]);
+  }, [leagueId, teamId, fetchTeamPlayers]);
 
   return { players, isLoading, error, refetch: fetchTeamPlayers };
 }
@@ -70,16 +80,21 @@ export function useTeamPlayers(teamId: number) {
 /**
  * Hook for fetching draft data
  */
-export function useDraft(year?: number) {
+export function useDraft(leagueId?: string, year?: number) {
   const [draftData, setDraftData] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchDraft = useCallback(async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await playerService.getDraft(year);
+      const data = await playerService.getDraft(leagueId, year);
       setDraftData(data);
     } catch (err) {
       setError(
@@ -90,7 +105,7 @@ export function useDraft(year?: number) {
     } finally {
       setIsLoading(false);
     }
-  }, [year]);
+  }, [leagueId, year]);
 
   useEffect(() => {
     fetchDraft();

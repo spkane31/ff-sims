@@ -138,6 +138,10 @@ def get_schedule(league: League, file_name: str) -> None:
             logging.info(f"Processing schedule for week: {week}")
             week_matchups = []
             for scoreboard_matchup in league.scoreboard(week=week):
+                # This is for playoff weeks
+                if not hasattr(scoreboard_matchup, "away_team") or not hasattr(scoreboard_matchup, "home_team"):
+                    continue
+
                 week_matchups.append(
                     {
                         "week": week,
@@ -470,11 +474,18 @@ if __name__ == "__main__":
         default="data",
         help="Directory to store output JSON files",
     )
+    parser.add_argument("--league-id", type=int, default=345674)
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
+
+    # Create league-specific directory
+    league_output_dir = os.path.join(args.output_dir, str(args.league_id))
+    if not os.path.exists(league_output_dir):
+        os.makedirs(league_output_dir)
+        logging.info(f"Created league directory: {league_output_dir}")
 
     SWID = os.environ.get("SWID")
     ESPN_S2 = os.environ.get("ESPN_S2")
@@ -488,8 +499,8 @@ if __name__ == "__main__":
         exit(1)
 
     # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
-    logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
+    league = League(league_id=args.league_id, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    logging.info(f"ID: {args.league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
 
     # This was done manually but have to iterate through each year to load data
     # DataLeague.from_espn_league(league).to_yaml("test.yaml")
@@ -499,11 +510,11 @@ if __name__ == "__main__":
     conn = psycopg2.connect(DATABASE_URL)
 
     # Define file paths for outputs
-    teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")
-    matchups_file = os.path.join(args.output_dir, f"matchups_{args.year}.json")
-    box_score_file = os.path.join(args.output_dir, f"box_score_players_{args.year}.json")
-    draft_file = os.path.join(args.output_dir, f"draft_selections_{args.year}.json")
-    transactions_file = os.path.join(args.output_dir, f"transactions_{args.year}.json")
+    teams_file = os.path.join(league_output_dir, f"teams_{args.year}.json")
+    matchups_file = os.path.join(league_output_dir, f"matchups_{args.year}.json")
+    box_score_file = os.path.join(league_output_dir, f"box_score_players_{args.year}.json")
+    draft_file = os.path.join(league_output_dir, f"draft_selections_{args.year}.json")
+    transactions_file = os.path.join(league_output_dir, f"transactions_{args.year}.json")
 
     # Create empty files to start with
     for file_path in [

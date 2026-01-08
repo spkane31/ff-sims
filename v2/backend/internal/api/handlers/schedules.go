@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"backend/internal/api/middleware"
 	"backend/internal/database"
 	"backend/internal/models"
 	"backend/internal/utils"
@@ -44,10 +45,11 @@ type Matchup struct {
 
 // GetPlayers returns all players with optional filtering
 func GetSchedules(c *gin.Context) {
+	leagueID := middleware.GetLeagueID(c)
 	year := c.Query("year")
 	gameTypeFilter := c.Query("gameType") // "all", "regular", "playoffs"
 
-	slog.Info("Fetching schedules", "year", year, "gameType", gameTypeFilter)
+	slog.Info("Fetching schedules", "leagueID", leagueID, "year", year, "gameType", gameTypeFilter)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -56,13 +58,17 @@ func GetSchedules(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if year == "" {
-			// Fetch all matchups (completed and future)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Find(&schedule).Error; scheduleErr != nil {
+			// Fetch all matchups for this league (completed and future)
+			if scheduleErr = database.DB.Model(&models.Matchup{}).
+				Where("league_id = ?", leagueID).
+				Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		} else {
-			// Fetch all matchups for the year (completed and future)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ?", year).Find(&schedule).Error; scheduleErr != nil {
+			// Fetch all matchups for the year and league (completed and future)
+			if scheduleErr = database.DB.Model(&models.Matchup{}).
+				Where("league_id = ? AND year = ?", leagueID, year).
+				Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
 		}
@@ -73,7 +79,10 @@ func GetSchedules(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Select("id, espn_id, owner").Find(&teams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).
+			Where("league_id = ?", leagueID).
+			Select("id, espn_id, owner").
+			Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return
 		}

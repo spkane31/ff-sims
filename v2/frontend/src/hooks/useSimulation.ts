@@ -4,16 +4,21 @@ import { SimulationResult, SimulationMetrics, simulationService } from '../servi
 /**
  * Hook for accessing simulation results
  */
-export function useSimulationResults() {
+export function useSimulationResults(leagueId?: string) {
   const [results, setResults] = useState<SimulationResult[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchResults = async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await simulationService.getSimulationResults();
+      const data = await simulationService.getSimulationResults(leagueId);
       setResults(data);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred while fetching simulation results'));
@@ -24,7 +29,7 @@ export function useSimulationResults() {
 
   useEffect(() => {
     fetchResults();
-  }, []);
+  }, [leagueId]);
 
   return { results, isLoading, error, refetch: fetchResults };
 }
@@ -32,16 +37,21 @@ export function useSimulationResults() {
 /**
  * Hook for accessing simulation metrics
  */
-export function useSimulationMetrics() {
+export function useSimulationMetrics(leagueId?: string) {
   const [metrics, setMetrics] = useState<SimulationMetrics | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchMetrics = async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await simulationService.getSimulationMetrics();
+      const data = await simulationService.getSimulationMetrics(leagueId);
       setMetrics(data);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred while fetching simulation metrics'));
@@ -52,7 +62,7 @@ export function useSimulationMetrics() {
 
   useEffect(() => {
     fetchMetrics();
-  }, []);
+  }, [leagueId]);
 
   return { metrics, isLoading, error, refetch: fetchMetrics };
 }
@@ -60,16 +70,20 @@ export function useSimulationMetrics() {
 /**
  * Hook for running a new simulation
  */
-export function useRunSimulation() {
+export function useRunSimulation(leagueId?: string) {
   const [results, setResults] = useState<SimulationResult[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
 
   const runSimulation = async (params: { iterations?: number; seed?: number } = {}) => {
+    if (!leagueId) {
+      throw new Error('League ID is required to run simulation');
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await simulationService.runSimulation(params);
+      const data = await simulationService.runSimulation(leagueId, params);
       setResults(data);
       return data;
     } catch (err) {

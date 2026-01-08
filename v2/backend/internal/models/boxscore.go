@@ -13,6 +13,7 @@ type BoxScore struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
+	LeagueID    uint      `json:"league_id"`
 	MatchupID   uint      `json:"matchup_id"`
 	PlayerID    uint      `json:"player_id"`
 	TeamID      uint      `json:"team_id"` // The team the player was on for this matchup

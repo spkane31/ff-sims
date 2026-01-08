@@ -1,9 +1,9 @@
 package handlers
 
 import (
+	"backend/internal/api/middleware"
 	"backend/internal/database"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -55,17 +55,11 @@ type GetLeagueYearsResponse struct {
 
 // GetLeagueYears returns all years that a league has been active based on matchup data
 func GetLeagueYears(c *gin.Context) {
-	// Get league ID parameter, default to 345674
-	leagueIDStr := c.DefaultQuery("league_id", "345674")
-	leagueID, err := strconv.Atoi(leagueIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league_id parameter"})
-		return
-	}
+	leagueID := middleware.GetLeagueID(c)
 
 	// Query distinct years from matchups table
 	var years []uint
-	err = database.DB.Table("matchups").
+	err := database.DB.Table("matchups").
 		Select("DISTINCT year").
 		Where("league_id = ?", leagueID).
 		Order("year DESC").

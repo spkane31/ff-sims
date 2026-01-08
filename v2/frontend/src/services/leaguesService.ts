@@ -1,5 +1,14 @@
 import { apiClient } from './apiClient';
 
+export interface League {
+  id: string;
+  name: string;
+}
+
+export interface LeaguesResponse {
+  leagues: League[];
+}
+
 export interface LeagueYearsResponse {
   years: number[];
 }
@@ -9,9 +18,16 @@ export interface LeagueYearsResponse {
  */
 export const leaguesService = {
   /**
-   * Get all years the league has been active
+   * Get all leagues
    */
-  getLeagueYears: async (leagueId: number = 345674): Promise<LeagueYearsResponse> => {
-    return apiClient.get<LeagueYearsResponse>(`/leagues/years?league_id=${leagueId}`);
+  getAllLeagues: async (): Promise<LeaguesResponse> => {
+    return apiClient.get<LeaguesResponse>("/leagues");
+  },
+
+  /**
+   * Get all years that a league has been active
+   */
+  getLeagueYears: async (leagueId: string): Promise<LeagueYearsResponse> => {
+    return apiClient.get<LeagueYearsResponse>(`/league/${leagueId}/leagues/years`);
   },
 };

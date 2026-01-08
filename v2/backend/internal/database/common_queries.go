@@ -2,10 +2,11 @@ package database
 
 import "backend/internal/models"
 
-// GetTeamsIDMap returns a map of all teams IDs (ESPN and Database) to the Team
-func GetTeamsIDMap() (map[uint]models.Team, error) {
+// TODO (seankane): Wonder if this can be removed easily
+// GetTeamsIDMap returns a map of all teams IDs (ESPN and Database) to the Team for a specific league
+func GetTeamsIDMap(leagueID uint) (map[uint]models.Team, error) {
 	var teams []models.Team
-	if err := DB.Find(&teams).Error; err != nil {
+	if err := DB.Where("league_id = ?", leagueID).Find(&teams).Error; err != nil {
 		return nil, err
 	}
 

@@ -38,6 +38,7 @@ type SimResult struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
+	LeagueID      uint    `json:"league_id"`
 	SimulationID  uint    `json:"simulationId"`
 	MatchupID     uint    `json:"matchupId"`
 	TeamID        uint    `json:"teamId"`
@@ -60,6 +61,7 @@ type SimTeamResult struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
+	LeagueID         uint    `json:"league_id"`
 	SimulationID     uint    `json:"simulationId"`
 	TeamID           uint    `json:"teamId"`
 	Wins             int     `json:"wins"`

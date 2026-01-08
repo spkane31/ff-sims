@@ -119,30 +119,30 @@ export interface TeamDetail {
  */
 export const teamsService = {
   /**
-   * Get all teams
+   * Get all teams for a specific league
    */
-  getAllTeams: async (): Promise<TeamResponse> => {
-    return apiClient.get<TeamResponse>("/teams");
+  getAllTeams: async (leagueId: string): Promise<TeamResponse> => {
+    return apiClient.get<TeamResponse>(`/league/${leagueId}/teams`);
   },
 
   /**
-   * Get a single team by ID
+   * Get a single team by ID for a specific league
    */
-  getTeamById: async (teamId: number): Promise<Team> => {
-    return apiClient.get<Team>(`/teams/${teamId}`);
+  getTeamById: async (leagueId: string, teamId: number): Promise<Team> => {
+    return apiClient.get<Team>(`/league/${leagueId}/teams/${teamId}`);
   },
 
   /**
    * Get detailed team information including schedule, players, draft picks, and transactions
    */
-  getTeamDetail: async (teamId: string | number): Promise<TeamDetail> => {
-    return apiClient.get<TeamDetail>(`/teams/${teamId}`);
+  getTeamDetail: async (leagueId: string, teamId: string | number): Promise<TeamDetail> => {
+    return apiClient.get<TeamDetail>(`/league/${leagueId}/teams/${teamId}`);
   },
 
   /**
-   * Get team standings
+   * Get team standings for a specific league
    */
-  getTeamStandings: async (): Promise<Team[]> => {
-    return apiClient.get<Team[]>("/teams/standings");
+  getTeamStandings: async (leagueId: string): Promise<Team[]> => {
+    return apiClient.get<Team[]>(`/league/${leagueId}/teams/standings`);
   },
 };

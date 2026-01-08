@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"backend/internal/api/middleware"
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
@@ -49,6 +50,7 @@ type TeamPoints struct {
 
 // GetTeams returns all teams
 func GetTeams(c *gin.Context) {
+	leagueID := middleware.GetLeagueID(c)
 	allTeams, teamsErr := []models.Team{}, error(nil)
 	fullSchedule, scheduleErr := []models.Matchup{}, error(nil)
 
@@ -57,7 +59,10 @@ func GetTeams(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Preload("NameHistory").Find(&allTeams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).
+			Where("league_id = ?", leagueID).
+			Preload("NameHistory").
+			Find(&allTeams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 		}
 	}()
@@ -66,7 +71,7 @@ func GetTeams(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if scheduleErr = database.DB.Model(&models.Matchup{}).
-			Where("completed = true").
+			Where("league_id = ? AND completed = true", leagueID).
 			Find(&fullSchedule).Error; scheduleErr != nil {
 			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
 		}
@@ -182,11 +187,12 @@ func GetTeams(c *gin.Context) {
 
 // GetTeamByID returns detailed information about a team including schedule, players, draft, and transactions
 func GetTeamByID(c *gin.Context) {
-	id := c.Param("id")
+	leagueID := middleware.GetLeagueID(c)
+	teamID := c.Param("id")
 
-	slog.Info("Fetching team by ID", "id", id)
+	slog.Info("Fetching team by ID", "leagueID", leagueID, "id", teamID)
 
-	teamMap, err := database.GetTeamsIDMap()
+	teamMap, err := database.GetTeamsIDMap(leagueID)
 	if err != nil {
 		slog.Error("Failed to fetch teams ID map", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch team data"})
@@ -195,8 +201,8 @@ func GetTeamByID(c *gin.Context) {
 
 	// Fetch the team
 	var team models.Team
-	if err := database.DB.Where("espn_id = ?", id).First(&team).Error; err != nil {
-		slog.Error("Failed to fetch team from database", "error", err, "id", id)
+	if err := database.DB.Where("espn_id = ?", teamID).First(&team).Error; err != nil {
+		slog.Error("Failed to fetch team from database", "error", err, "id", teamID)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
 		return
 	}
@@ -521,6 +527,7 @@ type TransactionPlayer struct {
 // GetCurrentSeasonStandings returns current season standings with expected wins
 // GET /api/teams/standings/{year}
 func GetCurrentSeasonStandings(c *gin.Context) {
+	leagueID := middleware.GetLeagueID(c)
 	yearParam := c.Param("year")
 	year, err := strconv.ParseUint(yearParam, 10, 32)
 	if err != nil {
@@ -529,24 +536,24 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	}
 	yearUint := uint(year)
 
-	// Fetch all teams
+	// Fetch all teams for this league
 	var allTeams []models.Team
-	if err := database.DB.Find(&allTeams).Error; err != nil {
+	if err := database.DB.Where("league_id = ?", leagueID).Find(&allTeams).Error; err != nil {
 		slog.Error("Failed to fetch teams from database", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
 		return
 	}
 
-	// Fetch current year's matchups
+	// Fetch current year's matchups for this league
 	var matchups []models.Matchup
-	if err := database.DB.Where("year = ? AND completed = true", yearUint).Find(&matchups).Error; err != nil {
+	if err := database.DB.Where("league_id = ? AND year = ? AND completed = true", leagueID, yearUint).Find(&matchups).Error; err != nil {
 		slog.Error("Failed to fetch matchups", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch matchups"})
 		return
 	}
 
 	// Get all weekly expected wins data for the year and aggregate by team
-	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, 345674, yearUint) // Assuming league ID 1
+	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, leagueID, yearUint)
 	if err != nil && err.Error() != "record not found" {
 		slog.Error("Failed to fetch weekly expected wins", "error", err)
 	}

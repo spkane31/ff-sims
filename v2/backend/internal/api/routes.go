@@ -2,99 +2,82 @@ package api
 
 import (
 	"backend/internal/api/handlers"
+	"backend/internal/api/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRouter configures the API routes
 func SetupRouter(r *gin.Engine) {
-	// Health check endpoint
+	// Health check endpoint (no league context needed)
 	r.GET("/api/health", handlers.HealthCheck)
 
-	// API routes group
-	api := r.Group("/api")
+	// Global leagues endpoint (lists all leagues)
+	r.GET("/api/leagues", handlers.GetLeagues)
+
+	// TODO (seankane): Remove the legacy routes on push
+	// // Legacy API routes with default league middleware (backward compatible)
+	// legacyAPI := r.Group("/api")
+	// legacyAPI.Use(middleware.DefaultLeagueMiddleware(345674))
+	// {
+	// 	setupLeagueRoutes(legacyAPI)
+	// }
+
+	// New multi-league routes with league context from URL
+	leagueAPI := r.Group("/api/league/:leagueId")
+	leagueAPI.Use(middleware.LeagueContextMiddleware())
 	{
-		// Teams endpoints
-		teams := api.Group("/teams")
-		{
-			teams.GET("", handlers.GetTeams)
-			teams.GET("/:id", handlers.GetTeamByID)
-			teams.GET("/all-time-expected-wins", handlers.GetAllTimeExpectedWins)
-			teams.GET("/standings/:year", handlers.GetCurrentSeasonStandings)
-		}
-
-		// Players endpoints
-		players := api.Group("/players")
-		{
-			players.GET("", handlers.GetPlayers)
-			players.GET("/:id", handlers.GetPlayerByID)
-			players.GET("/stats", handlers.GetPlayerStats)
-		}
-
-		schedules := api.Group("/schedules")
-		{
-			schedules.GET("", handlers.GetSchedules)
-			schedules.GET("/:id", handlers.GetMatchup)
-		}
-
-		transactions := api.Group("/transactions")
-		{
-			transactions.GET("", handlers.GetTransactions)
-			transactions.GET("/draft-picks", handlers.GetDraftPicks)
-		}
-
-		// Leagues endpoints
-		leagues := api.Group("/leagues")
-		{
-			leagues.GET("", handlers.GetLeagues)
-			// League-wide properties
-			leagues.GET("/years", handlers.GetLeagueYears)
-
-			// Expected wins endpoints
-			leagues.GET("/:id/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
-			leagues.GET("/:id/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
-			leagues.GET("/:id/expected-wins/rankings/:year", handlers.GetSeasonRankings)
-			leagues.GET("/:id/expected-wins/luck/:year", handlers.GetLuckDistribution)
-		}
-
-		// Teams endpoints (additional expected wins routes)
-		teams.GET("/:id/expected-wins/:year", handlers.GetTeamProgression)
-
-		// Simulation endpoints
-		sim := api.Group("/simulations")
-		{
-			sim.GET("/stats", handlers.GetStats)
-			// sim.POST("/run", handlers.RunSimulation)
-			// sim.GET("/results/:id", handlers.GetSimulationResults)
-		}
+		setupLeagueRoutes(leagueAPI)
 	}
 }
 
-func SetupMultiLeagueRouter(r *gin.Engine) {
-	api := r.Group("/:id")
+// setupLeagueRoutes configures routes that are league-scoped
+// Used by both legacy (/api/*) and new multi-league (/api/league/:leagueId/*) routes
+func setupLeagueRoutes(group *gin.RouterGroup) {
+	// Teams endpoints
+	teams := group.Group("/teams")
 	{
-		// Teams endpoints
-		teams := api.Group("/teams")
-		{
-			teams.GET("", handlers.GetTeams)
-			teams.GET("/:id", handlers.GetTeamByID)
-		}
+		teams.GET("", handlers.GetTeams)
+		teams.GET("/:id", handlers.GetTeamByID)
+		teams.GET("/all-time-expected-wins", handlers.GetAllTimeExpectedWins)
+		teams.GET("/standings/:year", handlers.GetCurrentSeasonStandings)
+		teams.GET("/:id/expected-wins/:year", handlers.GetTeamProgression)
 	}
 
-	schedules := api.Group("/schedules")
+	// Players endpoints (global data, but can be filtered by league context)
+	players := group.Group("/players")
+	{
+		players.GET("", handlers.GetPlayers)
+		players.GET("/:id", handlers.GetPlayerByID)
+		players.GET("/stats", handlers.GetPlayerStats)
+	}
+
+	// Schedules endpoints
+	schedules := group.Group("/schedules")
 	{
 		schedules.GET("", handlers.GetSchedules)
 		schedules.GET("/:id", handlers.GetMatchup)
 	}
 
-	transactions := api.Group("/transactions")
+	// Transactions endpoints
+	transactions := group.Group("/transactions")
 	{
 		transactions.GET("", handlers.GetTransactions)
 		transactions.GET("/draft-picks", handlers.GetDraftPicks)
 	}
 
+	// League-specific endpoints
+	leagues := group.Group("/leagues")
+	{
+		leagues.GET("/years", handlers.GetLeagueYears)
+		leagues.GET("/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
+		leagues.GET("/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
+		leagues.GET("/expected-wins/rankings/:year", handlers.GetSeasonRankings)
+		leagues.GET("/expected-wins/luck/:year", handlers.GetLuckDistribution)
+	}
+
 	// Simulation endpoints
-	sim := api.Group("/simulations")
+	sim := group.Group("/simulations")
 	{
 		sim.GET("/stats", handlers.GetStats)
 	}

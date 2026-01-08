@@ -13,6 +13,7 @@ type TeamNameHistory struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
+	LeagueID  uint       `json:"league_id"`
 	TeamID    uint       `json:"teamId"`
 	Name      string     `json:"name"`
 	StartDate time.Time  `json:"startDate"`

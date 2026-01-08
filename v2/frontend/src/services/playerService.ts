@@ -20,33 +20,33 @@ export interface Player {
  */
 export const playerService = {
   /**
-   * Get all players with stats
+   * Get all players with stats for a specific league
    */
-  getAllPlayers: async (year?: string | number): Promise<Player[]> => {
-    const endpoint = year ? `/boxscoreplayers?year=${year}` : '/boxscoreplayers';
+  getAllPlayers: async (leagueId: string, year?: string | number): Promise<Player[]> => {
+    const endpoint = year ? `/league/${leagueId}/boxscoreplayers?year=${year}` : `/league/${leagueId}/boxscoreplayers`;
     const response = await apiClient.get<{ data: Player[], total: number, page_size: number }>(endpoint);
     return response.data;
   },
 
   /**
-   * Get players for a specific team
+   * Get players for a specific team in a league
    */
-  getTeamPlayers: async (teamId: number): Promise<Player[]> => {
-    return apiClient.get<Player[]>(`/teams/${teamId}/players`);
+  getTeamPlayers: async (leagueId: string, teamId: number): Promise<Player[]> => {
+    return apiClient.get<Player[]>(`/league/${leagueId}/teams/${teamId}/players`);
   },
 
   /**
-   * Get players by position
+   * Get players by position for a specific league
    */
-  getPlayersByPosition: async (position: string): Promise<Player[]> => {
-    return apiClient.get<Player[]>(`/boxscoreplayers?position=${position}`);
+  getPlayersByPosition: async (leagueId: string, position: string): Promise<Player[]> => {
+    return apiClient.get<Player[]>(`/league/${leagueId}/boxscoreplayers?position=${position}`);
   },
 
   /**
-   * Get draft data
+   * Get draft data for a specific league
    */
-  getDraft: async (year?: number): Promise<Player[]> => {
-    const endpoint = year ? `/draft?year=${year}` : '/draft';
+  getDraft: async (leagueId: string, year?: number): Promise<Player[]> => {
+    const endpoint = year ? `/league/${leagueId}/draft?year=${year}` : `/league/${leagueId}/draft`;
     return apiClient.get<Player[]>(endpoint);
   }
 };

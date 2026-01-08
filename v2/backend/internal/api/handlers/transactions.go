@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"backend/internal/api/middleware"
 	"backend/internal/database"
 	"backend/internal/models"
 	"fmt"
@@ -44,6 +45,8 @@ type GetDraftPicksResponse struct {
 }
 
 func GetDraftPicks(c *gin.Context) {
+	leagueID := middleware.GetLeagueID(c)
+
 	// Get year parameter, default to 2024
 	yearStr := c.DefaultQuery("year", "2024")
 	year, err := strconv.Atoi(yearStr)
@@ -52,16 +55,8 @@ func GetDraftPicks(c *gin.Context) {
 		return
 	}
 
-	// Get league ID parameter, default to 345674
-	leagueIDStr := c.DefaultQuery("league_id", "345674")
-	leagueID, err := strconv.Atoi(leagueIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league_id parameter"})
-		return
-	}
-
 	// Fetch draft selections from database
-	draftSelections, err := models.GetLeagueDraftSelections(database.DB, uint(leagueID), uint(year))
+	draftSelections, err := models.GetLeagueDraftSelections(database.DB, leagueID, uint(year))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch draft selections"})
 		return

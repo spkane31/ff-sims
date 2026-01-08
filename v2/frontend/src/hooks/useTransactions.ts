@@ -15,16 +15,21 @@ interface UseTransactionsReturn {
 /**
  * Hook for fetching transactions data
  */
-export function useTransactions(): UseTransactionsReturn {
+export function useTransactions(leagueId?: string): UseTransactionsReturn {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTransactions = useCallback(async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await transactionsService.getAllTransactions();
+      const data = await transactionsService.getAllTransactions(leagueId);
       setTransactions(data.transactions);
     } catch (err) {
       setError(
@@ -35,7 +40,7 @@ export function useTransactions(): UseTransactionsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [leagueId]);
 
   useEffect(() => {
     fetchTransactions();
@@ -47,16 +52,21 @@ export function useTransactions(): UseTransactionsReturn {
 /**
  * Hook for fetching a single transaction by ID
  */
-export function useTransaction(transactionId: number) {
+export function useTransaction(leagueId: string | undefined, transactionId: number) {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTransaction = useCallback(async () => {
+    if (!leagueId || !transactionId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await transactionsService.getTransactionById(transactionId);
+      const data = await transactionsService.getTransactionById(leagueId, transactionId);
       setTransaction(data.transactions[0] || null); // Assuming the API returns an array
     } catch (err) {
       setError(
@@ -67,13 +77,13 @@ export function useTransaction(transactionId: number) {
     } finally {
       setIsLoading(false);
     }
-  }, [transactionId]);
+  }, [leagueId, transactionId]);
 
   useEffect(() => {
-    if (transactionId) {
+    if (leagueId && transactionId) {
       fetchTransaction();
     }
-  }, [transactionId, fetchTransaction]);
+  }, [leagueId, transactionId, fetchTransaction]);
 
   return { transaction, isLoading, error, refetch: fetchTransaction };
 }
@@ -88,16 +98,21 @@ interface UseDraftPicksReturn {
 /**
  * Hook for fetching draft picks data
  */
-export function useDraftPicks(year: number = 2024): UseDraftPicksReturn {
+export function useDraftPicks(leagueId?: string, year: number = 2024): UseDraftPicksReturn {
   const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchDraftPicks = useCallback(async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await transactionsService.getDraftPicks(year);
+      const data = await transactionsService.getDraftPicks(leagueId, year);
       setDraftPicks(data.draft_picks || []);
     } catch (err) {
       setError(
@@ -109,7 +124,7 @@ export function useDraftPicks(year: number = 2024): UseDraftPicksReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [year]);
+  }, [leagueId, year]);
 
   useEffect(() => {
     fetchDraftPicks();

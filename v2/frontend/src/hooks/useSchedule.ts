@@ -8,7 +8,7 @@ import {
 /**
  * Hook for fetching the full schedule
  */
-export function useSchedule(options?: { gameType?: string }) {
+export function useSchedule(leagueId?: string, options?: { gameType?: string }) {
   const [schedule, setSchedule] = useState<GetScheduleResponse>({
     data: { matchups: [] },
   });
@@ -16,10 +16,15 @@ export function useSchedule(options?: { gameType?: string }) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchSchedule = useCallback(async () => {
+    if (!leagueId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getFullSchedule(options?.gameType);
+      const data = await scheduleService.getFullSchedule(leagueId, options?.gameType);
       setSchedule(data);
     } catch (err) {
       setError(
@@ -30,7 +35,7 @@ export function useSchedule(options?: { gameType?: string }) {
     } finally {
       setIsLoading(false);
     }
-  }, [options?.gameType]);
+  }, [leagueId, options?.gameType]);
 
   useEffect(() => {
     fetchSchedule();
@@ -42,16 +47,21 @@ export function useSchedule(options?: { gameType?: string }) {
 /**
  * Hook for fetching a team's schedule
  */
-export function useTeamSchedule(teamId: number) {
+export function useTeamSchedule(leagueId: string | undefined, teamId: number) {
   const [teamSchedule, setTeamSchedule] = useState<Game[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeamSchedule = useCallback(async () => {
+    if (!leagueId || !teamId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getTeamSchedule(teamId);
+      const data = await scheduleService.getTeamSchedule(leagueId, teamId);
       setTeamSchedule(data);
     } catch (err) {
       setError(
@@ -62,13 +72,13 @@ export function useTeamSchedule(teamId: number) {
     } finally {
       setIsLoading(false);
     }
-  }, [teamId]);
+  }, [leagueId, teamId]);
 
   useEffect(() => {
-    if (teamId) {
+    if (leagueId && teamId) {
       fetchTeamSchedule();
     }
-  }, [teamId, fetchTeamSchedule]);
+  }, [leagueId, teamId, fetchTeamSchedule]);
 
   return { teamSchedule, isLoading, error, refetch: fetchTeamSchedule };
 }

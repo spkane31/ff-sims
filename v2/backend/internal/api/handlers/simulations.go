@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"backend/internal/api/middleware"
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
@@ -26,15 +27,17 @@ type TeamStats struct {
 }
 
 func GetStats(c *gin.Context) {
+	leagueID := middleware.GetLeagueID(c)
 	var matchups []models.Matchup
 
+	// TODO (seankane): The year is hardcoded here and what is the stats for here?
 	err := database.DB.Model(&models.Matchup{}).Select([]string{
 		"home_team_id",
 		"away_team_id",
 		"home_team_final_score",
 		"away_team_final_score",
 	}).
-		Where("season = ? AND completed = ?", 2024, true).
+		Where("league_id = ? AND season = ? AND completed = ?", leagueID, 2024, true).
 		Scan(&matchups).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get stats"})
@@ -43,7 +46,7 @@ func GetStats(c *gin.Context) {
 
 	logging.Infof("Retrieved stats for %d teams", len(matchups))
 
-	allTeams, err := database.GetTeamsIDMap()
+	allTeams, err := database.GetTeamsIDMap(leagueID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get teams"})
 		return
