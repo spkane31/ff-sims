@@ -36,6 +36,8 @@ class Matchup:
     week: int
     home_team_id: int
     away_team_id: int
+    game_type: str
+    is_playoff: bool
 
 
 @dataclass
@@ -94,6 +96,8 @@ class Schedule:
                         week=week,
                         home_team_id=scoreboard_matchup.home_team.team_id,
                         away_team_id=scoreboard_matchup.away_team.team_id,
+                        game_type=scoreboard_matchup.matchup_type,
+                        is_playoff=scoreboard_matchup.is_playoff,
                     )
                 )
 
@@ -122,6 +126,8 @@ class Schedule:
                                 week=week,
                                 home_team_id=boxscore.home_team.team_id,
                                 away_team_id=boxscore.away_team.team_id,
+                                game_type=boxscore.matchup_type,
+                                is_playoff=boxscore.is_playoff,
                                 completed=boxscore.home_score > 0 and boxscore.away_score > 0,
                                 home_score=boxscore.home_score,
                                 away_score=boxscore.away_score,

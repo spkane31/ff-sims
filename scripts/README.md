@@ -124,7 +124,7 @@ This should skip future weeks and only process completed weeks.
 |---------|---------|------------|--------|
 | Basic Teams | ✅ | ✅ | Complete |
 | Basic Matchups | ✅ | ✅ | Complete |
-| game_type/is_playoff | ✅ | ❌ | **Missing** |
+| game_type/is_playoff | ✅ | ✅ | Complete |
 | Basic Draft | ✅ | ✅ | Complete |
 | Draft player details | ✅ | ❌ | **Missing** |
 | Basic Transactions | ✅ | ✅ | Complete |
