@@ -503,7 +503,7 @@ if __name__ == "__main__":
     logging.info(f"ID: {args.league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
 
     # This was done manually but have to iterate through each year to load data
-    yaml_file = os.path.join(league_output_dir, f"league_{args.year}.yaml")
+    yaml_file = os.path.join(league_output_dir, f"{args.year}.yaml")
     DataLeague.from_espn_league(league).to_yaml(yaml_file)
 
     exit(0)

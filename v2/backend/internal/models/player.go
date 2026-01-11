@@ -13,12 +13,50 @@ type Player struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"` // Unique ESPN ID for the player
-	Name          string  `json:"name"`
-	Position      string  `json:"position"` // QB, RB, WR, TE, K, DEF
-	Team          string  `json:"team"`     // NFL team abbreviation
+	// Platform IDs
+	ESPNID        int64  `json:"espn_id" gorm:"index:idx_players_espn_id"`              // ESPN ID for the player
+	SleeperID     string `json:"sleeper_id" gorm:"index:idx_players_sleeper_id,unique"` // Unique Sleeper ID
+	YahooID       string `json:"yahoo_id,omitempty"`
+	FantasyDataID int    `json:"fantasy_data_id,omitempty"`
+	RotoworldID   int    `json:"rotoworld_id,omitempty"`
+	RotowireID    string `json:"rotowire_id,omitempty"`
+	SportsradarID string `json:"sportsradar_id,omitempty"`
+	StatsID       string `json:"stats_id,omitempty"`
+
+	// Basic Info
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Name      string `json:"name"`    // Full name for compatibility
+	Number    int    `json:"number"`  // Jersey number
+	Hashtag   string `json:"hashtag"` // Social media hashtag
+
+	// Position & Team
+	Position         string `json:"position"`                           // Primary position: QB, RB, WR, TE, K, DEF
+	FantasyPositions string `json:"fantasy_positions" gorm:"type:text"` // JSON array of eligible positions
+	Team             string `json:"team"`                               // NFL team abbreviation
+	Status           string `json:"status"`                             // Active, Injured, etc.
+	Sport            string `json:"sport" gorm:"default:'nfl'"`
+
+	// Biographical Info
+	Age          int    `json:"age,omitempty"`
+	Height       string `json:"height,omitempty"` // e.g., "6'2""
+	Weight       string `json:"weight,omitempty"` // e.g., "225"
+	College      string `json:"college,omitempty"`
+	YearsExp     int    `json:"years_exp,omitempty"`
+	BirthCountry string `json:"birth_country,omitempty"`
+
+	// Depth Chart & Rankings
+	DepthChartPosition int `json:"depth_chart_position,omitempty"`
+	DepthChartOrder    int `json:"depth_chart_order,omitempty"`
+	SearchRank         int `json:"search_rank,omitempty"` // Sleeper's search ranking
+
+	// Injury Tracking
+	InjuryStatus          string `json:"injury_status,omitempty"`
+	InjuryStartDate       string `json:"injury_start_date,omitempty"`
+	PracticeParticipation string `json:"practice_participation,omitempty"`
+
+	// Fantasy Stats
 	FantasyPoints float64 `json:"fantasy_points" gorm:"default:0"`
-	Status        string  `json:"status"` // Active, Injured, etc.
 
 	// Base stats - these represent career or season totals
 	Stats PlayerStats `json:"stats" gorm:"embedded"`
@@ -47,6 +85,13 @@ type PlayerStats struct {
 func GetPlayerByESPNID(db *gorm.DB, espnID int64) (*Player, error) {
 	var player Player
 	err := db.Where("espn_id = ?", espnID).First(&player).Error
+	return &player, err
+}
+
+// GetPlayerBySleeperID retrieves a player by their Sleeper ID
+func GetPlayerBySleeperID(db *gorm.DB, sleeperID string) (*Player, error) {
+	var player Player
+	err := db.Where("sleeper_id = ?", sleeperID).First(&player).Error
 	return &player, err
 }
 

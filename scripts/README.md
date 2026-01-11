@@ -19,56 +19,8 @@ We are in the process of migrating from writing data to multiple JSON files (in 
 
 The following features are currently implemented in `main.py` but **NOT YET** in the YAML-based `League` model:
 
-### 1. Draft Pick Enhancement
-**Location:** `_league.py:143-158`
-
-The current `DraftPick` class is missing:
-- `player_name` - Name of drafted player (currently only has player_id)
-- `player_position` - Position of drafted player
-
-**Reference:** `main.py:347-349`
-
----
-
-### 2. Transaction Enhancement
-**Location:** `_league.py:194-253`
-
-The current `Action` and `Transaction` classes are missing:
-- **Action class:** `player_name` and `player_position` fields
-- **Transaction class:** `year` field (for multi-year consistency)
-- Date formatting: Currently stored as timestamp (int), should be formatted string
-- Year validation: Transactions only available for 2024+
-
-**Reference:** `main.py:417-419, 438-447`
-
----
-
-### 3. Separate Data Collections
-
-`main.py` generates three separate outputs from schedule data:
-1. **Pure Matchups** - Just matchup pairings without scores (`pure_matchups_{year}.json`)
-2. **Matchups with Scores** - Full matchup + lineup data (`matchups_{year}.json`)
-3. **Box Score Players** - Individual player performances (`box_score_players_{year}.json`)
-
-The current `Schedule` class combines matchups and boxscores but doesn't separate "pure matchups" (matchups without any score data).
-
-**Reference:** `main.py:309, 323-325` (pure matchups), `main.py:279-306, 317-320` (box score players)
-
----
-
-### 4. Year Filtering Logic
-
-`main.py` has special handling for different years:
-- **Years < 2019:** Uses different data retrieval approach (lines 176-195)
-- **Years >= 2019:** Uses `box_scores()` function with enhanced data (lines 197-273)
-- **Current year filtering:** Only collects box score player data for current year, previous weeks (lines 278-306)
-
-This logic is **not reflected** in `Schedule.from_espn_league()` at `_league.py:83-139`
-
----
-
-### 5. Current Week Filter Bug
-**Location:** `_league.py:115`
+### 1. Current Week Filter Bug
+**Location:** `_league.py:223`
 
 Potential logic error in current week filtering:
 ```python
@@ -89,19 +41,6 @@ This should skip future weeks and only process completed weeks.
 
 | Feature | main.py | _league.py | Status |
 |---------|---------|------------|--------|
-| Basic Teams | ✅ | ✅ | Complete |
-| Basic Matchups | ✅ | ✅ | Complete |
-| game_type/is_playoff | ✅ | ✅ | Complete |
-| Enhanced player boxscore | ✅ | ✅ | Complete |
-| Basic Draft | ✅ | ✅ | Complete |
-| Draft player details | ✅ | ❌ | **Missing** |
-| Basic Transactions | ✅ | ✅ | Complete |
-| Transaction player details | ✅ | ❌ | **Missing** |
-| Transaction year field | ✅ | ❌ | **Missing** |
-| Transaction year validation | ✅ | ❌ | **Missing** |
-| Pure matchups separation | ✅ | ❌ | **Missing** |
-| Box score player dataset | ✅ | ❌ | **Missing** |
-| Year-specific logic (<2019) | ✅ | ❌ | **Missing** |
 | Current week filtering | ✅ | ⚠️ | **Bug** |
 
 ---
@@ -133,7 +72,10 @@ league = DataLeague.from_espn_league(espn_league)
 league.to_yaml(f"data/{league.id}_{league.year}.yaml")
 ```
 
-This will generate a single YAML file containing all league data.
+This will generate a single YAML file containing all league data, including:
+- **schedule.matchups**: Basic matchup pairings (equivalent to `pure_matchups_{year}.json`)
+- **schedule.boxscores**: Full boxscore data with player lineups (equivalent to `matchups_{year}.json`)
+- **schedule.box_score_players**: Individual player performance data (equivalent to `box_score_players_{year}.json`)
 
 ---
 
@@ -141,13 +83,9 @@ This will generate a single YAML file containing all league data.
 
 To complete the YAML migration:
 
-1. Add draft player details (player_name, player_position)
-2. Add transaction enhancements (player details, year field, year validation)
-3. Add year-specific logic to `Schedule.from_espn_league()` (handle pre-2019 data)
-4. Fix current week filtering logic bug at line 115
-5. Decide on structure for "pure matchups" vs full boxscores
-6. Test YAML output matches JSON data completeness
-7. Update main.py to use YAML approach
+1. Fix current week filtering logic bug at line 223
+2. Test YAML output matches JSON data completeness
+3. Update main.py to use YAML approach
 
 ---
 

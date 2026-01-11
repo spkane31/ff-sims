@@ -34,15 +34,16 @@ func main() {
 		Use:   "upload",
 		Short: "Upload data to the database",
 		Long:  "Process and upload data files to the database",
-		Run: func(cmd *cobra.Command, args []string) {
-			// Determine if we should calculate expected wins
-			doCalculateExpectedWins := !skipExpectedWins
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return etl.NewUpload(dataDir)
+			// // Determine if we should calculate expected wins
+			// doCalculateExpectedWins := !skipExpectedWins
 
-			// Run normal ETL with expected wins flag
-			if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
-				logging.Errorf("Failed to upload data: %v", err)
-				os.Exit(1)
-			}
+			// // Run normal ETL with expected wins flag
+			// if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
+			// 	logging.Errorf("Failed to upload data: %v", err)
+			// 	os.Exit(1)
+			// }
 		},
 	}
 	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
