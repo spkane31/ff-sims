@@ -199,6 +199,10 @@ class Schedule:
                 logging.debug(f"Processing schedule for week: {week}")
                 week_matchups: list[Matchup] = []
                 for scoreboard_matchup in espn_league.scoreboard(week=week):
+                    # Check for valid teams (some playoff weeks may have None)
+                    if not hasattr(scoreboard_matchup, "away_team") or not hasattr(scoreboard_matchup, "home_team"):
+                        continue
+
                     week_matchups.append(
                         Matchup(
                             year=espn_league.year,
@@ -230,6 +234,10 @@ class Schedule:
                             logging.debug(f"Retrieved {len(weeks_boxscores)} boxscores for week: {week}")
 
                             for boxscore in weeks_boxscores:
+                                # Skip invalid matchups (can happen in playoff weeks)
+                                if boxscore.away_team == 0 or boxscore.home_team == 0:
+                                    continue
+
                                 boxscores.append(
                                     Boxscore(
                                         year=espn_league.year,

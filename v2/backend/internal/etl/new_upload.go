@@ -169,7 +169,7 @@ func uploadYAMLFile(filePath string) error {
 			Losses:   0,
 			Ties:     0,
 			Points:   0,
-			Owners:   models.StringSlice(etlTeam.Owners),
+			Owners:   etlTeam.Owners,
 		}
 		err := database.DB.Model(&models.Team{}).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "league_id"}, {Name: "espn_id"}},
@@ -182,6 +182,29 @@ func uploadYAMLFile(filePath string) error {
 	}
 
 	// 3. Create all matchups
+	for _, etlMatchup := range league.Schedule.Matchups {
+		dbMatchup := models.Matchup{
+			LeagueID:           league.ID,
+			Season:             etlMatchup.Year,
+			Week:               etlMatchup.Week,
+			HomeTeamID:         uint(etlMatchup.HomeTeamID),
+			AwayTeamID:         uint(etlMatchup.AwayTeamID),
+			GameType:           etlMatchup.GameType,
+			IsPlayoff:          etlMatchup.IsPlayoff,
+			Completed:          false,
+			HomeTeamFinalScore: 0,
+			AwayTeamFinalScore: 0,
+		}
+		err := database.DB.Model(&models.Matchup{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "league_id"}, {Name: "season"}, {Name: "week"}, {Name: "home_team_id"}, {Name: "away_team_id"}},
+			DoNothing: true,
+		}).Create(&dbMatchup).Error
+		if err != nil {
+			logging.Errorf("Failed to ensure matchup exists: %v", err)
+			return err
+		}
+	}
+
 	// 4. Update existing boxscores
 	// 5. Update expected wins counts
 	// 6. Create new transactions

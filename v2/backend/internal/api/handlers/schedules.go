@@ -81,7 +81,7 @@ func GetSchedules(c *gin.Context) {
 		defer wg.Done()
 		if teamsErr = database.DB.Model(&models.Team{}).
 			Where("league_id = ?", leagueID).
-			Select("id, espn_id, owner").
+			Select("id, espn_id, owners").
 			Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return

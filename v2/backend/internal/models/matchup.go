@@ -14,12 +14,12 @@ type Matchup struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	LeagueID   uint      `json:"league_id"`
-	Week       uint      `json:"week"`
+	LeagueID   uint      `json:"league_id" gorm:"uniqueIndex:idx_matchup_unique"`
+	Week       uint      `json:"week" gorm:"uniqueIndex:idx_matchup_unique"`
 	Year       uint      `json:"year"`
-	Season     int       `json:"season"`
-	HomeTeamID uint      `json:"home_team_id"`
-	AwayTeamID uint      `json:"away_team_id"`
+	Season     uint      `json:"season" gorm:"uniqueIndex:idx_matchup_unique"`
+	HomeTeamID uint      `json:"home_team_id" gorm:"uniqueIndex:idx_matchup_unique"`
+	AwayTeamID uint      `json:"away_team_id" gorm:"uniqueIndex:idx_matchup_unique"`
 	GameDate   time.Time `json:"game_date"`
 	GameType   string    `json:"game_type"`
 

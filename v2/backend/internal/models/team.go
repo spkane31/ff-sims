@@ -1,49 +1,12 @@
 package models
 
 import (
-	"database/sql/driver"
 	"fmt"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
-
-// StringSlice is a custom type to handle []string serialization
-type StringSlice []string
-
-// Value implements the driver.Valuer interface
-func (s StringSlice) Value() (driver.Value, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return strings.Join(s, ","), nil
-}
-
-// Scan implements the sql.Scanner interface
-func (s *StringSlice) Scan(value interface{}) error {
-	if value == nil {
-		*s = nil
-		return nil
-	}
-
-	var str string
-	switch v := value.(type) {
-	case string:
-		str = v
-	case []byte:
-		str = string(v)
-	default:
-		return fmt.Errorf("invalid type for StringSlice: %T", value)
-	}
-
-	if str == "" {
-		*s = []string{}
-		return nil
-	}
-	*s = strings.Split(str, ",")
-	return nil
-}
 
 // Team represents a fantasy football team
 type Team struct {
@@ -52,10 +15,10 @@ type Team struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	Name     string      `json:"name"`
-	Owners   StringSlice `json:"owner_name" gorm:"type:text"`
-	ESPNID   uint        `json:"espn_id" gorm:"uniqueIndex:idx_teams_league_espn"`
-	LeagueID uint        `json:"league_id" gorm:"uniqueIndex:idx_teams_league_espn"`
+	Name     string   `json:"name"`
+	Owners   []string `json:"owner_name" gorm:"serializer:json;type:text"`
+	ESPNID   uint     `json:"espn_id" gorm:"uniqueIndex:idx_teams_league_espn"`
+	LeagueID uint     `json:"league_id" gorm:"uniqueIndex:idx_teams_league_espn"`
 	Wins     int         `json:"wins" gorm:"default:0"`
 	Losses   int         `json:"losses" gorm:"default:0"`
 	Ties     int         `json:"ties" gorm:"default:0"`

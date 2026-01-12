@@ -41,10 +41,10 @@ type ETLTeam struct {
 
 // ETLMatchup represents a single matchup between two teams
 type ETLMatchup struct {
-	Year       int    `json:"year" yaml:"year"`
-	Week       int    `json:"week" yaml:"week"`
-	HomeTeamID int    `json:"home_team_id" yaml:"home_team_id"`
-	AwayTeamID int    `json:"away_team_id" yaml:"away_team_id"`
+	Year       uint   `json:"year" yaml:"year"`
+	Week       uint   `json:"week" yaml:"week"`
+	HomeTeamID uint   `json:"home_team_id" yaml:"home_team_id"`
+	AwayTeamID uint   `json:"away_team_id" yaml:"away_team_id"`
 	GameType   string `json:"game_type" yaml:"game_type"`
 	IsPlayoff  bool   `json:"is_playoff" yaml:"is_playoff"`
 }

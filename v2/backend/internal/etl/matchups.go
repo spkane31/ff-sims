@@ -13,8 +13,8 @@ import (
 )
 
 type SimpleMatchup struct {
-	Week           int    `json:"week"`
-	Year           int    `json:"year"`
+	Week           uint   `json:"week"`
+	Year           uint   `json:"year"`
 	GameType       string `json:"game_type"`
 	IsPlayoff      bool   `json:"is_playoff"`
 	HomeTeamESPNID int64  `json:"home_team_espn_id"`
@@ -47,7 +47,7 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 			LeagueID:  leagueID,
 			Week:      uint(matchup.Week),
 			Year:      uint(matchup.Year),
-			Season:    int(matchup.Year),
+			Season:    matchup.Year,
 			Completed: matchup.Completed,
 			GameType:  matchup.GameType,
 			IsPlayoff: matchup.IsPlayoff,

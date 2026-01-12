@@ -269,9 +269,9 @@ func processMatchups(filePath string) error {
 
 		entry := &models.Matchup{
 			LeagueID:                   leagueID,
-			Week:                       uint(matchup.Week),
-			Year:                       uint(matchup.Year),
-			Season:                     int(matchup.Year),
+			Week:                       matchup.Week,
+			Year:                       matchup.Year,
+			Season:                     matchup.Year,
 			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -307,9 +307,9 @@ func processMatchups(filePath string) error {
 			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamESPNProjectedScore
 			existingMatchup.Completed = isCompleted // Use the same logic for updates
 			existingMatchup.GameType = matchup.GameType
-			existingMatchup.Week = uint(matchup.Week)
-			existingMatchup.Year = uint(matchup.Year)
-			existingMatchup.Season = int(matchup.Year)
+			existingMatchup.Week = matchup.Week
+			existingMatchup.Year = matchup.Year
+			existingMatchup.Season = matchup.Year
 
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamID, err)
