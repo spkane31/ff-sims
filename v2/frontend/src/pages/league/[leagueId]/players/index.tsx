@@ -5,6 +5,7 @@ import {
   playersService,
   GetPlayersResponse,
 } from "../../../../services/playersService";
+import { useLeague } from "../../../../hooks/useLeague";
 
 // Helper function to get position color
 function getPositionColor(position: string): string {
@@ -27,6 +28,7 @@ function getPositionColor(position: string): string {
 }
 
 export default function PlayersIndex() {
+  const { leagueId } = useLeague();
   const [playersData, setPlayersData] = useState<GetPlayersResponse | null>(
     null
   );
@@ -57,6 +59,8 @@ export default function PlayersIndex() {
   );
 
   useEffect(() => {
+    if (!leagueId) return;
+
     const fetchPlayers = async () => {
       try {
         setIsLoading(true);
@@ -70,7 +74,7 @@ export default function PlayersIndex() {
           ...(positionFilter !== "all" && { position: positionFilter }),
         };
 
-        const data = await playersService.getPlayers(params);
+        const data = await playersService.getPlayers(leagueId, params);
         setPlayersData(data);
       } catch (err) {
         console.error("Error fetching players:", err);
@@ -83,7 +87,7 @@ export default function PlayersIndex() {
     };
 
     fetchPlayers();
-  }, [positionFilter, yearFilter, rankFilter, currentPage]);
+  }, [leagueId, positionFilter, yearFilter, rankFilter, currentPage]);
 
   // Filter players by search term (server already handles ranking)
   const filteredPlayers =

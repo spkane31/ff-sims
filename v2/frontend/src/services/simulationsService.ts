@@ -37,16 +37,17 @@ export const simulationsService = {
   /**
    * Get team statistics for simulation
    */
-  getStats: async (): Promise<GetStatsResponse> => {
-    return apiClient.get<GetStatsResponse>("/simulations/stats");
+  getStats: async (leagueId: string): Promise<GetStatsResponse> => {
+    return apiClient.get<GetStatsResponse>(`/league/${leagueId}/simulations/stats`);
   },
 
   /**
    * Run a simulation
    */
   runSimulation: async (
+    leagueId: string,
     request: SimulationRequest
   ): Promise<SimulationResults> => {
-    return apiClient.post<SimulationResults>("/simulations/run", request);
+    return apiClient.post<SimulationResults>(`/league/${leagueId}/simulations/run`, request);
   },
 };

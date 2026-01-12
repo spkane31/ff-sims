@@ -30,7 +30,7 @@ interface UseTeamProgressionReturn {
  * Hook for fetching weekly expected wins data
  */
 export function useWeeklyExpectedWins(
-  leagueId: number,
+  leagueId: string,
   year: number,
   week?: number
 ): UseWeeklyExpectedWinsReturn {
@@ -72,7 +72,7 @@ export function useWeeklyExpectedWins(
  * Hook for fetching season expected wins data
  */
 export function useSeasonExpectedWins(
-  leagueId: number,
+  leagueId: string,
   year: number
 ): UseSeasonExpectedWinsReturn {
   const [seasonData, setSeasonData] = useState<SeasonExpectedWins[]>([]);
@@ -112,6 +112,7 @@ export function useSeasonExpectedWins(
  * Hook for fetching team progression data
  */
 export function useTeamProgression(
+  leagueId: string,
   teamId: number,
   year: number
 ): UseTeamProgressionReturn {
@@ -126,6 +127,7 @@ export function useTeamProgression(
       setIsLoading(true);
       setError(null);
       const response = await expectedWinsService.getTeamProgression(
+        leagueId,
         teamId,
         year
       );
@@ -139,13 +141,13 @@ export function useTeamProgression(
     } finally {
       setIsLoading(false);
     }
-  }, [teamId, year]);
+  }, [leagueId, teamId, year]);
 
   useEffect(() => {
-    if (teamId && year) {
+    if (leagueId && teamId && year) {
       fetchProgressionData();
     }
-  }, [teamId, year, fetchProgressionData]);
+  }, [leagueId, teamId, year, fetchProgressionData]);
 
   return { progressionData, isLoading, error, refetch: fetchProgressionData };
 }

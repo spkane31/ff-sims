@@ -37,7 +37,7 @@ func GetLeagues(c *gin.Context) {
 	}
 
 	err := database.DB.Table("leagues").
-		Select("id, name").
+		Select("id, name, league_id").
 		Order("id DESC").
 		Scan(&resp.Leagues).Error
 	if err != nil {
@@ -46,7 +46,6 @@ func GetLeagues(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
-
 }
 
 type GetLeagueYearsResponse struct {

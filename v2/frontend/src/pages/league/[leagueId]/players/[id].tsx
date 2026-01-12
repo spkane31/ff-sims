@@ -8,6 +8,7 @@ import {
   PlayerStats,
   GameLogEntry,
 } from "../../../../services/playersService";
+import { useLeague } from "../../../../hooks/useLeague";
 
 // Helper function to get position color
 function getPositionColor(position: string): string {
@@ -93,6 +94,7 @@ function getRelevantStats(stats: PlayerStats, position: string) {
 export default function PlayerDetailPage() {
   const router = useRouter();
   const { id } = router.query;
+  const { leagueId } = useLeague();
 
   const [isLoading, setIsLoading] = useState(true);
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
@@ -104,7 +106,7 @@ export default function PlayerDetailPage() {
   const [weekFilter, setWeekFilter] = useState<string>("all");
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !leagueId) return;
 
     const fetchPlayerData = async () => {
       try {
@@ -112,7 +114,7 @@ export default function PlayerDetailPage() {
         setError(null);
 
         // Use playersService to fetch player data
-        const playerData = await playersService.getPlayerDetail(id as string);
+        const playerData = await playersService.getPlayerDetail(leagueId, id as string);
         setPlayer(playerData);
       } catch (err) {
         console.error("Error fetching player data:", err);
@@ -125,7 +127,7 @@ export default function PlayerDetailPage() {
     };
 
     fetchPlayerData();
-  }, [id]);
+  }, [id, leagueId]);
 
   if (isLoading) {
     return (

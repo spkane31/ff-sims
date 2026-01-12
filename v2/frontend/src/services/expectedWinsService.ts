@@ -105,36 +105,36 @@ export const expectedWinsService = {
   /**
    * Get all-time expected wins for all teams
    */
-  getAllTimeExpectedWins: async (): Promise<AllTimeExpectedWinsResponse> => {
-    return apiClient.get<AllTimeExpectedWinsResponse>("/teams/all-time-expected-wins");
+  getAllTimeExpectedWins: async (leagueId: string): Promise<AllTimeExpectedWinsResponse> => {
+    return apiClient.get<AllTimeExpectedWinsResponse>(`/league/${leagueId}/teams/all-time-expected-wins`);
   },
 
   /**
    * Get weekly expected wins for a league and year
    */
-  getWeeklyExpectedWins: async (leagueId: number, year: number, week?: number): Promise<WeeklyExpectedWinsResponse> => {
+  getWeeklyExpectedWins: async (leagueId: string, year: number, week?: number): Promise<WeeklyExpectedWinsResponse> => {
     const params = week ? `?week=${week}` : '';
-    return apiClient.get<WeeklyExpectedWinsResponse>(`/leagues/${leagueId}/expected-wins/weekly/${year}${params}`);
+    return apiClient.get<WeeklyExpectedWinsResponse>(`/league/${leagueId}/expected-wins/weekly/${year}${params}`);
   },
 
   /**
    * Get season expected wins for a league and year
    */
-  getSeasonExpectedWins: async (leagueId: number, year: number): Promise<SeasonExpectedWinsResponse> => {
-    return apiClient.get<SeasonExpectedWinsResponse>(`/leagues/${leagueId}/expected-wins/season/${year}`);
+  getSeasonExpectedWins: async (leagueId: string, year: number): Promise<SeasonExpectedWinsResponse> => {
+    return apiClient.get<SeasonExpectedWinsResponse>(`/league/${leagueId}/expected-wins/season/${year}`);
   },
 
   /**
    * Get team progression (weekly expected wins for specific team)
    */
-  getTeamProgression: async (teamId: number, year: number): Promise<TeamProgressionResponse> => {
-    return apiClient.get<TeamProgressionResponse>(`/teams/${teamId}/expected-wins/${year}`);
+  getTeamProgression: async (leagueId: string, teamId: number, year: number): Promise<TeamProgressionResponse> => {
+    return apiClient.get<TeamProgressionResponse>(`/league/${leagueId}/teams/${teamId}/expected-wins/${year}`);
   },
 
   /**
    * Get current season standings with expected wins
    */
-  getCurrentSeasonStandings: async (year: number): Promise<CurrentSeasonStandingsResponse> => {
-    return apiClient.get<CurrentSeasonStandingsResponse>(`/teams/standings/${year}`);
+  getCurrentSeasonStandings: async (leagueId: string, year: number): Promise<CurrentSeasonStandingsResponse> => {
+    return apiClient.get<CurrentSeasonStandingsResponse>(`/league/${leagueId}/teams/standings/${year}`);
   },
 };

@@ -270,7 +270,7 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 		SELECT
 			season_expected_wins.team_id,
 			teams.name as team_name,
-			teams.owner,
+			teams.owners::jsonb->>0 as owner,
 			SUM(season_expected_wins.expected_wins) as total_expected_wins,
 			SUM(season_expected_wins.expected_losses) as total_expected_losses,
 			SUM(season_expected_wins.actual_wins) as total_actual_wins,
@@ -279,7 +279,7 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 			COUNT(season_expected_wins.year) as seasons_played
 		FROM season_expected_wins
 		JOIN teams ON teams.id = season_expected_wins.team_id
-		GROUP BY season_expected_wins.team_id, teams.name, teams.owner
+		GROUP BY season_expected_wins.team_id, teams.name, teams.owners
 		ORDER BY total_expected_wins DESC
 	`).Scan(&results).Error
 

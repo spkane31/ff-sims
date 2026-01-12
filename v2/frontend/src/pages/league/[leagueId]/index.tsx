@@ -70,7 +70,7 @@ export default function Home() {
         const [teamsResponse, expectedWinsResponse] = await Promise.all([
           teamsService.getAllTeams(leagueId!),
           expectedWinsService
-            .getAllTimeExpectedWins()
+            .getAllTimeExpectedWins(leagueId!)
             .catch(() => ({ data: [] })),
         ]);
 
@@ -110,7 +110,7 @@ export default function Home() {
     async function fetchCurrentStandings() {
       try {
         setStandingsLoading(true);
-        const standingsResponse = await expectedWinsService.getCurrentSeasonStandings(2025);
+        const standingsResponse = await expectedWinsService.getCurrentSeasonStandings(leagueId!, 2025);
         setCurrentStandings(standingsResponse.standings);
       } catch (error) {
         console.error("Error fetching current standings:", error);

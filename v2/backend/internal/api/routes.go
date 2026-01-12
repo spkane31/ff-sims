@@ -66,15 +66,17 @@ func setupLeagueRoutes(group *gin.RouterGroup) {
 		transactions.GET("/draft-picks", handlers.GetDraftPicks)
 	}
 
-	// League-specific endpoints
-	leagues := group.Group("/leagues")
+	// Expected wins endpoints
+	expectedWins := group.Group("/expected-wins")
 	{
-		leagues.GET("/years", handlers.GetLeagueYears)
-		leagues.GET("/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
-		leagues.GET("/expected-wins/season/:year", handlers.GetSeasonExpectedWins)
-		leagues.GET("/expected-wins/rankings/:year", handlers.GetSeasonRankings)
-		leagues.GET("/expected-wins/luck/:year", handlers.GetLuckDistribution)
+		expectedWins.GET("/weekly/:year", handlers.GetWeeklyExpectedWins)
+		expectedWins.GET("/season/:year", handlers.GetSeasonExpectedWins)
+		expectedWins.GET("/rankings/:year", handlers.GetSeasonRankings)
+		expectedWins.GET("/luck/:year", handlers.GetLuckDistribution)
 	}
+
+	// League metadata
+	group.GET("/years", handlers.GetLeagueYears)
 
 	// Simulation endpoints
 	sim := group.Group("/simulations")

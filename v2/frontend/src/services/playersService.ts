@@ -116,7 +116,7 @@ export const playersService = {
   /**
    * Get all players with optional filtering and pagination
    */
-  getPlayers: async (params?: {
+  getPlayers: async (leagueId: string, params?: {
     position?: string;
     year?: string;
     rank?: 'fantasy_points' | 'avg_points' | 'projected_points' | 'games_played' | 'vs_projection';
@@ -131,7 +131,7 @@ export const playersService = {
     if (params?.page) queryParams.append("page", params.page.toString());
     if (params?.limit) queryParams.append("limit", params.limit.toString());
 
-    const endpoint = `/players${
+    const endpoint = `/league/${leagueId}/players${
       queryParams.toString() ? `?${queryParams.toString()}` : ""
     }`;
 
@@ -141,11 +141,11 @@ export const playersService = {
   /**
    * Get a specific player by ID with detailed statistics
    */
-  getPlayerDetail: async (id: string | number, year?: string): Promise<PlayerDetail> => {
+  getPlayerDetail: async (leagueId: string, id: string | number, year?: string): Promise<PlayerDetail> => {
     const queryParams = new URLSearchParams();
     if (year) queryParams.append("year", year);
 
-    const endpoint = `/players/${id}${
+    const endpoint = `/league/${leagueId}/players/${id}${
       queryParams.toString() ? `?${queryParams.toString()}` : ""
     }`;
 
@@ -156,6 +156,7 @@ export const playersService = {
    * Get player statistics for a specific season
    */
   getPlayerStats: async (
+    leagueId: string,
     playerId: string | number,
     params?: {
       week?: string | number;
@@ -166,7 +167,7 @@ export const playersService = {
     if (params?.week) queryParams.append("week", params.week.toString());
     if (params?.season) queryParams.append("season", params.season.toString());
 
-    const endpoint = `/players/${playerId}/stats${
+    const endpoint = `/league/${leagueId}/players/${playerId}/stats${
       queryParams.toString() ? `?${queryParams.toString()}` : ""
     }`;
 
@@ -177,13 +178,14 @@ export const playersService = {
    * Get player game log for a specific season
    */
   getPlayerGameLog: async (
+    leagueId: string,
     playerId: string | number,
     year?: string | number
   ): Promise<PlayerGameLog[]> => {
     const queryParams = new URLSearchParams();
     if (year) queryParams.append("year", year.toString());
 
-    const endpoint = `/players/${playerId}/gamelog${
+    const endpoint = `/league/${leagueId}/players/${playerId}/gamelog${
       queryParams.toString() ? `?${queryParams.toString()}` : ""
     }`;
 
@@ -194,6 +196,7 @@ export const playersService = {
    * Get players by position
    */
   getPlayersByPosition: async (
+    leagueId: string,
     position: string,
     year?: string | number
   ): Promise<PlayerSummary[]> => {
@@ -201,8 +204,8 @@ export const playersService = {
     queryParams.append("position", position);
     if (year) queryParams.append("year", year.toString());
 
-    const endpoint = `/players?${queryParams.toString()}`;
-    
+    const endpoint = `/league/${leagueId}/players?${queryParams.toString()}`;
+
     const response = await apiClient.get<GetPlayersResponse>(endpoint);
     return response.players;
   },
@@ -211,6 +214,7 @@ export const playersService = {
    * Get top players by fantasy points
    */
   getTopPlayers: async (
+    leagueId: string,
     limit: number = 50,
     position?: string,
     year?: string | number
@@ -220,8 +224,8 @@ export const playersService = {
     if (position) queryParams.append("position", position);
     if (year) queryParams.append("year", year.toString());
 
-    const endpoint = `/players?${queryParams.toString()}`;
-    
+    const endpoint = `/league/${leagueId}/players?${queryParams.toString()}`;
+
     const response = await apiClient.get<GetPlayersResponse>(endpoint);
     return response.players;
   },
@@ -230,6 +234,7 @@ export const playersService = {
    * Search players by name
    */
   searchPlayers: async (
+    leagueId: string,
     query: string,
     limit: number = 20
   ): Promise<PlayerSummary[]> => {
@@ -237,8 +242,8 @@ export const playersService = {
     queryParams.append("search", query);
     queryParams.append("limit", limit.toString());
 
-    const endpoint = `/players/search?${queryParams.toString()}`;
-    
+    const endpoint = `/league/${leagueId}/players/search?${queryParams.toString()}`;
+
     return apiClient.get<PlayerSummary[]>(endpoint);
   },
 
@@ -246,6 +251,7 @@ export const playersService = {
    * Get player rankings for a specific position
    */
   getPlayerRankings: async (
+    leagueId: string,
     position: string,
     year?: string | number
   ): Promise<PlayerSummary[]> => {
@@ -253,8 +259,8 @@ export const playersService = {
     queryParams.append("position", position);
     if (year) queryParams.append("year", year.toString());
 
-    const endpoint = `/players/rankings?${queryParams.toString()}`;
-    
+    const endpoint = `/league/${leagueId}/players/rankings?${queryParams.toString()}`;
+
     return apiClient.get<PlayerSummary[]>(endpoint);
   },
 };

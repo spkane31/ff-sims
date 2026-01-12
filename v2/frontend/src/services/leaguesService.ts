@@ -28,6 +28,6 @@ export const leaguesService = {
    * Get all years that a league has been active
    */
   getLeagueYears: async (leagueId: string): Promise<LeagueYearsResponse> => {
-    return apiClient.get<LeagueYearsResponse>(`/league/${leagueId}/leagues/years`);
+    return apiClient.get<LeagueYearsResponse>(`/league/${leagueId}/years`);
   },
 };
