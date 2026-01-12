@@ -9,7 +9,10 @@ import (
 )
 
 var (
-	dataDir          string
+	dataDir         string
+	multipleLeagues bool
+
+	// These will be deprecated later
 	skipExpectedWins bool
 	processYear      uint
 )
@@ -35,7 +38,10 @@ func main() {
 		Short: "Upload data to the database",
 		Long:  "Process and upload data files to the database",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return etl.NewUpload(dataDir)
+			return etl.NewUpload(etl.NewUploadOptions{
+				Directory:       dataDir,
+				MultipleLeagues: multipleLeagues,
+			})
 			// // Determine if we should calculate expected wins
 			// doCalculateExpectedWins := !skipExpectedWins
 
@@ -47,6 +53,7 @@ func main() {
 		},
 	}
 	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
+	uploadCmd.Flags().BoolVar(&multipleLeagues, "multiple-leagues", false, "There are multiple leagues in the data directory")
 
 	// Expected wins command
 	xwinsCmd := &cobra.Command{

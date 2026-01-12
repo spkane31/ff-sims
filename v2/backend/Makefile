@@ -25,7 +25,7 @@ clean: ## Remove built binaries
 
 etl: ## Run the ETL process
 	@echo "Running ETL process..."
-	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
+	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data --multiple-leagues
 
 sleeper: ## Run the Sleeper data ingestion process
 	@echo "Running Sleeper data ingestion..."

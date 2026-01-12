@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 
 	for _, createdTeam := range createdTeams {
 		logging.Infof("Created Team - ID: %d, ESPN ID: %d, Name: %s, Owner: %s",
-			createdTeam.ID, createdTeam.ESPNID, createdTeam.Name, createdTeam.Owner)
+			createdTeam.ID, createdTeam.ESPNID, createdTeam.Name, strings.Join(createdTeam.Owners, ","))
 	}
 
 	for _, matchup := range matchups {

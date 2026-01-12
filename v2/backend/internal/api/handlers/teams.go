@@ -100,7 +100,7 @@ func GetTeams(c *gin.Context) {
 			ID:        fmt.Sprintf("%d", team.ID),
 			ESPNID:    fmt.Sprintf("%d", team.ESPNID),
 			Name:      team.Name,
-			OwnerName: team.Owner,
+			OwnerName: team.Owners[0],
 			RegularSeasonRecord: TeamRecord{
 				Wins:   team.Wins,
 				Losses: team.Losses,
@@ -224,8 +224,8 @@ func GetTeamByID(c *gin.Context) {
 	for _, matchup := range schedule {
 		logging.Infof("Matchup: Week %d, Year %d, Home Team: %s (%d), Away Team: %s (%d), Home Score: %.2f, Away Score: %.2f",
 			matchup.Week, matchup.Year,
-			teamMap[matchup.HomeTeamID].Owner, matchup.HomeTeamID,
-			teamMap[matchup.AwayTeamID].Owner, matchup.AwayTeamID,
+			teamMap[matchup.HomeTeamID].Owners[0], matchup.HomeTeamID,
+			teamMap[matchup.AwayTeamID].Owners[0], matchup.AwayTeamID,
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore)
 	}
 
@@ -242,7 +242,7 @@ func GetTeamByID(c *gin.Context) {
 		teamOwner := ""
 		teamID := 0
 		if selection.Team != nil {
-			teamOwner = selection.Team.Owner
+			teamOwner = selection.Team.Owners[0]
 			teamID = int(selection.Team.ESPNID)
 		}
 
@@ -392,14 +392,14 @@ func GetTeamByID(c *gin.Context) {
 			isHome = true
 			teamScore = matchup.HomeTeamFinalScore
 			opponentScore = matchup.AwayTeamFinalScore
-			opponent = teamMap[matchup.AwayTeamID].Owner
+			opponent = teamMap[matchup.AwayTeamID].Owners[0]
 			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.AwayTeamID].ESPNID)
 		} else {
 			// This team is away
 			isHome = false
 			teamScore = matchup.AwayTeamFinalScore
 			opponentScore = matchup.HomeTeamFinalScore
-			opponent = teamMap[matchup.HomeTeamID].Owner
+			opponent = teamMap[matchup.HomeTeamID].Owners[0]
 			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.HomeTeamID].ESPNID)
 		}
 
@@ -441,7 +441,7 @@ func GetTeamByID(c *gin.Context) {
 		ID:     fmt.Sprintf("%d", team.ID),
 		ESPNID: fmt.Sprintf("%d", team.ESPNID),
 		Name:   team.Name,
-		Owner:  team.Owner,
+		Owner:  team.Owners[0],
 		Record: TeamRecord{
 			Wins:   team.Wins,
 			Losses: team.Losses,
@@ -596,7 +596,7 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 		standing := CurrentSeasonStandingResponse{
 			TeamID:   team.ID,
 			ESPNID:   fmt.Sprintf("%d", team.ESPNID),
-			Owner:    team.Owner,
+			Owner:    team.Owners[0],
 			TeamName: team.Name,
 			Record:   TeamRecord{Wins: 0, Losses: 0, Ties: 0},
 			Points:   TeamPoints{Scored: 0, Against: 0},

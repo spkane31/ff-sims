@@ -34,7 +34,7 @@ type ETLPlayer struct {
 
 // ETLTeam represents a fantasy football team
 type ETLTeam struct {
-	ESPNID int      `json:"espn_id" yaml:"espn_id"`
+	ESPNID uint     `json:"espn_id" yaml:"espn_id"`
 	Name   string   `json:"name" yaml:"name"`
 	Owners []string `json:"owners" yaml:"owners"`
 }
@@ -153,7 +153,7 @@ const (
 
 // ETLLeague represents a complete fantasy football league with all associated data
 type ETLLeague struct {
-	ID           int              `json:"id" yaml:"id"`
+	ID           uint             `json:"id" yaml:"id"`
 	Year         int              `json:"year" yaml:"year"`
 	Teams        []ETLTeam        `json:"teams" yaml:"teams"`
 	Schedule     ETLSchedule      `json:"schedule" yaml:"schedule"`

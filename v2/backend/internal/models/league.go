@@ -13,7 +13,9 @@ type League struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	Name         string `json:"name"`
+	Name string `json:"name"`
+	// LeagueID is the unique identifier for a sites ID, either ESPN or Sleeper
+	LeagueID     uint   `json:"league_id" gorm:"uniqueIndex"`
 	Description  string `json:"description"`
 	ScoringType  string `json:"scoring_type"` // Standard, PPR, Half-PPR
 	Teams        []Team `json:"teams,omitempty"`

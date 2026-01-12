@@ -110,13 +110,11 @@ func finalizeTeamSeasonFromWeeklyData(db *gorm.DB, teamID uint, leagueID uint, y
 		FinalStanding:        finalStanding,
 	}
 
-	log.Printf("Creating season record for team %d, year %d: %.2f expected wins, %d actual wins", 
+	log.Printf("Creating season record for team %d, year %d: %.2f expected wins, %d actual wins",
 		teamID, year, cumulativeExpectedWins, cumulativeActualWins)
 
 	return models.SaveSeasonExpectedWins(db, seasonRecord)
 }
-
-
 
 // GetSeasonExpectedWinsRankings returns teams ranked by various metrics
 type SeasonRankings struct {
@@ -213,8 +211,9 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 	firstLuck := float64(seasonRecords[0].ActualWins) - seasonRecords[0].ExpectedWins
 	maxLuck := firstLuck
 	minLuck := firstLuck
-	maxLuckTeam := seasonRecords[0].Team.Owner
-	minLuckTeam := seasonRecords[0].Team.Owner
+	// TODO (seankane): Update the owners to support multiple owners
+	maxLuckTeam := seasonRecords[0].Team.Owners[0]
+	minLuckTeam := seasonRecords[0].Team.Owners[0]
 
 	var luckSum, luckSumAbs float64
 
@@ -226,14 +225,14 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 		if luck > maxLuck {
 			maxLuck = luck
 			if record.Team != nil {
-				maxLuckTeam = record.Team.Owner
+				maxLuckTeam = record.Team.Owners[0]
 			}
 		}
 
 		if luck < minLuck {
 			minLuck = luck
 			if record.Team != nil {
-				minLuckTeam = record.Team.Owner
+				minLuckTeam = record.Team.Owners[0]
 			}
 		}
 	}
@@ -260,7 +259,6 @@ func CalculateLeagueLuckDistribution(leagueID uint, year uint) (*LuckDistributio
 
 	return distribution, nil
 }
-
 
 // Helper function for absolute value
 func abs(x float64) float64 {

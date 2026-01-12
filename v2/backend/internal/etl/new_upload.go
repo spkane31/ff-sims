@@ -14,8 +14,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func NewUpload(directory string) error {
-	logging.Infof("Starting ETL upload from directory: %s", directory)
+type NewUploadOptions struct {
+	Directory       string
+	MultipleLeagues bool
+}
+
+func NewUpload(opts NewUploadOptions) error {
+	logging.Infof("Starting ETL upload from directory: %s", opts.Directory)
 
 	if err := database.Initialize(&config.Config{DB: config.DBConfig{ConnectionString: os.Getenv("DATABASE_URL")}}); err != nil {
 		logging.Errorf("Failed to initialize database: %v", err)
@@ -28,7 +33,7 @@ func NewUpload(directory string) error {
 
 	// Read the directory
 	var dataFiles []string
-	filepath.WalkDir(directory, func(path string, d os.DirEntry, err error) error {
+	filepath.WalkDir(opts.Directory, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -121,7 +126,7 @@ func checkPlayerEntries() error {
 
 func upsertPlayerBatch(players []models.Player) error {
 	// Use ON CONFLICT to update existing records or insert new ones
-	return database.DB.Clauses(clause.OnConflict{
+	return database.DB.Model(&models.Player{}).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "sleeper_id"}}, // The unique constraint column
 		DoUpdates: clause.AssignmentColumns([]string{
 			// Update all fields except ID and timestamps on conflict
@@ -144,6 +149,43 @@ func uploadYAMLFile(filePath string) error {
 	if err := yaml.Unmarshal(data, &league); err != nil {
 		return err
 	}
+
+	// 1. Ensure league exists
+	if err := database.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "league_id"}},
+		DoNothing: true,
+	}).Create(&models.League{LeagueID: league.ID}).Error; err != nil {
+		logging.Errorf("Failed to ensure league exists: %v", err)
+		return err
+	}
+
+	// 2. Ensure teams exist
+	for _, etlTeam := range league.Teams {
+		dbTeam := models.Team{
+			Name:     etlTeam.Name,
+			ESPNID:   uint(etlTeam.ESPNID),
+			LeagueID: league.ID,
+			Wins:     0,
+			Losses:   0,
+			Ties:     0,
+			Points:   0,
+			Owners:   models.StringSlice(etlTeam.Owners),
+		}
+		err := database.DB.Model(&models.Team{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "league_id"}, {Name: "espn_id"}},
+			DoNothing: true,
+		}).Create(&dbTeam).Error
+		if err != nil {
+			logging.Errorf("Failed to ensure team exists: %v", err)
+			return err
+		}
+	}
+
+	// 3. Create all matchups
+	// 4. Update existing boxscores
+	// 5. Update expected wins counts
+	// 6. Create new transactions
+	// 7. Run simulations
 
 	logging.Infof("Successfully unmarshaled league ID %d for year %d", league.ID, league.Year)
 

@@ -10,9 +10,9 @@ func createTestTeams(numTeams int) []models.Team {
 	teams := make([]models.Team, numTeams)
 	for i := 0; i < numTeams; i++ {
 		teams[i] = models.Team{
-			ID:       uint(i + 1),
-			Name:     "Team " + string(rune('A'+i)),
-			Owner:    "Owner " + string(rune('A'+i)),
+			ID:   uint(i + 1),
+			Name: "Team " + string(rune('A'+i)),
+			// Owner:    "Owner " + string(rune('A'+i)),
 			LeagueID: 1,
 		}
 	}

@@ -148,11 +148,11 @@ func GetSchedules(c *gin.Context) {
 
 		for _, team := range teams {
 			if team.ID == matchup.HomeTeamID {
-				resp.Data.Matchups[i].HomeTeamName = team.Owner
+				resp.Data.Matchups[i].HomeTeamName = team.Owners[0]
 				resp.Data.Matchups[i].HomeTeamESPNID = team.ESPNID
 			}
 			if team.ID == matchup.AwayTeamID {
-				resp.Data.Matchups[i].AwayTeamName = team.Owner
+				resp.Data.Matchups[i].AwayTeamName = team.Owners[0]
 				resp.Data.Matchups[i].AwayTeamESPNID = team.ESPNID
 			}
 		}
@@ -301,11 +301,11 @@ func GetMatchup(c *gin.Context) {
 	awayTeamESPNID := uint(0)
 	for _, team := range teams {
 		if team.ID == matchup.HomeTeamID {
-			homeTeamName = team.Owner
+			homeTeamName = team.Owners[0]
 			homeTeamESPNID = team.ESPNID
 		}
 		if team.ID == matchup.AwayTeamID {
-			awayTeamName = team.Owner
+			awayTeamName = team.Owners[0]
 			awayTeamESPNID = team.ESPNID
 		}
 	}

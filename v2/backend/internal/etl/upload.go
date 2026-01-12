@@ -537,7 +537,7 @@ func processTeams(filePath string) ([]*models.Team, error) {
 				LeagueID: leagueID,
 				ESPNID:   uint(team.ESPNID),
 				Name:     team.Nickname,
-				Owner:    team.Owner,
+				Owners:   []string{team.Owner},
 			}
 			if createErr := database.DB.Session(&gorm.Session{}).Create(newTeam).Error; createErr != nil {
 				return nil, fmt.Errorf("error creating new team with ESPN ID %d: %w", team.ESPNID, createErr)
@@ -547,7 +547,7 @@ func processTeams(filePath string) ([]*models.Team, error) {
 		} else {
 			// Team exists, update its details
 			existingTeam.Name = team.Nickname
-			existingTeam.Owner = team.Owner
+			existingTeam.Owners = []string{team.Owner}
 			if err := database.DB.Save(&existingTeam).Error; err != nil {
 				return nil, fmt.Errorf("error updating existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}

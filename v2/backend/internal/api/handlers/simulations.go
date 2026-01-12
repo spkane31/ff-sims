@@ -90,7 +90,7 @@ func GetStats(c *gin.Context) {
 
 		resp.TeamStats = append(resp.TeamStats, TeamStats{
 			TeamID:        fmt.Sprintf("%d", teamID),
-			TeamOwner:     allTeams[teamID].Owner,
+			TeamOwner:     allTeams[teamID].Owners[0],
 			AveragePoints: average,
 			StdDevPoints:  math.Sqrt(variance),
 		})
