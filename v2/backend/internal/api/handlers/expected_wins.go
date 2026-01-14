@@ -292,7 +292,11 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 	}
 
 	// Convert to response format
-	data := make([]AllTimeExpectedWins, len(results))
+	// TODO seankane: claude wrote this, gotta be a better way
+	data := []AllTimeExpectedWins{}
+	if len(results) > 0 {
+		data = make([]AllTimeExpectedWins, len(results))
+	}
 	for i, result := range results {
 		data[i] = AllTimeExpectedWins{
 			TeamID:             result.TeamID,

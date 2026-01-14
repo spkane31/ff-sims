@@ -48,7 +48,7 @@ func isChampionshipGame(game models.Matchup, allSchedule []models.Matchup) bool 
 	// Get all WINNERS_BRACKET games for this year
 	var yearPlayoffGames []models.Matchup
 	for _, g := range allSchedule {
-		if g.GameType == "WINNERS_BRACKET" && g.Year == game.Year {
+		if g.GameType == "WINNERS_BRACKET" && g.Season == game.Season {
 			yearPlayoffGames = append(yearPlayoffGames, g)
 		}
 	}
@@ -79,7 +79,7 @@ func isThirdPlaceGame(game models.Matchup, allSchedule []models.Matchup) bool {
 	var yearGames []models.Matchup
 	var lastWeek uint
 	for _, g := range allSchedule {
-		if g.Year == game.Year {
+		if g.Season == game.Season {
 			yearGames = append(yearGames, g)
 			if g.Week > lastWeek {
 				lastWeek = g.Week

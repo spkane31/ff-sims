@@ -1,50 +1,39 @@
-.PHONY: build clean run etl migrate deduplicate help
+.PHONY: build run clean etl reset-db
 
-help: ## Show this help message
-	@echo 'Makefile for backend'
-	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+build-server:
+	@echo "Building server..."
+	go build -o bin/server ./cmd/server
+	@echo "Server build complete!"
 
-build: ## Build the backend binaries
-	@echo "Building the backend..."
-	@go build -o bin/backend \
-		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
-		./cmd/server
-	@go build -o bin/etl \
-		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
-		./cmd/etl
+build-etl:
+	@echo "Building ETL..."
+	go build -o bin/etl ./cmd/etl
+	@echo "ETL build complete!"
 
-run: build ## Build and run the backend server
-	@echo "Running the backend..."
-	@./bin/backend
+build: build-server build-etl
 
-clean: ## Remove built binaries
-	@echo "Cleaning up..."
-	@rm -rf bin
+run: server
+	@echo "Starting server..."
+	./bin/server
 
-etl: ## Run the ETL process
+etl:
 	@echo "Running ETL process..."
-	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data --multiple-leagues
+	./bin/etl --directory /Users/seankane/github.com/ff-sims/scripts/data --multiple-leagues
 
-sleeper: ## Run the Sleeper data ingestion process
-	@echo "Running Sleeper data ingestion..."
-	@go run ./cmd/sleeperetl
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -rf bin/
+	@echo "Clean complete!"
 
-migrate: ## Run all database migration files (requires DATABASE_URL)
-	@echo "Running database migrations..."
-	@if [ -z "$(DATABASE_URL)" ]; then \
-		echo "ERROR: DATABASE_URL environment variable is not set"; \
-		exit 1; \
-	fi
-	@for file in migrations/*.sql; do \
-		if [ -f "$$file" ]; then \
-			echo "Applying migration: $$file"; \
-			psql $(DATABASE_URL) -f "$$file" || exit 1; \
-		fi; \
-	done
-	@echo "All migrations applied successfully"
+reset-db:
+	@echo "Resetting database..."
+	./scripts/reset_db.sh
 
-deduplicate: ## Remove duplicate records from database
-	@echo "Running deduplication process..."
-	@go run ./cmd/deduplicate
+help:
+	@echo "Available commands:"
+	@echo "  make build     - Build server and ETL binaries"
+	@echo "  make run       - Build and run the server"
+	@echo "  make etl       - Run the ETL process"
+	@echo "  make clean     - Remove build artifacts"
+	@echo "  make reset-db  - Drop and recreate database with fresh schema"
+	@echo "  make help      - Show this help message"

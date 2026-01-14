@@ -46,7 +46,6 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 		entry := &models.Matchup{
 			LeagueID:  leagueID,
 			Week:      uint(matchup.Week),
-			Year:      uint(matchup.Year),
 			Season:    matchup.Year,
 			Completed: matchup.Completed,
 			GameType:  matchup.GameType,
@@ -54,10 +53,10 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 		}
 		// Look up team IDs from createdTeams
 		for _, team := range createdTeams {
-			if team.ESPNID == uint(matchup.HomeTeamESPNID) {
+			if team.ESPNID != nil && *team.ESPNID == uint(matchup.HomeTeamESPNID) {
 				entry.HomeTeamID = team.ID
 			}
-			if team.ESPNID == uint(matchup.AwayTeamESPNID) {
+			if team.ESPNID != nil && *team.ESPNID == uint(matchup.AwayTeamESPNID) {
 				entry.AwayTeamID = team.ID
 			}
 		}
@@ -71,8 +70,8 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 
 		// Create or update the matchup in the database
 		var existingMatchup models.Matchup
-		err := database.DB.Where("home_team_id = ? AND away_team_id = ? AND week = ? AND year = ?",
-			entry.HomeTeamID, entry.AwayTeamID, entry.Week, entry.Year).First(&existingMatchup).Error
+		err := database.DB.Where("home_team_id = ? AND away_team_id = ? AND week = ? AND season = ?",
+			entry.HomeTeamID, entry.AwayTeamID, entry.Week, entry.Season).First(&existingMatchup).Error
 
 		if err != nil {
 			if err != gorm.ErrRecordNotFound {

@@ -26,7 +26,9 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 |---------|-------------------|-------------------|--------|
 | League Creation | `upload.go:722-744` | `new_upload.go:153-160` | ✅ Complete |
 | Team Creation | `upload.go:510-560` | `new_upload.go:162-182` | ✅ Complete |
-| Basic Matchup Creation | `upload.go:204-341` | `new_upload.go:184-206` | ⚠️ Partial |
+| Basic Matchup Creation | `upload.go:204-341` | `new_upload.go:184-206` | ✅ Complete |
+| Matchup Score Updates | `upload.go:304-318` | `new_upload.go:208-239` | ✅ Complete |
+| Draft Selection Processing | `upload.go:40-124` | `new_upload.go:241-321` | ✅ Complete |
 | Player Data Refresh | N/A | `new_upload.go:64-125` | ✅ New Feature |
 | Multi-league Support | ❌ Not supported | `new_upload.go:19` | ✅ New Feature |
 
@@ -34,11 +36,10 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 
 | Feature | JSON Implementation | YAML Status | Priority |
 |---------|-------------------|-------------|----------|
-| **Box Score Processing** | `upload.go:343-500` | ❌ TODO (Line 208) | 🔴 CRITICAL |
-| **Draft Selection Processing** | `upload.go:40-124` | ❌ Missing | 🔴 CRITICAL |
-| **Transaction Processing** | `upload.go:575-696` | ❌ TODO (Line 210) | 🔴 CRITICAL |
-| **Expected Wins Calculation** | `upload.go:816-892` | ❌ TODO (Line 209) | 🟡 HIGH |
-| **Simulation Execution** | `upload.go:829-892` | ❌ TODO (Line 211) | 🟡 HIGH |
+| **Box Score Processing** | `upload.go:343-500` | ❌ TODO (Line 323) | 🔴 CRITICAL |
+| **Transaction Processing** | `upload.go:575-696` | ❌ TODO (Line 325) | 🔴 CRITICAL |
+| **Expected Wins Calculation** | `upload.go:816-892` | ❌ TODO (Line 324) | 🟡 HIGH |
+| **Simulation Execution** | `upload.go:829-892` | ❌ TODO (Line 326) | 🟡 HIGH |
 | **Pure Matchups** | `matchups.go:25-102` | ❌ Missing | 🟢 LOW |
 
 ## Detailed Feature Gaps
@@ -69,7 +70,7 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 - Generate player statistics reports
 - Support fantasy analysis features
 
-### 2. Draft Selection Processing (CRITICAL)
+### 2. Draft Selection Processing ✅ IMPLEMENTED
 
 **JSON Implementation:**
 - Reads draft picks with round/pick numbers
@@ -78,19 +79,18 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 - Handles keeper league scenarios implicitly
 - Updates existing draft selections
 
-**YAML Gap:**
-- Draft structure defined (`models.go:106-121`)
-- Includes keeper flag (not in JSON version)
-- No processing logic implemented
-- Players must exist before draft processing
+**YAML Implementation:**
+- ✅ Draft structure defined (`models.go:106-121`)
+- ✅ Includes keeper flag (improvement over JSON version!)
+- ✅ Processing logic implemented (`new_upload.go:241-321`)
+- ✅ Creates players if they don't exist
+- ✅ Maps ESPN team IDs to internal IDs
+- ✅ Uses upsert for idempotent processing
+- ✅ Handles all draft picks with detailed logging
 
-**Impact:** Without draft processing, you cannot:
-- Track draft history
-- Analyze draft performance
-- Support keeper league functionality
-- Generate draft reports
+**Status:** Feature complete! Draft selections are now properly imported and linked to teams and players.
 
-### 3. Transaction Processing (CRITICAL)
+### 3. Transaction Processing (CRITICAL - Next Priority)
 
 **JSON Implementation:**
 - Processes adds, drops, trades, free agent pickups
@@ -112,7 +112,7 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 - Support trade review features
 - Calculate transaction-based metrics
 
-### 4. Matchup Score Processing (HIGH)
+### 4. Matchup Score Processing ✅ IMPLEMENTED
 
 **JSON Implementation:**
 - Stores `HomeTeamFinalScore` and `AwayTeamFinalScore`
@@ -121,15 +121,13 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 - Updates existing matchups with new scores
 
 **YAML Implementation:**
-- Creates matchups but hardcodes scores to 0
-- Sets `Completed: false` for all matchups
-- Missing score fields in processing logic
+- ✅ Creates matchups from `schedule.matchups` section
+- ✅ Updates scores from `schedule.boxscores` section (`new_upload.go:208-239`)
+- ✅ Processes `HomeScore`, `AwayScore`, `HomeProjectedScore`, `AwayProjectedScore`
+- ✅ Sets `Completed` status from boxscore data
+- ✅ Logs detailed update information
 
-**Impact:** Without score processing:
-- Cannot determine matchup winners
-- Cannot track team performance
-- Expected wins calculations will fail
-- Playoff simulations will be inaccurate
+**Status:** Feature complete! Matchup scores are now properly updated from boxscore data.
 
 ### 5. Expected Wins Calculation (HIGH)
 
@@ -199,10 +197,13 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
    - Draft picks include `keeper` flag
    - Native support for keeper leagues
 
-4. **Player Data Integration**
+4. **Player Data Management**
    - Automatic player database updates from Sleeper API
-   - Ensures player data freshness
-   - Reduces manual player management
+   - Local JSON cache for offline development (`internal/etl/data/players.json`)
+   - Manual editing support for fixing missing/incorrect data
+   - Force refresh option via `--refresh-players` flag
+   - Reduces dependency on external APIs
+   - Version controlled player data for consistency
 
 5. **Multi-League Support**
    - Can process multiple leagues in parallel
@@ -322,11 +323,10 @@ The YAML-based approach provides significant architectural improvements:
 - Modern database operations
 - Automatic player data management
 
-However, it is currently **~30% complete** with critical gaps in:
+However, it is currently **~50% complete** with critical gaps in:
 1. Box score processing (blocks analytics)
-2. Draft selections (blocks historical analysis)
-3. Transactions (blocks roster tracking)
-4. Expected wins (blocks key feature)
+2. Transactions (blocks roster tracking)
+3. Expected wins (blocks key feature)
 
 **Recommendation:** Treat this as a ground-up rewrite rather than a simple format migration. Prioritize implementing core data processing features before deprecating the JSON approach.
 

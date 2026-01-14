@@ -15,15 +15,11 @@ type Team struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	Name     string   `json:"name"`
-	Owners   []string `json:"owner_name" gorm:"serializer:json;type:text"`
-	ESPNID   uint     `json:"espn_id" gorm:"uniqueIndex:idx_teams_league_espn"`
-	LeagueID uint     `json:"league_id" gorm:"uniqueIndex:idx_teams_league_espn"`
-	Wins     int         `json:"wins" gorm:"default:0"`
-	Losses   int         `json:"losses" gorm:"default:0"`
-	Ties     int         `json:"ties" gorm:"default:0"`
-	Points   float64     `json:"points" gorm:"default:0"`
-	// Year     uint    `json:"year"`
+	Name   string   `json:"name"`
+	Owners []string `json:"owner_name" gorm:"serializer:json;type:text"`
+	// TODO seankane: Change to non-nullable for sleeper and consider change to TeamID (source can be retrieved from League)
+	ESPNID   *uint `json:"espn_id,omitempty"` // Nullable for Sleeper teams
+	LeagueID uint  `json:"league_id" gorm:"index"`
 
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`
@@ -38,7 +34,11 @@ type Team struct {
 }
 
 func (t *Team) String() string {
-	return fmt.Sprintf("Team(ID=%d, Name=%s, Owner=%s, ESPNID=%d, LeagueID=%d)", t.ID, t.Name, strings.Join(t.Owners, ","), t.ESPNID, t.LeagueID) //, t.Year)
+	espnID := "nil"
+	if t.ESPNID != nil {
+		espnID = fmt.Sprintf("%d", *t.ESPNID)
+	}
+	return fmt.Sprintf("Team(ID=%d, Name=%s, Owner=%s, ESPNID=%s, LeagueID=%d)", t.ID, t.Name, strings.Join(t.Owners, ","), espnID, t.LeagueID)
 }
 
 // AfterCreate hook is triggered after creating a new team

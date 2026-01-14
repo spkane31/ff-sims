@@ -16,15 +16,20 @@ type DraftSelection struct {
 	PlayerName     string `json:"player_name"`
 	PlayerPosition string `json:"player_position"` // QB, RB, WR, TE, K, DEF
 	TeamID         uint   `json:"team_id"`         // Team drafting the player
-	Round          uint   `json:"round"`
-	Pick           uint   `json:"pick"` // 1-based index
-	Year           uint   `json:"year"` // Draft year
-	LeagueID       uint   `json:"league_id"`
+	Round          uint   `json:"round" gorm:"uniqueIndex:idx_draft_pick"`
+	Pick           uint   `json:"pick" gorm:"uniqueIndex:idx_draft_pick"` // 1-based index
+	Year           uint   `json:"year" gorm:"uniqueIndex:idx_draft_pick"` // Draft year
+	LeagueID       uint   `json:"league_id" gorm:"uniqueIndex:idx_draft_pick"`
 
 	// Relationships
 	Team   *Team   `json:"team,omitempty"`
 	Player *Player `json:"player,omitempty"`
 	League *League `json:"league,omitempty"`
+}
+
+// TableName specifies the table name and adds a unique constraint
+func (DraftSelection) TableName() string {
+	return "draft_selections"
 }
 
 // Transaction represents various team transactions like adding/dropping/trading players

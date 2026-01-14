@@ -151,7 +151,7 @@ func GetPlayers(c *gin.Context) {
 	//        COUNT(bs.id) AS games_played
 	// FROM players p
 	// JOIN box_scores bs ON p.id = bs.player_id
-	// WHERE bs.year = ? [AND p.position = ?]
+	// WHERE bs.season = ? [AND p.position = ?]
 	// GROUP BY p.id, p.name, p.position, p.team, p.status, p.espn_id
 	// ORDER BY total_points DESC
 	// LIMIT ? OFFSET ?
@@ -183,7 +183,7 @@ func GetPlayers(c *gin.Context) {
 		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id")
 	} else {
 		yearInt, _ := strconv.Atoi(year)
-		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.year = ?", yearInt)
+		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.season = ?", yearInt)
 	}
 
 	query = query.Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
@@ -248,7 +248,7 @@ func GetPlayers(c *gin.Context) {
 			}
 		} else {
 			yearInt, _ := strconv.Atoi(year)
-			if err := database.DB.Where("player_id IN ? AND year = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
+			if err := database.DB.Where("player_id IN ? AND season = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
 				slog.Error("Failed to fetch detailed box scores", "error", err)
 				// Continue without detailed stats rather than failing completely
 			}
@@ -347,14 +347,14 @@ func GetPlayerByID(c *gin.Context) {
 	var boxScores []models.BoxScore
 	if year == "all" {
 		if err := database.DB.Where("player_id = ?", player.ID).
-			Order("year desc, week asc").Find(&boxScores).Error; err != nil {
+			Order("season desc, week asc").Find(&boxScores).Error; err != nil {
 			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
 			return
 		}
 	} else {
 		yearInt, _ := strconv.Atoi(year)
-		if err := database.DB.Where("player_id = ? AND year = ?", player.ID, yearInt).
+		if err := database.DB.Where("player_id = ? AND season = ?", player.ID, yearInt).
 			Order("week asc").Find(&boxScores).Error; err != nil {
 			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})

@@ -67,7 +67,7 @@ func GetSchedules(c *gin.Context) {
 		} else {
 			// Fetch all matchups for the year and league (completed and future)
 			if scheduleErr = database.DB.Model(&models.Matchup{}).
-				Where("league_id = ? AND year = ?", leagueID, year).
+				Where("league_id = ? AND season = ?", leagueID, year).
 				Find(&schedule).Error; scheduleErr != nil {
 				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 			}
@@ -127,14 +127,20 @@ func GetSchedules(c *gin.Context) {
 		filteredSchedule = typeFilteredSchedule
 	}
 
-	resp := GetSchedulesResponse{}
-	resp.Data.Matchups = make([]Matchup, len(filteredSchedule))
+	resp := GetSchedulesResponse{
+		Data: Schedule{
+			Matchups: []Matchup{},
+		},
+	}
+	if len(filteredSchedule) > 0 {
+		resp.Data.Matchups = make([]Matchup, len(filteredSchedule))
+	}
 	for i, matchup := range filteredSchedule {
 		playoffGameType := utils.GetPlayoffGameType(matchup, schedule)
 
 		resp.Data.Matchups[i] = Matchup{
 			ID:                 fmt.Sprintf("%d", matchup.ID),
-			Year:               matchup.Year,
+			Year:               matchup.Season,
 			Week:               matchup.Week,
 			HomeScore:          matchup.HomeTeamFinalScore,
 			AwayScore:          matchup.AwayTeamFinalScore,
@@ -149,11 +155,15 @@ func GetSchedules(c *gin.Context) {
 		for _, team := range teams {
 			if team.ID == matchup.HomeTeamID {
 				resp.Data.Matchups[i].HomeTeamName = team.Owners[0]
-				resp.Data.Matchups[i].HomeTeamESPNID = team.ESPNID
+				if team.ESPNID != nil {
+					resp.Data.Matchups[i].HomeTeamESPNID = *team.ESPNID
+				}
 			}
 			if team.ID == matchup.AwayTeamID {
 				resp.Data.Matchups[i].AwayTeamName = team.Owners[0]
-				resp.Data.Matchups[i].AwayTeamESPNID = team.ESPNID
+				if team.ESPNID != nil {
+					resp.Data.Matchups[i].AwayTeamESPNID = *team.ESPNID
+				}
 			}
 		}
 	}
@@ -302,11 +312,15 @@ func GetMatchup(c *gin.Context) {
 	for _, team := range teams {
 		if team.ID == matchup.HomeTeamID {
 			homeTeamName = team.Owners[0]
-			homeTeamESPNID = team.ESPNID
+			if team.ESPNID != nil {
+				homeTeamESPNID = *team.ESPNID
+			}
 		}
 		if team.ID == matchup.AwayTeamID {
 			awayTeamName = team.Owners[0]
-			awayTeamESPNID = team.ESPNID
+			if team.ESPNID != nil {
+				awayTeamESPNID = *team.ESPNID
+			}
 		}
 	}
 
@@ -355,7 +369,7 @@ func GetMatchup(c *gin.Context) {
 	resp := GetMatchupResponse{
 		Data: SingleMatchup{
 			ID:             id,
-			Year:           matchup.Year,
+			Year:           matchup.Season,
 			Week:           matchup.Week,
 			HomeTeamESPNID: homeTeamESPNID,
 			AwayTeamESPNID: awayTeamESPNID,

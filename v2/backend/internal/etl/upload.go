@@ -90,7 +90,7 @@ func processDraftSelections(filePath string) error {
 		}
 
 		for _, team := range teams {
-			if team.ESPNID == selection.OwnerESPNID {
+			if team.ESPNID != nil && *team.ESPNID == selection.OwnerESPNID {
 				entry.TeamID = team.ID
 				break
 			}
@@ -217,7 +217,7 @@ func processMatchups(filePath string) error {
 	for i, matchup := range matchupsMarshalled {
 		matchups[i] = &models.Matchup{
 			Week:                       matchup.Week,
-			Year:                       matchup.Year,
+			Season:                     matchup.Year,
 			HomeTeamID:                 matchup.HomeTeamESPNID,
 			AwayTeamID:                 matchup.AwayTeamESPNID,
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -241,13 +241,15 @@ func processMatchups(filePath string) error {
 
 	idMap := make(map[uint]uint)
 	for _, team := range teams {
-		idMap[team.ESPNID] = team.ID
+		if team.ESPNID != nil {
+			idMap[*team.ESPNID] = team.ID
+		}
 	}
 
 	logging.Infof("Successfully processed %d matchups from %s", len(matchups), filePath)
 	for idx, matchup := range matchups {
-		logging.Debugf("Matchup - Week: %d, Year: %d, Home Team ESPN ID: %d, Away Team ESPN ID: %d, Home Score: %.2f, Away Score: %.2f, Completed: %t",
-			matchup.Week, matchup.Year, matchup.HomeTeamID, matchup.AwayTeamID,
+		logging.Debugf("Matchup - Week: %d, Season: %d, Home Team ESPN ID: %d, Away Team ESPN ID: %d, Home Score: %.2f, Away Score: %.2f, Completed: %t",
+			matchup.Week, matchup.Season, matchup.HomeTeamID, matchup.AwayTeamID,
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore, matchup.Completed)
 		logging.Debugf("Home Team Projected Score: %.2f, Away Team Projected Score: %.2f",
 			matchup.HomeTeamESPNProjectedScore, matchup.AwayTeamESPNProjectedScore)
@@ -270,8 +272,7 @@ func processMatchups(filePath string) error {
 		entry := &models.Matchup{
 			LeagueID:                   leagueID,
 			Week:                       matchup.Week,
-			Year:                       matchup.Year,
-			Season:                     matchup.Year,
+			Season:                     matchup.Season,
 			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -287,7 +288,7 @@ func processMatchups(filePath string) error {
 		// Check if the matchup already exists (use more comprehensive check to handle duplicates)
 		var existingMatchup models.Matchup
 		err := database.DB.Where("home_team_id = ? AND away_team_id = ? AND week = ? AND year = ?",
-			homeTeamID, awayTeamID, matchup.Week, matchup.Year).First(&existingMatchup).Error
+			homeTeamID, awayTeamID, matchup.Week, matchup.Season).First(&existingMatchup).Error
 
 		if err != nil {
 			if err != gorm.ErrRecordNotFound {
@@ -308,8 +309,7 @@ func processMatchups(filePath string) error {
 			existingMatchup.Completed = isCompleted // Use the same logic for updates
 			existingMatchup.GameType = matchup.GameType
 			existingMatchup.Week = matchup.Week
-			existingMatchup.Year = matchup.Year
-			existingMatchup.Season = matchup.Year
+			existingMatchup.Season = matchup.Season
 
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamID, err)
@@ -324,14 +324,14 @@ func processMatchups(filePath string) error {
 
 		// Process home team lineup
 		for _, player := range matchupsMarshalled[idx].HomeTeamLineup {
-			if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+			if err := processPlayerLineUp(player, entry.HomeTeamID, existingMatchup.ID, matchup.Week, matchup.Season); err != nil {
 				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
 			}
 		}
 
 		// Process away team lineup
 		for _, player := range matchupsMarshalled[idx].AwayTeamLineup {
-			if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Year); err != nil {
+			if err := processPlayerLineUp(player, entry.AwayTeamID, existingMatchup.ID, matchup.Week, matchup.Season); err != nil {
 				return fmt.Errorf("error processing home team player lineup for player %s: %w", player.PlayerName, err)
 			}
 		}
@@ -533,9 +533,10 @@ func processTeams(filePath string) ([]*models.Team, error) {
 				return nil, fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
 			// Team does not exist, create a new one
+			espnID := uint(team.ESPNID)
 			newTeam := &models.Team{
 				LeagueID: leagueID,
-				ESPNID:   uint(team.ESPNID),
+				ESPNID:   &espnID,
 				Name:     team.Nickname,
 				Owners:   []string{team.Owner},
 			}

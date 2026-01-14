@@ -16,7 +16,6 @@ type Matchup struct {
 
 	LeagueID   uint      `json:"league_id" gorm:"uniqueIndex:idx_matchup_unique"`
 	Week       uint      `json:"week" gorm:"uniqueIndex:idx_matchup_unique"`
-	Year       uint      `json:"year"`
 	Season     uint      `json:"season" gorm:"uniqueIndex:idx_matchup_unique"`
 	HomeTeamID uint      `json:"home_team_id" gorm:"uniqueIndex:idx_matchup_unique"`
 	AwayTeamID uint      `json:"away_team_id" gorm:"uniqueIndex:idx_matchup_unique"`
@@ -46,5 +45,5 @@ type Matchup struct {
 }
 
 func (m *Matchup) String() string {
-	return fmt.Sprintf("Matchup(ID=%d, Week=%d, Year=%d, HomeTeamID=%d, AwayTeamID=%d, HomeScore=%.2f, AwayScore=%.2f, Completed=%t)", m.ID, m.Week, m.Year, m.HomeTeamID, m.AwayTeamID, m.HomeTeamFinalScore, m.AwayTeamFinalScore, m.Completed)
+	return fmt.Sprintf("Matchup(ID=%d, Week=%d, Season=%d, HomeTeamID=%d, AwayTeamID=%d, HomeScore=%.2f, AwayScore=%.2f, Completed=%t)", m.ID, m.Week, m.Season, m.HomeTeamID, m.AwayTeamID, m.HomeTeamFinalScore, m.AwayTeamFinalScore, m.Completed)
 }

@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	dataDir         string
-	multipleLeagues bool
+	dataDir           string
+	multipleLeagues   bool
+	refreshPlayerData bool
 
 	// These will be deprecated later
 	skipExpectedWins bool
@@ -39,8 +40,9 @@ func main() {
 		Long:  "Process and upload data files to the database",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return etl.NewUpload(etl.NewUploadOptions{
-				Directory:       dataDir,
-				MultipleLeagues: multipleLeagues,
+				Directory:         dataDir,
+				MultipleLeagues:   multipleLeagues,
+				RefreshPlayerData: refreshPlayerData,
 			})
 			// // Determine if we should calculate expected wins
 			// doCalculateExpectedWins := !skipExpectedWins
@@ -54,6 +56,7 @@ func main() {
 	}
 	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
 	uploadCmd.Flags().BoolVar(&multipleLeagues, "multiple-leagues", false, "There are multiple leagues in the data directory")
+	uploadCmd.Flags().BoolVar(&refreshPlayerData, "refresh-players", false, "Force refresh player data from Sleeper API and update local JSON file")
 
 	// Expected wins command
 	xwinsCmd := &cobra.Command{

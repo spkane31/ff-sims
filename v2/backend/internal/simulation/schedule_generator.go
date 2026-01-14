@@ -135,7 +135,6 @@ func (sg *ScheduleGenerator) generateWeekMatches(teams []models.Team, week uint,
 			match := models.Matchup{
 				LeagueID:   leagueID,
 				Week:       week,
-				Year:       year,
 				Season:     year,
 				HomeTeamID: homeTeamID,
 				AwayTeamID: awayTeamID,
@@ -286,7 +285,6 @@ func (sg *ScheduleGenerator) createPlayoffMatchup(homeTeamID, awayTeamID uint, w
 	return models.Matchup{
 		LeagueID:   leagueID,
 		Week:       week,
-		Year:       year,
 		Season:     year,
 		HomeTeamID: homeTeamID,
 		AwayTeamID: awayTeamID,

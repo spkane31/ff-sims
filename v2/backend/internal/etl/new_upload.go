@@ -6,18 +6,23 @@ import (
 	"backend/internal/logging"
 	"backend/internal/models"
 	"backend/internal/sleeper"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type NewUploadOptions struct {
-	Directory       string
-	MultipleLeagues bool
+	Directory         string
+	MultipleLeagues   bool
+	RefreshPlayerData bool // Force refresh from Sleeper API
 }
+
+const playersDataFile = "internal/etl/data/players.json"
 
 func NewUpload(opts NewUploadOptions) error {
 	logging.Infof("Starting ETL upload from directory: %s", opts.Directory)
@@ -26,7 +31,7 @@ func NewUpload(opts NewUploadOptions) error {
 		logging.Errorf("Failed to initialize database: %v", err)
 	}
 
-	if err := checkPlayerEntries(); err != nil {
+	if err := checkPlayerEntries(opts.RefreshPlayerData); err != nil {
 		logging.Errorf("Player entries check failed: %v", err)
 		return err
 	}
@@ -61,7 +66,7 @@ func NewUpload(opts NewUploadOptions) error {
 	return nil
 }
 
-func checkPlayerEntries() error {
+func checkPlayerEntries(forceRefresh bool) error {
 	var last_updated models.Player
 	if err := database.DB.Model(&models.Player{}).Order("updated_at desc").Limit(1).Find(&last_updated).Error; err != nil {
 		return err
@@ -69,20 +74,47 @@ func checkPlayerEntries() error {
 
 	logging.Infof("Last player entry updated at: %v", last_updated.UpdatedAt)
 
-	// Check if data is fresh (exists and less than 2 days old)
+	// Check if data is fresh (exists and less than 2 days old) and not forcing refresh
 	twoDaysAgo := time.Now().Add(-48 * time.Hour)
-	if !last_updated.UpdatedAt.IsZero() && last_updated.UpdatedAt.After(twoDaysAgo) {
+	if !forceRefresh && !last_updated.UpdatedAt.IsZero() && last_updated.UpdatedAt.After(twoDaysAgo) {
 		logging.Infof("Player entries are up to date, skipping data fetch")
 		return nil
 	}
 
-	logging.Infof("Player entries are outdated or missing, fetching from Sleeper API")
+	// Try to load players from local JSON file first
+	var players map[string]sleeper.Player
+	var err error
 
-	sleeperClient := sleeper.New()
+	// Check if local file exists and we're not forcing refresh
+	if !forceRefresh {
+		if _, err := os.Stat(playersDataFile); err == nil {
+			logging.Infof("Loading players from local file: %s", playersDataFile)
+			players, err = loadPlayersFromFile(playersDataFile)
+			if err != nil {
+				logging.Warnf("Failed to load players from file, will fetch from API: %v", err)
+				players = nil
+			} else {
+				logging.Infof("Successfully loaded %d players from local file", len(players))
+			}
+		}
+	}
 
-	players, err := sleeperClient.GetAllPlayers()
-	if err != nil {
-		return err
+	// If we don't have players from file, fetch from API
+	if players == nil || forceRefresh {
+		logging.Infof("Fetching players from Sleeper API")
+		sleeperClient := sleeper.New()
+
+		players, err = sleeperClient.GetAllPlayers()
+		if err != nil {
+			return err
+		}
+
+		// Save to local file for future use
+		if err := savePlayersToFile(playersDataFile, players); err != nil {
+			logging.Warnf("Failed to save players to file: %v", err)
+		} else {
+			logging.Infof("Saved %d players to %s", len(players), playersDataFile)
+		}
 	}
 
 	// Process players in batches to avoid memory issues
@@ -119,9 +151,34 @@ func checkPlayerEntries() error {
 		logging.Infof("Upserted final %d players (total: %d)", len(playersList), count)
 	}
 
-	logging.Infof("Successfully upserted %d players from Sleeper API", count)
+	logging.Infof("Successfully upserted %d players", count)
 
 	return nil
+}
+
+// loadPlayersFromFile reads player data from a JSON file
+func loadPlayersFromFile(filepath string) (map[string]sleeper.Player, error) {
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	var players map[string]sleeper.Player
+	if err := json.Unmarshal(data, &players); err != nil {
+		return nil, err
+	}
+
+	return players, nil
+}
+
+// savePlayersToFile writes player data to a JSON file
+func savePlayersToFile(filepath string, players map[string]sleeper.Player) error {
+	data, err := json.MarshalIndent(players, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath, data, 0644)
 }
 
 func upsertPlayerBatch(players []models.Player) error {
@@ -150,31 +207,39 @@ func uploadYAMLFile(filePath string) error {
 		return err
 	}
 
-	// 1. Ensure league exists
-	if err := database.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "league_id"}},
-		DoNothing: true,
-	}).Create(&models.League{LeagueID: league.ID}).Error; err != nil {
-		logging.Errorf("Failed to ensure league exists: %v", err)
-		return err
+	// 1. Ensure league exists and get its database ID
+	var dbLeague models.League
+	if err := database.DB.Where("league_id = ? AND source = ?", league.ID, "espn").First(&dbLeague).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create the league
+			dbLeague = models.League{
+				LeagueID: league.ID,
+				Source:   "espn",
+			}
+			if err := database.DB.Create(&dbLeague).Error; err != nil {
+				logging.Errorf("Failed to create league: %v", err)
+				return err
+			}
+			logging.Infof("Created new league with DB ID %d for ESPN league %d", dbLeague.ID, league.ID)
+		} else {
+			logging.Errorf("Failed to query league: %v", err)
+			return err
+		}
 	}
+	logging.Infof("Using database league ID: %d for ESPN league ID: %d", dbLeague.ID, league.ID)
 
 	// 2. Ensure teams exist
 	for _, etlTeam := range league.Teams {
+		espnID := uint(etlTeam.ESPNID)
 		dbTeam := models.Team{
 			Name:     etlTeam.Name,
-			ESPNID:   uint(etlTeam.ESPNID),
-			LeagueID: league.ID,
-			Wins:     0,
-			Losses:   0,
-			Ties:     0,
-			Points:   0,
+			ESPNID:   &espnID,     // Pointer for nullable field
+			LeagueID: dbLeague.ID, // Use database PK, not ESPN ID
 			Owners:   etlTeam.Owners,
 		}
-		err := database.DB.Model(&models.Team{}).Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "league_id"}, {Name: "espn_id"}},
-			DoNothing: true,
-		}).Create(&dbTeam).Error
+		err := database.DB.Model(&models.Team{}).
+			Where("league_id = ? AND espn_id = ?", dbLeague.ID, espnID).
+			FirstOrCreate(&dbTeam).Error
 		if err != nil {
 			logging.Errorf("Failed to ensure team exists: %v", err)
 			return err
@@ -184,7 +249,7 @@ func uploadYAMLFile(filePath string) error {
 	// 3. Create all matchups
 	for _, etlMatchup := range league.Schedule.Matchups {
 		dbMatchup := models.Matchup{
-			LeagueID:           league.ID,
+			LeagueID:           dbLeague.ID, // Use database PK
 			Season:             etlMatchup.Year,
 			Week:               etlMatchup.Week,
 			HomeTeamID:         uint(etlMatchup.HomeTeamID),
@@ -205,12 +270,140 @@ func uploadYAMLFile(filePath string) error {
 		}
 	}
 
-	// 4. Update existing boxscores
-	// 5. Update expected wins counts
-	// 6. Create new transactions
-	// 7. Run simulations
+	// 4. Update matchup scores from boxscores
+	for _, etlBoxscore := range league.Schedule.Boxscores {
+		// Find the matchup to update
+		result := database.DB.Model(&models.Matchup{}).
+			Where("league_id = ? AND season = ? AND week = ? AND home_team_id = ? AND away_team_id = ?",
+				dbLeague.ID, etlBoxscore.Year, etlBoxscore.Week,
+				etlBoxscore.HomeTeamID, etlBoxscore.AwayTeamID).
+			Updates(map[string]interface{}{
+				"home_team_final_score":          etlBoxscore.HomeScore,
+				"away_team_final_score":          etlBoxscore.AwayScore,
+				"home_team_espn_projected_score": etlBoxscore.HomeProjectedScore,
+				"away_team_espn_projected_score": etlBoxscore.AwayProjectedScore,
+				"completed":                      etlBoxscore.Completed,
+			})
 
-	logging.Infof("Successfully unmarshaled league ID %d for year %d", league.ID, league.Year)
+		if result.Error != nil {
+			logging.Errorf("Failed to update matchup scores for week %d: %v", etlBoxscore.Week, result.Error)
+			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			logging.Warnf("No matchup found to update for week %d, year %d (home: %d, away: %d)",
+				etlBoxscore.Week, etlBoxscore.Year, etlBoxscore.HomeTeamID, etlBoxscore.AwayTeamID)
+			continue
+		}
+
+		logging.Infof("Updated matchup scores for week %d, year %d: Team %d (%.1f) vs Team %d (%.1f) - Completed: %t",
+			etlBoxscore.Week, etlBoxscore.Year,
+			etlBoxscore.HomeTeamID, etlBoxscore.HomeScore,
+			etlBoxscore.AwayTeamID, etlBoxscore.AwayScore,
+			etlBoxscore.Completed)
+	}
+
+	// 5. Process draft selections
+	if len(league.Draft.Selections) > 0 {
+		logging.Infof("Processing %d draft selections for year %d", len(league.Draft.Selections), league.Draft.Year)
+
+		// First, get all teams to map ESPN IDs to internal IDs
+		var teams []models.Team
+		if err := database.DB.Where("league_id = ?", dbLeague.ID).Find(&teams).Error; err != nil {
+			logging.Errorf("Failed to fetch teams for draft processing: %v", err)
+			return err
+		}
+
+		teamIDMap := make(map[int]uint)
+		for _, team := range teams {
+			if team.ESPNID != nil {
+				teamIDMap[int(*team.ESPNID)] = team.ID
+			}
+		}
+
+		for _, pick := range league.Draft.Selections {
+			// Find the player by ESPN ID first
+			var player models.Player
+			err := database.DB.Where("espn_id = ?", pick.PlayerID).First(&player).Error
+
+			if err != nil {
+				// Player not found by ESPN ID, try to find by name and update ESPN ID
+				err = database.DB.Where("LOWER(name) = LOWER(?)", pick.PlayerName).First(&player).Error
+				if err != nil {
+					// Player still not found - this shouldn't happen after batch import
+					logging.Warnf("Player %s (ESPN ID: %d) not found in database, skipping draft pick",
+						pick.PlayerName, pick.PlayerID)
+					continue
+				}
+
+				// Found by name, update the ESPN ID
+				player.ESPNID = int64(pick.PlayerID)
+				if player.Position == "" {
+					player.Position = pick.PlayerPosition
+				}
+				if err := database.DB.Save(&player).Error; err != nil {
+					logging.Errorf("Failed to update player %s with ESPN ID: %v", pick.PlayerName, err)
+					return err
+				}
+				logging.Infof("Updated player %s (ID: %d) with ESPN ID: %d", player.Name, player.ID, pick.PlayerID)
+			}
+
+			// Map ESPN team ID to internal team ID
+			internalTeamID, exists := teamIDMap[pick.TeamID]
+			if !exists {
+				logging.Warnf("Team with ESPN ID %d not found for draft pick, skipping", pick.TeamID)
+				continue
+			}
+
+			// Check if draft selection already exists
+			var existingSelection models.DraftSelection
+			err = database.DB.Where("league_id = ? AND year = ? AND round = ? AND pick = ?",
+				dbLeague.ID, league.Draft.Year, pick.Round, pick.Pick).First(&existingSelection).Error
+
+			if err != nil {
+				// Draft selection doesn't exist, create it
+				draftSelection := models.DraftSelection{
+					PlayerID:       player.ID,
+					PlayerName:     pick.PlayerName,
+					PlayerPosition: pick.PlayerPosition,
+					TeamID:         internalTeamID,
+					Round:          uint(pick.Round),
+					Pick:           uint(pick.Pick),
+					Year:           uint(league.Draft.Year),
+					LeagueID:       dbLeague.ID, // Use database PK
+				}
+
+				if err := database.DB.Create(&draftSelection).Error; err != nil {
+					logging.Errorf("Failed to create draft selection for player %s: %v", pick.PlayerName, err)
+					return err
+				}
+				logging.Debugf("Created draft pick: Round %d, Pick %d - %s to Team %d",
+					pick.Round, pick.Pick, pick.PlayerName, internalTeamID)
+			} else {
+				// Draft selection exists, update it
+				existingSelection.PlayerID = player.ID
+				existingSelection.PlayerName = pick.PlayerName
+				existingSelection.PlayerPosition = pick.PlayerPosition
+				existingSelection.TeamID = internalTeamID
+
+				if err := database.DB.Save(&existingSelection).Error; err != nil {
+					logging.Errorf("Failed to update draft selection for player %s: %v", pick.PlayerName, err)
+					return err
+				}
+				logging.Debugf("Updated draft pick: Round %d, Pick %d - %s to Team %d",
+					pick.Round, pick.Pick, pick.PlayerName, internalTeamID)
+			}
+		}
+
+		logging.Infof("Successfully processed %d draft selections", len(league.Draft.Selections))
+	}
+
+	// 6. Process box score player stats (TODO)
+	// 7. Update expected wins counts (TODO)
+	// 8. Create new transactions (TODO)
+	// 9. Run simulations (TODO)
+
+	logging.Infof("Successfully processed league ID %d for year %d", league.ID, league.Year)
 
 	return nil
 }

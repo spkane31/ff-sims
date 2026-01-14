@@ -6,6 +6,14 @@ import (
 	"gorm.io/gorm"
 )
 
+type LeagueSource string
+
+const (
+	LeagueSourceESPN LeagueSource = "espn"
+	// TODO seankane: add Sleeper support
+	LeagueSourceSleeper LeagueSource = "sleeper"
+)
+
 // League represents a fantasy football league
 type League struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
@@ -15,14 +23,15 @@ type League struct {
 
 	Name string `json:"name"`
 	// LeagueID is the unique identifier for a sites ID, either ESPN or Sleeper
-	LeagueID     uint   `json:"league_id" gorm:"uniqueIndex"`
-	Description  string `json:"description"`
-	ScoringType  string `json:"scoring_type"` // Standard, PPR, Half-PPR
-	Teams        []Team `json:"teams,omitempty"`
-	Season       int    `json:"season"`
-	CurrentWeek  int    `json:"current_week"`
-	TotalWeeks   int    `json:"total_weeks" gorm:"default:17"`
-	PlayoffWeeks int    `json:"playoff_weeks" gorm:"default:3"`
+	LeagueID     uint         `json:"league_id" gorm:"uniqueIndex:idx_league_source"`
+	Source       LeagueSource `json:"source" gorm:"uniqueIndex:idx_league_source;default:'espn'"` // "espn" or "sleeper"
+	Description  string       `json:"description"`
+	ScoringType  string       `json:"scoring_type"` // Standard, PPR, Half-PPR
+	Teams        []Team       `json:"teams,omitempty"`
+	Season       int          `json:"season"`
+	CurrentWeek  int          `json:"current_week"`
+	TotalWeeks   int          `json:"total_weeks" gorm:"default:17"`
+	PlayoffWeeks int          `json:"playoff_weeks" gorm:"default:3"`
 
 	// Settings
 	RosterSettings  RosterSettings  `json:"roster_settings" gorm:"embedded"`

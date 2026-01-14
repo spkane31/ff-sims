@@ -59,10 +59,10 @@ func GetLeagueYears(c *gin.Context) {
 	// Query distinct years from matchups table
 	var years []uint
 	err := database.DB.Table("matchups").
-		Select("DISTINCT year").
+		Select("DISTINCT season").
 		Where("league_id = ?", leagueID).
-		Order("year DESC").
-		Pluck("year", &years).Error
+		Order("season DESC").
+		Pluck("season", &years).Error
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch league years"})
