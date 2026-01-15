@@ -124,18 +124,18 @@ func processDraftSelections(filePath string) error {
 }
 
 type Matchup struct {
-	Week                       uint           `json:"week"`
-	Year                       uint           `json:"year"`
-	HomeTeamESPNID             uint           `json:"home_team_espn_id"`
-	AwayTeamESPNID             uint           `json:"away_team_espn_id"`
-	HomeTeamFinalScore         float64        `json:"home_team_final_score"`
-	AwayTeamFinalScore         float64        `json:"away_team_final_score"`
-	HomeTeamESPNProjectedScore float64        `json:"home_team_espn_projected_score"`
-	AwayTeamESPNProjectedScore float64        `json:"away_team_espn_projected_score"`
-	Completed                  bool           `json:"completed"`
-	GameType                   string         `json:"game_type"`
-	HomeTeamLineup             []PlayerLineup `json:"home_team_lineup"`
-	AwayTeamLineup             []PlayerLineup `json:"away_team_lineup"`
+	Week                   uint           `json:"week"`
+	Year                   uint           `json:"year"`
+	HomeTeamESPNID         uint           `json:"home_team_espn_id"`
+	AwayTeamESPNID         uint           `json:"away_team_espn_id"`
+	HomeTeamFinalScore     float64        `json:"home_team_final_score"`
+	AwayTeamFinalScore     float64        `json:"away_team_final_score"`
+	HomeTeamProjectedScore float64        `json:"home_team_projected_score"`
+	AwayTeamProjectedScore float64        `json:"away_team_projected_score"`
+	Completed              bool           `json:"completed"`
+	GameType               string         `json:"game_type"`
+	HomeTeamLineup         []PlayerLineup `json:"home_team_lineup"`
+	AwayTeamLineup         []PlayerLineup `json:"away_team_lineup"`
 }
 
 type PlayerLineup struct {
@@ -216,16 +216,16 @@ func processMatchups(filePath string) error {
 	matchups := make([]*models.Matchup, len(matchupsMarshalled))
 	for i, matchup := range matchupsMarshalled {
 		matchups[i] = &models.Matchup{
-			Week:                       matchup.Week,
-			Season:                     matchup.Year,
-			HomeTeamID:                 matchup.HomeTeamESPNID,
-			AwayTeamID:                 matchup.AwayTeamESPNID,
-			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
-			AwayTeamFinalScore:         matchup.AwayTeamFinalScore,
-			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
-			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
-			Completed:                  matchup.Completed,
-			GameType:                   matchup.GameType,
+			Week:                   matchup.Week,
+			Season:                 matchup.Year,
+			HomeTeamID:             matchup.HomeTeamESPNID,
+			AwayTeamID:             matchup.AwayTeamESPNID,
+			HomeTeamFinalScore:     matchup.HomeTeamFinalScore,
+			AwayTeamFinalScore:     matchup.AwayTeamFinalScore,
+			HomeTeamProjectedScore: matchup.HomeTeamProjectedScore,
+			AwayTeamProjectedScore: matchup.AwayTeamProjectedScore,
+			Completed:              matchup.Completed,
+			GameType:               matchup.GameType,
 		}
 	}
 
@@ -252,7 +252,7 @@ func processMatchups(filePath string) error {
 			matchup.Week, matchup.Season, matchup.HomeTeamID, matchup.AwayTeamID,
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore, matchup.Completed)
 		logging.Debugf("Home Team Projected Score: %.2f, Away Team Projected Score: %.2f",
-			matchup.HomeTeamESPNProjectedScore, matchup.AwayTeamESPNProjectedScore)
+			matchup.HomeTeamProjectedScore, matchup.AwayTeamProjectedScore)
 
 		// Look up the internal database IDs using the ESPN IDs
 		homeTeamID, homeTeamExists := idMap[uint(matchup.HomeTeamID)]
@@ -270,16 +270,16 @@ func processMatchups(filePath string) error {
 		isCompleted := matchup.Completed && !(matchup.HomeTeamFinalScore == 0.0 && matchup.AwayTeamFinalScore == 0.0)
 
 		entry := &models.Matchup{
-			LeagueID:                   leagueID,
-			Week:                       matchup.Week,
-			Season:                     matchup.Season,
-			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
-			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
-			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
-			AwayTeamFinalScore:         matchup.AwayTeamFinalScore,
-			HomeTeamESPNProjectedScore: matchup.HomeTeamESPNProjectedScore,
-			AwayTeamESPNProjectedScore: matchup.AwayTeamESPNProjectedScore,
-			GameType:                   matchup.GameType,
+			LeagueID:               leagueID,
+			Week:                   matchup.Week,
+			Season:                 matchup.Season,
+			HomeTeamID:             homeTeamID, // Use mapped internal ID instead of ESPN ID
+			AwayTeamID:             awayTeamID, // Use mapped internal ID instead of ESPN ID
+			HomeTeamFinalScore:     matchup.HomeTeamFinalScore,
+			AwayTeamFinalScore:     matchup.AwayTeamFinalScore,
+			HomeTeamProjectedScore: matchup.HomeTeamProjectedScore,
+			AwayTeamProjectedScore: matchup.AwayTeamProjectedScore,
+			GameType:               matchup.GameType,
 
 			Completed: isCompleted,
 			IsPlayoff: false, // TODO: implement playoff logic
@@ -304,8 +304,8 @@ func processMatchups(filePath string) error {
 			// Matchup exists, update its details
 			existingMatchup.HomeTeamFinalScore = matchup.HomeTeamFinalScore
 			existingMatchup.AwayTeamFinalScore = matchup.AwayTeamFinalScore
-			existingMatchup.HomeTeamESPNProjectedScore = matchup.HomeTeamESPNProjectedScore
-			existingMatchup.AwayTeamESPNProjectedScore = matchup.AwayTeamESPNProjectedScore
+			existingMatchup.HomeTeamProjectedScore = matchup.HomeTeamProjectedScore
+			existingMatchup.AwayTeamProjectedScore = matchup.AwayTeamProjectedScore
 			existingMatchup.Completed = isCompleted // Use the same logic for updates
 			existingMatchup.GameType = matchup.GameType
 			existingMatchup.Week = matchup.Week

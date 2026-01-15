@@ -78,8 +78,8 @@ def upsert_matchups(
                         "away_team_espn_id": matchup.away_team.team_id,
                         "home_team_final_score": 0,
                         "away_team_final_score": 0,
-                        "home_team_espn_projected_score": 0,
-                        "away_team_espn_projected_score": 0,
+                        "home_team_projected_score": 0,
+                        "away_team_projected_score": 0,
                         "completed": False,
                     }
                 )
@@ -108,8 +108,8 @@ def upsert_matchup(
             "away_team_espn_id": away_team,
             "home_team_final_score": home_team_score,
             "away_team_final_score": away_team_score,
-            "home_team_espn_projected_score": home_team_projected_score,
-            "away_team_espn_projected_score": away_team_projected_score,
+            "home_team_projected_score": home_team_projected_score,
+            "away_team_projected_score": away_team_projected_score,
             "completed": completed,
         }
         with open(file_name, "a") as f:
@@ -188,8 +188,8 @@ def get_schedule(league: League, file_name: str) -> None:
                         "away_team_espn_id": box_score.away_team.team_id,
                         "home_team_final_score": box_score.home_score,
                         "away_team_final_score": box_score.away_score,
-                        "home_team_espn_projected_score": -1,
-                        "away_team_espn_projected_score": -1,
+                        "home_team_projected_score": -1,
+                        "away_team_projected_score": -1,
                         "completed": True,
                     }
                 )
@@ -213,8 +213,8 @@ def get_schedule(league: League, file_name: str) -> None:
                     "away_team_espn_id": box_score.away_team.team_id,
                     "home_team_final_score": box_score.home_score,
                     "away_team_final_score": box_score.away_score,
-                    "home_team_espn_projected_score": box_score.home_projected,
-                    "away_team_espn_projected_score": box_score.away_projected,
+                    "home_team_projected_score": box_score.home_projected,
+                    "away_team_projected_score": box_score.away_projected,
                     "completed": league.current_week >= week and box_score.home_score > 0 and box_score.away_score > 0,
                     "home_team_lineup": [
                         {

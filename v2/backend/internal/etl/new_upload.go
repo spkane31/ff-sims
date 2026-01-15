@@ -7,6 +7,7 @@ import (
 	"backend/internal/models"
 	"backend/internal/sleeper"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -246,14 +247,37 @@ func uploadYAMLFile(filePath string) error {
 		}
 	}
 
-	// 3. Create all matchups
+	// 3. Create team ID mapping (ESPN ID -> Database ID)
+	var teams []models.Team
+	if err := database.DB.Where("league_id = ?", dbLeague.ID).Find(&teams).Error; err != nil {
+		logging.Errorf("Failed to fetch teams for matchup creation: %v", err)
+		return err
+	}
+
+	teamIDMap := make(map[uint]uint) // ESPN ID -> Database ID
+	for _, team := range teams {
+		if team.TeamID != nil {
+			teamIDMap[*team.TeamID] = team.ID
+		}
+	}
+
+	// 4. Create all matchups
 	for _, etlMatchup := range league.Schedule.Matchups {
+		homeTeamDBID, homeExists := teamIDMap[etlMatchup.HomeTeamID]
+		awayTeamDBID, awayExists := teamIDMap[etlMatchup.AwayTeamID]
+
+		if !homeExists || !awayExists {
+			logging.Warnf("Skipping matchup week %d, year %d: team mapping not found (home: %d, away: %d)",
+				etlMatchup.Week, etlMatchup.Year, etlMatchup.HomeTeamID, etlMatchup.AwayTeamID)
+			continue
+		}
+
 		dbMatchup := models.Matchup{
 			LeagueID:           dbLeague.ID, // Use database PK
 			Season:             etlMatchup.Year,
 			Week:               etlMatchup.Week,
-			HomeTeamID:         uint(etlMatchup.HomeTeamID),
-			AwayTeamID:         uint(etlMatchup.AwayTeamID),
+			HomeTeamID:         homeTeamDBID, // Use database internal ID
+			AwayTeamID:         awayTeamDBID, // Use database internal ID
 			GameType:           etlMatchup.GameType,
 			IsPlayoff:          etlMatchup.IsPlayoff,
 			Completed:          false,
@@ -270,19 +294,29 @@ func uploadYAMLFile(filePath string) error {
 		}
 	}
 
-	// 4. Update matchup scores from boxscores
+	// 5. Update matchup scores from boxscores
 	for _, etlBoxscore := range league.Schedule.Boxscores {
+		// Map ESPN team IDs to database IDs
+		homeTeamDBID, homeExists := teamIDMap[etlBoxscore.HomeTeamID]
+		awayTeamDBID, awayExists := teamIDMap[etlBoxscore.AwayTeamID]
+
+		if !homeExists || !awayExists {
+			logging.Warnf("Skipping boxscore update week %d, year %d: team mapping not found (home: %d, away: %d)",
+				etlBoxscore.Week, etlBoxscore.Year, etlBoxscore.HomeTeamID, etlBoxscore.AwayTeamID)
+			continue
+		}
+
 		// Find the matchup to update
 		result := database.DB.Model(&models.Matchup{}).
 			Where("league_id = ? AND season = ? AND week = ? AND home_team_id = ? AND away_team_id = ?",
 				dbLeague.ID, etlBoxscore.Year, etlBoxscore.Week,
-				etlBoxscore.HomeTeamID, etlBoxscore.AwayTeamID).
+				homeTeamDBID, awayTeamDBID).
 			Updates(map[string]interface{}{
-				"home_team_final_score":          etlBoxscore.HomeScore,
-				"away_team_final_score":          etlBoxscore.AwayScore,
-				"home_team_espn_projected_score": etlBoxscore.HomeProjectedScore,
-				"away_team_espn_projected_score": etlBoxscore.AwayProjectedScore,
-				"completed":                      etlBoxscore.Completed,
+				"home_team_final_score":     etlBoxscore.HomeScore,
+				"away_team_final_score":     etlBoxscore.AwayScore,
+				"home_team_projected_score": etlBoxscore.HomeProjectedScore,
+				"away_team_projected_score": etlBoxscore.AwayProjectedScore,
+				"completed":                 etlBoxscore.Completed,
 			})
 
 		if result.Error != nil {
@@ -291,8 +325,8 @@ func uploadYAMLFile(filePath string) error {
 		}
 
 		if result.RowsAffected == 0 {
-			logging.Warnf("No matchup found to update for week %d, year %d (home: %d, away: %d)",
-				etlBoxscore.Week, etlBoxscore.Year, etlBoxscore.HomeTeamID, etlBoxscore.AwayTeamID)
+			logging.Warnf("No matchup found to update for week %d, year %d (home DB ID: %d, away DB ID: %d)",
+				etlBoxscore.Week, etlBoxscore.Year, homeTeamDBID, awayTeamDBID)
 			continue
 		}
 
@@ -303,7 +337,15 @@ func uploadYAMLFile(filePath string) error {
 			etlBoxscore.Completed)
 	}
 
-	// 5. Process draft selections
+	// 5. Recalculate team records from matchup results
+	logging.Infof("Recalculating team records for league %d", dbLeague.ID)
+	if err := recalculateTeamRecords(database.DB, dbLeague.ID); err != nil {
+		logging.Errorf("Failed to recalculate team records: %v", err)
+		return err
+	}
+	logging.Infof("Successfully recalculated team records")
+
+	// 6. Process draft selections
 	if len(league.Draft.Selections) > 0 {
 		logging.Infof("Processing %d draft selections for year %d", len(league.Draft.Selections), league.Draft.Year)
 
@@ -406,4 +448,69 @@ func uploadYAMLFile(filePath string) error {
 	logging.Infof("Successfully processed league ID %d for year %d", league.ID, league.Year)
 
 	return nil
+}
+
+// recalculateTeamRecords recalculates wins/losses/ties for all teams
+// based on completed regular season matchups
+func recalculateTeamRecords(db *gorm.DB, leagueID uint) error {
+	// 1. Query all completed regular season matchups
+	var matchups []models.Matchup
+	err := db.Where("league_id = ? AND completed = ? AND is_playoff = ?",
+		leagueID, true, false).
+		Find(&matchups).Error
+	if err != nil {
+		return fmt.Errorf("failed to query matchups: %w", err)
+	}
+
+	// 2. Build map of team records
+	type TeamRecord struct {
+		Wins   int
+		Losses int
+		Ties   int
+	}
+	records := make(map[uint]TeamRecord)
+
+	// 3. Count results for each matchup
+	for _, m := range matchups {
+		homeRec := records[m.HomeTeamID]
+		awayRec := records[m.AwayTeamID]
+
+		if m.HomeTeamFinalScore > m.AwayTeamFinalScore {
+			// Home team wins
+			homeRec.Wins++
+			awayRec.Losses++
+		} else if m.AwayTeamFinalScore > m.HomeTeamFinalScore {
+			// Away team wins
+			awayRec.Wins++
+			homeRec.Losses++
+		} else {
+			// Tie game
+			homeRec.Ties++
+			awayRec.Ties++
+		}
+
+		records[m.HomeTeamID] = homeRec
+		records[m.AwayTeamID] = awayRec
+	}
+
+	// 4. Update all teams in a transaction
+	return db.Transaction(func(tx *gorm.DB) error {
+		for teamID, rec := range records {
+			// Use Exec with raw SQL to avoid GORM "record not found" errors
+			result := tx.Exec(
+				"UPDATE teams SET wins = ?, losses = ?, ties = ?, updated_at = NOW() WHERE id = ? AND league_id = ?",
+				rec.Wins, rec.Losses, rec.Ties, teamID, leagueID,
+			)
+
+			if result.Error != nil {
+				return fmt.Errorf("failed to update team %d: %w", teamID, result.Error)
+			}
+
+			if result.RowsAffected == 0 {
+				// Team doesn't exist in this league, skip it
+				logging.Warnf("Team %d not found in league %d, skipping record update", teamID, leagueID)
+			}
+		}
+		return nil
+	})
 }

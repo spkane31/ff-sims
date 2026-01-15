@@ -49,7 +49,7 @@ func deduplicateMatchups(year int) error {
 			SELECT DISTINCT ON (home_team_id, away_team_id, week, year)
 				id, created_at, updated_at, deleted_at, league_id, week, year, season,
 				home_team_id, away_team_id, game_date, game_type, home_team_final_score,
-				away_team_final_score, home_team_espn_projected_score, away_team_espn_projected_score,
+				away_team_final_score, home_team_projected_score, away_team_projected_score,
 				completed, is_playoff
 			FROM matchups
 			WHERE year = ?

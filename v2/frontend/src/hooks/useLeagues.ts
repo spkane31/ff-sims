@@ -21,7 +21,7 @@ export function useLeagueYears(
     try {
       setIsLoading(true);
       setError(null);
-      const data = await leaguesService.getLeagueYears(leagueId);
+      const data = await leaguesService.getLeagueYears(String(leagueId));
       setYears(data.years || []);
     } catch (err) {
       setError(

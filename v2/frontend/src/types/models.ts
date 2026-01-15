@@ -26,6 +26,8 @@ export interface Matchup extends BaseModel {
   awayScore: number;
   homeProjectedScore: number;
   awayProjectedScore: number;
+  homeExpectedWin?: number;
+  awayExpectedWin?: number;
   completed: boolean;
   isPlayoff: boolean;
   gameType: string;
@@ -124,6 +126,8 @@ export interface Team extends BaseModel {
   wins: number;
   losses: number;
   ties: number;
+  expected_wins?: number;
+  expected_losses?: number;
   points: number;
   players?: Player[];
   league?: League;

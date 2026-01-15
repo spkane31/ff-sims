@@ -24,6 +24,15 @@ type Team struct {
 	// standings, etc.
 	Disabled bool  `json:"disabled" gorm:"default:false"`
 
+	// Regular season record (cumulative, regular season only)
+	Wins   int `json:"wins" gorm:"default:0"`
+	Losses int `json:"losses" gorm:"default:0"`
+	Ties   int `json:"ties" gorm:"default:0"`
+
+	// Expected wins (cumulative, will be populated in future phase)
+	ExpectedWins   float64 `json:"expected_wins" gorm:"default:0"`
+	ExpectedLosses float64 `json:"expected_losses" gorm:"default:0"`
+
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`
 	HomeMatchups    []Matchup         `json:"home_matchups,omitempty" gorm:"foreignKey:HomeTeamID;references:ID"`

@@ -116,7 +116,7 @@ This document compares the current JSON-based ETL pipeline (`upload.go`) with th
 
 **JSON Implementation:**
 - Stores `HomeTeamFinalScore` and `AwayTeamFinalScore`
-- Tracks `HomeTeamESPNProjectedScore` and `AwayTeamESPNProjectedScore`
+- Tracks `HomeTeamProjectedScore` and `AwayTeamProjectedScore`
 - Validates completion status (both scores must be > 0)
 - Updates existing matchups with new scores
 
@@ -343,3 +343,56 @@ However, it is currently **~50% complete** with critical gaps in:
 2. Implement box score processing with test data
 3. Add integration tests comparing JSON vs YAML outputs
 4. Validate with single league before multi-league rollout
+
+---
+
+## Frontend Improvements (2026-01-14)
+
+### Multi-League Support - UI Enhancements
+
+As part of the multi-league migration, the following frontend improvements were implemented:
+
+#### 1. League Dropdown Display Fix
+**Issue:** The league dropdown in the header was not displaying the current league name - it either showed "Loading..." indefinitely or appeared blank.
+
+**Root Cause:** Type mismatch in League interface definitions:
+- `leaguesService.ts` defined `League` with `id: string`
+- `types/models.ts` defined `League` extending `BaseModel` with `id: number`
+- Comparison logic `league.id === leagueId` failed due to string vs number mismatch
+
+**Solution:**
+- Consolidated League type definitions to use single source from `types/models.ts`
+- Updated type conversions in comparison logic
+- Modified conditional rendering to show dropdown in all league contexts
+
+**Files Modified:**
+- `frontend/src/services/leaguesService.ts` - Removed duplicate League interface, imported from models
+- `frontend/src/components/Header.tsx` - Fixed imports and comparison logic
+- `frontend/src/pages/index.tsx` - Updated League imports and ID handling
+- `frontend/src/hooks/useLeagues.ts` - Fixed string conversion for API calls
+
+#### 2. League Navigation Enhancement
+**Feature:** Added home icon button to navigate back to league selector
+
+**Implementation:**
+- Added home icon button to left of league dropdown in header
+- Button only appears when viewing a specific league
+- Provides quick navigation to explore other leagues
+- Includes hover effects and tooltip
+
+**Files Modified:**
+- `frontend/src/components/Header.tsx:67-86` - Added home icon Link component
+
+**Benefits:**
+- Improved user experience for multi-league navigation
+- Clear visual indication of ability to switch between leagues
+- Consistent with multi-league architecture goals
+
+#### Impact on Multi-League Support
+These frontend changes directly support the multi-league ETL migration by:
+1. Properly displaying multiple leagues in UI
+2. Enabling seamless switching between leagues
+3. Fixing type consistency issues that would affect scaling
+4. Improving navigation UX for users managing multiple leagues
+
+**Status:** ✅ Complete - Frontend now fully supports multi-league navigation

@@ -24,25 +24,27 @@ type Schedule struct {
 }
 
 type Matchup struct {
-	ID                   string           `json:"id"`
-	Year                 uint             `json:"year"`
-	Week                 uint             `json:"week"`
-	HomeTeamID           uint             `json:"homeTeamId"`
-	AwayTeamID           uint             `json:"awayTeamId"`
-	HomeTeamInternalID   uint             `json:"homeTeamInternalId"`
-	AwayTeamInternalID   uint             `json:"awayTeamInternalId"`
-	HomeTeamName         string           `json:"homeTeamName"`
-	AwayTeamName         string           `json:"awayTeamName"`
-	HomeScore            float64          `json:"homeScore"`
-	AwayScore            float64          `json:"awayScore"`
-	HomeProjectedScore   float64          `json:"homeProjectedScore"`
-	AwayProjectedScore   float64          `json:"awayProjectedScore"`
-	HomePlayers          []BoxScorePlayer `json:"homePlayers"`
-	AwayPlayers          []BoxScorePlayer `json:"awayPlayers"`
-	GameType             string           `json:"gameType"`
-	PlayoffGameType      string           `json:"playoffGameType"`
-	Completed            bool             `json:"completed"`
-	IsPlayoff            bool             `json:"isPlayoff"`
+	ID                 string           `json:"id"`
+	Year               uint             `json:"year"`
+	Week               uint             `json:"week"`
+	HomeTeamID         uint             `json:"homeTeamId"`
+	AwayTeamID         uint             `json:"awayTeamId"`
+	HomeTeamInternalID uint             `json:"homeTeamInternalId"`
+	AwayTeamInternalID uint             `json:"awayTeamInternalId"`
+	HomeTeamName       string           `json:"homeTeamName"`
+	AwayTeamName       string           `json:"awayTeamName"`
+	HomeScore          float64          `json:"homeScore"`
+	AwayScore          float64          `json:"awayScore"`
+	HomeProjectedScore float64          `json:"homeProjectedScore"`
+	AwayProjectedScore float64          `json:"awayProjectedScore"`
+	HomeExpectedWin    float64          `json:"homeExpectedWin"`
+	AwayExpectedWin    float64          `json:"awayExpectedWin"`
+	HomePlayers        []BoxScorePlayer `json:"homePlayers"`
+	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
+	GameType           string           `json:"gameType"`
+	PlayoffGameType    string           `json:"playoffGameType"`
+	Completed          bool             `json:"completed"`
+	IsPlayoff          bool             `json:"isPlayoff"`
 }
 
 // GetPlayers returns all players with optional filtering
@@ -146,8 +148,10 @@ func GetSchedules(c *gin.Context) {
 			Week:               matchup.Week,
 			HomeScore:          matchup.HomeTeamFinalScore,
 			AwayScore:          matchup.AwayTeamFinalScore,
-			HomeProjectedScore: matchup.HomeTeamESPNProjectedScore,
-			AwayProjectedScore: matchup.AwayTeamESPNProjectedScore,
+			HomeProjectedScore: matchup.HomeTeamProjectedScore,
+			AwayProjectedScore: matchup.AwayTeamProjectedScore,
+			HomeExpectedWin:    matchup.HomeTeamExpectedWin,
+			AwayExpectedWin:    matchup.AwayTeamExpectedWin,
 			GameType:           matchup.GameType,
 			PlayoffGameType:    string(playoffGameType),
 			Completed:          matchup.Completed && !(matchup.HomeTeamFinalScore == 0 && matchup.AwayTeamFinalScore == 0),

@@ -30,9 +30,6 @@ func main() {
 		},
 	}
 
-	// Add global flags
-	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "./data", "Directory containing data files")
-
 	// Upload command
 	uploadCmd := &cobra.Command{
 		Use:   "upload",
@@ -54,6 +51,7 @@ func main() {
 			// }
 		},
 	}
+	uploadCmd.Flags().StringVar(&dataDir, "directory", "./data", "Directory containing data files")
 	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
 	uploadCmd.Flags().BoolVar(&multipleLeagues, "multiple-leagues", false, "There are multiple leagues in the data directory")
 	uploadCmd.Flags().BoolVar(&refreshPlayerData, "refresh-players", false, "Force refresh player data from Sleeper API and update local JSON file")

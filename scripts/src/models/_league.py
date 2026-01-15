@@ -4,8 +4,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 import yaml
+from typing import Optional
 from espn_api.football import BoxPlayer, League as ESPNLeague
 
+
+from src.sleeper import SleeperClient
 
 @dataclass
 class Player:
@@ -40,6 +43,10 @@ class Matchup:
     away_team_id: int
     game_type: str
     is_playoff: bool
+    home_score: float = 0.0
+    away_score: float = 0.0
+    home_projected_score: float = 0.0
+    away_projected_score: float = 0.0
 
 
 @dataclass
@@ -94,13 +101,15 @@ class PlayerBoxscore(Player):
 
 @dataclass
 class Boxscore(Matchup):
-    home_score: float
-    away_score: float
-    home_projected_score: float
-    away_projected_score: float
-    home_roster: list[PlayerBoxscore]
-    away_roster: list[PlayerBoxscore]
+    home_roster: list[PlayerBoxscore] = None
+    away_roster: list[PlayerBoxscore] = None
     completed: bool = False
+
+    def __post_init__(self):
+        if self.home_roster is None:
+            self.home_roster = []
+        if self.away_roster is None:
+            self.away_roster = []
 
 
 
@@ -169,6 +178,10 @@ class Schedule:
                         away_team_id=scoreboard_matchup.away_team.team_id,
                         game_type=scoreboard_matchup.matchup_type,
                         is_playoff=scoreboard_matchup.is_playoff,
+                        home_score=scoreboard_matchup.home_score,
+                        away_score=scoreboard_matchup.away_score,
+                        home_projected_score=-1,  # Projected scores not available pre-2019
+                        away_projected_score=-1,
                     )
                     matchups_by_week.append([matchup])
 
@@ -211,6 +224,10 @@ class Schedule:
                             away_team_id=scoreboard_matchup.away_team.team_id,
                             game_type=scoreboard_matchup.matchup_type,
                             is_playoff=scoreboard_matchup.is_playoff,
+                            home_score=scoreboard_matchup.home_score,
+                            away_score=scoreboard_matchup.away_score,
+                            home_projected_score=0.0,  # Will be populated from box_scores if available
+                            away_projected_score=0.0,
                         )
                     )
 
@@ -229,69 +246,70 @@ class Schedule:
                     if prev_teams != curr_teams:
                         matchups_by_week.append(week_matchups)
 
-                        if espn_league.current_week <= week:
-                            weeks_boxscores = espn_league.box_scores(week=week)
-                            logging.debug(f"Retrieved {len(weeks_boxscores)} boxscores for week: {week}")
+                # Fetch box scores for all weeks up to current week (regardless of matchup changes)
+                if week <= espn_league.current_week:
+                    weeks_boxscores = espn_league.box_scores(week=week)
+                    logging.debug(f"Retrieved {len(weeks_boxscores)} boxscores for week: {week}")
 
-                            for boxscore in weeks_boxscores:
-                                # Skip invalid matchups (can happen in playoff weeks)
-                                if boxscore.away_team == 0 or boxscore.home_team == 0:
-                                    continue
+                    for boxscore in weeks_boxscores:
+                        # Skip invalid matchups (can happen in playoff weeks)
+                        if boxscore.away_team == 0 or boxscore.home_team == 0:
+                            continue
 
-                                boxscores.append(
-                                    Boxscore(
-                                        year=espn_league.year,
+                        boxscores.append(
+                            Boxscore(
+                                year=espn_league.year,
+                                week=week,
+                                home_team_id=boxscore.home_team.team_id,
+                                away_team_id=boxscore.away_team.team_id,
+                                game_type=boxscore.matchup_type,
+                                is_playoff=boxscore.is_playoff,
+                                completed=boxscore.home_score > 0 and boxscore.away_score > 0,
+                                home_score=boxscore.home_score,
+                                away_score=boxscore.away_score,
+                                home_projected_score=boxscore.home_projected,
+                                away_projected_score=boxscore.away_projected,
+                                home_roster=[PlayerBoxscore.from_espn_player_boxscore(p) for p in boxscore.home_lineup],
+                                away_roster=[PlayerBoxscore.from_espn_player_boxscore(p) for p in boxscore.away_lineup],
+                            )
+                        )
+
+                        # Collect box score player data (only for current year, past weeks)
+                        if espn_league.year == datetime.now().year and week < espn_league.current_week:
+                            home_team_id = boxscore.home_team.team_id
+                            away_team_id = boxscore.away_team.team_id
+
+                            # Collect home team player data
+                            for player in boxscore.home_lineup:
+                                box_score_players.append(
+                                    BoxScorePlayerData(
+                                        player_name=player.name,
+                                        player_id=player.playerId,
+                                        projected_points=player.projected_points,
+                                        actual_points=player.points,
+                                        player_position=player.position,
+                                        status=player.slot_position,
                                         week=week,
-                                        home_team_id=boxscore.home_team.team_id,
-                                        away_team_id=boxscore.away_team.team_id,
-                                        game_type=boxscore.matchup_type,
-                                        is_playoff=boxscore.is_playoff,
-                                        completed=boxscore.home_score > 0 and boxscore.away_score > 0,
-                                        home_score=boxscore.home_score,
-                                        away_score=boxscore.away_score,
-                                        home_projected_score=boxscore.home_projected,
-                                        away_projected_score=boxscore.away_projected,
-                                        home_roster=[PlayerBoxscore.from_espn_player_boxscore(p) for p in boxscore.home_lineup],
-                                        away_roster=[PlayerBoxscore.from_espn_player_boxscore(p) for p in boxscore.away_lineup],
+                                        year=espn_league.year,
+                                        owner_espn_id=home_team_id,
                                     )
                                 )
 
-                                # Collect box score player data (only for current year, past weeks)
-                                if espn_league.year == datetime.now().year and week < espn_league.current_week:
-                                    home_team_id = boxscore.home_team.team_id
-                                    away_team_id = boxscore.away_team.team_id
-
-                                    # Collect home team player data
-                                    for player in boxscore.home_lineup:
-                                        box_score_players.append(
-                                            BoxScorePlayerData(
-                                                player_name=player.name,
-                                                player_id=player.playerId,
-                                                projected_points=player.projected_points,
-                                                actual_points=player.points,
-                                                player_position=player.position,
-                                                status=player.slot_position,
-                                                week=week,
-                                                year=espn_league.year,
-                                                owner_espn_id=home_team_id,
-                                            )
-                                        )
-
-                                    # Collect away team player data
-                                    for player in boxscore.away_lineup:
-                                        box_score_players.append(
-                                            BoxScorePlayerData(
-                                                player_name=player.name,
-                                                player_id=player.playerId,
-                                                projected_points=player.projected_points,
-                                                actual_points=player.points,
-                                                player_position=player.position,
-                                                status=player.slot_position,
-                                                week=week,
-                                                year=espn_league.year,
-                                                owner_espn_id=away_team_id,
-                                            )
-                                        )
+                            # Collect away team player data
+                            for player in boxscore.away_lineup:
+                                box_score_players.append(
+                                    BoxScorePlayerData(
+                                        player_name=player.name,
+                                        player_id=player.playerId,
+                                        projected_points=player.projected_points,
+                                        actual_points=player.points,
+                                        player_position=player.position,
+                                        status=player.slot_position,
+                                        week=week,
+                                        year=espn_league.year,
+                                        owner_espn_id=away_team_id,
+                                    )
+                                )
 
         # Flatten matchups into a single list
         matchups = [matchup for week_matchups in matchups_by_week for matchup in week_matchups]
@@ -522,3 +540,17 @@ class League:
         with open(file=file_name, mode="w") as f:
             f.write(yaml.dump(asdict(self), indent=2))
         return None
+
+def get_all_years(espn_league: Optional[ESPNLeague]=None, sleeper_league: Optional[SleeperClient]=None) -> list[League]:
+    if espn_league is not None:
+        return _get_all_years_espn()
+    elif sleeper_league is not None:
+        return _get_all_years_sleeper()
+    else:
+        return NotImplementedError("Function to get all years of leagues is not yet implemented.")
+
+def _get_all_years_espn() -> list[League]:
+    return NotImplementedError("Function to get all years of ESPN leagues is not yet implemented.")
+
+def _get_all_years_sleeper() -> list[League]:
+    return NotImplementedError("Function to get all years of Sleeper leagues is not yet implemented.")

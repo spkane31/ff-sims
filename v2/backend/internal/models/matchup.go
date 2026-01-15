@@ -23,14 +23,14 @@ type Matchup struct {
 	GameType   string    `json:"game_type"`
 
 	// Score information
-	HomeTeamFinalScore         float64 `json:"home_score"`
-	AwayTeamFinalScore         float64 `json:"away_score"`
-	HomeTeamESPNProjectedScore float64 `json:"home_projected_score"`
-	AwayTeamESPNProjectedScore float64 `json:"away_projected_score"`
+	HomeTeamFinalScore     float64 `json:"home_score"`
+	AwayTeamFinalScore     float64 `json:"away_score"`
+	HomeTeamProjectedScore float64 `json:"home_projected_score"`
+	AwayTeamProjectedScore float64 `json:"away_projected_score"`
 
 	// Expected wins
-	// HomeTeamExpectedWin float64 `json:"home_expected_win"`
-	// AwayTeamExpectedWin float64 `json:"away_expected_win"`
+	HomeTeamExpectedWin float64 `json:"home_expected_win"`
+	AwayTeamExpectedWin float64 `json:"away_expected_win"`
 
 	// Status flags
 	Completed bool `json:"completed" gorm:"default:false"`

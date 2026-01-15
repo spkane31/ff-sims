@@ -1,9 +1,5 @@
 import { apiClient } from './apiClient';
-
-export interface League {
-  id: string;
-  name: string;
-}
+import { League } from '../types/models';
 
 export interface LeaguesResponse {
   leagues: League[];

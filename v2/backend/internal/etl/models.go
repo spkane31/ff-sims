@@ -73,7 +73,7 @@ type ETLPlayerBoxscore struct {
 
 // ETLBoxscore represents a completed matchup with detailed scoring information
 type ETLBoxscore struct {
-	ETLMatchup                             // Embedded ETLMatchup struct
+	ETLMatchup         `yaml:",inline"`    // Embedded ETLMatchup struct
 	HomeScore          float64             `json:"home_score" yaml:"home_score"`
 	AwayScore          float64             `json:"away_score" yaml:"away_score"`
 	HomeProjectedScore float64             `json:"home_projected_score" yaml:"home_projected_score"`

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState, useEffect } from "react";
 import { useLeague } from "../hooks/useLeague";
-import { leaguesService, League } from "../services/leaguesService";
+import { leaguesService } from "../services/leaguesService";
+import { League } from "../types/models";
 
 const Header = () => {
   const router = useRouter();
@@ -19,7 +20,7 @@ const Header = () => {
         setLeagues(response.leagues || []);
 
         if (leagueId && response.leagues) {
-          const league = response.leagues.find((l) => l.id === leagueId);
+          const league = response.leagues.find((l) => String(l.id) === leagueId);
           setCurrentLeague(league || null);
         }
       } catch (error) {
@@ -62,17 +63,15 @@ const Header = () => {
     <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md">
       <div className="container mx-auto px-4 py-4">
         <div className="flex justify-between items-center">
-          {isLeagueContext && currentLeague ? (
-            <div className="relative">
-              <button
-                onClick={() => setIsLeagueDropdownOpen(!isLeagueDropdownOpen)}
-                className="text-2xl font-bold flex items-center hover:text-blue-200 transition-colors"
+          {isLeagueContext ? (
+            <div className="flex items-center gap-3">
+              <Link
+                href="/"
+                className="p-2 rounded-md hover:bg-blue-700 transition-colors"
+                title="Back to all leagues"
               >
-                {currentLeague.name}
                 <svg
-                  className={`w-5 h-5 ml-2 transition-transform ${
-                    isLeagueDropdownOpen ? "rotate-180" : ""
-                  }`}
+                  className="w-6 h-6"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -81,30 +80,53 @@ const Header = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                   />
                 </svg>
-              </button>
+              </Link>
+              <div className="relative">
+                <button
+                  onClick={() => setIsLeagueDropdownOpen(!isLeagueDropdownOpen)}
+                  className="text-2xl font-bold flex items-center hover:text-blue-200 transition-colors"
+                >
+                  {currentLeague?.name || "Loading..."}
+                  <svg
+                    className={`w-5 h-5 ml-2 transition-transform ${
+                      isLeagueDropdownOpen ? "rotate-180" : ""
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
 
-              {isLeagueDropdownOpen && leagues.length > 0 && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-md shadow-lg z-50">
-                  <div className="py-1">
-                    {leagues.map((league) => (
-                      <button
-                        key={league.id}
-                        onClick={() => handleLeagueSwitch(league.id)}
-                        className={`block w-full text-left px-4 py-2 text-sm ${
-                          league.id === leagueId
-                            ? "bg-blue-50 text-blue-700 font-medium"
-                            : "text-gray-700 hover:bg-gray-100"
-                        }`}
-                      >
-                        {league.name}
-                      </button>
-                    ))}
+                {isLeagueDropdownOpen && leagues.length > 0 && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-md shadow-lg z-50">
+                    <div className="py-1">
+                      {leagues.map((league) => (
+                        <button
+                          key={league.id}
+                          onClick={() => handleLeagueSwitch(String(league.id))}
+                          className={`block w-full text-left px-4 py-2 text-sm ${
+                            String(league.id) === leagueId
+                              ? "bg-blue-50 text-blue-700 font-medium"
+                              : "text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          {league.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : (
             <Link href="/" className="text-2xl font-bold">

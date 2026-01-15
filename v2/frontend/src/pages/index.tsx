@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
-import { leaguesService, League } from "../services/leaguesService";
+import { leaguesService } from "../services/leaguesService";
+import { League } from "../types/models";
 
 export default function LeagueSelector() {
   const router = useRouter();
@@ -64,7 +65,7 @@ export default function LeagueSelector() {
               {leagues.map((league) => (
                 <button
                   key={league.id}
-                  onClick={() => handleLeagueClick(league.id)}
+                  onClick={() => handleLeagueClick(String(league.id))}
                   className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg hover:border-blue-500 transition-all duration-200 text-left"
                 >
                   <h2 className="text-xl font-semibold text-gray-900 mb-2">

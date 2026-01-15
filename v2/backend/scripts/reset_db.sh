@@ -15,7 +15,7 @@ if [ "$confirm" != "yes" ]; then
 fi
 
 echo "🗑️  Dropping database '$DB_NAME'..."
-psql -U $DB_USER -c "DROP DATABASE IF EXISTS $DB_NAME;"
+psql -U $DB_USER -c "DROP DATABASE IF EXISTS $DB_NAME WITH (FORCE);"
 
 echo "📦 Creating database '$DB_NAME'..."
 psql -U $DB_USER -c "CREATE DATABASE $DB_NAME;"
