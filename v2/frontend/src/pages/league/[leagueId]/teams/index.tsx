@@ -43,16 +43,16 @@ export default function Teams() {
 
     const records = new Map<string, { wins: number; losses: number }>();
 
-    // Initialize records for all teams
+    // Initialize records for all teams using internal database IDs
     filteredTeams.forEach((team) => {
-      records.set(team.espnId, { wins: 0, losses: 0 });
+      records.set(team.id, { wins: 0, losses: 0 });
     });
 
     // Count wins/losses only against teams in filteredTeams
     schedule.data.matchups.forEach((matchup) => {
       if (matchup.homeScore > 0 || matchup.awayScore > 0) {
-        const homeId = matchup.homeTeamESPNID.toString();
-        const awayId = matchup.awayTeamESPNID.toString();
+        const homeId = matchup.homeTeamInternalId.toString();
+        const awayId = matchup.awayTeamInternalId.toString();
 
         // Only count if both teams are in filteredTeams
         if (records.has(homeId) && records.has(awayId)) {
@@ -76,22 +76,22 @@ export default function Teams() {
       return new Map<string, Map<string, { wins: number; losses: number }>>();
     }
 
-    // Create a map: teamESPNId -> (opponentESPNId -> {wins, losses})
+    // Create a map: teamInternalId -> (opponentInternalId -> {wins, losses})
     const records = new Map<
       string,
       Map<string, { wins: number; losses: number }>
     >();
 
-    // Initialize records for all teams
+    // Initialize records for all teams using internal database IDs
     filteredTeams.forEach((team) => {
-      records.set(team.espnId, new Map());
+      records.set(team.id, new Map());
     });
 
     // Process all completed matchups (including playoffs)
     schedule.data.matchups.forEach((matchup) => {
       if (matchup.homeScore > 0 || matchup.awayScore > 0) {
-        const homeId = matchup.homeTeamESPNID.toString();
-        const awayId = matchup.awayTeamESPNID.toString();
+        const homeId = matchup.homeTeamInternalId.toString();
+        const awayId = matchup.awayTeamInternalId.toString();
 
         // Skip if either team is not in filteredTeams
         if (!records.has(homeId) || !records.has(awayId)) {
@@ -266,12 +266,12 @@ export default function Teams() {
               fieldB = b.name;
               break;
             case "wins":
-              fieldA = adjustedRecords.get(a.espnId)?.wins ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.wins ?? 0;
+              fieldA = adjustedRecords.get(a.id)?.wins ?? 0;
+              fieldB = adjustedRecords.get(b.id)?.wins ?? 0;
               break;
             case "losses":
-              fieldA = adjustedRecords.get(a.espnId)?.losses ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.losses ?? 0;
+              fieldA = adjustedRecords.get(a.id)?.losses ?? 0;
+              fieldB = adjustedRecords.get(b.id)?.losses ?? 0;
               break;
             case "pf":
               fieldA = a.points.scored;
@@ -417,7 +417,7 @@ export default function Teams() {
                         <td className="py-4 px-4">
                           <div className="flex flex-col">
                             <Link
-                              href={`/teams/${team.espnId}`}
+                              href={`/teams/${team.id}`}
                               className="font-medium hover:text-blue-600"
                             >
                               {team.name}
@@ -428,17 +428,17 @@ export default function Teams() {
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.wins ?? 0}
+                          {adjustedRecords.get(team.id)?.wins ?? 0}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.losses ?? 0}
+                          {adjustedRecords.get(team.id)?.losses ?? 0}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
                             const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                              adjustedRecords.get(team.id)?.wins ?? 0;
                             const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                              adjustedRecords.get(team.id)?.losses ?? 0;
                             const totalGames = wins + losses;
                             const avgPF =
                               totalGames > 0
@@ -462,9 +462,9 @@ export default function Teams() {
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
                             const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                              adjustedRecords.get(team.id)?.wins ?? 0;
                             const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                              adjustedRecords.get(team.id)?.losses ?? 0;
                             const totalGames = wins + losses;
                             const avgPA =
                               totalGames > 0
@@ -488,9 +488,9 @@ export default function Teams() {
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
                             const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
+                              adjustedRecords.get(team.id)?.wins ?? 0;
                             const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
+                              adjustedRecords.get(team.id)?.losses ?? 0;
                             const totalGames = wins + losses;
                             const totalDiff =
                               team.points.scored - team.points.against;
@@ -574,7 +574,7 @@ export default function Teams() {
                           className="flex justify-between items-center py-2"
                         >
                           <Link
-                            href={`/teams/${team.espnId}`}
+                            href={`/teams/${team.id}`}
                             className="font-medium hover:text-blue-600"
                           >
                             {team.owner}
@@ -618,7 +618,7 @@ export default function Teams() {
                           className="flex justify-between items-center py-2"
                         >
                           <Link
-                            href={`/teams/${team.espnId}`}
+                            href={`/teams/${team.id}`}
                             className="font-medium hover:text-blue-600"
                           >
                             {team.owner}

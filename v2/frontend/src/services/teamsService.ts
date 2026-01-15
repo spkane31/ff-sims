@@ -21,7 +21,7 @@ export interface TeamExpectedWins {
 
 export interface Team {
   id: string;
-  espnId: string;
+  teamId: string;
   name: string;
   owner: string;
   record: TeamRecord;
@@ -91,7 +91,8 @@ export interface ScheduleGame {
   week: number;
   year: number;
   opponent: string;
-  opponentESPNID: string; // Add opponent ESPN ID for linking
+  opponentTeamID: string; // Platform-specific team ID (ESPN/Sleeper)
+  opponentInternalID: string; // Internal database ID for linking
   isHome: boolean;
   teamScore: number;
   opponentScore: number;
@@ -103,7 +104,7 @@ export interface ScheduleGame {
 
 export interface TeamDetail {
   id: string;
-  espnId: string;
+  teamId: string;
   name: string;
   owner: string;
   record: TeamRecord;

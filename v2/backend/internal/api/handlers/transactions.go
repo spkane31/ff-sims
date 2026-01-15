@@ -69,8 +69,8 @@ func GetDraftPicks(c *gin.Context) {
 		teamID := 0
 		if selection.Team != nil {
 			teamOwner = selection.Team.Owners[0]
-			if selection.Team.ESPNID != nil {
-				teamID = int(*selection.Team.ESPNID)
+			if selection.Team.TeamID != nil {
+				teamID = int(*selection.Team.TeamID)
 			}
 		}
 

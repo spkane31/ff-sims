@@ -230,15 +230,15 @@ func uploadYAMLFile(filePath string) error {
 
 	// 2. Ensure teams exist
 	for _, etlTeam := range league.Teams {
-		espnID := uint(etlTeam.ESPNID)
+		teamID := uint(etlTeam.ESPNID)
 		dbTeam := models.Team{
 			Name:     etlTeam.Name,
-			ESPNID:   &espnID,     // Pointer for nullable field
+			TeamID:   &teamID,     // Pointer for nullable field
 			LeagueID: dbLeague.ID, // Use database PK, not ESPN ID
 			Owners:   etlTeam.Owners,
 		}
 		err := database.DB.Model(&models.Team{}).
-			Where("league_id = ? AND espn_id = ?", dbLeague.ID, espnID).
+			Where("league_id = ? AND team_id = ?", dbLeague.ID, teamID).
 			FirstOrCreate(&dbTeam).Error
 		if err != nil {
 			logging.Errorf("Failed to ensure team exists: %v", err)
@@ -316,8 +316,8 @@ func uploadYAMLFile(filePath string) error {
 
 		teamIDMap := make(map[int]uint)
 		for _, team := range teams {
-			if team.ESPNID != nil {
-				teamIDMap[int(*team.ESPNID)] = team.ID
+			if team.TeamID != nil {
+				teamIDMap[int(*team.TeamID)] = team.ID
 			}
 		}
 

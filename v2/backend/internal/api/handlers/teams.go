@@ -27,7 +27,7 @@ type GetTeamsResponse struct {
 
 type TeamResponse struct {
 	ID                  string     `json:"id"`
-	ESPNID              string     `json:"espnId"`
+	TeamID              string     `json:"teamId"`
 	Name                string     `json:"name"`
 	OwnerName           string     `json:"owner"`
 	RegularSeasonRecord TeamRecord `json:"record"`
@@ -98,13 +98,13 @@ func GetTeams(c *gin.Context) {
 	}
 
 	for _, team := range allTeams {
-		espnID := "0"
-		if team.ESPNID != nil {
-			espnID = fmt.Sprintf("%d", *team.ESPNID)
+		teamID := "0"
+		if team.TeamID != nil {
+			teamID = fmt.Sprintf("%d", *team.TeamID)
 		}
 		resp.Teams = append(resp.Teams, TeamResponse{
 			ID:        fmt.Sprintf("%d", team.ID),
-			ESPNID:    espnID,
+			TeamID:    teamID,
 			Name:      team.Name,
 			OwnerName: team.Owners[0],
 			RegularSeasonRecord: TeamRecord{
@@ -205,9 +205,9 @@ func GetTeamByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch the team
+	// Fetch the team by internal database ID
 	var team models.Team
-	if err := database.DB.Where("espn_id = ?", teamID).First(&team).Error; err != nil {
+	if err := database.DB.Where("id = ?", teamID).First(&team).Error; err != nil {
 		slog.Error("Failed to fetch team from database", "error", err, "id", teamID)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
 		return
@@ -247,8 +247,8 @@ func GetTeamByID(c *gin.Context) {
 		teamID := 0
 		if selection.Team != nil {
 			teamOwner = selection.Team.Owners[0]
-			if selection.Team.ESPNID != nil {
-				teamID = int(*selection.Team.ESPNID)
+			if selection.Team.TeamID != nil {
+				teamID = int(*selection.Team.TeamID)
 			}
 		}
 
@@ -389,7 +389,8 @@ func GetTeamByID(c *gin.Context) {
 		}
 
 		var opponent string
-		var opponentESPNID string
+		var opponentTeamID string
+		var opponentInternalID string
 		var teamScore, opponentScore float64
 		var isHome bool
 
@@ -399,10 +400,11 @@ func GetTeamByID(c *gin.Context) {
 			teamScore = matchup.HomeTeamFinalScore
 			opponentScore = matchup.AwayTeamFinalScore
 			opponent = teamMap[matchup.AwayTeamID].Owners[0]
-			if teamMap[matchup.AwayTeamID].ESPNID != nil {
-				opponentESPNID = fmt.Sprintf("%d", *teamMap[matchup.AwayTeamID].ESPNID)
+			opponentInternalID = fmt.Sprintf("%d", matchup.AwayTeamID)
+			if teamMap[matchup.AwayTeamID].TeamID != nil {
+				opponentTeamID = fmt.Sprintf("%d", *teamMap[matchup.AwayTeamID].TeamID)
 			} else {
-				opponentESPNID = "0"
+				opponentTeamID = "0"
 			}
 		} else {
 			// This team is away
@@ -410,10 +412,11 @@ func GetTeamByID(c *gin.Context) {
 			teamScore = matchup.AwayTeamFinalScore
 			opponentScore = matchup.HomeTeamFinalScore
 			opponent = teamMap[matchup.HomeTeamID].Owners[0]
-			if teamMap[matchup.HomeTeamID].ESPNID != nil {
-				opponentESPNID = fmt.Sprintf("%d", *teamMap[matchup.HomeTeamID].ESPNID)
+			opponentInternalID = fmt.Sprintf("%d", matchup.HomeTeamID)
+			if teamMap[matchup.HomeTeamID].TeamID != nil {
+				opponentTeamID = fmt.Sprintf("%d", *teamMap[matchup.HomeTeamID].TeamID)
 			} else {
-				opponentESPNID = "0"
+				opponentTeamID = "0"
 			}
 		}
 
@@ -434,27 +437,28 @@ func GetTeamByID(c *gin.Context) {
 		}
 
 		scheduleResponse = append(scheduleResponse, ScheduleGameResponse{
-			Week:           int(matchup.Week),
-			Year:           int(matchup.Season),
-			Opponent:       opponent,
-			OpponentESPNID: opponentESPNID,
-			IsHome:         isHome,
-			TeamScore:      teamScore,
-			OpponentScore:  opponentScore,
-			Result:         result,
-			Completed:      matchup.Completed,
-			IsPlayoff:      isPlayoff,
-			MatchupID:      fmt.Sprintf("%d", matchup.ID),
+			Week:               int(matchup.Week),
+			Year:               int(matchup.Season),
+			Opponent:           opponent,
+			OpponentTeamID:     opponentTeamID,
+			OpponentInternalID: opponentInternalID,
+			IsHome:             isHome,
+			TeamScore:          teamScore,
+			OpponentScore:      opponentScore,
+			Result:             result,
+			Completed:          matchup.Completed,
+			IsPlayoff:          isPlayoff,
+			MatchupID:          fmt.Sprintf("%d", matchup.ID),
 		})
 	}
 
-	espnIDStr := "0"
-	if team.ESPNID != nil {
-		espnIDStr = fmt.Sprintf("%d", *team.ESPNID)
+	teamIDStr := "0"
+	if team.TeamID != nil {
+		teamIDStr = fmt.Sprintf("%d", *team.TeamID)
 	}
 	response := TeamDetailResponse{
 		ID:     fmt.Sprintf("%d", team.ID),
-		ESPNID: espnIDStr,
+		TeamID: teamIDStr,
 		Name:   team.Name,
 		Owner:  team.Owners[0],
 		Record: TeamRecord{
@@ -478,7 +482,7 @@ func GetTeamByID(c *gin.Context) {
 // Response types for detailed team information
 type TeamDetailResponse struct {
 	ID             string                 `json:"id"`
-	ESPNID         string                 `json:"espnId"`
+	TeamID         string                 `json:"teamId"`
 	Name           string                 `json:"name"`
 	Owner          string                 `json:"owner"`
 	Record         TeamRecord             `json:"record"`
@@ -490,11 +494,12 @@ type TeamDetailResponse struct {
 }
 
 type ScheduleGameResponse struct {
-	Week           int     `json:"week"`
-	Year           int     `json:"year"`
-	Opponent       string  `json:"opponent"`
-	OpponentESPNID string  `json:"opponentESPNID"` // Add opponent ESPN ID for linking
-	IsHome         bool    `json:"isHome"`
+	Week             int     `json:"week"`
+	Year             int     `json:"year"`
+	Opponent         string  `json:"opponent"`
+	OpponentTeamID   string  `json:"opponentTeamID"` // Opponent platform-specific team ID
+	OpponentInternalID string `json:"opponentInternalID"` // Opponent internal database ID for linking
+	IsHome           bool    `json:"isHome"`
 	TeamScore      float64 `json:"teamScore"`
 	OpponentScore  float64 `json:"opponentScore"`
 	Result         string  `json:"result"` // "W", "L", "T", or "Upcoming"
@@ -604,19 +609,19 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	var standings []CurrentSeasonStandingResponse
 	for _, team := range allTeams {
 		// Skip dummy teams
-		if team.ESPNID != nil && (*team.ESPNID == 2 || *team.ESPNID == 8) {
+		if team.TeamID != nil && (*team.TeamID == 2 || *team.TeamID == 8) {
 			continue
 		}
 
-		espnID := "0"
-		if team.ESPNID != nil {
-			espnID = fmt.Sprintf("%d", *team.ESPNID)
+		teamID := "0"
+		if team.TeamID != nil {
+			teamID = fmt.Sprintf("%d", *team.TeamID)
 		}
 		standing := CurrentSeasonStandingResponse{
-			TeamID:   team.ID,
-			ESPNID:   espnID,
-			Owner:    team.Owners[0],
-			TeamName: team.Name,
+			TeamID:           team.ID,
+			PlatformTeamID:   teamID,
+			Owner:            team.Owners[0],
+			TeamName:         team.Name,
 			Record:   TeamRecord{Wins: 0, Losses: 0, Ties: 0},
 			Points:   TeamPoints{Scored: 0, Against: 0},
 		}
@@ -688,15 +693,15 @@ type GetCurrentSeasonStandingsResponse struct {
 }
 
 type CurrentSeasonStandingResponse struct {
-	TeamID         uint       `json:"team_id"`
-	ESPNID         string     `json:"espn_id"`
-	Owner          string     `json:"owner"`
-	TeamName       string     `json:"team_name"`
-	Record         TeamRecord `json:"record"`
-	Points         TeamPoints `json:"points"`
-	ExpectedWins   *float64   `json:"expected_wins,omitempty"`
-	ExpectedLosses *float64   `json:"expected_losses,omitempty"`
-	WinLuck        *float64   `json:"win_luck,omitempty"`
+	TeamID           uint       `json:"team_id"`
+	PlatformTeamID   string     `json:"platform_team_id"`
+	Owner            string     `json:"owner"`
+	TeamName         string     `json:"team_name"`
+	Record           TeamRecord `json:"record"`
+	Points           TeamPoints `json:"points"`
+	ExpectedWins     *float64   `json:"expected_wins,omitempty"`
+	ExpectedLosses   *float64   `json:"expected_losses,omitempty"`
+	WinLuck          *float64   `json:"win_luck,omitempty"`
 }
 
 // CreateTeam creates a new team

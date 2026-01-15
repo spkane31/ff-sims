@@ -17,9 +17,12 @@ type Team struct {
 
 	Name   string   `json:"name"`
 	Owners []string `json:"owner_name" gorm:"serializer:json;type:text"`
-	// TODO seankane: Change to non-nullable for sleeper and consider change to TeamID (source can be retrieved from League)
-	ESPNID   *uint `json:"espn_id,omitempty"` // Nullable for Sleeper teams
+	// Platform-specific team identifier (ESPN team ID or Sleeper roster ID)
+	TeamID   *uint `json:"team_id,omitempty" gorm:"index"` // Nullable for flexibility
 	LeagueID uint  `json:"league_id" gorm:"index"`
+	// TODO seankane: Add the correct querying to remove disabled teams by default from things like record
+	// standings, etc.
+	Disabled bool  `json:"disabled" gorm:"default:false"`
 
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`
@@ -34,11 +37,11 @@ type Team struct {
 }
 
 func (t *Team) String() string {
-	espnID := "nil"
-	if t.ESPNID != nil {
-		espnID = fmt.Sprintf("%d", *t.ESPNID)
+	teamID := "nil"
+	if t.TeamID != nil {
+		teamID = fmt.Sprintf("%d", *t.TeamID)
 	}
-	return fmt.Sprintf("Team(ID=%d, Name=%s, Owner=%s, ESPNID=%s, LeagueID=%d)", t.ID, t.Name, strings.Join(t.Owners, ","), espnID, t.LeagueID)
+	return fmt.Sprintf("Team(ID=%d, Name=%s, Owner=%s, TeamID=%s, LeagueID=%d)", t.ID, t.Name, strings.Join(t.Owners, ","), teamID, t.LeagueID)
 }
 
 // AfterCreate hook is triggered after creating a new team

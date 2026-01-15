@@ -70,17 +70,21 @@ export interface GetMatchupDetailResponse {
     id: string;
     year: number;
     week: number;
-    homeTeamESPNID: number;
-    awayTeamESPNID: number;
+    homeTeamId: number; // Platform-specific ID
+    awayTeamId: number; // Platform-specific ID
+    homeTeamInternalId: number; // Internal database ID for navigation
+    awayTeamInternalId: number; // Internal database ID for navigation
     homeTeam: {
-      id: string;
+      id: string; // Platform-specific ID
+      internalId: string; // Internal database ID for navigation
       name: string;
       score: number;
       projectedScore: number;
       players: Player[];
     };
     awayTeam: {
-      id: string;
+      id: string; // Platform-specific ID
+      internalId: string; // Internal database ID for navigation
       name: string;
       score: number;
       projectedScore: number;

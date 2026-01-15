@@ -32,7 +32,8 @@ interface Game {
   week: number;
   year: number;
   opponent: string;
-  opponentESPNID: string; // Add opponent ESPN ID for linking
+  opponentTeamID: string; // Platform-specific team ID (ESPN/Sleeper)
+  opponentInternalID: string; // Internal database ID for linking
   result: "W" | "L" | "T" | "-";
   score: string;
   isHome: boolean;
@@ -131,7 +132,8 @@ function mapApiDataToUiFormat(teamData: TeamDetailType): {
       ? `${game.teamScore.toFixed(2)}-${game.opponentScore.toFixed(2)}`
       : "0-0",
     isHome: game.isHome,
-    opponentESPNID: game.opponentESPNID, // Add opponent ESPN ID
+    opponentTeamID: game.opponentTeamID, // Platform-specific team ID
+    opponentInternalID: game.opponentInternalID, // Internal database ID for linking
     isPlayoff: game.isPlayoff, // Add isPlayoff field
     matchupId: game.matchupId, // Add matchup ID for linking
   }));
@@ -281,7 +283,7 @@ function calculateTeamStats(games: Game[]) {
   // Opponent analysis - find most common opponents and record against them
   const opponentStats: Record<
     string,
-    { wins: number; losses: number; ties: number; opponentESPNID: string }
+    { wins: number; losses: number; ties: number; opponentTeamID: string; opponentInternalID: string }
   > = {};
 
   completedGames.forEach((game) => {
@@ -290,7 +292,8 @@ function calculateTeamStats(games: Game[]) {
         wins: 0,
         losses: 0,
         ties: 0,
-        opponentESPNID: game.opponentESPNID,
+        opponentTeamID: game.opponentTeamID,
+        opponentInternalID: game.opponentInternalID,
       };
     }
 
@@ -303,7 +306,8 @@ function calculateTeamStats(games: Game[]) {
   const topOpponents = Object.entries(opponentStats)
     .map(([opponent, record]) => ({
       opponent,
-      opponentESPNID: record.opponentESPNID, // Include opponent ESPN ID for linking
+      opponentTeamID: record.opponentTeamID, // Platform-specific team ID
+      opponentInternalID: record.opponentInternalID, // Internal database ID for linking
       totalGames: record.wins + record.losses + record.ties,
       winPercentage:
         (record.wins / (record.wins + record.losses + record.ties)) * 100,
@@ -873,7 +877,7 @@ export default function TeamDetail() {
                         >
                           <h3 className="font-medium mb-2">
                             <Link
-                              href={`/teams/${opponentData.opponentESPNID}`}
+                              href={`/teams/${opponentData.opponentInternalID}`}
                               className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 transition-colors duration-200"
                             >
                               {opponentData.opponent}
@@ -907,7 +911,7 @@ export default function TeamDetail() {
                           </div>
                           <div className="mt-2">
                             <Link
-                              href={`/teams/${opponentData.opponentESPNID}`}
+                              href={`/teams/${opponentData.opponentInternalID}`}
                               className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300"
                             >
                               View {opponentData.opponent}&apos;s Team Page →

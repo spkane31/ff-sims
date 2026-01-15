@@ -24,23 +24,25 @@ type Schedule struct {
 }
 
 type Matchup struct {
-	ID                 string           `json:"id"`
-	Year               uint             `json:"year"`
-	Week               uint             `json:"week"`
-	HomeTeamESPNID     uint             `json:"homeTeamESPNID"`
-	AwayTeamESPNID     uint             `json:"awayTeamESPNID"`
-	HomeTeamName       string           `json:"homeTeamName"`
-	AwayTeamName       string           `json:"awayTeamName"`
-	HomeScore          float64          `json:"homeScore"`
-	AwayScore          float64          `json:"awayScore"`
-	HomeProjectedScore float64          `json:"homeProjectedScore"`
-	AwayProjectedScore float64          `json:"awayProjectedScore"`
-	HomePlayers        []BoxScorePlayer `json:"homePlayers"`
-	AwayPlayers        []BoxScorePlayer `json:"awayPlayers"`
-	GameType           string           `json:"gameType"`
-	PlayoffGameType    string           `json:"playoffGameType"`
-	Completed          bool             `json:"completed"`
-	IsPlayoff          bool             `json:"isPlayoff"`
+	ID                   string           `json:"id"`
+	Year                 uint             `json:"year"`
+	Week                 uint             `json:"week"`
+	HomeTeamID           uint             `json:"homeTeamId"`
+	AwayTeamID           uint             `json:"awayTeamId"`
+	HomeTeamInternalID   uint             `json:"homeTeamInternalId"`
+	AwayTeamInternalID   uint             `json:"awayTeamInternalId"`
+	HomeTeamName         string           `json:"homeTeamName"`
+	AwayTeamName         string           `json:"awayTeamName"`
+	HomeScore            float64          `json:"homeScore"`
+	AwayScore            float64          `json:"awayScore"`
+	HomeProjectedScore   float64          `json:"homeProjectedScore"`
+	AwayProjectedScore   float64          `json:"awayProjectedScore"`
+	HomePlayers          []BoxScorePlayer `json:"homePlayers"`
+	AwayPlayers          []BoxScorePlayer `json:"awayPlayers"`
+	GameType             string           `json:"gameType"`
+	PlayoffGameType      string           `json:"playoffGameType"`
+	Completed            bool             `json:"completed"`
+	IsPlayoff            bool             `json:"isPlayoff"`
 }
 
 // GetPlayers returns all players with optional filtering
@@ -81,7 +83,7 @@ func GetSchedules(c *gin.Context) {
 		defer wg.Done()
 		if teamsErr = database.DB.Model(&models.Team{}).
 			Where("league_id = ?", leagueID).
-			Select("id, espn_id, owners").
+			Select("id, team_id, owners").
 			Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return
@@ -155,14 +157,16 @@ func GetSchedules(c *gin.Context) {
 		for _, team := range teams {
 			if team.ID == matchup.HomeTeamID {
 				resp.Data.Matchups[i].HomeTeamName = team.Owners[0]
-				if team.ESPNID != nil {
-					resp.Data.Matchups[i].HomeTeamESPNID = *team.ESPNID
+				resp.Data.Matchups[i].HomeTeamInternalID = team.ID
+				if team.TeamID != nil {
+					resp.Data.Matchups[i].HomeTeamID = *team.TeamID
 				}
 			}
 			if team.ID == matchup.AwayTeamID {
 				resp.Data.Matchups[i].AwayTeamName = team.Owners[0]
-				if team.ESPNID != nil {
-					resp.Data.Matchups[i].AwayTeamESPNID = *team.ESPNID
+				resp.Data.Matchups[i].AwayTeamInternalID = team.ID
+				if team.TeamID != nil {
+					resp.Data.Matchups[i].AwayTeamID = *team.TeamID
 				}
 			}
 		}
@@ -184,17 +188,20 @@ type GetMatchupResponse struct {
 }
 
 type SingleMatchup struct {
-	ID             string      `json:"id"`
-	Year           uint        `json:"year"`
-	Week           uint        `json:"week"`
-	HomeTeamESPNID uint        `json:"homeTeamESPNID"`
-	AwayTeamESPNID uint        `json:"awayTeamESPNID"`
-	HomeTeam       TeamMatchup `json:"homeTeam"`
-	AwayTeam       TeamMatchup `json:"awayTeam"`
+	ID                 string      `json:"id"`
+	Year               uint        `json:"year"`
+	Week               uint        `json:"week"`
+	HomeTeamID         uint        `json:"homeTeamId"`
+	AwayTeamID         uint        `json:"awayTeamId"`
+	HomeTeamInternalID uint        `json:"homeTeamInternalId"`
+	AwayTeamInternalID uint        `json:"awayTeamInternalId"`
+	HomeTeam           TeamMatchup `json:"homeTeam"`
+	AwayTeam           TeamMatchup `json:"awayTeam"`
 }
 
 type TeamMatchup struct {
-	ESPNID         string           `json:"id"`
+	TeamID         string           `json:"id"`
+	InternalID     string           `json:"internalId"`
 	Name           string           `json:"name"`
 	Score          float64          `json:"score"`
 	ProjectedScore float64          `json:"projectedScore"`
@@ -304,22 +311,24 @@ func GetMatchup(c *gin.Context) {
 
 	matchup := matchups[0]
 
-	// Find team names and ESPN IDs
+	// Find team names and IDs
 	homeTeamName := "Unknown Team"
 	awayTeamName := "Unknown Team"
-	homeTeamESPNID := uint(0)
-	awayTeamESPNID := uint(0)
+	homeTeamID := uint(0)
+	awayTeamID := uint(0)
+	homeTeamInternalID := matchup.HomeTeamID
+	awayTeamInternalID := matchup.AwayTeamID
 	for _, team := range teams {
 		if team.ID == matchup.HomeTeamID {
 			homeTeamName = team.Owners[0]
-			if team.ESPNID != nil {
-				homeTeamESPNID = *team.ESPNID
+			if team.TeamID != nil {
+				homeTeamID = *team.TeamID
 			}
 		}
 		if team.ID == matchup.AwayTeamID {
 			awayTeamName = team.Owners[0]
-			if team.ESPNID != nil {
-				awayTeamESPNID = *team.ESPNID
+			if team.TeamID != nil {
+				awayTeamID = *team.TeamID
 			}
 		}
 	}
@@ -368,20 +377,24 @@ func GetMatchup(c *gin.Context) {
 
 	resp := GetMatchupResponse{
 		Data: SingleMatchup{
-			ID:             id,
-			Year:           matchup.Season,
-			Week:           matchup.Week,
-			HomeTeamESPNID: homeTeamESPNID,
-			AwayTeamESPNID: awayTeamESPNID,
+			ID:                 id,
+			Year:               matchup.Season,
+			Week:               matchup.Week,
+			HomeTeamID:         homeTeamID,
+			AwayTeamID:         awayTeamID,
+			HomeTeamInternalID: homeTeamInternalID,
+			AwayTeamInternalID: awayTeamInternalID,
 			HomeTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", homeTeamESPNID),
+				TeamID:         fmt.Sprintf("%d", homeTeamID),
+				InternalID:     fmt.Sprintf("%d", homeTeamInternalID),
 				Score:          matchup.HomeTeamFinalScore,
 				ProjectedScore: homeProjectedScore,
 				Name:           homeTeamName,
 				Players:        homeTeamPlayers,
 			},
 			AwayTeam: TeamMatchup{
-				ESPNID:         fmt.Sprintf("%d", awayTeamESPNID),
+				TeamID:         fmt.Sprintf("%d", awayTeamID),
+				InternalID:     fmt.Sprintf("%d", awayTeamInternalID),
 				Score:          matchup.AwayTeamFinalScore,
 				ProjectedScore: awayProjectedScore,
 				Name:           awayTeamName,

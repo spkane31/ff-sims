@@ -34,8 +34,8 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 	}
 
 	for _, createdTeam := range createdTeams {
-		logging.Infof("Created Team - ID: %d, ESPN ID: %d, Name: %s, Owner: %s",
-			createdTeam.ID, createdTeam.ESPNID, createdTeam.Name, strings.Join(createdTeam.Owners, ","))
+		logging.Infof("Created Team - ID: %d, TeamID: %d, Name: %s, Owner: %s",
+			createdTeam.ID, createdTeam.TeamID, createdTeam.Name, strings.Join(createdTeam.Owners, ","))
 	}
 
 	for _, matchup := range matchups {
@@ -53,10 +53,10 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 		}
 		// Look up team IDs from createdTeams
 		for _, team := range createdTeams {
-			if team.ESPNID != nil && *team.ESPNID == uint(matchup.HomeTeamESPNID) {
+			if team.TeamID != nil && *team.TeamID == uint(matchup.HomeTeamESPNID) {
 				entry.HomeTeamID = team.ID
 			}
-			if team.ESPNID != nil && *team.ESPNID == uint(matchup.AwayTeamESPNID) {
+			if team.TeamID != nil && *team.TeamID == uint(matchup.AwayTeamESPNID) {
 				entry.AwayTeamID = team.ID
 			}
 		}

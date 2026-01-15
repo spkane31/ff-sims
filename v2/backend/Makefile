@@ -12,9 +12,8 @@ build-etl:
 
 build: build-server build-etl
 
-run: server
-	@echo "Starting server..."
-	./bin/server
+run:
+	go run ./cmd/server
 
 etl:
 	@echo "Running ETL process..."

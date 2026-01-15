@@ -16,12 +16,12 @@ export interface Matchup extends BaseModel {
   week: number;
   year: number;
   season: number;
-  homeTeamId: number;
-  awayTeamId: number;
+  homeTeamId: number; // Platform-specific ID (ESPN/Sleeper)
+  awayTeamId: number; // Platform-specific ID (ESPN/Sleeper)
+  homeTeamInternalId: number; // Internal database ID for navigation
+  awayTeamInternalId: number; // Internal database ID for navigation
   homeTeamName: string;
   awayTeamName: string;
-  homeTeamESPNID: number;
-  awayTeamESPNID: number;
   homeScore: number;
   awayScore: number;
   homeProjectedScore: number;
@@ -119,7 +119,7 @@ export interface League extends BaseModel {
 export interface Team extends BaseModel {
   name: string;
   owner_name: string;
-  espn_id: number;
+  team_id: number; // Platform-specific ID (ESPN team ID or Sleeper roster ID)
   league_id: number;
   wins: number;
   losses: number;

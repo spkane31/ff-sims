@@ -90,7 +90,7 @@ func processDraftSelections(filePath string) error {
 		}
 
 		for _, team := range teams {
-			if team.ESPNID != nil && *team.ESPNID == selection.OwnerESPNID {
+			if team.TeamID != nil && *team.TeamID == selection.OwnerESPNID {
 				entry.TeamID = team.ID
 				break
 			}
@@ -241,8 +241,8 @@ func processMatchups(filePath string) error {
 
 	idMap := make(map[uint]uint)
 	for _, team := range teams {
-		if team.ESPNID != nil {
-			idMap[*team.ESPNID] = team.ID
+		if team.TeamID != nil {
+			idMap[*team.TeamID] = team.ID
 		}
 	}
 
@@ -528,7 +528,7 @@ func processTeams(filePath string) ([]*models.Team, error) {
 
 		// Check if team already exists
 		var existingTeam models.Team
-		if err := database.DB.First(&existingTeam, "espn_id = ?", team.ESPNID).Error; err != nil {
+		if err := database.DB.First(&existingTeam, "team_id = ?", team.ESPNID).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return nil, fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
@@ -536,7 +536,7 @@ func processTeams(filePath string) ([]*models.Team, error) {
 			espnID := uint(team.ESPNID)
 			newTeam := &models.Team{
 				LeagueID: leagueID,
-				ESPNID:   &espnID,
+				TeamID:   &espnID,
 				Name:     team.Nickname,
 				Owners:   []string{team.Owner},
 			}
@@ -651,9 +651,9 @@ func processTransactions(filePath string) error {
 			logging.Infof("Created new player: %+v", player)
 		}
 
-		// Get the team by ESPN ID
+		// Get the team by platform-specific ID
 		var team models.Team
-		if err := database.DB.First(&team, "espn_id = ?", t.TeamESPNID).Error; err != nil {
+		if err := database.DB.First(&team, "team_id = ?", t.TeamESPNID).Error; err != nil {
 			return fmt.Errorf("error checking team with ESPN ID %d: %w", t.TeamESPNID, err)
 		}
 
