@@ -1,6 +1,7 @@
-import requests
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
+
+import requests
 
 
 @dataclass
@@ -143,15 +144,93 @@ class League:
     total_rosters: int
 
 
+@dataclass
+class User:
+    user_id: str
+    username: str
+    display_name: str
+    avatar: Optional[str]
+    metadata: dict
+    is_owner: bool
+
+
+@dataclass
+class DraftSettings:
+    alpha_sort: int
+    autopause_enabled: int
+    autopause_end_time: int
+    autopause_start_time: int
+    autostart: int
+    cpu_autopick: int
+    enforce_position_limits: int
+    nomination_timer: int
+    pick_timer: int
+    player_type: int
+    reversal_round: int
+    rounds: int
+    teams: int
+    slots_bn: Optional[int] = None
+    slots_def: Optional[int] = None
+    slots_flex: Optional[int] = None
+    slots_k: Optional[int] = None
+    slots_qb: Optional[int] = None
+    slots_rb: Optional[int] = None
+    slots_te: Optional[int] = None
+    slots_wr: Optional[int] = None
+    slots_super_flex: Optional[int] = None
+
+
+@dataclass
+class DraftMetadata:
+    scoring_type: str
+    name: str
+    description: str
+    show_team_names: str
+    elapsed_pick_timer: Optional[str] = None
+    is_autopaused: Optional[str] = None
+
+
+@dataclass
+class Draft:
+    type: str
+    status: str
+    start_time: int
+    sport: str
+    settings: DraftSettings
+    season_type: str
+    season: str
+    metadata: DraftMetadata
+    league_id: str
+    last_picked: int
+    last_message_time: int
+    last_message_id: str
+    draft_order: Optional[list[str]]
+    draft_id: str
+    creators: Optional[list[str]]
+    created: int
+
+    @property
+    def rounds(self) -> int:
+        """Expose rounds from settings for backward compatibility."""
+        return self.settings.rounds
+
+    @property
+    def pick_time(self) -> int:
+        """Expose pick_timer from settings as pick_time for backward compatibility."""
+        return self.settings.pick_timer
+
+
 class SleeperClient:
     def __init__(self):
-        self.base_url = "https://api.sleeper.app/v1"
+        self._base_url = "https://api.sleeper.app/v1"
+
+    def _get(self, endpoint: str, retry_count: int = 0) -> Any:
+        response = requests.get(f"{self._base_url}{endpoint}")
+        response.raise_for_status()
+        return response.json()
 
     def get_league(self, league_id: str) -> League:
-        # curl "https://api.sleeper.app/v1/league/<league_id>"
-        response = requests.get(f"{self.base_url}/league/{league_id}")
-        response.raise_for_status()
-        data = response.json()
+        data = self._get(f"/league/{league_id}")
 
         # Parse nested objects
         metadata = LeagueMetadata(**data["metadata"])
@@ -193,3 +272,43 @@ class SleeperClient:
             total_rosters=data["total_rosters"],
         )
 
+    def get_users_in_leauge(self, league_id: str) -> list[User]:
+        data = self._get(f"/league/{league_id}/users")
+
+        return [
+            User(
+                user_id=user_data.get("user_id"),
+                username=user_data.get("username"),
+                display_name=user_data.get("display_name"),
+                avatar=user_data.get("avatar"),
+                metadata=user_data.get("metadata", {}),
+                is_owner=user_data["is_owner"],
+            )
+            for user_data in data
+        ]
+
+    # DRAFTS endpoints
+
+    def get_all_drafts_for_user(self, user_id: str, season: str, sport: str = "nfl") -> list[Draft]:
+        data = self._get(f"/user/{user_id}/drafts/{sport}/{season}")
+        return [
+            Draft(
+                type=draft_data.get("type"),
+                status=draft_data.get("status"),
+                start_time=draft_data.get("start_time"),
+                sport=draft_data.get("sport"),
+                settings=DraftSettings(**draft_data.get("settings")),
+                season_type=draft_data.get("season_type"),
+                season=draft_data.get("season"),
+                metadata=DraftMetadata(**draft_data.get("metadata")),
+                league_id=draft_data.get("league_id"),
+                last_picked=draft_data.get("last_picked"),
+                last_message_time=draft_data.get("last_message_time"),
+                last_message_id=draft_data.get("last_message_id"),
+                draft_order=draft_data.get("draft_order"),
+                draft_id=draft_data.get("draft_id"),
+                creators=draft_data.get("creators"),
+                created=draft_data.get("created"),
+            )
+            for draft_data in data
+        ]

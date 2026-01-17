@@ -122,22 +122,22 @@ export const teamsService = {
   /**
    * Get all teams for a specific league
    */
-  getAllTeams: async (leagueId: string): Promise<TeamResponse> => {
-    return apiClient.get<TeamResponse>(`/league/${leagueId}/teams`);
+  getAllTeams: async (leagueId: string, season: number): Promise<TeamResponse> => {
+    return apiClient.get<TeamResponse>(`/league/${leagueId}/teams?season=${season}`);
   },
 
   /**
    * Get a single team by ID for a specific league
    */
-  getTeamById: async (leagueId: string, teamId: number): Promise<Team> => {
-    return apiClient.get<Team>(`/league/${leagueId}/teams/${teamId}`);
+  getTeamById: async (leagueId: string, teamId: number, season: number): Promise<Team> => {
+    return apiClient.get<Team>(`/league/${leagueId}/teams/${teamId}?season=${season}`);
   },
 
   /**
    * Get detailed team information including schedule, players, draft picks, and transactions
    */
-  getTeamDetail: async (leagueId: string, teamId: string | number): Promise<TeamDetail> => {
-    return apiClient.get<TeamDetail>(`/league/${leagueId}/teams/${teamId}`);
+  getTeamDetail: async (leagueId: string, teamId: string | number, season: number): Promise<TeamDetail> => {
+    return apiClient.get<TeamDetail>(`/league/${leagueId}/teams/${teamId}?season=${season}`);
   },
 
   /**

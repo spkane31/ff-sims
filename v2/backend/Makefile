@@ -16,6 +16,10 @@ reset-db:
 	@echo "Resetting database..."
 	./scripts/reset_db.sh
 
+test:
+	@echo "Running tests..."
+	go test ./...
+
 help:
 	@echo "Available commands:"
 	@echo "  make build     - Build server and ETL binaries"

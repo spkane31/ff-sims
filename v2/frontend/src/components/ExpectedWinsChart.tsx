@@ -1,8 +1,10 @@
 import React, { useMemo } from "react";
-import { WeeklyExpectedWins } from "../services/expectedWinsService";
+import { Matchup } from "../types/models";
+import { calculateWeeklyProgression } from "../utils/expectedWinsCalculations";
 
 interface ExpectedWinsChartProps {
-  weeklyData: WeeklyExpectedWins[];
+  matchups: Matchup[];
+  teamIds: number[];
   isLoading: boolean;
   currentYear: number;
 }
@@ -15,26 +17,23 @@ interface ChartDataPoint {
 }
 
 function prepareChartData(
-  weeklyData: WeeklyExpectedWins[]
+  matchups: Matchup[],
+  teamIds: number[]
 ): Map<number, ChartDataPoint[]> {
   const teamData = new Map<number, ChartDataPoint[]>();
 
-  weeklyData.forEach((week) => {
-    if (!teamData.has(week.team_id)) {
-      teamData.set(week.team_id, []);
-    }
+  teamIds.forEach((teamId) => {
+    const progression = calculateWeeklyProgression(matchups, teamId);
 
-    teamData.get(week.team_id)!.push({
-      week: week.week,
-      expectedWins: week.expected_wins,
-      actualWins: week.actual_wins,
-      winLuck: week.win_luck,
-    });
-  });
-
-  // Sort each team's data by week
-  teamData.forEach((data) => {
-    data.sort((a, b) => a.week - b.week);
+    teamData.set(
+      teamId,
+      progression.map((p) => ({
+        week: p.week,
+        expectedWins: p.expectedWins,
+        actualWins: p.actualWins,
+        winLuck: p.actualWins - p.expectedWins,
+      }))
+    );
   });
 
   return teamData;
@@ -62,21 +61,25 @@ function generateTeamColor(teamId: number): string {
 }
 
 export default function ExpectedWinsChart({
-  weeklyData,
+  matchups,
+  teamIds,
   isLoading,
   currentYear,
 }: ExpectedWinsChartProps) {
-  const chartData = useMemo(() => prepareChartData(weeklyData), [weeklyData]);
+  const chartData = useMemo(() => prepareChartData(matchups, teamIds), [matchups, teamIds]);
   const maxWeek = useMemo(() => {
-    return weeklyData.reduce((max, week) => Math.max(max, week.week), 0);
-  }, [weeklyData]);
+    return matchups.reduce((max, m) => Math.max(max, m.week), 0);
+  }, [matchups]);
 
   const maxWins = useMemo(() => {
-    return weeklyData.reduce(
-      (max, week) => Math.max(max, week.actual_wins, week.expected_wins),
-      0
-    );
-  }, [weeklyData]);
+    let max = 0;
+    chartData.forEach((data) => {
+      data.forEach((point) => {
+        max = Math.max(max, point.actualWins, point.expectedWins);
+      });
+    });
+    return max;
+  }, [chartData]);
 
   if (isLoading) {
     return (
@@ -167,11 +170,16 @@ export default function ExpectedWinsChart({
             {/* Data lines for each team */}
             {Array.from(chartData.entries()).map(([teamId, data]) => {
               const color = generateTeamColor(teamId);
-              const teamInfo = weeklyData.find(
-                (w) => w.team_id === teamId
-              )?.team;
 
-              if (!teamInfo || data.length === 0) return null;
+              // Get team name from matchups (for future legend implementation)
+              // const teamMatchup = matchups.find(
+              //   (m) => m.homeTeamId === teamId || m.awayTeamId === teamId
+              // );
+              // const teamName = teamMatchup
+              //   ? (teamMatchup.homeTeamId === teamId ? teamMatchup.homeTeamName : teamMatchup.awayTeamName)
+              //   : `Team ${teamId}`;
+
+              if (data.length === 0) return null;
 
               // Expected wins line (dashed)
               const expectedPath = data

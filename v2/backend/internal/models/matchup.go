@@ -29,8 +29,8 @@ type Matchup struct {
 	AwayTeamProjectedScore float64 `json:"away_projected_score"`
 
 	// Expected wins
-	HomeTeamExpectedWin float64 `json:"home_expected_win"`
-	AwayTeamExpectedWin float64 `json:"away_expected_win"`
+	HomeTeamExpectedWin float64 `json:"homeExpectedWin"`
+	AwayTeamExpectedWin float64 `json:"awayExpectedWin"`
 
 	// Status flags
 	Completed bool `json:"completed" gorm:"default:false"`

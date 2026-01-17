@@ -100,19 +100,31 @@ export const scheduleService = {
   /**
    * Get the full schedule for a specific league
    */
-  getFullSchedule: async (leagueId: string, gameType?: string): Promise<GetMatchupsResponse> => {
+  getFullSchedule: async (
+    leagueId: string,
+    year?: string,
+    gameType?: string
+  ): Promise<GetMatchupsResponse> => {
     const params = new URLSearchParams();
+    if (year) {
+      params.append("year", year);
+    }
     if (gameType && gameType !== "all") {
       params.append("gameType", gameType);
     }
     const queryString = params.toString() ? `?${params.toString()}` : "";
-    return apiClient.get<GetMatchupsResponse>(`/league/${leagueId}/schedules${queryString}`);
+    return apiClient.get<GetMatchupsResponse>(
+      `/league/${leagueId}/schedules${queryString}`
+    );
   },
 
   /**
    * Get the schedule for a specific year and league
    */
-  getScheduleByYear: async (leagueId: string, year: number): Promise<Game[]> => {
+  getScheduleByYear: async (
+    leagueId: string,
+    year: number
+  ): Promise<Game[]> => {
     return apiClient.get<Game[]>(`/league/${leagueId}/schedules?year=${year}`);
   },
 
@@ -126,8 +138,13 @@ export const scheduleService = {
   /**
    * Get schedule for a specific team in a league
    */
-  getTeamSchedule: async (leagueId: string, teamId: number): Promise<Game[]> => {
-    return apiClient.get<Game[]>(`/league/${leagueId}/schedules/team/${teamId}`);
+  getTeamSchedule: async (
+    leagueId: string,
+    teamId: number
+  ): Promise<Game[]> => {
+    return apiClient.get<Game[]>(
+      `/league/${leagueId}/schedules/team/${teamId}`
+    );
   },
 
   /**
@@ -137,6 +154,8 @@ export const scheduleService = {
     leagueId: string,
     matchupId: string
   ): Promise<GetMatchupDetailResponse> => {
-    return apiClient.get<GetMatchupDetailResponse>(`/league/${leagueId}/schedules/${matchupId}`);
+    return apiClient.get<GetMatchupDetailResponse>(
+      `/league/${leagueId}/schedules/${matchupId}`
+    );
   },
 };

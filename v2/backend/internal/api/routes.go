@@ -39,9 +39,7 @@ func setupLeagueRoutes(group *gin.RouterGroup) {
 	{
 		teams.GET("", handlers.GetTeams)
 		teams.GET("/:id", handlers.GetTeamByID)
-		teams.GET("/all-time-expected-wins", handlers.GetAllTimeExpectedWins)
 		teams.GET("/standings/:year", handlers.GetCurrentSeasonStandings)
-		teams.GET("/:id/expected-wins/:year", handlers.GetTeamProgression)
 	}
 
 	// Players endpoints (global data, but can be filtered by league context)
@@ -64,15 +62,6 @@ func setupLeagueRoutes(group *gin.RouterGroup) {
 	{
 		transactions.GET("", handlers.GetTransactions)
 		transactions.GET("/draft-picks", handlers.GetDraftPicks)
-	}
-
-	// Expected wins endpoints
-	expectedWins := group.Group("/expected-wins")
-	{
-		expectedWins.GET("/weekly/:year", handlers.GetWeeklyExpectedWins)
-		expectedWins.GET("/season/:year", handlers.GetSeasonExpectedWins)
-		expectedWins.GET("/rankings/:year", handlers.GetSeasonRankings)
-		expectedWins.GET("/luck/:year", handlers.GetLuckDistribution)
 	}
 
 	// League metadata

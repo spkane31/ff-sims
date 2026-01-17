@@ -5,6 +5,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
+	"backend/internal/simulation"
 	"backend/internal/sleeper"
 	"encoding/json"
 	"fmt"
@@ -329,12 +330,6 @@ func uploadYAMLFile(filePath string) error {
 				etlBoxscore.Week, etlBoxscore.Year, homeTeamDBID, awayTeamDBID)
 			continue
 		}
-
-		logging.Infof("Updated matchup scores for week %d, year %d: Team %d (%.1f) vs Team %d (%.1f) - Completed: %t",
-			etlBoxscore.Week, etlBoxscore.Year,
-			etlBoxscore.HomeTeamID, etlBoxscore.HomeScore,
-			etlBoxscore.AwayTeamID, etlBoxscore.AwayScore,
-			etlBoxscore.Completed)
 	}
 
 	// 5. Recalculate team records from matchup results
@@ -345,7 +340,16 @@ func uploadYAMLFile(filePath string) error {
 	}
 	logging.Infof("Successfully recalculated team records")
 
-	// 6. Process draft selections
+	// 6. Calculate expected wins for matchups
+	logging.Infof("Processing expected wins calculations for league %d, year %d", dbLeague.ID, league.Year)
+	if err := processExpectedWinsForLeague(database.DB, dbLeague.ID, uint(league.Year)); err != nil {
+		// Log warning but don't fail the ETL - expected wins is supplementary data
+		logging.Warnf("Failed to calculate expected wins: %v", err)
+	} else {
+		logging.Infof("Successfully calculated expected wins")
+	}
+
+	// 7. Process draft selections
 	if len(league.Draft.Selections) > 0 {
 		logging.Infof("Processing %d draft selections for year %d", len(league.Draft.Selections), league.Draft.Year)
 
@@ -440,10 +444,9 @@ func uploadYAMLFile(filePath string) error {
 		logging.Infof("Successfully processed %d draft selections", len(league.Draft.Selections))
 	}
 
-	// 6. Process box score player stats (TODO)
-	// 7. Update expected wins counts (TODO)
-	// 8. Create new transactions (TODO)
-	// 9. Run simulations (TODO)
+	// 8. Process box score player stats (TODO)
+	// 9. Create new transactions (TODO)
+	// 10. Run simulations (TODO)
 
 	logging.Infof("Successfully processed league ID %d for year %d", league.ID, league.Year)
 
@@ -511,6 +514,73 @@ func recalculateTeamRecords(db *gorm.DB, leagueID uint) error {
 				logging.Warnf("Team %d not found in league %d, skipping record update", teamID, leagueID)
 			}
 		}
+		return nil
+	})
+}
+
+// processExpectedWinsForLeague calculates and updates expected wins for all matchups in a league/season
+func processExpectedWinsForLeague(db *gorm.DB, leagueID uint, year uint) error {
+	logging.Infof("Calculating expected wins for league %d, year %d", leagueID, year)
+
+	// 1. Query all completed regular season matchups for this league and year
+	var matchups []models.Matchup
+	err := db.Where("league_id = ? AND season = ? AND completed = ? AND is_playoff = ?",
+		leagueID, year, true, false).Find(&matchups).Error
+	if err != nil {
+		return fmt.Errorf("failed to query matchups: %w", err)
+	}
+
+	if len(matchups) == 0 {
+		logging.Infof("No completed matchups found for league %d, year %d, skipping expected wins calculation", leagueID, year)
+		return nil
+	}
+
+	logging.Infof("Found %d completed matchups to process", len(matchups))
+
+	// Convert to slice of pointers for simulation function
+	matchupPtrs := make([]*models.Matchup, len(matchups))
+	for i := range matchups {
+		matchupPtrs[i] = &matchups[i]
+	}
+
+	// 2. Calculate per-matchup expected wins using Monte Carlo simulation
+	matchupExpectedWins, err := simulation.CalculateMatchupExpectedWins(matchupPtrs)
+	if err != nil {
+		return fmt.Errorf("failed to calculate expected wins: %w", err)
+	}
+
+	logging.Infof("Calculated expected wins for %d matchups", len(matchupExpectedWins))
+
+	// 3. Update each matchup with calculated probabilities
+	// Use a transaction for consistency
+	return db.Transaction(func(tx *gorm.DB) error {
+		for matchupID, expectedWins := range matchupExpectedWins {
+			// Validate probabilities are in valid range [0, 1]
+			if expectedWins.HomeExpectedWin < 0.0 || expectedWins.HomeExpectedWin > 1.0 {
+				logging.Warnf("Invalid home expected win for matchup %d: %.4f", matchupID, expectedWins.HomeExpectedWin)
+				continue
+			}
+			if expectedWins.AwayExpectedWin < 0.0 || expectedWins.AwayExpectedWin > 1.0 {
+				logging.Warnf("Invalid away expected win for matchup %d: %.4f", matchupID, expectedWins.AwayExpectedWin)
+				continue
+			}
+
+			result := tx.Model(&models.Matchup{}).Where("id = ?", matchupID).
+				Updates(map[string]interface{}{
+					"home_team_expected_win": expectedWins.HomeExpectedWin,
+					"away_team_expected_win": expectedWins.AwayExpectedWin,
+				})
+
+			if result.Error != nil {
+				return fmt.Errorf("failed to update matchup %d: %w", matchupID, result.Error)
+			}
+
+			if result.RowsAffected == 0 {
+				logging.Warnf("Matchup %d not found, skipping", matchupID)
+			}
+		}
+
+		logging.Infof("Successfully updated expected wins for %d matchups", len(matchupExpectedWins))
 		return nil
 	})
 }

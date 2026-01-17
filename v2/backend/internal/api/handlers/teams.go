@@ -51,6 +51,20 @@ type TeamPoints struct {
 // GetTeams returns all teams
 func GetTeams(c *gin.Context) {
 	leagueID := middleware.GetLeagueID(c)
+
+	// Get season from query parameter (required to prevent multi-season data mixing)
+	seasonParam := c.Query("season")
+	if seasonParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "season parameter is required"})
+		return
+	}
+
+	season, err := strconv.ParseUint(seasonParam, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid season parameter"})
+		return
+	}
+
 	allTeams, teamsErr := []models.Team{}, error(nil)
 	fullSchedule, scheduleErr := []models.Matchup{}, error(nil)
 
@@ -70,8 +84,10 @@ func GetTeams(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		// CRITICAL: Filter by season to prevent cross-season data mixing
+		// This prevents expected wins from being inflated to 58+ by combining multiple years
 		if scheduleErr = database.DB.Model(&models.Matchup{}).
-			Where("league_id = ? AND completed = true", leagueID).
+			Where("league_id = ? AND season = ? AND completed = true", leagueID, uint(season)).
 			Find(&fullSchedule).Error; scheduleErr != nil {
 			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
 		}
@@ -196,7 +212,20 @@ func GetTeamByID(c *gin.Context) {
 	leagueID := middleware.GetLeagueID(c)
 	teamID := c.Param("id")
 
-	slog.Info("Fetching team by ID", "leagueID", leagueID, "id", teamID)
+	// Get season from query parameter (required to prevent multi-season data mixing)
+	seasonParam := c.Query("season")
+	if seasonParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "season parameter is required"})
+		return
+	}
+
+	season, err := strconv.ParseUint(seasonParam, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid season parameter"})
+		return
+	}
+
+	slog.Info("Fetching team by ID", "leagueID", leagueID, "id", teamID, "season", season)
 
 	teamMap, err := database.GetTeamsIDMap(leagueID)
 	if err != nil {
@@ -212,17 +241,20 @@ func GetTeamByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
 		return
 	}
-	// Fetch team's schedule (all matchups for this team, including incomplete games for display)
+
+	// CRITICAL: Filter by season to prevent cross-season data mixing
+	// Fetch team's schedule for the specific season only
 	var schedule []models.Matchup
-	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND completed = true", team.ID, team.ID).
-		Order("season desc, week asc").Find(&schedule).Error; err != nil {
-		slog.Error("Failed to fetch team schedule", "error", err, "team_id", team.ID)
+	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND season = ? AND completed = true", team.ID, team.ID, uint(season)).
+		Order("week asc").Find(&schedule).Error; err != nil {
+		slog.Error("Failed to fetch team schedule", "error", err, "team_id", team.ID, "season", season)
 	}
 
-	// Fetch full schedule for playoff detection (only completed games needed for playoff logic)
+	// CRITICAL: Filter full schedule by season as well
+	// Fetch full schedule for playoff detection (only completed games for this season)
 	var fullSchedule []models.Matchup
-	if err := database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&fullSchedule).Error; err != nil {
-		slog.Error("Failed to fetch full schedule for playoff detection", "error", err)
+	if err := database.DB.Model(&models.Matchup{}).Where("league_id = ? AND season = ? AND completed = true", leagueID, uint(season)).Find(&fullSchedule).Error; err != nil {
+		slog.Error("Failed to fetch full schedule for playoff detection", "error", err, "season", season)
 	}
 
 	for _, matchup := range schedule {
@@ -494,18 +526,18 @@ type TeamDetailResponse struct {
 }
 
 type ScheduleGameResponse struct {
-	Week             int     `json:"week"`
-	Year             int     `json:"year"`
-	Opponent         string  `json:"opponent"`
-	OpponentTeamID   string  `json:"opponentTeamID"` // Opponent platform-specific team ID
-	OpponentInternalID string `json:"opponentInternalID"` // Opponent internal database ID for linking
-	IsHome           bool    `json:"isHome"`
-	TeamScore      float64 `json:"teamScore"`
-	OpponentScore  float64 `json:"opponentScore"`
-	Result         string  `json:"result"` // "W", "L", "T", or "Upcoming"
-	Completed      bool    `json:"completed"`
-	IsPlayoff      bool    `json:"isPlayoff"`
-	MatchupID      string  `json:"matchupId"` // Add matchup ID for linking to schedule detail page
+	Week               int     `json:"week"`
+	Year               int     `json:"year"`
+	Opponent           string  `json:"opponent"`
+	OpponentTeamID     string  `json:"opponentTeamID"`     // Opponent platform-specific team ID
+	OpponentInternalID string  `json:"opponentInternalID"` // Opponent internal database ID for linking
+	IsHome             bool    `json:"isHome"`
+	TeamScore          float64 `json:"teamScore"`
+	OpponentScore      float64 `json:"opponentScore"`
+	Result             string  `json:"result"` // "W", "L", "T", or "Upcoming"
+	Completed          bool    `json:"completed"`
+	IsPlayoff          bool    `json:"isPlayoff"`
+	MatchupID          string  `json:"matchupId"` // Add matchup ID for linking to schedule detail page
 }
 
 type PlayerResponse struct {
@@ -572,39 +604,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 		return
 	}
 
-	// Get all weekly expected wins data for the year and aggregate by team
-	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, leagueID, yearUint)
-	if err != nil && err.Error() != "record not found" {
-		slog.Error("Failed to fetch weekly expected wins", "error", err)
-	}
-
-	// Create expected wins map for quick lookup - sum up weekly expected wins for each team
-	type TeamExpectedWinsSummary struct {
-		TotalExpectedWins   float64
-		TotalExpectedLosses float64
-		TotalActualWins     int
-		TotalActualLosses   int
-		WeekCount           int
-	}
-
-	expectedWinsMap := make(map[uint]*TeamExpectedWinsSummary)
-	for _, ew := range weeklyExpectedWins {
-		if _, exists := expectedWinsMap[ew.TeamID]; !exists {
-			expectedWinsMap[ew.TeamID] = &TeamExpectedWinsSummary{}
-		}
-
-		summary := expectedWinsMap[ew.TeamID]
-		// Sum the weekly expected wins (not cumulative - use WeeklyExpectedWins field)
-		summary.TotalExpectedWins += ew.WeeklyExpectedWins
-		summary.TotalExpectedLosses += ew.WeeklyExpectedLosses
-		if ew.WeeklyActualWin {
-			summary.TotalActualWins++
-		} else {
-			summary.TotalActualLosses++
-		}
-		summary.WeekCount++
-	}
-
 	// Build standings response
 	var standings []CurrentSeasonStandingResponse
 	for _, team := range allTeams {
@@ -618,12 +617,12 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 			teamID = fmt.Sprintf("%d", *team.TeamID)
 		}
 		standing := CurrentSeasonStandingResponse{
-			TeamID:           team.ID,
-			PlatformTeamID:   teamID,
-			Owner:            team.Owners[0],
-			TeamName:         team.Name,
-			Record:   TeamRecord{Wins: 0, Losses: 0, Ties: 0},
-			Points:   TeamPoints{Scored: 0, Against: 0},
+			TeamID:         team.ID,
+			PlatformTeamID: teamID,
+			Owner:          team.Owners[0],
+			TeamName:       team.Name,
+			Record:         TeamRecord{Wins: 0, Losses: 0, Ties: 0},
+			Points:         TeamPoints{Scored: 0, Against: 0},
 		}
 
 		// Calculate record and points from matchups
@@ -653,14 +652,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 					standing.Record.Ties++
 				}
 			}
-		}
-
-		// Add expected wins data if available (using aggregated weekly data)
-		if summary, exists := expectedWinsMap[team.ID]; exists {
-			standing.ExpectedWins = &summary.TotalExpectedWins
-			standing.ExpectedLosses = &summary.TotalExpectedLosses
-			winLuck := float64(standing.Record.Wins) - summary.TotalExpectedWins
-			standing.WinLuck = &winLuck
 		}
 
 		standings = append(standings, standing)
@@ -693,15 +684,15 @@ type GetCurrentSeasonStandingsResponse struct {
 }
 
 type CurrentSeasonStandingResponse struct {
-	TeamID           uint       `json:"team_id"`
-	PlatformTeamID   string     `json:"platform_team_id"`
-	Owner            string     `json:"owner"`
-	TeamName         string     `json:"team_name"`
-	Record           TeamRecord `json:"record"`
-	Points           TeamPoints `json:"points"`
-	ExpectedWins     *float64   `json:"expected_wins,omitempty"`
-	ExpectedLosses   *float64   `json:"expected_losses,omitempty"`
-	WinLuck          *float64   `json:"win_luck,omitempty"`
+	TeamID         uint       `json:"team_id"`
+	PlatformTeamID string     `json:"platform_team_id"`
+	Owner          string     `json:"owner"`
+	TeamName       string     `json:"team_name"`
+	Record         TeamRecord `json:"record"`
+	Points         TeamPoints `json:"points"`
+	ExpectedWins   *float64   `json:"expected_wins,omitempty"`
+	ExpectedLosses *float64   `json:"expected_losses,omitempty"`
+	WinLuck        *float64   `json:"win_luck,omitempty"`
 }
 
 // CreateTeam creates a new team

@@ -554,8 +554,8 @@ func TestCreatePlayoffMatchup(t *testing.T) {
 	if matchup.Week != 15 {
 		t.Errorf("Expected week 15, got %d", matchup.Week)
 	}
-	if matchup.Year != 2024 {
-		t.Errorf("Expected year 2024, got %d", matchup.Year)
+	if matchup.Season != 2024 {
+		t.Errorf("Expected season 2024, got %d", matchup.Season)
 	}
 	if matchup.LeagueID != 1 {
 		t.Errorf("Expected league ID 1, got %d", matchup.LeagueID)

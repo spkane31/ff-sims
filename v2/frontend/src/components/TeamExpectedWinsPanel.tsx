@@ -1,13 +1,18 @@
 import React from "react";
+import { Matchup } from "../types/models";
 import {
-  WeeklyExpectedWins,
-  SeasonExpectedWins,
-} from "../services/expectedWinsService";
+  calculateCumulativeExpectedWins,
+  calculateActualWins,
+  calculateWinLuck,
+  calculateStrengthOfSchedule,
+  buildTeamRecords,
+  findLuckiestWeek,
+  findUnluckiestWeek,
+} from "../utils/expectedWinsCalculations";
 
 interface TeamExpectedWinsPanelProps {
   teamId: number;
-  progressionData?: WeeklyExpectedWins[];
-  seasonData: SeasonExpectedWins[];
+  matchups: Matchup[];
   isLoading: boolean;
   currentYear: number;
 }
@@ -22,25 +27,10 @@ interface TeamExpectedWinsStats {
 }
 
 function calculateTeamExpectedWinsStats(
-  progressionData: WeeklyExpectedWins[] | undefined,
-  seasonData: SeasonExpectedWins[]
+  matchups: Matchup[],
+  teamId: number
 ): TeamExpectedWinsStats {
-  // Use season data if available, otherwise fall back to progression data
-  const seasonStats = seasonData.length > 0 ? seasonData[0] : null;
-
-  if (seasonStats) {
-    // Use season data when available
-    return {
-      currentExpectedWins: seasonStats.expected_wins,
-      currentActualWins: seasonStats.actual_wins,
-      winLuck: seasonStats.win_luck,
-      strengthOfSchedule: seasonStats.strength_of_schedule,
-      luckiestWeek: null, // No weekly breakdown from season data
-      unluckiestWeek: null,
-    };
-  }
-
-  if (!progressionData || progressionData.length === 0) {
+  if (!matchups || matchups.length === 0) {
     return {
       currentExpectedWins: 0,
       currentActualWins: 0,
@@ -51,40 +41,32 @@ function calculateTeamExpectedWinsStats(
     };
   }
 
-  // Get the most recent week's data for current stats
-  const latestWeek = progressionData[progressionData.length - 1];
+  // Calculate stats using new utilities
+  const expectedWins = calculateCumulativeExpectedWins(matchups, teamId);
+  const actualWins = calculateActualWins(matchups, teamId);
+  const winLuck = calculateWinLuck(matchups, teamId);
 
-  // Find luckiest and unluckiest weeks (highest and lowest weekly win probability that resulted in opposite outcome)
-  let luckiestWeek: { week: number; luck: number } | null = null;
-  let unluckiestWeek: { week: number; luck: number } | null = null;
+  // Build team records for SOS calculation
+  const teamRecords = buildTeamRecords(matchups);
+  const strengthOfSchedule = calculateStrengthOfSchedule(matchups, teamId, teamRecords);
 
-  progressionData.forEach((weekData) => {
-    // Calculate luck as the difference between actual result and expected probability
-    const actualResult = weekData.weekly_actual_win ? 1 : 0;
-    const weekLuck = actualResult - weekData.weekly_win_probability;
-
-    if (!luckiestWeek || weekLuck > luckiestWeek.luck) {
-      luckiestWeek = { week: weekData.week, luck: weekLuck };
-    }
-
-    if (!unluckiestWeek || weekLuck < unluckiestWeek.luck) {
-      unluckiestWeek = { week: weekData.week, luck: weekLuck };
-    }
-  });
+  // Find luckiest and unluckiest weeks
+  const luckiestWeek = findLuckiestWeek(matchups, teamId);
+  const unluckiestWeek = findUnluckiestWeek(matchups, teamId);
 
   return {
-    currentExpectedWins: latestWeek.expected_wins,
-    currentActualWins: latestWeek.actual_wins,
-    winLuck: latestWeek.win_luck,
-    strengthOfSchedule: latestWeek.strength_of_schedule,
+    currentExpectedWins: expectedWins,
+    currentActualWins: actualWins,
+    winLuck,
+    strengthOfSchedule,
     luckiestWeek,
     unluckiestWeek,
   };
 }
 
 export default function TeamExpectedWinsPanel({
-  progressionData,
-  seasonData,
+  teamId,
+  matchups,
   isLoading,
   currentYear,
 }: TeamExpectedWinsPanelProps) {
@@ -99,12 +81,9 @@ export default function TeamExpectedWinsPanel({
     );
   }
 
-  const stats = calculateTeamExpectedWinsStats(progressionData, seasonData);
+  const stats = calculateTeamExpectedWinsStats(matchups, teamId);
 
-  if (
-    seasonData.length === 0 &&
-    (!progressionData || progressionData.length === 0)
-  ) {
+  if (!matchups || matchups.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">

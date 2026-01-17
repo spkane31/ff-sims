@@ -11,13 +11,13 @@ interface UseTeamsReturn {
 /**
  * Hook for fetching teams data
  */
-export function useTeams(leagueId?: string): UseTeamsReturn {
+export function useTeams(leagueId?: string, season?: number): UseTeamsReturn {
   const [teams, setTeams] = useState<Team[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeams = useCallback(async () => {
-    if (!leagueId) {
+    if (!leagueId || !season) {
       setIsLoading(false);
       return;
     }
@@ -25,7 +25,7 @@ export function useTeams(leagueId?: string): UseTeamsReturn {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await teamsService.getAllTeams(leagueId);
+      const data = await teamsService.getAllTeams(leagueId, season);
       setTeams(data.teams);
     } catch (err) {
       setError(
@@ -36,7 +36,7 @@ export function useTeams(leagueId?: string): UseTeamsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [leagueId]);
+  }, [leagueId, season]);
 
   useEffect(() => {
     fetchTeams();
@@ -48,13 +48,13 @@ export function useTeams(leagueId?: string): UseTeamsReturn {
 /**
  * Hook for fetching a single team by ID
  */
-export function useTeam(leagueId: string | undefined, teamId: number) {
+export function useTeam(leagueId: string | undefined, teamId: number, season?: number) {
   const [team, setTeam] = useState<Team | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeam = useCallback(async () => {
-    if (!leagueId || !teamId) {
+    if (!leagueId || !teamId || !season) {
       setIsLoading(false);
       return;
     }
@@ -62,7 +62,7 @@ export function useTeam(leagueId: string | undefined, teamId: number) {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await teamsService.getTeamById(leagueId, teamId);
+      const data = await teamsService.getTeamById(leagueId, teamId, season);
       setTeam(data);
     } catch (err) {
       setError(
@@ -73,7 +73,7 @@ export function useTeam(leagueId: string | undefined, teamId: number) {
     } finally {
       setIsLoading(false);
     }
-  }, [leagueId, teamId]);
+  }, [leagueId, teamId, season]);
 
   useEffect(() => {
     if (leagueId && teamId) {

@@ -1,16 +1,21 @@
 import { useState } from "react";
 import Layout from "../../../../components/Layout";
 import { useSchedule } from "../../../../hooks/useSchedule";
-import { useStrengthOfSchedule, TeamStrength } from "../../../../hooks/useStrengthOfSchedule";
+import {
+  useStrengthOfSchedule,
+  TeamStrength,
+} from "../../../../hooks/useStrengthOfSchedule";
+import { useLeague } from "../../../../hooks/useLeague";
 import { Matchup } from "@/types/models";
 import Link from "next/link";
 
 export default function Schedule() {
+  const { leagueId } = useLeague();
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedGameType, setSelectedGameType] = useState<string>("all");
   const [showFutureMatchups, setShowFutureMatchups] = useState<boolean>(false);
-  const { schedule, isLoading, error } = useSchedule({
+  const { schedule, isLoading, error } = useSchedule(leagueId, {
     gameType: selectedGameType,
   });
 
@@ -88,10 +93,14 @@ export default function Schedule() {
   });
 
   // Determine the target year for calculations
-  const targetYear = selectedYear !== "all" ? parseInt(selectedYear) : undefined;
+  const targetYear =
+    selectedYear !== "all" ? parseInt(selectedYear) : undefined;
 
   // Calculate strength of schedule using custom hook
-  const { overallStrength, remainingStrength } = useStrengthOfSchedule(scheduleData, targetYear);
+  const { overallStrength, remainingStrength } = useStrengthOfSchedule(
+    scheduleData,
+    targetYear
+  );
 
   // Helper function to get color based on difficulty
   const getDifficultyColor = (
@@ -130,7 +139,8 @@ export default function Schedule() {
               </div>
             ) : overallStrength.length === 0 ? (
               <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                No strength of schedule data available for the selected year. Make sure future matchups are loaded.
+                No strength of schedule data available for the selected year.
+                Make sure future matchups are loaded.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -148,7 +158,9 @@ export default function Schedule() {
                           <span className="w-40 text-sm truncate">{team}</span>
                           <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
                             <div
-                              className={`h-full ${getDifficultyColor(difficulty)}`}
+                              className={`h-full ${getDifficultyColor(
+                                difficulty
+                              )}`}
                               style={{ width: `${strengthPercentage}%` }}
                             ></div>
                           </div>
@@ -175,7 +187,9 @@ export default function Schedule() {
                           <span className="w-40 text-sm truncate">{team}</span>
                           <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
                             <div
-                              className={`h-full ${getDifficultyColor(difficulty)}`}
+                              className={`h-full ${getDifficultyColor(
+                                difficulty
+                              )}`}
                               style={{ width: `${strengthPercentage}%` }}
                             ></div>
                           </div>

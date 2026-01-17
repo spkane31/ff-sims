@@ -62,8 +62,8 @@ function findBetterLineupDecisions(players: Player[]) {
 
 export default function MatchupDetail() {
   const router = useRouter();
-  const { id } = router.query;
-  const { matchup, isLoading, error } = useMatchupDetail(id as string);
+  const { leagueId, id } = router.query;
+  const { matchup, isLoading, error } = useMatchupDetail(leagueId as string, id as string);
 
   if (isLoading || matchup === null) {
     return (
@@ -98,8 +98,7 @@ export default function MatchupDetail() {
   const matchupData = matchup;
 
   const { data } = matchupData;
-  const { homeTeam, awayTeam, year, week, homeTeamESPNID, awayTeamESPNID } =
-    data;
+  const { homeTeam, awayTeam, year, week } = data;
 
   // Calculate winner
   const homeWon = homeTeam.score > awayTeam.score;
@@ -145,7 +144,7 @@ export default function MatchupDetail() {
             >
               <div className="text-xl font-semibold mb-1">
                 <Link
-                  href={`/teams/${homeTeamESPNID}`}
+                  href={`/teams/${homeTeam.internalId}`}
                   className="hover:text-blue-600 transition-colors"
                 >
                   {homeTeam.name}
@@ -207,7 +206,7 @@ export default function MatchupDetail() {
             >
               <div className="text-xl font-semibold mb-1">
                 <Link
-                  href={`/teams/${awayTeamESPNID}`}
+                  href={`/teams/${awayTeam.internalId}`}
                   className="hover:text-blue-600 transition-colors"
                 >
                   {awayTeam.name}

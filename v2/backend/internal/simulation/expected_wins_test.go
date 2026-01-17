@@ -12,7 +12,6 @@ func createTestMatchup(homeTeamID, awayTeamID uint, homeScore, awayScore float64
 	return &models.Matchup{
 		ID:                 1,
 		Week:               1,
-		Year:               2024,
 		Season:             2024,
 		HomeTeamID:         homeTeamID,
 		AwayTeamID:         awayTeamID,
@@ -169,9 +168,14 @@ func TestCalculateExpectedWins_SingleGame(t *testing.T) {
 	os.Setenv("EXPECTED_WINS_SIMULATIONS", "100")
 	defer os.Unsetenv("EXPECTED_WINS_SIMULATIONS")
 
-	matchups := []*models.Matchup{
-		createTestMatchup(1, 2, 100.0, 90.0, true), // Team 1 wins by 10
-	}
+	// Need at least 4 teams for schedule generator to work
+	// Create 2 matchups in the same week so all 4 teams have scores
+	matchup1 := createTestMatchup(1, 2, 100.0, 90.0, true) // Team 1 wins by 10
+	matchup2 := createTestMatchup(3, 4, 95.0, 85.0, true)  // Team 3 wins by 10
+	matchup1.Week = 1
+	matchup2.Week = 1
+
+	matchups := []*models.Matchup{matchup1, matchup2}
 
 	results, err := CalculateExpectedWins(matchups)
 
@@ -179,11 +183,11 @@ func TestCalculateExpectedWins_SingleGame(t *testing.T) {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 
-	if len(results) != 2 {
-		t.Errorf("Expected 2 results, got %d", len(results))
+	if len(results) != 4 {
+		t.Errorf("Expected 4 results, got %d", len(results))
 	}
 
-	// Find results for each team
+	// Find results for teams 1 and 2
 	var team1Result, team2Result *ExpectedWinsResult
 	for i := range results {
 		if results[i].TeamID == 1 {
@@ -194,20 +198,18 @@ func TestCalculateExpectedWins_SingleGame(t *testing.T) {
 	}
 
 	if team1Result == nil || team2Result == nil {
-		t.Fatal("Could not find results for both teams")
+		t.Fatal("Could not find results for teams 1 and 2")
 	}
 
-	// With simulation-based approach and only 1 week, team 1 should have higher expected wins
-	// since they consistently score 100 vs team 2's 90 in random matchups
-	if team1Result.ExpectedWins <= 0.5 {
-		t.Errorf("Team 1 should have >0.5 expected wins, got %.3f", team1Result.ExpectedWins)
+	// With schedule-based simulations, team 1 (scores 100) should have higher expected wins
+	// than team 2 (scores 90) when paired against random opponents
+	// Team 1's expected wins should be higher because it's the highest scorer
+	if team1Result.ExpectedWins <= team2Result.ExpectedWins {
+		t.Errorf("Team 1 (higher scorer) should have more expected wins than Team 2, got Team1: %.3f vs Team2: %.3f",
+			team1Result.ExpectedWins, team2Result.ExpectedWins)
 	}
 
-	if team2Result.ExpectedWins >= 0.5 {
-		t.Errorf("Team 2 should have <0.5 expected wins, got %.3f", team2Result.ExpectedWins)
-	}
-
-	// Check actual wins/losses
+	// Check actual wins/losses from the real matchup
 	if team1Result.ActualWins != 1 {
 		t.Errorf("Team 1 should have 1 actual win, got %d", team1Result.ActualWins)
 	}
@@ -365,6 +367,84 @@ func TestCalculateWeeklyExpectedWins_SingleWeek(t *testing.T) {
 
 // Test edge cases
 // Removed logistic probability edge case tests as we now use simulation-based approach
+
+// TestCalculateExpectedWins_RejectsMultipleSeasons verifies that mixing seasons causes an error
+// This prevents the bug where expected wins get inflated to 58+ by combining 2023 and 2025 data
+func TestCalculateExpectedWins_RejectsMultipleSeasons(t *testing.T) {
+	// Create matchups from 2023
+	matchup2023 := createTestMatchup(1, 2, 100.0, 90.0, true)
+	matchup2023.Season = 2023
+	matchup2023.Week = 1
+
+	// Create matchups from 2025
+	matchup2025 := createTestMatchup(1, 2, 110.0, 95.0, true)
+	matchup2025.Season = 2025
+	matchup2025.Week = 1
+
+	// Mix both seasons together
+	mixedMatchups := []*models.Matchup{matchup2023, matchup2025}
+
+	// This should return an error
+	results, err := CalculateExpectedWins(mixedMatchups)
+
+	if err == nil {
+		t.Error("Expected error when mixing seasons, got none")
+	}
+
+	if results != nil {
+		t.Errorf("Expected nil results when error occurs, got %v", results)
+	}
+
+	// Verify error message mentions both seasons
+	if err != nil {
+		errMsg := err.Error()
+		if !contains(errMsg, "2023") || !contains(errMsg, "2025") {
+			t.Errorf("Error message should mention both seasons (2023 and 2025), got: %s", errMsg)
+		}
+	}
+}
+
+// TestCalculateExpectedWins_SingleSeasonWorks verifies that single season data works correctly
+func TestCalculateExpectedWins_SingleSeasonWorks(t *testing.T) {
+	os.Setenv("EXPECTED_WINS_SIMULATIONS", "100")
+	defer os.Unsetenv("EXPECTED_WINS_SIMULATIONS")
+
+	// Create matchups all from 2023
+	matchup1 := createTestMatchup(1, 2, 100.0, 90.0, true)
+	matchup1.Season = 2023
+	matchup1.Week = 1
+
+	matchup2 := createTestMatchup(3, 4, 105.0, 95.0, true)
+	matchup2.Season = 2023
+	matchup2.Week = 1
+
+	matchups := []*models.Matchup{matchup1, matchup2}
+
+	// This should work without error
+	results, err := CalculateExpectedWins(matchups)
+
+	if err != nil {
+		t.Errorf("Expected no error for single season, got: %v", err)
+	}
+
+	if len(results) != 4 {
+		t.Errorf("Expected 4 results, got %d", len(results))
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
 
 // Benchmark tests
 func BenchmarkCalculateExpectedWins(b *testing.B) {

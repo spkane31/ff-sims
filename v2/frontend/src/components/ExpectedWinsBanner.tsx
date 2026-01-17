@@ -1,107 +1,27 @@
-import React from 'react';
-import { SeasonExpectedWins, WeeklyExpectedWins } from '../services/expectedWinsService';
+import React from "react";
+import { Matchup } from "../types/models";
+import { calculateLeagueStats } from "../utils/expectedWinsCalculations";
+
+interface Team {
+  id: number;
+  name: string;
+  ownerName: string;
+}
 
 interface ExpectedWinsBannerProps {
-  seasonData: SeasonExpectedWins[];
-  weeklyData?: WeeklyExpectedWins[];
+  matchups: Matchup[];
+  teams: Team[];
   isLoading: boolean;
   currentYear: number;
 }
 
-interface ExpectedWinsStats {
-  averageExpectedWins: number;
-  averageWinLuck: number;
-  luckiestTeam: { name: string; luck: number } | null;
-  unluckiestTeam: { name: string; luck: number } | null;
-  totalTeams: number;
-}
-
-function calculateExpectedWinsStats(seasonData: SeasonExpectedWins[], weeklyData?: WeeklyExpectedWins[]): ExpectedWinsStats {
-  // If we have season data, use it directly
-  if (seasonData && seasonData.length > 0) {
-    const totalExpectedWins = seasonData.reduce((sum, team) => sum + team.expected_wins, 0);
-    const totalWinLuck = seasonData.reduce((sum, team) => sum + team.win_luck, 0);
-
-    let luckiestTeam = seasonData[0];
-    let unluckiestTeam = seasonData[0];
-
-    seasonData.forEach((team) => {
-      if (team.win_luck > luckiestTeam.win_luck) {
-        luckiestTeam = team;
-      }
-      if (team.win_luck < unluckiestTeam.win_luck) {
-        unluckiestTeam = team;
-      }
-    });
-
-    return {
-      averageExpectedWins: totalExpectedWins / seasonData.length,
-      averageWinLuck: totalWinLuck / seasonData.length,
-      luckiestTeam: luckiestTeam.team ? { 
-        name: luckiestTeam.team.owner_name, 
-        luck: luckiestTeam.win_luck 
-      } : null,
-      unluckiestTeam: unluckiestTeam.team ? { 
-        name: unluckiestTeam.team.owner_name, 
-        luck: unluckiestTeam.win_luck 
-      } : null,
-      totalTeams: seasonData.length,
-    };
-  }
-
-  // If no season data but we have weekly data, derive stats from latest week per team
-  if (weeklyData && weeklyData.length > 0) {
-    // Get the latest week data for each team
-    const latestWeekPerTeam = new Map<number, WeeklyExpectedWins>();
-    weeklyData.forEach((week) => {
-      const existing = latestWeekPerTeam.get(week.team_id);
-      if (!existing || week.week > existing.week) {
-        latestWeekPerTeam.set(week.team_id, week);
-      }
-    });
-
-    const latestWeekData = Array.from(latestWeekPerTeam.values());
-    const totalExpectedWins = latestWeekData.reduce((sum, team) => sum + team.expected_wins, 0);
-    const totalWinLuck = latestWeekData.reduce((sum, team) => sum + team.win_luck, 0);
-
-    let luckiestTeam = latestWeekData[0];
-    let unluckiestTeam = latestWeekData[0];
-
-    latestWeekData.forEach((team) => {
-      if (team.win_luck > luckiestTeam.win_luck) {
-        luckiestTeam = team;
-      }
-      if (team.win_luck < unluckiestTeam.win_luck) {
-        unluckiestTeam = team;
-      }
-    });
-
-    return {
-      averageExpectedWins: totalExpectedWins / latestWeekData.length,
-      averageWinLuck: totalWinLuck / latestWeekData.length,
-      luckiestTeam: luckiestTeam.team ? { 
-        name: luckiestTeam.team.owner_name, 
-        luck: luckiestTeam.win_luck 
-      } : null,
-      unluckiestTeam: unluckiestTeam.team ? { 
-        name: unluckiestTeam.team.owner_name, 
-        luck: unluckiestTeam.win_luck 
-      } : null,
-      totalTeams: latestWeekData.length,
-    };
-  }
-
-  // No data available
-  return {
-    averageExpectedWins: 0,
-    averageWinLuck: 0,
-    luckiestTeam: null,
-    unluckiestTeam: null,
-    totalTeams: 0,
-  };
-}
-
-export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, currentYear }: ExpectedWinsBannerProps) {
+// TODO seankane: Is this used anywhere? If not, delete it.
+export default function ExpectedWinsBanner({
+  matchups,
+  teams,
+  isLoading,
+  currentYear,
+}: ExpectedWinsBannerProps) {
   if (isLoading) {
     return (
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-6 rounded-lg shadow-md mb-8">
@@ -113,9 +33,10 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
     );
   }
 
-  const stats = calculateExpectedWinsStats(seasonData, weeklyData);
+  const teamIds = teams.map((t) => t.id);
+  const stats = calculateLeagueStats(matchups, teamIds);
 
-  if (stats.totalTeams === 0) {
+  if (teams.length === 0) {
     return (
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-6 rounded-lg shadow-md mb-8">
         <div className="text-center">
@@ -130,6 +51,14 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
     );
   }
 
+  // Find team names for luckiest/unluckiest
+  const luckiestTeam = stats.luckiestTeam
+    ? teams.find((t) => t.id === stats.luckiestTeam!.teamId)
+    : null;
+  const unluckiestTeam = stats.unluckiestTeam
+    ? teams.find((t) => t.id === stats.unluckiestTeam!.teamId)
+    : null;
+
   return (
     <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-6 rounded-lg shadow-md mb-8">
       <div className="text-center mb-6">
@@ -137,7 +66,8 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
           Expected Wins Analysis - {currentYear}
         </h2>
         <p className="text-gray-600 dark:text-gray-400">
-          How many wins each team &ldquo;should&rdquo; have based on their scoring performance
+          How many wins each team &ldquo;should&rdquo; have based on their
+          scoring performance
         </p>
       </div>
 
@@ -152,21 +82,24 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
         </div>
 
         <div className="text-center">
-          <div className={`text-3xl font-bold ${
-            stats.averageWinLuck > 0 
-              ? 'text-green-600 dark:text-green-400' 
-              : stats.averageWinLuck < 0 
-              ? 'text-red-600 dark:text-red-400' 
-              : 'text-gray-600 dark:text-gray-400'
-          }`}>
-            {stats.averageWinLuck > 0 ? '+' : ''}{stats.averageWinLuck.toFixed(1)}
+          <div
+            className={`text-3xl font-bold ${
+              stats.averageWinLuck > 0
+                ? "text-green-600 dark:text-green-400"
+                : stats.averageWinLuck < 0
+                ? "text-red-600 dark:text-red-400"
+                : "text-gray-600 dark:text-gray-400"
+            }`}
+          >
+            {stats.averageWinLuck > 0 ? "+" : ""}
+            {stats.averageWinLuck.toFixed(1)}
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
             Average Win Luck
           </div>
         </div>
 
-        {stats.luckiestTeam && (
+        {luckiestTeam && stats.luckiestTeam && (
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               +{stats.luckiestTeam.luck.toFixed(1)}
@@ -175,12 +108,12 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
               Luckiest Team
             </div>
             <div className="text-xs font-medium text-gray-700 dark:text-gray-300">
-              {stats.luckiestTeam.name}
+              {luckiestTeam.ownerName || luckiestTeam.name}
             </div>
           </div>
         )}
 
-        {stats.unluckiestTeam && (
+        {unluckiestTeam && stats.unluckiestTeam && (
           <div className="text-center">
             <div className="text-2xl font-bold text-red-600 dark:text-red-400">
               {stats.unluckiestTeam.luck.toFixed(1)}
@@ -189,7 +122,7 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
               Unluckiest Team
             </div>
             <div className="text-xs font-medium text-gray-700 dark:text-gray-300">
-              {stats.unluckiestTeam.name}
+              {unluckiestTeam.ownerName || unluckiestTeam.name}
             </div>
           </div>
         )}
@@ -197,7 +130,8 @@ export default function ExpectedWinsBanner({ seasonData, weeklyData, isLoading, 
 
       <div className="mt-6 text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Win Luck = Actual Wins - Expected Wins. Positive values indicate teams that have been lucky with their schedule.
+          Win Luck = Actual Wins - Expected Wins. Positive values indicate teams
+          that have been lucky with their schedule.
         </p>
       </div>
     </div>

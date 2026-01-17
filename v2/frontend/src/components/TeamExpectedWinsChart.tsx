@@ -1,8 +1,11 @@
 import React, { useMemo } from "react";
-import { WeeklyExpectedWins } from "../services/expectedWinsService";
+import { Matchup } from "../types/models";
+import { calculateWeeklyProgression } from "../utils/expectedWinsCalculations";
 
 interface TeamExpectedWinsChartProps {
-  progressionData: WeeklyExpectedWins[];
+  teamId: number;
+  matchups: Matchup[];
+  teamName?: string;
   isLoading: boolean;
   currentYear: number;
 }
@@ -18,29 +21,32 @@ interface ChartDataPoint {
 }
 
 function prepareTeamChartData(
-  progressionData: WeeklyExpectedWins[]
+  matchups: Matchup[],
+  teamId: number
 ): ChartDataPoint[] {
-  return progressionData
-    .sort((a, b) => a.week - b.week)
-    .map((week) => ({
-      week: week.week,
-      expectedWins: week.expected_wins,
-      actualWins: week.actual_wins,
-      winLuck: week.win_luck,
-      weeklyWinProbability: week.weekly_win_probability,
-      weeklyActualWin: week.weekly_actual_win,
-      pointDifferential: week.point_differential,
-    }));
+  const progression = calculateWeeklyProgression(matchups, teamId);
+
+  return progression.map((p) => ({
+    week: p.week,
+    expectedWins: p.expectedWins,
+    actualWins: p.actualWins,
+    winLuck: p.actualWins - p.expectedWins,
+    weeklyWinProbability: p.weeklyExpectedWin,
+    weeklyActualWin: p.weeklyActualWin,
+    pointDifferential: p.pointDifferential || 0,
+  }));
 }
 
 export default function TeamExpectedWinsChart({
-  progressionData,
+  teamId,
+  matchups,
+  teamName = "Team",
   isLoading,
   currentYear,
 }: TeamExpectedWinsChartProps) {
   const chartData = useMemo(
-    () => prepareTeamChartData(progressionData),
-    [progressionData]
+    () => prepareTeamChartData(matchups, teamId),
+    [matchups, teamId]
   );
   const maxWeek = useMemo(() => {
     return chartData.reduce((max, week) => Math.max(max, week.week), 0);
@@ -52,11 +58,6 @@ export default function TeamExpectedWinsChart({
       0
     );
   }, [chartData]);
-
-  const teamName =
-    progressionData.length > 0
-      ? progressionData[0].team?.name || "Team"
-      : "Team";
 
   if (isLoading) {
     return (

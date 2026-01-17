@@ -2,14 +2,21 @@ import { useEffect, useState, useMemo } from "react";
 import Layout from "../../../components/Layout";
 import Link from "next/link";
 import { teamsService, Team } from "../../../services/teamsService";
-import { expectedWinsService, CurrentSeasonStanding } from "../../../services/expectedWinsService";
+import { scheduleService } from "../../../services/scheduleService";
 import { useSchedule } from "../../../hooks/useSchedule";
 import { useStrengthOfSchedule } from "../../../hooks/useStrengthOfSchedule";
 import { useLeague } from "../../../hooks/useLeague";
 import { Matchup } from "@/types/models";
 import InteractiveSimulation from "../../../components/InteractiveSimulation";
 import PivotalGames from "../../../components/PivotalGames";
-import { Schedule as SimSchedule, Matchup as SimMatchup } from "../../../types/simulation";
+import {
+  Schedule as SimSchedule,
+  Matchup as SimMatchup,
+} from "../../../types/simulation";
+import {
+  calculateCumulativeExpectedWins,
+  calculateWinLuck,
+} from "../../../utils/expectedWinsCalculations";
 
 interface PivotalGame {
   week: number;
@@ -52,12 +59,13 @@ export default function Home() {
   const { leagueId } = useLeague();
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
-  const [currentStandings, setCurrentStandings] = useState<CurrentSeasonStanding[]>([]);
-  const [standingsLoading, setStandingsLoading] = useState(true);
   const [sortField, setSortField] = useState<SortField>("regularSeasonRecord");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const { schedule, isLoading: scheduleLoading } = useSchedule(leagueId);
   const [pivotalGames, setPivotalGames] = useState<PivotalGame[]>([]);
+  const [currentSeasonMatchups, setCurrentSeasonMatchups] = useState<Matchup[]>(
+    []
+  );
 
   useEffect(() => {
     if (!leagueId) return;
@@ -66,34 +74,69 @@ export default function Home() {
       try {
         setTeamsLoading(true);
 
-        // Fetch teams and expected wins data in parallel
-        const [teamsResponse, expectedWinsResponse] = await Promise.all([
-          teamsService.getAllTeams(leagueId!),
-          expectedWinsService
-            .getAllTimeExpectedWins(leagueId!)
-            .catch(() => ({ data: [] })),
-        ]);
+        // Fetch teams data for 2025 season
+        const teamsResponse = await teamsService.getAllTeams(leagueId!, 2025);
 
-        // Merge expected wins data with teams data
-        const teamsWithExpectedWins = teamsResponse.teams.map((team) => {
-          const expectedWinsData = expectedWinsResponse.data.find(
-            (ew) => ew.team_id.toString() === team.id || ew.owner === team.owner
+        // Fetch 2025 season matchups for expected wins calculation
+        let matchupsForXWins: Matchup[] = [];
+        try {
+          const matchupsResponse = await scheduleService.getFullSchedule(
+            leagueId!,
+            "2025"
           );
+          if (matchupsResponse?.data?.matchups) {
+            matchupsForXWins = matchupsResponse.data.matchups;
+            setCurrentSeasonMatchups(matchupsForXWins);
+          }
+        } catch (matchupError) {
+          console.error(
+            "Error fetching matchups for expected wins:",
+            matchupError
+          );
+        }
+
+        // Note: All-time expected wins calculation requires fetching matchups for all seasons
+        // For now, we'll calculate current season only and add it to teams
+        // To add all-time: fetch matchups for each season and use calculateAllTimeExpectedWins()
+
+        // Enrich teams with current season expected wins
+        const enrichedTeams = teamsResponse.teams.map((team) => {
+          // Calculate current season expected wins if we have matchup data
+          let expectedWins = undefined;
+          try {
+            if (matchupsForXWins.length > 0) {
+              const teamIdNum = parseInt(team.id, 10);
+              const xWins = calculateCumulativeExpectedWins(
+                matchupsForXWins,
+                teamIdNum
+              );
+              const actualWins = team.record.wins;
+              const totalGames =
+                team.record.wins + team.record.losses + team.record.ties;
+              const expectedLosses = totalGames - xWins;
+              const winLuck = actualWins - xWins;
+
+              expectedWins = {
+                expectedWins: xWins,
+                expectedLosses: expectedLosses,
+                winLuck: winLuck,
+                seasonsPlayed: 1, // Current season only
+              };
+            }
+          } catch (error) {
+            console.error(
+              `Error calculating expected wins for team ${team.id}:`,
+              error
+            );
+          }
 
           return {
             ...team,
-            expectedWins: expectedWinsData
-              ? {
-                  expectedWins: expectedWinsData.total_expected_wins,
-                  expectedLosses: expectedWinsData.total_expected_losses,
-                  winLuck: expectedWinsData.total_win_luck,
-                  seasonsPlayed: expectedWinsData.seasons_played,
-                }
-              : undefined,
+            expectedWins,
           };
         });
 
-        setTeams(teamsWithExpectedWins);
+        setTeams(enrichedTeams);
       } catch (error) {
         console.error("Error fetching teams data:", error);
       } finally {
@@ -104,23 +147,21 @@ export default function Home() {
     fetchTeamsData();
   }, [leagueId]);
 
-  useEffect(() => {
-    if (!leagueId) return;
-
-    async function fetchCurrentStandings() {
-      try {
-        setStandingsLoading(true);
-        const standingsResponse = await expectedWinsService.getCurrentSeasonStandings(leagueId!, 2025);
-        setCurrentStandings(standingsResponse.standings);
-      } catch (error) {
-        console.error("Error fetching current standings:", error);
-      } finally {
-        setStandingsLoading(false);
-      }
+  // Helper function to get expected wins for a team
+  const getTeamExpectedWinsData = (teamId: string) => {
+    if (currentSeasonMatchups.length === 0) {
+      return { expectedWins: 0, luck: 0 };
     }
 
-    fetchCurrentStandings();
-  }, [leagueId]);
+    const teamIdNum = parseInt(teamId, 10);
+    const expectedWins = calculateCumulativeExpectedWins(
+      currentSeasonMatchups,
+      teamIdNum
+    );
+    const luck = calculateWinLuck(currentSeasonMatchups, teamIdNum);
+
+    return { expectedWins, luck };
+  };
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -131,80 +172,78 @@ export default function Home() {
     }
   };
 
-  const sortedTeams = [...teams]
-    .filter((team) => team.espnId !== "2" && team.espnId !== "8")
-    .sort((a, b) => {
-      let fieldA: string | number;
-      let fieldB: string | number;
+  const sortedTeams = [...teams].sort((a, b) => {
+    let fieldA: string | number;
+    let fieldB: string | number;
 
-      switch (sortField) {
-        case "owner":
-          fieldA = a.owner.toLowerCase();
-          fieldB = b.owner.toLowerCase();
-          break;
-        case "regularSeasonRecord":
-          // Sort by wins, then by win percentage
-          fieldA = a.record.wins;
-          fieldB = b.record.wins;
-          if (fieldA === fieldB) {
-            // If wins are equal, sort by win percentage
-            const totalGamesA = a.record.wins + a.record.losses + a.record.ties;
-            const totalGamesB = b.record.wins + b.record.losses + b.record.ties;
-            const winPctA = totalGamesA > 0 ? a.record.wins / totalGamesA : 0;
-            const winPctB = totalGamesB > 0 ? b.record.wins / totalGamesB : 0;
-            fieldA = winPctA;
-            fieldB = winPctB;
-          }
-          break;
-        case "playoffRecord":
-          // Sort by playoff wins, then by playoff win percentage
-          fieldA = a.playoffRecord.wins;
-          fieldB = b.playoffRecord.wins;
-          if (fieldA === fieldB) {
-            const totalGamesA =
-              a.playoffRecord.wins +
-              a.playoffRecord.losses +
-              a.playoffRecord.ties;
-            const totalGamesB =
-              b.playoffRecord.wins +
-              b.playoffRecord.losses +
-              b.playoffRecord.ties;
-            const winPctA =
-              totalGamesA > 0 ? a.playoffRecord.wins / totalGamesA : 0;
-            const winPctB =
-              totalGamesB > 0 ? b.playoffRecord.wins / totalGamesB : 0;
-            fieldA = winPctA;
-            fieldB = winPctB;
-          }
-          break;
-        case "pointsFor":
-          fieldA = a.points.scored;
-          fieldB = b.points.scored;
-          break;
-        case "pointsAgainst":
-          fieldA = a.points.against;
-          fieldB = b.points.against;
-          break;
-        case "expectedRecord":
-          // Sort by expected wins
-          fieldA = a.expectedWins?.expectedWins ?? 0;
-          fieldB = b.expectedWins?.expectedWins ?? 0;
-          break;
-        case "luck":
-          // Use pre-calculated luck from backend
-          fieldA = a.expectedWins?.winLuck ?? 0;
-          fieldB = b.expectedWins?.winLuck ?? 0;
-          break;
-        default:
-          fieldA = a.owner.toLowerCase();
-          fieldB = b.owner.toLowerCase();
-      }
+    switch (sortField) {
+      case "owner":
+        fieldA = a.owner.toLowerCase();
+        fieldB = b.owner.toLowerCase();
+        break;
+      case "regularSeasonRecord":
+        // Sort by wins, then by win percentage
+        fieldA = a.record.wins;
+        fieldB = b.record.wins;
+        if (fieldA === fieldB) {
+          // If wins are equal, sort by win percentage
+          const totalGamesA = a.record.wins + a.record.losses + a.record.ties;
+          const totalGamesB = b.record.wins + b.record.losses + b.record.ties;
+          const winPctA = totalGamesA > 0 ? a.record.wins / totalGamesA : 0;
+          const winPctB = totalGamesB > 0 ? b.record.wins / totalGamesB : 0;
+          fieldA = winPctA;
+          fieldB = winPctB;
+        }
+        break;
+      case "playoffRecord":
+        // Sort by playoff wins, then by playoff win percentage
+        fieldA = a.playoffRecord.wins;
+        fieldB = b.playoffRecord.wins;
+        if (fieldA === fieldB) {
+          const totalGamesA =
+            a.playoffRecord.wins +
+            a.playoffRecord.losses +
+            a.playoffRecord.ties;
+          const totalGamesB =
+            b.playoffRecord.wins +
+            b.playoffRecord.losses +
+            b.playoffRecord.ties;
+          const winPctA =
+            totalGamesA > 0 ? a.playoffRecord.wins / totalGamesA : 0;
+          const winPctB =
+            totalGamesB > 0 ? b.playoffRecord.wins / totalGamesB : 0;
+          fieldA = winPctA;
+          fieldB = winPctB;
+        }
+        break;
+      case "pointsFor":
+        fieldA = a.points.scored;
+        fieldB = b.points.scored;
+        break;
+      case "pointsAgainst":
+        fieldA = a.points.against;
+        fieldB = b.points.against;
+        break;
+      case "expectedRecord":
+        // Sort by expected wins
+        fieldA = a.expectedWins?.expectedWins ?? 0;
+        fieldB = b.expectedWins?.expectedWins ?? 0;
+        break;
+      case "luck":
+        // Use pre-calculated luck from backend
+        fieldA = a.expectedWins?.winLuck ?? 0;
+        fieldB = b.expectedWins?.winLuck ?? 0;
+        break;
+      default:
+        fieldA = a.owner.toLowerCase();
+        fieldB = b.owner.toLowerCase();
+    }
 
-      if (fieldA === fieldB) return 0;
+    if (fieldA === fieldB) return 0;
 
-      const result = fieldA > fieldB ? 1 : -1;
-      return sortDirection === "asc" ? result : -result;
-    });
+    const result = fieldA > fieldB ? 1 : -1;
+    return sortDirection === "asc" ? result : -result;
+  });
 
   const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null;
@@ -222,32 +261,28 @@ export default function Home() {
       return { winners: [], losers: [] };
     }
 
-    const scheduleData: Matchup[] = schedule.data.matchups
-      .flat()
-      .map((game) => ({
-        leagueId: 1,
-        id: game.id,
-        createdAt: "2023-10-01T00:00:00Z",
-        updatedAt: "2023-10-01T00:00:00Z",
-        season: game.year,
-        year: game.year,
-        week: game.week,
-        homeTeamId: game.homeTeamId || 0,
-        awayTeamId: game.awayTeamId || 0,
-        homeTeamESPNID: game.homeTeamESPNID || 0,
-        awayTeamESPNID: game.awayTeamESPNID || 0,
-        homeTeamName: game.homeTeamName,
-        awayTeamName: game.awayTeamName,
-        homeScore: game.homeScore,
-        awayScore: game.awayScore,
-        homeProjectedScore: game.homeProjectedScore,
-        awayProjectedScore: game.awayProjectedScore,
-        completed: game.completed || (game.homeScore > 0 && game.awayScore > 0),
-        homeTeam: game.homeTeam,
-        awayTeam: game.awayTeam,
-        gameType: game.gameType,
-        isPlayoff: game.isPlayoff || false,
-      }));
+    const scheduleData = schedule.data.matchups.flat().map((game) => ({
+      leagueId: 1,
+      id: game.id,
+      createdAt: "2023-10-01T00:00:00Z",
+      updatedAt: "2023-10-01T00:00:00Z",
+      season: game.year,
+      year: game.year,
+      week: game.week,
+      homeTeamId: game.homeTeamId || 0,
+      awayTeamId: game.awayTeamId || 0,
+      homeTeamName: game.homeTeamName,
+      awayTeamName: game.awayTeamName,
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+      homeProjectedScore: game.homeProjectedScore,
+      awayProjectedScore: game.awayProjectedScore,
+      completed: game.completed || (game.homeScore > 0 && game.awayScore > 0),
+      homeTeam: game.homeTeam,
+      awayTeam: game.awayTeam,
+      gameType: game.gameType,
+      isPlayoff: game.isPlayoff || false,
+    }));
 
     const years = Array.from(
       new Set(scheduleData.map((game) => game.year))
@@ -262,7 +297,7 @@ export default function Home() {
       if (year >= currentYear) {
         return false;
       }
-      
+
       const regularSeasonGames = scheduleData.filter(
         (game) => game.year === year && game.gameType === "NONE"
       );
@@ -494,8 +529,6 @@ export default function Home() {
       week: game.week,
       homeTeamId: game.homeTeamId || 0,
       awayTeamId: game.awayTeamId || 0,
-      homeTeamESPNID: game.homeTeamESPNID || 0,
-      awayTeamESPNID: game.awayTeamESPNID || 0,
       homeTeamName: game.homeTeamName,
       awayTeamName: game.awayTeamName,
       homeScore: game.homeScore,
@@ -512,17 +545,22 @@ export default function Home() {
   }, [schedule, scheduleLoading]);
 
   // Calculate strength of schedule for current season (2025) using custom hook
-  const { overallStrength, remainingStrength } = useStrengthOfSchedule(scheduleDataForSOS, 2025);
+  const { overallStrength, remainingStrength } = useStrengthOfSchedule(
+    scheduleDataForSOS as Matchup[],
+    2025
+  );
 
-  // Helper function to get ESPN ID by owner name
-  const getEspnIdByOwner = (ownerName: string): string | null => {
+  // Helper function to get Team ID by owner name
+  const getTeamIdByOwner = (ownerName: string): string | null => {
     const team = teams.find((team) => team.owner === ownerName);
-    return team ? team.espnId : null;
+    return team ? team.teamId : null;
   };
 
   // Helper function to get SOS for a team by owner name
   // Note: The SOS data is keyed by owner names (from schedule data's homeTeamName/awayTeamName)
-  const getSOSByOwner = (ownerName: string): { overall: number | null; remaining: number | null } => {
+  const getSOSByOwner = (
+    ownerName: string
+  ): { overall: number | null; remaining: number | null } => {
     // The SOS calculation uses owner names as the team key, so match directly by owner name
     const overallData = overallStrength.find((s) => s.team === ownerName);
     const remainingData = remainingStrength.find((s) => s.team === ownerName);
@@ -606,7 +644,7 @@ export default function Home() {
         {/* Current Season Standings */}
         <section className="py-6">
           <h2 className="text-2xl font-semibold mb-6">2025 Season Standings</h2>
-          {standingsLoading ? (
+          {teamsLoading ? (
             <div className="flex items-center space-x-2">
               <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
               <p>Loading current standings...</p>
@@ -646,85 +684,104 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                  {currentStandings.map((standing, index) => (
-                    <tr
-                      key={standing.team_id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <Link
-                          href={`/teams/${standing.espn_id}`}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+                  {teams
+                    .sort((a, b) => {
+                      // Sort by wins, then points for
+                      if (a.record.wins !== b.record.wins) {
+                        return b.record.wins - a.record.wins;
+                      }
+                      return b.points.scored - a.points.scored;
+                    })
+                    .map((team, index) => {
+                      const xWinsData = getTeamExpectedWinsData(team.id);
+                      return (
+                        <tr
+                          key={team.id}
+                          className="hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
-                          {standing.owner}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {standing.record.wins}-{standing.record.losses}
-                        {standing.record.ties > 0 ? `-${standing.record.ties}` : ""}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {standing.points.scored.toLocaleString(undefined, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {standing.points.against.toLocaleString(undefined, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {standing.expected_wins !== undefined && standing.expected_losses !== undefined
-                          ? `${standing.expected_wins.toLocaleString(undefined, {
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <Link
+                              href={`/teams/${team.teamId}`}
+                              className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+                            >
+                              {team.owner}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.record.wins}-{team.record.losses}
+                            {team.record.ties > 0 ? `-${team.record.ties}` : ""}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.points.scored.toLocaleString(undefined, {
                               minimumFractionDigits: 1,
                               maximumFractionDigits: 1,
-                            })}-${standing.expected_losses.toLocaleString(undefined, {
-                              minimumFractionDigits: 1,
-                              maximumFractionDigits: 1,
-                            })}`
-                          : "N/A"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center">
-                        {standing.win_luck !== undefined ? (
-                          <span className={`${
-                            standing.win_luck > 0
-                              ? "text-green-600 dark:text-green-400"
-                              : standing.win_luck < 0
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-gray-600 dark:text-gray-300"
-                          }`}>
-                            {standing.win_luck.toLocaleString(undefined, {
-                              minimumFractionDigits: 1,
-                              maximumFractionDigits: 1,
-                              signDisplay: "exceptZero"
                             })}
-                          </span>
-                        ) : (
-                          <span className="text-gray-600 dark:text-gray-300">N/A</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {(() => {
-                          const sos = getSOSByOwner(standing.owner);
-                          return sos.overall !== null ? `${sos.overall}%` : "N/A";
-                        })()}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                        {(() => {
-                          const sos = getSOSByOwner(standing.owner);
-                          return sos.remaining !== null ? `${sos.remaining}%` : "N/A";
-                        })()}
-                      </td>
-                    </tr>
-                  ))}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {team.points.against.toLocaleString(undefined, {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 1,
+                            })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {currentSeasonMatchups.length > 0
+                              ? xWinsData.expectedWins.toLocaleString(
+                                  undefined,
+                                  {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                  }
+                                )
+                              : "N/A"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center">
+                            {currentSeasonMatchups.length > 0 ? (
+                              <span
+                                className={`${
+                                  xWinsData.luck > 0
+                                    ? "text-green-600 dark:text-green-400"
+                                    : xWinsData.luck < 0
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-gray-600 dark:text-gray-300"
+                                }`}
+                              >
+                                {xWinsData.luck > 0 ? "+" : ""}
+                                {xWinsData.luck.toLocaleString(undefined, {
+                                  minimumFractionDigits: 1,
+                                  maximumFractionDigits: 1,
+                                })}
+                              </span>
+                            ) : (
+                              <span className="text-gray-600 dark:text-gray-300">
+                                N/A
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {(() => {
+                              const sos = getSOSByOwner(team.owner);
+                              return sos.overall !== null
+                                ? `${sos.overall}%`
+                                : "N/A";
+                            })()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                            {(() => {
+                              const sos = getSOSByOwner(team.owner);
+                              return sos.remaining !== null
+                                ? `${sos.remaining}%`
+                                : "N/A";
+                            })()}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
-              {currentStandings.length === 0 && (
+              {teams.length === 0 && (
                 <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                   No standings data available for 2025 season yet.
                 </div>
@@ -734,75 +791,82 @@ export default function Home() {
         </section>
 
         {/* Interactive Simulation Section */}
-        {!scheduleLoading && schedule?.data?.matchups && (() => {
-          // Convert schedule data to the format expected by InteractiveSimulation
-          const simSchedule: SimSchedule = [];
-          const weekMap = new Map<number, SimMatchup[]>();
-          const currentYear = 2025;
+        {!scheduleLoading &&
+          schedule?.data?.matchups &&
+          (() => {
+            // Convert schedule data to the format expected by InteractiveSimulation
+            const simSchedule: SimSchedule = [];
+            const weekMap = new Map<number, SimMatchup[]>();
+            const currentYear = 2025;
 
-          // Filter for current year only
-          const currentYearMatchups = schedule.data.matchups.filter(
-            (m) => m.year === currentYear
-          );
+            // Filter for current year only
+            const currentYearMatchups = schedule.data.matchups.filter(
+              (m) => m.year === currentYear
+            );
 
-          currentYearMatchups.forEach((matchup) => {
-            if (!weekMap.has(matchup.week)) {
-              weekMap.set(matchup.week, []);
-            }
+            currentYearMatchups.forEach((matchup) => {
+              if (!weekMap.has(matchup.week)) {
+                weekMap.set(matchup.week, []);
+              }
 
-            weekMap.get(matchup.week)!.push({
-              homeTeamName: matchup.homeTeamName,
-              awayTeamName: matchup.awayTeamName,
-              homeTeamESPNID: matchup.homeTeamESPNID || 0,
-              awayTeamESPNID: matchup.awayTeamESPNID || 0,
-              homeTeamFinalScore: matchup.homeScore,
-              awayTeamFinalScore: matchup.awayScore,
-              completed: matchup.homeScore > 0 || matchup.awayScore > 0,
-              week: matchup.week,
-              gameType: matchup.gameType || "NONE",
+              weekMap.get(matchup.week)!.push({
+                homeTeamName: matchup.homeTeamName,
+                awayTeamName: matchup.awayTeamName,
+                homeTeamESPNID: matchup.homeTeamId || 0,
+                awayTeamESPNID: matchup.awayTeamId || 0,
+                homeTeamFinalScore: matchup.homeScore,
+                awayTeamFinalScore: matchup.awayScore,
+                completed: matchup.homeScore > 0 || matchup.awayScore > 0,
+                week: matchup.week,
+                gameType: matchup.gameType || "NONE",
+              });
             });
-          });
 
-          // Convert map to ordered array by week
-          const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
-          sortedWeeks.forEach((week) => {
-            const weekGames = weekMap.get(week) || [];
-            simSchedule.push(weekGames);
-          });
+            // Convert map to ordered array by week
+            const sortedWeeks = Array.from(weekMap.keys()).sort(
+              (a, b) => a - b
+            );
+            sortedWeeks.forEach((week) => {
+              const weekGames = weekMap.get(week) || [];
+              simSchedule.push(weekGames);
+            });
 
-          // Find the current week (first week with incomplete games)
-          const currentWeekIndex = simSchedule.findIndex((week) =>
-            week.some((matchup) => !matchup.completed)
-          );
-          const startWeek =
-            currentWeekIndex === -1 ? simSchedule.length : currentWeekIndex + 1;
+            // Find the current week (first week with incomplete games)
+            const currentWeekIndex = simSchedule.findIndex((week) =>
+              week.some((matchup) => !matchup.completed)
+            );
+            const startWeek =
+              currentWeekIndex === -1
+                ? simSchedule.length
+                : currentWeekIndex + 1;
 
-          return (
-            <>
-              {/* Pivotal Games Section */}
-              <PivotalGames games={pivotalGames} />
+            return (
+              <>
+                {/* Pivotal Games Section */}
+                <PivotalGames games={pivotalGames} />
 
-              {/* Interactive Simulation Section */}
-              <section className="py-6">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
-                    Playoff Predictor
-                  </h2>
-                  <p className="text-gray-600 dark:text-gray-300 mb-6">
-                    Explore different scenarios for the rest of the season and see how they affect playoff chances.
-                  </p>
-                  <InteractiveSimulation
-                    schedule={simSchedule}
-                    startWeek={startWeek}
-                    iterations={10000}
-                    autoRun={true}
-                    onPivotalGamesCalculated={setPivotalGames}
-                  />
-                </div>
-              </section>
-            </>
-          );
-        })()}
+                {/* Interactive Simulation Section */}
+                <section className="py-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+                      Playoff Predictor
+                    </h2>
+                    <p className="text-gray-600 dark:text-gray-300 mb-6">
+                      Explore different scenarios for the rest of the season and
+                      see how they affect playoff chances.
+                    </p>
+                    <InteractiveSimulation
+                      schedule={simSchedule}
+                      startWeek={startWeek}
+                      iterations={10000}
+                      autoRun={true}
+                      onPivotalGamesCalculated={setPivotalGames}
+                    />
+                  </div>
+                </section>
+              </>
+            );
+          })()}
 
         {/* Hall of Fame & Wall of Shame Section */}
         <section className="py-6">
@@ -825,7 +889,7 @@ export default function Home() {
                     ]
                   : winners
                 ).map((champion, index) => {
-                  const espnId = getEspnIdByOwner(champion.owner);
+                  const teamId = getTeamIdByOwner(champion.owner);
                   return (
                     <div
                       key={champion.year}
@@ -838,8 +902,8 @@ export default function Home() {
                           <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
                             {champion.year} Champion
                           </h3>
-                          {espnId ? (
-                            <Link href={`/teams/${espnId}`}>
+                          {teamId ? (
+                            <Link href={`/teams/${teamId}`}>
                               <p className="text-blue-600 dark:text-blue-400 font-medium hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors">
                                 {champion.owner}
                               </p>
@@ -883,7 +947,7 @@ export default function Home() {
                     ]
                   : losers
                 ).map((lastPlace, index) => {
-                  const espnId = getEspnIdByOwner(lastPlace.owner);
+                  const teamId = getTeamIdByOwner(lastPlace.owner);
                   return (
                     <div
                       key={lastPlace.year}
@@ -896,8 +960,8 @@ export default function Home() {
                           <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
                             {lastPlace.year} Last Place
                           </h3>
-                          {espnId ? (
-                            <Link href={`/teams/${espnId}`}>
+                          {teamId ? (
+                            <Link href={`/teams/${teamId}`}>
                               <p className="text-red-600 dark:text-red-400 font-medium hover:text-red-800 dark:hover:text-red-300 hover:underline transition-colors">
                                 {lastPlace.owner}
                               </p>
@@ -975,7 +1039,8 @@ export default function Home() {
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
                           onClick={() => handleSort("expectedRecord")}
                         >
-                          Expected Record (Regular Season){renderSortIcon("expectedRecord")}
+                          Expected Record (Regular Season)
+                          {renderSortIcon("expectedRecord")}
                         </th>
                         <th
                           className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors"
@@ -993,7 +1058,7 @@ export default function Home() {
                         >
                           <td className="px-4 py-3 text-sm">
                             <Link
-                              href={`/teams/${team.espnId}`}
+                              href={`/teams/${team.teamId}`}
                               className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
                             >
                               {team.owner}
@@ -1023,33 +1088,47 @@ export default function Home() {
                             })}
                           </td>
                           <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                            {team.expectedWins?.expectedWins !== undefined && team.expectedWins?.expectedLosses !== undefined
-                              ? `${team.expectedWins.expectedWins.toLocaleString(undefined, {
-                                  minimumFractionDigits: 1,
-                                  maximumFractionDigits: 1,
-                                })}-${team.expectedWins.expectedLosses.toLocaleString(undefined, {
-                                  minimumFractionDigits: 1,
-                                  maximumFractionDigits: 1,
-                                })}`
+                            {team.expectedWins?.expectedWins !== undefined &&
+                            team.expectedWins?.expectedLosses !== undefined
+                              ? `${team.expectedWins.expectedWins.toLocaleString(
+                                  undefined,
+                                  {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                  }
+                                )}-${team.expectedWins.expectedLosses.toLocaleString(
+                                  undefined,
+                                  {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                  }
+                                )}`
                               : "N/A"}
                           </td>
                           <td className="px-4 py-3 text-sm text-center">
                             {team.expectedWins?.winLuck !== undefined ? (
-                              <span className={`${
-                                team.expectedWins.winLuck > 0
-                                  ? "text-green-600 dark:text-green-400"
-                                  : team.expectedWins.winLuck < 0
-                                  ? "text-red-600 dark:text-red-400"
-                                  : "text-gray-600 dark:text-gray-300"
-                              }`}>
-                                {team.expectedWins.winLuck.toLocaleString(undefined, {
-                                  minimumFractionDigits: 1,
-                                  maximumFractionDigits: 1,
-                                  signDisplay: "exceptZero"
-                                })}
+                              <span
+                                className={`${
+                                  team.expectedWins.winLuck > 0
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.expectedWins.winLuck < 0
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-gray-600 dark:text-gray-300"
+                                }`}
+                              >
+                                {team.expectedWins.winLuck.toLocaleString(
+                                  undefined,
+                                  {
+                                    minimumFractionDigits: 1,
+                                    maximumFractionDigits: 1,
+                                    signDisplay: "exceptZero",
+                                  }
+                                )}
                               </span>
                             ) : (
-                              <span className="text-gray-600 dark:text-gray-300">N/A</span>
+                              <span className="text-gray-600 dark:text-gray-300">
+                                N/A
+                              </span>
                             )}
                           </td>
                         </tr>

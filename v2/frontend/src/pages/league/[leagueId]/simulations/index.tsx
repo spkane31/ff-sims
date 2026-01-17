@@ -146,8 +146,8 @@ export default function Simulations() {
         weekMap.get(matchup.week)?.push({
           homeTeamName: matchup.homeTeamName,
           awayTeamName: matchup.awayTeamName,
-          homeTeamESPNID: matchup.homeTeamESPNID,
-          awayTeamESPNID: matchup.awayTeamESPNID,
+          homeTeamESPNID: matchup.homeTeamId,
+          awayTeamESPNID: matchup.awayTeamId,
           homeTeamFinalScore: matchup.homeScore,
           awayTeamFinalScore: matchup.awayScore,
           completed: matchup.homeScore > 0 || matchup.awayScore > 0,
@@ -166,10 +166,10 @@ export default function Simulations() {
       const teamNames = new Map<number, string>();
 
       yearMatchups.forEach((matchup) => {
-        teams.add(matchup.homeTeamESPNID);
-        teams.add(matchup.awayTeamESPNID);
-        teamNames.set(matchup.homeTeamESPNID, matchup.homeTeamName);
-        teamNames.set(matchup.awayTeamESPNID, matchup.awayTeamName);
+        teams.add(matchup.homeTeamId);
+        teams.add(matchup.awayTeamId);
+        teamNames.set(matchup.homeTeamId, matchup.homeTeamName);
+        teamNames.set(matchup.awayTeamId, matchup.awayTeamName);
       });
 
       const teamList = Array.from(teams);
@@ -222,7 +222,7 @@ export default function Simulations() {
     teamId: number,
     opponentId: number
   ) => {
-    const matchupKey = `${matchup.week}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+    const matchupKey = `${matchup.week}-${matchup.homeTeamId ?? matchup.homeTeamESPNID}-${matchup.awayTeamId ?? matchup.awayTeamESPNID}`;
 
     setSelectedResults((prev) => {
       const newResults = new Map(prev);
@@ -255,7 +255,7 @@ export default function Simulations() {
     matchup: Matchup,
     teamId: number
   ): "win" | "loss" | "none" => {
-    const matchupKey = `${matchup.week}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+    const matchupKey = `${matchup.week}-${matchup.homeTeamId ?? matchup.homeTeamESPNID}-${matchup.awayTeamId ?? matchup.awayTeamESPNID}`;
     const winner = selectedResults.get(matchupKey);
 
     if (winner === undefined) return "none";
@@ -301,8 +301,8 @@ export default function Simulations() {
             return;
           }
 
-          const homeTeamId = matchup.homeTeamESPNID;
-          const awayTeamId = matchup.awayTeamESPNID;
+          const homeTeamId = matchup.homeTeamId ?? matchup.homeTeamESPNID;
+          const awayTeamId = matchup.awayTeamId ?? matchup.awayTeamESPNID;
 
           // Add matchup to home team's list
           if (!teamMatchups.has(homeTeamId)) {
@@ -699,10 +699,10 @@ export default function Simulations() {
                                       }
 
                                       const isHomeTeam =
-                                        matchup.homeTeamESPNID === team.id;
+                                        (matchup.homeTeamId ?? matchup.homeTeamESPNID) === team.id;
                                       const opponentId = isHomeTeam
-                                        ? matchup.awayTeamESPNID
-                                        : matchup.homeTeamESPNID;
+                                        ? (matchup.awayTeamId ?? matchup.awayTeamESPNID)
+                                        : (matchup.homeTeamId ?? matchup.homeTeamESPNID);
                                       const opponent = isHomeTeam
                                         ? matchup.awayTeamName
                                         : matchup.homeTeamName;

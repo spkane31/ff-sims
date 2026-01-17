@@ -2,13 +2,14 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Optional
 
 import yaml
-from typing import Optional
-from espn_api.football import BoxPlayer, League as ESPNLeague
-
+from espn_api.football import BoxPlayer
+from espn_api.football import League as ESPNLeague
 
 from src.sleeper import SleeperClient
+
 
 @dataclass
 class Player:
@@ -112,9 +113,6 @@ class Boxscore(Matchup):
             self.away_roster = []
 
 
-
-
-
 @dataclass
 class BoxScorePlayerData:
     player_name: str
@@ -206,8 +204,6 @@ class Schedule:
 
         else:
             # Post-2019 logic: Build matchups from scoreboard, then get detailed box scores
-            logging.info(f"Processing post-2019 league data for year {espn_league.year}")
-
             for week in range(1, 18):
                 logging.debug(f"Processing schedule for week: {week}")
                 week_matchups: list[Matchup] = []
@@ -531,7 +527,6 @@ class League:
             league_source=LeagueSource.ESPN,
         )
 
-
     @classmethod
     def from_sleeper_league(cls, id: int) -> "League":
         raise NotImplementedError("Sleeper league integration is not yet implemented.")
@@ -541,7 +536,10 @@ class League:
             f.write(yaml.dump(asdict(self), indent=2))
         return None
 
-def get_all_years(espn_league: Optional[ESPNLeague]=None, sleeper_league: Optional[SleeperClient]=None) -> list[League]:
+
+def get_all_years(
+    espn_league: Optional[ESPNLeague] = None, sleeper_league: Optional[SleeperClient] = None
+) -> list[League]:
     if espn_league is not None:
         return _get_all_years_espn()
     elif sleeper_league is not None:
@@ -549,8 +547,10 @@ def get_all_years(espn_league: Optional[ESPNLeague]=None, sleeper_league: Option
     else:
         return NotImplementedError("Function to get all years of leagues is not yet implemented.")
 
+
 def _get_all_years_espn() -> list[League]:
     return NotImplementedError("Function to get all years of ESPN leagues is not yet implemented.")
+
 
 def _get_all_years_sleeper() -> list[League]:
     return NotImplementedError("Function to get all years of Sleeper leagues is not yet implemented.")

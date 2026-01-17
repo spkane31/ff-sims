@@ -12,10 +12,6 @@ var (
 	dataDir           string
 	multipleLeagues   bool
 	refreshPlayerData bool
-
-	// These will be deprecated later
-	skipExpectedWins bool
-	processYear      uint
 )
 
 func main() {
@@ -41,43 +37,14 @@ func main() {
 				MultipleLeagues:   multipleLeagues,
 				RefreshPlayerData: refreshPlayerData,
 			})
-			// // Determine if we should calculate expected wins
-			// doCalculateExpectedWins := !skipExpectedWins
-
-			// // Run normal ETL with expected wins flag
-			// if err := etl.UploadWithOptions(dataDir, doCalculateExpectedWins); err != nil {
-			// 	logging.Errorf("Failed to upload data: %v", err)
-			// 	os.Exit(1)
-			// }
 		},
 	}
 	uploadCmd.Flags().StringVar(&dataDir, "directory", "./data", "Directory containing data files")
-	uploadCmd.Flags().BoolVar(&skipExpectedWins, "skip-expected-wins", false, "Skip expected wins calculations during ETL")
 	uploadCmd.Flags().BoolVar(&multipleLeagues, "multiple-leagues", false, "There are multiple leagues in the data directory")
 	uploadCmd.Flags().BoolVar(&refreshPlayerData, "refresh-players", false, "Force refresh player data from Sleeper API and update local JSON file")
 
-	// Expected wins command
-	xwinsCmd := &cobra.Command{
-		Use:   "xwins",
-		Short: "Calculate expected wins",
-		Long:  "Calculate expected wins for fantasy football teams based on their performance",
-		Run: func(cmd *cobra.Command, args []string) {
-			if processYear > 0 {
-				logging.Infof("Running expected wins calculation for year %d only", processYear)
-			} else {
-				logging.Infof("Running expected wins calculation for all years")
-			}
-			if err := etl.ProcessExpectedWinsWithYear(processYear); err != nil {
-				logging.Errorf("Failed to calculate expected wins: %v", err)
-				os.Exit(1)
-			}
-		},
-	}
-	xwinsCmd.Flags().UintVar(&processYear, "year", 0, "Specific year to process for expected wins (0 = all years, starting with most recent)")
-
 	// Add commands to root
 	rootCmd.AddCommand(uploadCmd)
-	rootCmd.AddCommand(xwinsCmd)
 
 	rootCmd.SilenceUsage = true // Suppress usage message on error
 

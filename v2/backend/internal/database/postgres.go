@@ -19,7 +19,7 @@ var DB *gorm.DB
 // Initialize sets up the database connection
 func Initialize(cfg *config.Config) error {
 	var err error
-	logging.Infof("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
+	logging.Infof("Initializing database connection: %s", cfg.DB.ConnectionString)
 	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
 		Logger:                                   logger.Default.LogMode(logger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true, // Disable FK checks during migration
@@ -65,8 +65,6 @@ func runMigrations() error {
 		&models.DraftSelection{},
 		&models.Transaction{},
 		&models.BoxScore{},
-		&models.WeeklyExpectedWins{},
-		&models.SeasonExpectedWins{},
 		// Sleeper models
 		&models.SleeperLeague{},
 		&models.SleeperUser{},

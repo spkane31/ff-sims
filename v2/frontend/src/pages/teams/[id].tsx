@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Layout from "../../components/Layout";
+import { useLeague } from "../../hooks/useLeague";
 import {
   teamsService,
   TeamDetail as TeamDetailType,
@@ -336,6 +337,7 @@ function getStreakText(streak: { type: string; count: number }) {
 export default function TeamDetail() {
   const router = useRouter();
   const { id } = router.query;
+  const { leagueId } = useLeague();
 
   const [isLoading, setIsLoading] = useState(true);
   const [team, setTeam] = useState<ReturnType<
@@ -361,15 +363,19 @@ export default function TeamDetail() {
   >([]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !leagueId) return;
 
     const fetchTeamData = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Use teamsService to fetch detailed team data
-        const teamData = await teamsService.getTeamDetail(id as string);
+        // Use teamsService to fetch detailed team data for 2025 season
+        const teamData = await teamsService.getTeamDetail(
+          leagueId,
+          id as string,
+          2025
+        );
 
         // Map API data to the format expected by the UI
         const mappedTeam = mapApiDataToUiFormat(teamData);
@@ -395,7 +401,7 @@ export default function TeamDetail() {
     };
 
     fetchTeamData();
-  }, [id]);
+  }, [id, leagueId]);
 
   if (isLoading) {
     return (

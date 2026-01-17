@@ -467,25 +467,34 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--year", type=int, default=2025)
+    parser.add_argument(
+        "--years",
+        type=list,
+        default=[
+            2017,
+            2018,
+            2019,
+            2020,
+            2021,
+            2022,
+            2023,
+            2024,
+            2025,
+        ],
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="data",
         help="Directory to store output JSON files",
     )
-    parser.add_argument("--league-id", type=int, default=345674)
+    parser.add_argument("--leagues", type=list, default=[345674, 1094568961])
+
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
-
-    # Create league-specific directory
-    league_output_dir = os.path.join(args.output_dir, str(args.league_id))
-    if not os.path.exists(league_output_dir):
-        os.makedirs(league_output_dir)
-        logging.info(f"Created league directory: {league_output_dir}")
 
     SWID = os.environ.get("SWID")
     ESPN_S2 = os.environ.get("ESPN_S2")
@@ -498,13 +507,31 @@ if __name__ == "__main__":
         logging.error("ESPN_S2 not set")
         exit(1)
 
-    # This was done manually but have to iterate through each year to load data
-    league = League(league_id=args.league_id, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
-    logging.info(f"ID: {args.league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
+    for league_id in args.leagues:
+        for year in args.years:
+            start = time.time()
+            try:
+                logging.info(f"Processing league ID: {league_id} for year: {year}")
 
-    # This was done manually but have to iterate through each year to load data
-    yaml_file = os.path.join(league_output_dir, f"{args.year}.yaml")
-    DataLeague.from_espn_league(league).to_yaml(yaml_file)
+                # Create league-specific directory
+                league_output_dir = os.path.join(args.output_dir, str(league_id))
+                if not os.path.exists(league_output_dir):
+                    os.makedirs(league_output_dir)
+                    logging.info(f"Created league directory: {league_output_dir}")
+
+                league = League(league_id=league_id, year=int(year), swid=SWID, espn_s2=ESPN_S2, debug=False)
+                logging.info(f"ID: {league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
+
+                # This was done manually but have to iterate through each year to load data
+                yaml_file = os.path.join(league_output_dir, f"{year}.yaml")
+                DataLeague.from_espn_league(league).to_yaml(yaml_file)
+
+            except Exception as e:
+                logging.error(f"Error processing league ID {league_id} for year {year}: {e}")
+
+            logging.info(
+                f"Completed league ID: {league_id} for year: {year} in {round(time.time() - start, 2)} seconds"
+            )
 
     exit(0)
 

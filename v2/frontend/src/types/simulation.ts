@@ -22,6 +22,8 @@ export interface Matchup {
   awayTeamName: string;
   homeTeamESPNID: number;
   awayTeamESPNID: number;
+  homeTeamId?: number;  // Platform team ID from API
+  awayTeamId?: number;  // Platform team ID from API
   homeTeamFinalScore: number;
   awayTeamFinalScore: number;
   completed: boolean;

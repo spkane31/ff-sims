@@ -8,7 +8,7 @@ import {
 /**
  * Hook for fetching the full schedule
  */
-export function useSchedule(leagueId?: string, options?: { gameType?: string }) {
+export function useSchedule(leagueId?: string, options?: { year?: string; gameType?: string }) {
   const [schedule, setSchedule] = useState<GetScheduleResponse>({
     data: { matchups: [] },
   });
@@ -24,7 +24,7 @@ export function useSchedule(leagueId?: string, options?: { gameType?: string }) 
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getFullSchedule(leagueId, options?.gameType);
+      const data = await scheduleService.getFullSchedule(leagueId, options?.year, options?.gameType);
       setSchedule(data);
     } catch (err) {
       setError(
@@ -35,7 +35,7 @@ export function useSchedule(leagueId?: string, options?: { gameType?: string }) 
     } finally {
       setIsLoading(false);
     }
-  }, [leagueId, options?.gameType]);
+  }, [leagueId, options?.year, options?.gameType]);
 
   useEffect(() => {
     fetchSchedule();
