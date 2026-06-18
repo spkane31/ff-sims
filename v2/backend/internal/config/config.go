@@ -5,12 +5,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 )
-
-func init() {
-	godotenv.Load()
-}
 
 // Config contains all configuration for the application
 type Config struct {

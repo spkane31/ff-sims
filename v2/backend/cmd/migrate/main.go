@@ -6,15 +6,13 @@ import (
 	"os"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/pressly/goose/v3"
 
 	"backend/migrations"
 )
 
 func main() {
-	godotenv.Load()
-
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is not set")
