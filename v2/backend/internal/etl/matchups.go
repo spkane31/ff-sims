@@ -46,7 +46,6 @@ func processPureMatchups(filePath string, createdTeams []*models.Team) error {
 			LeagueID:  leagueID,
 			Week:      uint(matchup.Week),
 			Year:      uint(matchup.Year),
-			Season:    int(matchup.Year),
 			Completed: matchup.Completed,
 			GameType:  matchup.GameType,
 			IsPlayoff: matchup.IsPlayoff,
