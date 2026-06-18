@@ -1,0 +1,2 @@
+id,created_at,updated_at,deleted_at,name,description,scoring_type,season,current_week,total_weeks,playoff_weeks,qb,rb,wr,te,flex,k,dst,bn,ir,passing_yards,passing_td,interception,rushing_yards,rushing_td,reception,receiving_yards,receiving_td,fumble,field_goal0to39,field_goal40to49,field_goal50plus,extra_point
+345674,2025-08-02 17:27:32.916071+00,2025-08-02 17:27:32.916071+00,,Fantasy Football League,Default league created by ETL process,PPR,2024,1,17,3,1,2,2,1,1,1,1,6,1,0.04,4,-2,0.1,6,0,0.1,6,-2,3,4,5,1
