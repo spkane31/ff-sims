@@ -5,12 +5,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 )
-
-func init() {
-	godotenv.Load()
-}
 
 // Config contains all configuration for the application
 type Config struct {
@@ -31,9 +27,6 @@ type DBConfig struct {
 
 // Load reads the configuration from environment variables
 func Load() (*Config, error) {
-	// Load .env file if it exists
-	godotenv.Load()
-
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnvAsInt("SERVER_PORT", 8080),

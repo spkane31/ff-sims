@@ -1,4 +1,4 @@
-.PHONY: build clean run etl migrate deduplicate help
+.PHONY: build clean run etl migrate migrate-status migrate-down deduplicate help
 
 help: ## Show this help message
 	@echo 'Makefile for backend'
@@ -14,6 +14,9 @@ build: ## Build the backend binaries
 	@go build -o bin/etl \
 		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
 		./cmd/etl
+	@go build -o bin/migrate \
+		-ldflags="-X 'backend/pkg/version.GitSHA=$(shell git rev-parse --short=9 HEAD)' -X 'backend/pkg/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)'" \
+		./cmd/migrate
 
 run: build ## Build and run the backend server
 	@echo "Running the backend..."
@@ -27,19 +30,14 @@ etl: build ## Run the ETL process
 	@echo "Running ETL process..."
 	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
 
-migrate: ## Run all database migration files (requires DATABASE_URL)
-	@echo "Running database migrations..."
-	@if [ -z "$(DATABASE_URL)" ]; then \
-		echo "ERROR: DATABASE_URL environment variable is not set"; \
-		exit 1; \
-	fi
-	@for file in migrations/*.sql; do \
-		if [ -f "$$file" ]; then \
-			echo "Applying migration: $$file"; \
-			psql $(DATABASE_URL) -f "$$file" || exit 1; \
-		fi; \
-	done
-	@echo "All migrations applied successfully"
+migrate: build ## Apply all pending goose migrations (requires DATABASE_URL)
+	@./bin/migrate up
+
+migrate-status: build ## Show goose migration status (requires DATABASE_URL)
+	@./bin/migrate status
+
+migrate-down: build ## Roll back the last migration (requires DATABASE_URL)
+	@./bin/migrate down
 
 deduplicate: ## Remove duplicate records from database
 	@echo "Running deduplication process..."
