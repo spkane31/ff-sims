@@ -10,7 +10,6 @@ import psycopg2
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League
 
-from src.models import League as DataLeague
 
 load_dotenv(find_dotenv())
 
@@ -138,6 +137,10 @@ def get_schedule(league: League, file_name: str) -> None:
             logging.info(f"Processing schedule for week: {week}")
             week_matchups = []
             for scoreboard_matchup in league.scoreboard(week=week):
+                # This is for playoff weeks
+                if not hasattr(scoreboard_matchup, "away_team") or not hasattr(scoreboard_matchup, "home_team"):
+                    continue
+
                 week_matchups.append(
                     {
                         "week": week,
