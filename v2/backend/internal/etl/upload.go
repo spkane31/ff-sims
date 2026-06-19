@@ -447,8 +447,6 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		MatchupID: matchupID,
 		PlayerID:  playerRecord.ID,
 		TeamID:    teamID,
-		Week:      week,
-		Year:      year,
 
 		SlotPosition: player.SlotPosition,
 
@@ -459,8 +457,8 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 
 	// Check if the box score already exists
 	var existingBoxScore models.BoxScore
-	if err := database.DB.First(&existingBoxScore, "matchup_id = ? AND player_id = ? AND week = ? AND year = ?",
-		matchupID, playerRecord.ID, week, year).Error; err != nil {
+	if err := database.DB.First(&existingBoxScore, "matchup_id = ? AND player_id = ?",
+		matchupID, playerRecord.ID).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return fmt.Errorf("error checking existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
