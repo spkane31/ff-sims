@@ -18,7 +18,6 @@ type BoxScore struct {
 	TeamID      uint      `json:"team_id"` // The team the player was on for this matchup
 	Week        uint      `json:"week"`
 	Year        uint      `json:"year"`
-	Season      int       `json:"season"`
 	GameDate    time.Time `json:"game_date"`
 	StartedFlag bool      `json:"started_flag" gorm:"default:false"` // Whether player was in starting lineup
 

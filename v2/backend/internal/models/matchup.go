@@ -17,7 +17,6 @@ type Matchup struct {
 	LeagueID   uint      `json:"league_id"`
 	Week       uint      `json:"week"`
 	Year       uint      `json:"year"`
-	Season     int       `json:"season"`
 	HomeTeamID uint      `json:"home_team_id"`
 	AwayTeamID uint      `json:"away_team_id"`
 	GameDate   time.Time `json:"game_date"`
