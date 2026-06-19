@@ -183,7 +183,9 @@ func GetPlayers(c *gin.Context) {
 		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id")
 	} else {
 		yearInt, _ := strconv.Atoi(year)
-		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id AND bs.year = ?", yearInt)
+		query = query.
+			Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id").
+			Joins("LEFT JOIN matchups m ON bs.matchup_id = m.id AND m.year = ?", yearInt)
 	}
 
 	query = query.Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
@@ -244,13 +246,14 @@ func GetPlayers(c *gin.Context) {
 		if year == "all" {
 			if err := database.DB.Where("player_id IN ?", playerIDs).Find(&boxScores).Error; err != nil {
 				slog.Error("Failed to fetch detailed box scores", "error", err)
-				// Continue without detailed stats rather than failing completely
 			}
 		} else {
 			yearInt, _ := strconv.Atoi(year)
-			if err := database.DB.Where("player_id IN ? AND year = ?", playerIDs, yearInt).Find(&boxScores).Error; err != nil {
+			if err := database.DB.
+				Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", yearInt).
+				Where("player_id IN ?", playerIDs).
+				Find(&boxScores).Error; err != nil {
 				slog.Error("Failed to fetch detailed box scores", "error", err)
-				// Continue without detailed stats rather than failing completely
 			}
 		}
 	}
@@ -346,16 +349,20 @@ func GetPlayerByID(c *gin.Context) {
 
 	var boxScores []models.BoxScore
 	if year == "all" {
-		if err := database.DB.Where("player_id = ?", player.ID).
-			Order("year desc, week asc").Find(&boxScores).Error; err != nil {
+		if err := database.DB.Preload("Matchup").
+			Joins("JOIN matchups ON matchups.id = box_scores.matchup_id").
+			Where("box_scores.player_id = ?", player.ID).
+			Order("matchups.year DESC, matchups.week ASC").Find(&boxScores).Error; err != nil {
 			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
 			return
 		}
 	} else {
 		yearInt, _ := strconv.Atoi(year)
-		if err := database.DB.Where("player_id = ? AND year = ?", player.ID, yearInt).
-			Order("week asc").Find(&boxScores).Error; err != nil {
+		if err := database.DB.Preload("Matchup").
+			Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", yearInt).
+			Where("box_scores.player_id = ?", player.ID).
+			Order("matchups.week ASC").Find(&boxScores).Error; err != nil {
 			slog.Error("Failed to fetch box scores", "error", err, "player_id", player.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player statistics"})
 			return
@@ -401,7 +408,7 @@ func GetPlayerByID(c *gin.Context) {
 	yearlyGamePoints := make(map[uint][]float64) // Track individual game scores for standard deviation
 
 	for _, boxScore := range boxScores {
-		year := boxScore.Year
+		year := boxScore.Matchup.Year
 		if yearlyStats[year] == nil {
 			yearlyStats[year] = &AnnualStatsEntry{
 				Year:                 year,
@@ -411,7 +418,7 @@ func GetPlayerByID(c *gin.Context) {
 				AvgFantasyPoints:     0,
 				Difference:           0,
 				BestGame:             GamePerformance{Points: 0, Year: year, Week: 0},
-				WorstGame:            GamePerformance{Points: math.MaxFloat64, Year: year, Week: 0},
+				WorstGame:            GamePerformance{Points: math.MaxFloat64, Year: year, Week: 0}, //nolint
 				ConsistencyScore:     0,
 				TotalStats:           PlayerStatsResponse{},
 			}
@@ -430,8 +437,8 @@ func GetPlayerByID(c *gin.Context) {
 		if boxScore.ActualPoints > entry.BestGame.Points {
 			entry.BestGame = GamePerformance{
 				Points: boxScore.ActualPoints,
-				Year:   boxScore.Year,
-				Week:   boxScore.Week,
+				Year:   boxScore.Matchup.Year,
+				Week:   boxScore.Matchup.Week,
 			}
 		}
 
@@ -439,8 +446,8 @@ func GetPlayerByID(c *gin.Context) {
 		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < entry.WorstGame.Points {
 			entry.WorstGame = GamePerformance{
 				Points: boxScore.ActualPoints,
-				Year:   boxScore.Year,
-				Week:   boxScore.Week,
+				Year:   boxScore.Matchup.Year,
+				Week:   boxScore.Matchup.Week,
 			}
 		}
 
@@ -506,16 +513,16 @@ func GetPlayerByID(c *gin.Context) {
 		if boxScore.ActualPoints > overallBestGame.Points {
 			overallBestGame = GamePerformance{
 				Points: boxScore.ActualPoints,
-				Year:   boxScore.Year,
-				Week:   boxScore.Week,
+				Year:   boxScore.Matchup.Year,
+				Week:   boxScore.Matchup.Week,
 			}
 		}
 
 		if boxScore.ActualPoints > 0 && boxScore.ActualPoints < overallWorstGame.Points {
 			overallWorstGame = GamePerformance{
 				Points: boxScore.ActualPoints,
-				Year:   boxScore.Year,
-				Week:   boxScore.Week,
+				Year:   boxScore.Matchup.Year,
+				Week:   boxScore.Matchup.Week,
 			}
 		}
 	}
@@ -545,13 +552,13 @@ func GetPlayerByID(c *gin.Context) {
 		}
 
 		gameLogEntry := GameLogEntry{
-			Week:            boxScore.Week,
-			Year:            boxScore.Year,
+			Week:            boxScore.Matchup.Week,
+			Year:            boxScore.Matchup.Year,
 			ActualPoints:    boxScore.ActualPoints,
 			ProjectedPoints: boxScore.ProjectedPoints,
 			Difference:      boxScore.ActualPoints - boxScore.ProjectedPoints,
 			StartedFlag:     boxScore.StartedFlag,
-			GameDate:        boxScore.GameDate.Format("2006-01-02"),
+			GameDate:        boxScore.Matchup.GameDate.Format("2006-01-02"),
 			Stats:           gameStats,
 		}
 

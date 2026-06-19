@@ -110,9 +110,10 @@ func (t *Team) GetTeamRoster(db *gorm.DB, year uint) ([]Player, error) {
 // GetTeamBoxScores returns all box scores for a team in a specific season
 func (t *Team) GetTeamBoxScores(db *gorm.DB, year uint) ([]BoxScore, error) {
 	var boxScores []BoxScore
-	err := db.Where("team_id = ? AND year = ?", t.ID, year).
-		Preload("Player").
-		Order("week asc").
+	err := db.Preload("Player").Preload("Matchup").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
+		Where("box_scores.team_id = ?", t.ID).
+		Order("matchups.week ASC").
 		Find(&boxScores).Error
 	return boxScores, err
 }

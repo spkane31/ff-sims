@@ -53,7 +53,11 @@ func GetPlayerByESPNID(db *gorm.DB, espnID int64) (*Player, error) {
 // GetPlayerBoxScores retrieves all box scores for a player in a specific season
 func GetPlayerBoxScores(db *gorm.DB, playerID uint, year uint) ([]BoxScore, error) {
 	var boxScores []BoxScore
-	err := db.Where("player_id = ? AND year = ?", playerID, year).Order("week asc").Find(&boxScores).Error
+	err := db.Preload("Matchup").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
+		Where("box_scores.player_id = ?", playerID).
+		Order("matchups.week ASC").
+		Find(&boxScores).Error
 	return boxScores, err
 }
 
