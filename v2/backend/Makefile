@@ -28,7 +28,7 @@ clean: ## Remove built binaries
 
 etl: build ## Run the ETL process
 	@echo "Running ETL process..."
-	@go run ./cmd/etl upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
+	@go run ./cmd/etl --league-id=345674 --platform=ESPN upload --data-dir /Users/seankane/github.com/ff-sims/scripts/data
 
 migrate: build ## Apply all pending goose migrations (requires DATABASE_URL)
 	@./bin/migrate up
