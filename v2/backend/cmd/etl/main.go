@@ -107,12 +107,20 @@ func resolveLeagueID(externalID, plt string) (uint, error) {
 	var league models.League
 	err = database.DB.Where("external_id = ? AND platform = ?", externalID, plt).First(&league).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return 0, fmt.Errorf("league not found: external_id=%s platform=%s — run the leagues API to create it first", externalID, plt)
+		if err != gorm.ErrRecordNotFound {
+			return 0, fmt.Errorf("error looking up league: %w", err)
 		}
-		return 0, fmt.Errorf("error looking up league: %w", err)
+		league = models.League{
+			Name:       fmt.Sprintf("%s League %s", plt, externalID),
+			Platform:   plt,
+			ExternalID: externalID,
+		}
+		if createErr := database.DB.Create(&league).Error; createErr != nil {
+			return 0, fmt.Errorf("error creating league: %w", createErr)
+		}
+		logging.Infof("Created new league %q (platform=%s) with internal ID %d", externalID, plt, league.ID)
+	} else {
+		logging.Infof("Resolved league %q (platform=%s) to internal ID %d", externalID, plt, league.ID)
 	}
-
-	logging.Infof("Resolved league %q (platform=%s) to internal ID %d", externalID, plt, league.ID)
 	return league.ID, nil
 }
