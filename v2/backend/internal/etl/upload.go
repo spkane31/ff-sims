@@ -116,7 +116,7 @@ func processDraftSelections(filePath string) error {
 			if err := database.DB.Save(&existingSelection).Error; err != nil {
 				return fmt.Errorf("error updating existing draft selection for player ID %d: %w", selection.PlayerID, err)
 			}
-			logging.Infof("Updated existing draft selection: %s", existingSelection)
+			logging.Infof("Updated existing draft selection: %v", existingSelection)
 		}
 	}
 
