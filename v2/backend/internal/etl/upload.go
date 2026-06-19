@@ -518,13 +518,13 @@ func processTeams(filePath string, leagueID uint) ([]*models.Team, error) {
 		logging.Infof("Team - ESPN ID: %d, Owner: %s, Nickname: %s, Year: %d",
 			team.ESPNID, team.Owner, team.Nickname, team.Year)
 
-		// Check if team already exists
+		// Check if team already exists within this league
 		var existingTeam models.Team
-		if err := database.DB.First(&existingTeam, "espn_id = ?", team.ESPNID).Error; err != nil {
+		if err := database.DB.First(&existingTeam, "espn_id = ? AND league_id = ?", team.ESPNID, leagueID).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return nil, fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
-			// Team does not exist, create a new one
+			// Team does not exist in this league, create a new one
 			newTeam := &models.Team{
 				LeagueID: leagueID,
 				ESPNID:   uint(team.ESPNID),
@@ -537,7 +537,7 @@ func processTeams(filePath string, leagueID uint) ([]*models.Team, error) {
 			logging.Infof("Created new team: %+v", newTeam)
 			createdTeams = append(createdTeams, newTeam)
 		} else {
-			// Team exists, update its details
+			// Team exists in this league, update its details
 			existingTeam.Name = team.Nickname
 			existingTeam.Owner = team.Owner
 			if err := database.DB.Save(&existingTeam).Error; err != nil {
