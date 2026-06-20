@@ -13,7 +13,6 @@ func createTestMatchup(homeTeamID, awayTeamID uint, homeScore, awayScore float64
 		ID:                 1,
 		Week:               1,
 		Year:               2024,
-		Season:             2024,
 		HomeTeamID:         homeTeamID,
 		AwayTeamID:         awayTeamID,
 		GameDate:           time.Now(),

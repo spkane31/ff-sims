@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import Dict, List
 
-import psycopg2
+import psycopg
 from dotenv import find_dotenv, load_dotenv
 from espn_api.football import League
 
@@ -370,7 +370,7 @@ def get_simple_draft(
     return None
 
 
-def update_active_players(league: League, conn: "psycopg2.connection") -> None:
+def update_active_players(league: League, conn: "psycopg.Connection") -> None:
     """get_all_players will get the scores for all players from a given year"""
     logging.info(f"Getting all players for {league.year}")
 
@@ -466,6 +466,7 @@ if __name__ == "__main__":
     logging.info("Scraping fantasy football data from ESPN")
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--league-id", type=int, required=True, help="ESPN league ID (e.g. 345674)")
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument(
         "--output-dir",
@@ -490,16 +491,8 @@ if __name__ == "__main__":
         logging.error("ESPN_S2 not set")
         exit(1)
 
-    # This was done manually but have to iterate through each year to load data
-    league = League(league_id=345674, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
-    logging.info(f"Year: {league.year}\tCurrent Week: {league.current_week}")
-
-    # This was done manually but have to iterate through each year to load data
-    # DataLeague.from_espn_league(league).to_yaml("test.yaml")
-
-    # exit(0)
-
-    conn = psycopg2.connect(DATABASE_URL)
+    league = League(league_id=args.league_id, year=args.year, swid=SWID, espn_s2=ESPN_S2, debug=False)
+    logging.info(f"League ID: {args.league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
 
     # Define file paths for outputs
     teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")
@@ -519,10 +512,14 @@ if __name__ == "__main__":
         with open(file_path, "w") as f:
             f.write("[]")
 
-    with conn:
-        get_schedule(league, file_name=matchups_file)
-        get_simple_draft(league, file_name=draft_file)
-        get_all_transactions(league, file_name=transactions_file)
-        update_active_players(league, conn=conn)
+    get_schedule(league, file_name=matchups_file)
+    get_simple_draft(league, file_name=draft_file)
+    get_all_transactions(league, file_name=transactions_file)
+
+    if DATABASE_URL:
+        with psycopg.connect(DATABASE_URL) as conn:
+            update_active_players(league, conn=conn)
+    else:
+        logging.info("DATABASE_URL not set — skipping update_active_players")
 
     logging.info(f"Completed in {round(time.time() - start, 2)} seconds")

@@ -44,7 +44,11 @@ type GetDraftPicksResponse struct {
 }
 
 func GetDraftPicks(c *gin.Context) {
-	// Get year parameter, default to 2024
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+
 	yearStr := c.DefaultQuery("year", "2024")
 	year, err := strconv.Atoi(yearStr)
 	if err != nil {
@@ -52,16 +56,8 @@ func GetDraftPicks(c *gin.Context) {
 		return
 	}
 
-	// Get league ID parameter, default to 345674
-	leagueIDStr := c.DefaultQuery("league_id", "345674")
-	leagueID, err := strconv.Atoi(leagueIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league_id parameter"})
-		return
-	}
-
 	// Fetch draft selections from database
-	draftSelections, err := models.GetLeagueDraftSelections(database.DB, uint(leagueID), uint(year))
+	draftSelections, err := models.GetLeagueDraftSelections(database.DB, leagueID, uint(year))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch draft selections"})
 		return
@@ -95,6 +91,10 @@ func GetDraftPicks(c *gin.Context) {
 }
 
 func GetTransactions(c *gin.Context) {
+	_, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
 	c.JSON(200, GetTransactionsResponse{
 		Transactions: []Transaction{
 			{
