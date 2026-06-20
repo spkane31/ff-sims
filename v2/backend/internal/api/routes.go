@@ -18,6 +18,7 @@ func SetupRouter(r *gin.Engine) {
 	leagueScoped := leagues.Group("/:leagueId")
 	leagueScoped.GET("/years", handlers.GetLeagueYears)
 	leagueScoped.GET("/teams", handlers.GetTeams)
+	leagueScoped.GET("/teams/standings/:year", handlers.GetCurrentSeasonStandings)
 	leagueScoped.GET("/teams/:teamId", handlers.GetTeamByID)
 	leagueScoped.GET("/teams/:teamId/expected-wins/:year", handlers.GetTeamProgression)
 	leagueScoped.GET("/schedules", handlers.GetSchedules)
