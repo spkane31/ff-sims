@@ -26,7 +26,10 @@ type TeamStats struct {
 }
 
 func GetStats(c *gin.Context) {
-	// Handler logic for getting simulation stats
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
 
 	type Stats struct {
 		TeamID        string  `json:"team_id"`
@@ -42,7 +45,7 @@ func GetStats(c *gin.Context) {
 		"home_team_final_score",
 		"away_team_final_score",
 	}).
-		Where("season = ? AND completed = ?", 2024, true).
+		Where("league_id = ? AND year = ? AND completed = ?", leagueID, 2024, true).
 		Scan(&matchups).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get stats"})
@@ -51,7 +54,7 @@ func GetStats(c *gin.Context) {
 
 	logging.Infof("Retrieved stats for %d teams", len(matchups))
 
-	allTeams, err := database.GetTeamsIDMap()
+	allTeams, err := database.GetTeamsIDMapByLeague(leagueID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get teams"})
 		return
