@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
+import Layout from "@/components/Layout";
 import {
   teamsService,
   TeamDetail as TeamDetailType,
-} from "../../services/teamsService";
+} from "@/services/teamsService";
 
 // Type definitions for the legacy UI components
 interface Player {
@@ -335,7 +335,8 @@ function getStreakText(streak: { type: string; count: number }) {
 
 export default function TeamDetail() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, leagueId } = router.query;
+  const leagueIdNum = Number(leagueId);
 
   const [isLoading, setIsLoading] = useState(true);
   const [team, setTeam] = useState<ReturnType<
@@ -369,7 +370,7 @@ export default function TeamDetail() {
         setError(null);
 
         // Use teamsService to fetch detailed team data
-        const teamData = await teamsService.getTeamDetail(id as string);
+        const teamData = await teamsService.getTeamDetail(leagueIdNum, id as string);
 
         // Map API data to the format expected by the UI
         const mappedTeam = mapApiDataToUiFormat(teamData);
@@ -418,7 +419,7 @@ export default function TeamDetail() {
             and try again.
           </p>
           <Link
-            href="/teams"
+            href={`/league/${leagueIdNum}/teams`}
             className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
           >
             ← Back to Teams
@@ -447,7 +448,7 @@ export default function TeamDetail() {
 
             <div className="mt-4 md:mt-0">
               <Link
-                href="/teams"
+                href={`/league/${leagueIdNum}/teams`}
                 className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
               >
                 ← Back to Teams
@@ -873,7 +874,7 @@ export default function TeamDetail() {
                         >
                           <h3 className="font-medium mb-2">
                             <Link
-                              href={`/teams/${opponentData.opponentESPNID}`}
+                              href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
                               className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 transition-colors duration-200"
                             >
                               {opponentData.opponent}
@@ -907,7 +908,7 @@ export default function TeamDetail() {
                           </div>
                           <div className="mt-2">
                             <Link
-                              href={`/teams/${opponentData.opponentESPNID}`}
+                              href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
                               className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300"
                             >
                               View {opponentData.opponent}&apos;s Team Page →
@@ -1220,7 +1221,7 @@ export default function TeamDetail() {
                     <div key={i}>
                       {game.matchupId ? (
                         <Link
-                          href={`/schedule/${game.matchupId}`}
+                          href={`/league/${leagueIdNum}/schedule/${game.matchupId}`}
                           className={`block p-4 rounded-lg border cursor-pointer hover:shadow-md transition-shadow duration-200 ${
                             game.result === "W"
                               ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 hover:border-green-300"

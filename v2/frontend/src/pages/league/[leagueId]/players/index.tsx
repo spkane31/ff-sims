@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
+import Layout from "@/components/Layout";
 import {
   playersService,
   GetPlayersResponse,
-} from "../../services/playersService";
+} from "@/services/playersService";
 
 // Helper function to get position color
 function getPositionColor(position: string): string {
@@ -27,6 +28,8 @@ function getPositionColor(position: string): string {
 }
 
 export default function PlayersIndex() {
+  const router = useRouter();
+  const leagueId = Number(router.query.leagueId);
   const [playersData, setPlayersData] = useState<GetPlayersResponse | null>(
     null
   );
@@ -282,7 +285,7 @@ export default function PlayersIndex() {
                       </td>
                       <td className="py-4 px-4 whitespace-nowrap">
                         <Link
-                          href={`/players/${player.id}`}
+                          href={`/league/${leagueId}/players/${player.id}`}
                           className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 font-medium transition-colors"
                         >
                           {player.name}

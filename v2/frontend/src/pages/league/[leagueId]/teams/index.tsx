@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import Layout from "../../components/Layout";
+import { useRouter } from "next/router";
+import Layout from "@/components/Layout";
 import Link from "next/link";
-import { useTeams } from "../../hooks/useTeams";
+import { useTeams } from "@/hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
-import AllTimeMatchupsGrid from "../../components/AllTimeMatchupsGrid";
+import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 
 type SortField =
   | "rank"
@@ -17,12 +18,14 @@ type SortField =
 type SortDirection = "asc" | "desc";
 
 export default function Teams() {
-  const { teams, isLoading, error } = useTeams();
+  const router = useRouter();
+  const leagueId = Number(router.query.leagueId);
+  const { teams, isLoading, error } = useTeams(leagueId);
   const {
     schedule,
     isLoading: isScheduleLoading,
     error: scheduleError,
-  } = useSchedule();
+  } = useSchedule(leagueId);
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -417,7 +420,7 @@ export default function Teams() {
                         <td className="py-4 px-4">
                           <div className="flex flex-col">
                             <Link
-                              href={`/teams/${team.espnId}`}
+                              href={`/league/${leagueId}/teams/${team.espnId}`}
                               className="font-medium hover:text-blue-600"
                             >
                               {team.name}
@@ -574,7 +577,7 @@ export default function Teams() {
                           className="flex justify-between items-center py-2"
                         >
                           <Link
-                            href={`/teams/${team.espnId}`}
+                            href={`/league/${leagueId}/teams/${team.espnId}`}
                             className="font-medium hover:text-blue-600"
                           >
                             {team.owner}
@@ -618,7 +621,7 @@ export default function Teams() {
                           className="flex justify-between items-center py-2"
                         >
                           <Link
-                            href={`/teams/${team.espnId}`}
+                            href={`/league/${leagueId}/teams/${team.espnId}`}
                             className="font-medium hover:text-blue-600"
                           >
                             {team.owner}

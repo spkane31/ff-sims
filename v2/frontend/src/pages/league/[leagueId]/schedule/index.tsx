@@ -1,16 +1,19 @@
 import { useState } from "react";
-import Layout from "../../components/Layout";
-import { useSchedule } from "../../hooks/useSchedule";
-import { useStrengthOfSchedule, TeamStrength } from "../../hooks/useStrengthOfSchedule";
+import { useRouter } from "next/router";
+import Layout from "@/components/Layout";
+import { useSchedule } from "@/hooks/useSchedule";
+import { useStrengthOfSchedule, TeamStrength } from "@/hooks/useStrengthOfSchedule";
 import { Matchup } from "@/types/models";
 import Link from "next/link";
 
 export default function Schedule() {
+  const router = useRouter();
+  const leagueId = Number(router.query.leagueId);
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedGameType, setSelectedGameType] = useState<string>("all");
   const [showFutureMatchups, setShowFutureMatchups] = useState<boolean>(false);
-  const { schedule, isLoading, error } = useSchedule({
+  const { schedule, isLoading, error } = useSchedule(leagueId, {
     gameType: selectedGameType,
   });
 
@@ -342,7 +345,7 @@ export default function Schedule() {
                         <td className="py-4 px-4">
                           <div className="flex flex-col md:flex-row md:items-center">
                             <Link
-                              href={`/teams/${game.homeTeamESPNID}`}
+                              href={`/league/${leagueId}/teams/${game.homeTeamESPNID}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.homeScore > game.awayScore
@@ -356,7 +359,7 @@ export default function Schedule() {
                             <span className="md:hidden">@</span>
 
                             <Link
-                              href={`/teams/${game.awayTeamESPNID}`}
+                              href={`/league/${leagueId}/teams/${game.awayTeamESPNID}`}
                               className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
                                 game.completed &&
                                 game.awayScore > game.homeScore
@@ -411,7 +414,7 @@ export default function Schedule() {
 
                         <td className="py-4 px-4 whitespace-nowrap">
                           <Link
-                            href={`/schedule/${game.id}`}
+                            href={`/league/${leagueId}/schedule/${game.id}`}
                             className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
                           >
                             View Details
