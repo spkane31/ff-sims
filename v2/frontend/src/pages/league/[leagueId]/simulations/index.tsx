@@ -42,6 +42,7 @@ export default function Simulations() {
 
   // New useEffect to load schedule and determine available weeks/years
   useEffect(() => {
+    if (!leagueId || isNaN(leagueId)) return;
     const loadScheduleInfo = async () => {
       try {
         // Get all schedule data to determine available years
@@ -84,7 +85,7 @@ export default function Simulations() {
     };
 
     loadScheduleInfo();
-  }, []);
+  }, [leagueId]);
 
   // Separate useEffect to handle year changes
   useEffect(() => {

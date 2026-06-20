@@ -37,16 +37,20 @@ func GetStats(c *gin.Context) {
 		StdDevPoints  float64 `json:"std_dev_points"`
 	}
 
+	yearParam := c.Query("year")
+
 	var matchups []models.Matchup
 
-	err := database.DB.Model(&models.Matchup{}).Select([]string{
+	q := database.DB.Model(&models.Matchup{}).Select([]string{
 		"home_team_id",
 		"away_team_id",
 		"home_team_final_score",
 		"away_team_final_score",
-	}).
-		Where("league_id = ? AND year = ? AND completed = ?", leagueID, 2024, true).
-		Scan(&matchups).Error
+	}).Where("league_id = ? AND completed = ?", leagueID, true)
+	if yearParam != "" {
+		q = q.Where("year = ?", yearParam)
+	}
+	err := q.Scan(&matchups).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get stats"})
 		return

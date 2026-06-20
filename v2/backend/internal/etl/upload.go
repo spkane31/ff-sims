@@ -564,7 +564,7 @@ type Transaction struct {
 }
 
 // processTransactions processes transactions data
-func processTransactions(filePath string) error {
+func processTransactions(filePath string, leagueID uint) error {
 	logging.Infof("Processing transactions data from: %s", filePath)
 
 	// Read the file content
@@ -642,10 +642,10 @@ func processTransactions(filePath string) error {
 			logging.Infof("Created new player: %+v", player)
 		}
 
-		// Get the team by ESPN ID
+		// Get the team by ESPN ID scoped to this league
 		var team models.Team
-		if err := database.DB.First(&team, "espn_id = ?", t.TeamESPNID).Error; err != nil {
-			return fmt.Errorf("error checking team with ESPN ID %d: %w", t.TeamESPNID, err)
+		if err := database.DB.Where("espn_id = ? AND league_id = ?", t.TeamESPNID, leagueID).First(&team).Error; err != nil {
+			return fmt.Errorf("error checking team with ESPN ID %d in league %d: %w", t.TeamESPNID, leagueID, err)
 		}
 
 		transactionsRecord := &models.Transaction{
@@ -661,7 +661,7 @@ func processTransactions(filePath string) error {
 
 		// Check if the transaction already exists
 		var existingTransaction models.Transaction
-		if err := database.DB.First(&existingTransaction, "team_id = ? AND player_id = ? AND date = ?", t.TeamESPNID, t.PlayerID, t.Date).Error; err != nil {
+		if err := database.DB.First(&existingTransaction, "team_id = ? AND player_id = ? AND date = ?", team.ID, player.ID, t.Date).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return fmt.Errorf("error checking existing transaction for team ESPN ID %d and player ID %d: %w", t.TeamESPNID, t.PlayerID, err)
 			}
@@ -759,7 +759,7 @@ func UploadWithOptions(directory string, leagueID uint, calculateExpectedWins bo
 		case "matchups":
 			processErr = processMatchups(filePath, leagueID)
 		case "transactions":
-			processErr = processTransactions(filePath)
+			processErr = processTransactions(filePath, leagueID)
 		case "pure_matchups":
 			processErr = processPureMatchups(filePath, leagueID, createdTeams)
 		default:
