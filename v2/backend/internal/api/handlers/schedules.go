@@ -42,12 +42,16 @@ type Matchup struct {
 	IsPlayoff          bool             `json:"isPlayoff"`
 }
 
-// GetPlayers returns all players with optional filtering
+// GetSchedules returns matchups for a league with optional year/gameType filtering.
 func GetSchedules(c *gin.Context) {
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
 	year := c.Query("year")
 	gameTypeFilter := c.Query("gameType") // "all", "regular", "playoffs"
 
-	slog.Info("Fetching schedules", "year", year, "gameType", gameTypeFilter)
+	slog.Info("Fetching schedules", "leagueId", leagueID, "year", year, "gameType", gameTypeFilter)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -55,16 +59,12 @@ func GetSchedules(c *gin.Context) {
 	schedule, scheduleErr := []models.Matchup{}, error(nil)
 	go func() {
 		defer wg.Done()
-		if year == "" {
-			// Fetch all matchups (completed and future)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Find(&schedule).Error; scheduleErr != nil {
-				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
-			}
-		} else {
-			// Fetch all matchups for the year (completed and future)
-			if scheduleErr = database.DB.Model(&models.Matchup{}).Where("year = ?", year).Find(&schedule).Error; scheduleErr != nil {
-				slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
-			}
+		q := database.DB.Model(&models.Matchup{}).Where("league_id = ?", leagueID)
+		if year != "" {
+			q = q.Where("year = ?", year)
+		}
+		if scheduleErr = q.Find(&schedule).Error; scheduleErr != nil {
+			slog.Error("Failed to fetch schedules from database", "error", scheduleErr)
 		}
 		slog.Info("Fetched schedules from database", "count", len(schedule))
 	}()
@@ -73,7 +73,9 @@ func GetSchedules(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Select("id, espn_id, owner").Find(&teams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).
+			Where("league_id = ?", leagueID).
+			Select("id, espn_id, owner").Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 			return
 		}
@@ -221,8 +223,12 @@ func getPositionOrder(position string) int {
 }
 
 func GetMatchup(c *gin.Context) {
-	id := c.Param("id")
-	slog.Info("Fetching matchup", "id", id)
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+	id := c.Param("matchupId")
+	slog.Info("Fetching matchup", "id", id, "leagueId", leagueID)
 
 	wg := sync.WaitGroup{}
 	wg.Add(3)
@@ -230,7 +236,8 @@ func GetMatchup(c *gin.Context) {
 	matchups, matchupsErr := []models.Matchup{}, error(nil)
 	go func() {
 		defer wg.Done()
-		if matchupsErr = database.DB.Model(&models.Matchup{}).Where("id = ?", id).Find(&matchups).Error; matchupsErr != nil {
+		if matchupsErr = database.DB.Model(&models.Matchup{}).
+			Where("id = ? AND league_id = ?", id, leagueID).Find(&matchups).Error; matchupsErr != nil {
 			slog.Error("Failed to fetch matchup from database", "error", matchupsErr)
 		}
 	}()
@@ -238,7 +245,7 @@ func GetMatchup(c *gin.Context) {
 	teams, teamsErr := []models.Team{}, error(nil)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Find(&teams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).Where("league_id = ?", leagueID).Find(&teams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 		}
 	}()
