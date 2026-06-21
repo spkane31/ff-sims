@@ -6,6 +6,8 @@ import { leaguesService, League } from "@/services/leaguesService";
 import { useTeams } from "@/hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
+import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
+import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
 
 type SortField =
   | "rank"
@@ -491,6 +493,16 @@ export default function LeagueDashboard() {
             headToHeadRecords={headToHeadRecords}
           />
         </section>
+
+        {/* Hall of Fame & Wall of Shame */}
+        <HallOfFameWallOfShame
+          leagueId={id}
+          schedule={schedule}
+          isLoading={isScheduleLoading}
+        />
+
+        {/* All-Time Team Records */}
+        <AllTimeRecordsTable leagueId={id} />
 
         {/* League leaders + summary */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
