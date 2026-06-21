@@ -499,6 +499,7 @@ export default function LeagueDashboard() {
           leagueId={id}
           schedule={schedule}
           isLoading={isScheduleLoading}
+          teams={teams}
         />
 
         {/* All-Time Team Records */}

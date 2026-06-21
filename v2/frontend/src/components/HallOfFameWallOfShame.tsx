@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { GetScheduleResponse } from "@/services/scheduleService";
 import { Matchup } from "@/types/models";
+import { Team } from "@/services/teamsService";
 
 interface Props {
   leagueId: number;
   schedule: GetScheduleResponse | null;
   isLoading: boolean;
+  teams?: Team[];
 }
 
 interface YearResult {
@@ -133,7 +135,7 @@ function calculateWinnersAndLosers(
 
 const PLACEHOLDER: YearResult[] = [{ year: 0, owner: "Loading...", record: "0-0", points: 0 }];
 
-export default function HallOfFameWallOfShame({ leagueId, schedule, isLoading }: Props) {
+export default function HallOfFameWallOfShame({ leagueId, schedule, isLoading, teams }: Props) {
   const { winners, losers } =
     !isLoading && schedule
       ? calculateWinnersAndLosers(schedule)
@@ -141,6 +143,11 @@ export default function HallOfFameWallOfShame({ leagueId, schedule, isLoading }:
 
   const champRows = isLoading ? PLACEHOLDER : winners;
   const loseRows = isLoading ? PLACEHOLDER : losers;
+
+  const getTeamLink = (ownerName: string) => {
+    const team = teams?.find((t) => t.owner === ownerName);
+    return team ? `/league/${leagueId}/teams/${team.espnId}` : null;
+  };
 
   return (
     <section className="py-6">
@@ -166,13 +173,15 @@ export default function HallOfFameWallOfShame({ leagueId, schedule, isLoading }:
                     </h3>
                     {isLoading ? (
                       <p className="text-blue-600 dark:text-blue-400 font-medium">{champion.owner}</p>
-                    ) : (
+                    ) : getTeamLink(champion.owner) ? (
                       <Link
-                        href={`/league/${leagueId}/teams/${champion.owner}`}
+                        href={getTeamLink(champion.owner)!}
                         className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
                       >
                         {champion.owner}
                       </Link>
+                    ) : (
+                      <p className="text-blue-600 dark:text-blue-400 font-medium">{champion.owner}</p>
                     )}
                   </div>
                   {!isLoading && (
@@ -212,13 +221,15 @@ export default function HallOfFameWallOfShame({ leagueId, schedule, isLoading }:
                     </h3>
                     {isLoading ? (
                       <p className="text-red-600 dark:text-red-400 font-medium">{lastPlace.owner}</p>
-                    ) : (
+                    ) : getTeamLink(lastPlace.owner) ? (
                       <Link
-                        href={`/league/${leagueId}/teams/${lastPlace.owner}`}
+                        href={getTeamLink(lastPlace.owner)!}
                         className="text-red-600 dark:text-red-400 font-medium hover:underline"
                       >
                         {lastPlace.owner}
                       </Link>
+                    ) : (
+                      <p className="text-red-600 dark:text-red-400 font-medium">{lastPlace.owner}</p>
                     )}
                   </div>
                   {!isLoading && (
