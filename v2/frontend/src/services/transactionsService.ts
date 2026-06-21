@@ -38,25 +38,11 @@ export interface TransactionsResponse {
  * Transactions API service
  */
 export const transactionsService = {
-  /**
-   * Get all draft picks
-   */
-  getDraftPicks: async (year: number = 2024, leagueId: number = 345674): Promise<DraftPicksResponse> => {
-    return apiClient.get<DraftPicksResponse>(`/transactions/draft-picks?year=${year}&league_id=${leagueId}`);
+  getDraftPicks: async (leagueId: number, year: number = 2024): Promise<DraftPicksResponse> => {
+    return apiClient.get<DraftPicksResponse>(`/leagues/${leagueId}/transactions/draft-picks?year=${year}`);
   },
 
-  /**
-   * Get all transactions
-   */
-  getAllTransactions: async (): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>('/transactions');
+  getAllTransactions: async (leagueId: number): Promise<TransactionsResponse> => {
+    return apiClient.get<TransactionsResponse>(`/leagues/${leagueId}/transactions`);
   },
-
-  /**
-   * Get a single transaction by ID
-   */
-  getTransactionById: async (transactionId: number): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>(`/transactions/${transactionId}`);
-  },
-
 };

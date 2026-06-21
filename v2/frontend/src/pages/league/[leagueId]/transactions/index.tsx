@@ -1,14 +1,17 @@
 import React, { useState } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
+import Layout from "@/components/Layout";
 import { useDraftPicks } from "@/hooks/useTransactions";
 import { useLeagueYears } from "@/hooks/useLeagues";
 
 export default function Transactions() {
+  const router = useRouter();
+  const leagueId = Number(router.query.leagueId);
   const [selectedYear, setSelectedYear] = useState<number>(2024);
   const [hasInitialized, setHasInitialized] = useState<boolean>(false);
-  const { draftPicks, isLoading, error } = useDraftPicks(selectedYear);
-  const { years: availableYears, isLoading: yearsLoading } = useLeagueYears();
+  const { draftPicks, isLoading, error } = useDraftPicks(leagueId, selectedYear);
+  const { years: availableYears, isLoading: yearsLoading } = useLeagueYears(leagueId);
 
   // Set initial year to most recent year only once when data first loads
   React.useEffect(() => {
@@ -103,7 +106,7 @@ export default function Transactions() {
                         <td className="py-3 px-4 text-gray-900 dark:text-gray-100">{pick.pick}</td>
                         <td className="py-3 px-4">
                           <Link 
-                            href={`/teams/${pick.team_id}`}
+                            href={`/league/${leagueId}/teams/${pick.team_id}`}
                             className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 font-medium underline decoration-transparent hover:decoration-current transition-colors"
                           >
                             {pick.owner}
@@ -111,7 +114,7 @@ export default function Transactions() {
                         </td>
                         <td className="py-3 px-4">
                           <Link 
-                            href={`/players/${pick.player_id}`}
+                            href={`/league/${leagueId}/players/${pick.player_id}`}
                             className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 font-medium underline decoration-transparent hover:decoration-current transition-colors"
                           >
                             {pick.player}

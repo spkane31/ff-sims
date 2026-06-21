@@ -92,8 +92,11 @@ func GetTeams(c *gin.Context) {
 		return
 	}
 
-	slog.Info("Fetched teams from database", "count", len(allTeams))
-	slog.Info("Fetched full schedule from database", "count", len(fullSchedule))
+	slog.Info("Fetched teams from database", "count", len(allTeams), "leagueId", leagueID)
+	for _, t := range allTeams {
+		slog.Info("GetTeams team", "leagueId", leagueID, "dbId", t.ID, "espnId", t.ESPNID, "owner", t.Owner)
+	}
+	slog.Info("Fetched full schedule from database", "count", len(fullSchedule), "leagueId", leagueID)
 
 	resp := GetTeamsResponse{}
 
@@ -595,11 +598,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	// Build standings response
 	var standings []CurrentSeasonStandingResponse
 	for _, team := range allTeams {
-		// Skip dummy teams
-		if team.ESPNID == 2 || team.ESPNID == 8 {
-			continue
-		}
-
 		standing := CurrentSeasonStandingResponse{
 			TeamID:   team.ID,
 			ESPNID:   fmt.Sprintf("%d", team.ESPNID),

@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
-import { Simulator } from "../../utils/simulator";
-import { TeamScoringData, Schedule, Matchup } from "../../types/simulation";
-import { scheduleService } from "../../services/scheduleService";
+import Layout from "@/components/Layout";
+import { Simulator } from "@/utils/simulator";
+import { TeamScoringData, Schedule, Matchup } from "@/types/simulation";
+import { scheduleService } from "@/services/scheduleService";
 
 export default function Simulations() {
+  const router = useRouter();
+  const leagueId = Number(router.query.leagueId);
   const [simulating, setSimulating] = useState(false);
   const [results, setResults] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,10 +42,11 @@ export default function Simulations() {
 
   // New useEffect to load schedule and determine available weeks/years
   useEffect(() => {
+    if (!leagueId || isNaN(leagueId)) return;
     const loadScheduleInfo = async () => {
       try {
         // Get all schedule data to determine available years
-        const response = await scheduleService.getFullSchedule();
+        const response = await scheduleService.getFullSchedule(leagueId);
 
         // Extract unique years and set available years
         const uniqueYears = Array.from(
@@ -81,7 +85,7 @@ export default function Simulations() {
     };
 
     loadScheduleInfo();
-  }, []);
+  }, [leagueId]);
 
   // Separate useEffect to handle year changes
   useEffect(() => {
@@ -123,7 +127,7 @@ export default function Simulations() {
   const fetchScheduleDataForYear = async (year: number): Promise<Schedule> => {
     try {
       // Use the v2 schedule service to get all matchup data, then filter by year
-      const response = await scheduleService.getFullSchedule();
+      const response = await scheduleService.getFullSchedule(leagueId);
 
       // Filter matchups by the selected year
       const yearMatchups = response.data.matchups.filter(
@@ -908,7 +912,7 @@ export default function Simulations() {
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap">
                               <Link
-                                href={`/teams/${team.id}`}
+                                href={`/league/${leagueId}/teams/${team.id}`}
                                 className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
                               >
                                 {team.teamName}
@@ -1166,32 +1170,72 @@ export default function Simulations() {
                               </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 2
-                                ? (team.regularSeasonResult[2] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 2 &&
+                                  team.regularSeasonResult[2] > 0.12
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 2 &&
+                                      team.regularSeasonResult[2] > 0.06
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 2
+                                  ? (team.regularSeasonResult[2] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 3
-                                ? (team.regularSeasonResult[3] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 3 &&
+                                  team.regularSeasonResult[3] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 3 &&
+                                      team.regularSeasonResult[3] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 3
+                                  ? (team.regularSeasonResult[3] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 4
-                                ? (team.regularSeasonResult[4] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 4 &&
+                                  team.regularSeasonResult[4] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 4 &&
+                                      team.regularSeasonResult[4] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 4
+                                  ? (team.regularSeasonResult[4] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 5
-                                ? (team.regularSeasonResult[5] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 5 &&
+                                  team.regularSeasonResult[5] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 5 &&
+                                      team.regularSeasonResult[5] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 5
+                                  ? (team.regularSeasonResult[5] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span
