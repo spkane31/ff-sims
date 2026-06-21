@@ -335,7 +335,7 @@ function getStreakText(streak: { type: string; count: number }) {
 
 export default function TeamDetail() {
   const router = useRouter();
-  const { id, leagueId } = router.query;
+  const { teamId, leagueId } = router.query;
   const leagueIdNum = Number(leagueId);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -362,7 +362,7 @@ export default function TeamDetail() {
   >([]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!teamId) return;
 
     const fetchTeamData = async () => {
       try {
@@ -370,7 +370,7 @@ export default function TeamDetail() {
         setError(null);
 
         // Use teamsService to fetch detailed team data
-        const teamData = await teamsService.getTeamDetail(leagueIdNum, id as string);
+        const teamData = await teamsService.getTeamDetail(leagueIdNum, teamId as string);
 
         // Map API data to the format expected by the UI
         const mappedTeam = mapApiDataToUiFormat(teamData);
@@ -396,7 +396,7 @@ export default function TeamDetail() {
     };
 
     fetchTeamData();
-  }, [id]);
+  }, [teamId]);
 
   if (isLoading) {
     return (

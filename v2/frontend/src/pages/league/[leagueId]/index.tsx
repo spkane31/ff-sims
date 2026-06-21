@@ -453,7 +453,7 @@ export default function LeagueDashboard() {
                             const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
                             const avgSign = avgDiff > 0 ? "+" : "";
                             const totalSign = totalDiff > 0 ? "+" : "";
-                            return `${avgSign}${Math.abs(avgDiff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${totalSign}${Math.abs(totalDiff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+                            return `${avgSign}${avgDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${totalSign}${totalDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
                           })()}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">

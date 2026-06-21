@@ -62,9 +62,9 @@ function findBetterLineupDecisions(players: Player[]) {
 
 export default function MatchupDetail() {
   const router = useRouter();
-  const { id, leagueId } = router.query;
+  const { matchupId, leagueId } = router.query;
   const leagueIdNum = Number(leagueId);
-  const { matchup, isLoading, error } = useMatchupDetail(leagueIdNum, id as string);
+  const { matchup, isLoading, error } = useMatchupDetail(leagueIdNum, matchupId as string);
 
   if (isLoading || matchup === null) {
     return (

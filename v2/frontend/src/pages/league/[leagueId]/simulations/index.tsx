@@ -1170,32 +1170,72 @@ export default function Simulations() {
                               </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 2
-                                ? (team.regularSeasonResult[2] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 2 &&
+                                  team.regularSeasonResult[2] > 0.12
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 2 &&
+                                      team.regularSeasonResult[2] > 0.06
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 2
+                                  ? (team.regularSeasonResult[2] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 3
-                                ? (team.regularSeasonResult[3] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 3 &&
+                                  team.regularSeasonResult[3] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 3 &&
+                                      team.regularSeasonResult[3] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 3
+                                  ? (team.regularSeasonResult[3] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 4
-                                ? (team.regularSeasonResult[4] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 4 &&
+                                  team.regularSeasonResult[4] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 4 &&
+                                      team.regularSeasonResult[4] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 4
+                                  ? (team.regularSeasonResult[4] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
-                              {team.regularSeasonResult.length > 5
-                                ? (team.regularSeasonResult[5] * 100).toFixed(
-                                    1
-                                  ) + "%"
-                                : "0.0%"}
+                              <span
+                                className={`font-medium ${
+                                  team.regularSeasonResult.length > 5 &&
+                                  team.regularSeasonResult[5] > 0.10
+                                    ? "text-green-600 dark:text-green-400"
+                                    : team.regularSeasonResult.length > 5 &&
+                                      team.regularSeasonResult[5] > 0.05
+                                    ? "text-yellow-600 dark:text-yellow-400"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }`}
+                              >
+                                {team.regularSeasonResult.length > 5
+                                  ? (team.regularSeasonResult[5] * 100).toFixed(1) + "%"
+                                  : "0.0%"}
+                              </span>
                             </td>
                             <td className="py-2 px-4 whitespace-nowrap text-center">
                               <span

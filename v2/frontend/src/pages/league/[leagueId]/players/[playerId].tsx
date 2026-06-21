@@ -92,7 +92,7 @@ function getRelevantStats(stats: PlayerStats, position: string) {
 
 export default function PlayerDetailPage() {
   const router = useRouter();
-  const { id, leagueId } = router.query;
+  const { playerId, leagueId } = router.query;
   const leagueIdNum = Number(leagueId);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -105,7 +105,7 @@ export default function PlayerDetailPage() {
   const [weekFilter, setWeekFilter] = useState<string>("all");
 
   useEffect(() => {
-    if (!id) return;
+    if (!playerId) return;
 
     const fetchPlayerData = async () => {
       try {
@@ -113,7 +113,7 @@ export default function PlayerDetailPage() {
         setError(null);
 
         // Use playersService to fetch player data
-        const playerData = await playersService.getPlayerDetail(id as string);
+        const playerData = await playersService.getPlayerDetail(playerId as string);
         setPlayer(playerData);
       } catch (err) {
         console.error("Error fetching player data:", err);
@@ -126,7 +126,7 @@ export default function PlayerDetailPage() {
     };
 
     fetchPlayerData();
-  }, [id]);
+  }, [playerId]);
 
   if (isLoading) {
     return (
