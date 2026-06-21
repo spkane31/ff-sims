@@ -772,12 +772,14 @@ func UploadWithOptions(directory string, leagueID uint, calculateExpectedWins bo
 		}
 	}
 
-	// After all data is processed, calculate expected wins for any new/updated weeks
+	// After all data is processed, calculate expected wins for all years.
+	// processExpectedWinsAllYearsWithRecalc queries distinct years from matchups,
+	// processes every week via upserts, and finalizes the season aggregate — so it
+	// is correct for both a first-time historical load and an incremental weekly update.
 	if calculateExpectedWins {
 		logging.Infof("Processing expected wins calculations after ETL update")
-		if err := processExpectedWinsAfterETL(leagueID); err != nil {
+		if err := processExpectedWinsAllYearsWithRecalc(leagueID); err != nil {
 			logging.Warnf("Failed to process expected wins after ETL: %v", err)
-			// Don't return error as ETL was successful, just log the warning
 		}
 	} else {
 		logging.Infof("Skipping expected wins calculations (disabled by flag)")
@@ -786,70 +788,6 @@ func UploadWithOptions(directory string, leagueID uint, calculateExpectedWins bo
 	return nil
 }
 
-// processExpectedWinsAfterETL calculates expected wins for any newly completed weeks
-func processExpectedWinsAfterETL(leagueID uint) error {
-	db := database.DB
-
-	// Get the current year for processing
-	currentYear := uint(time.Now().Year())
-
-	// Find the most recent completed week for this league
-	lastCompletedWeek, err := models.GetLastCompletedWeek(db, leagueID, currentYear)
-	if err != nil || lastCompletedWeek == 0 {
-		logging.Infof("No completed weeks found for expected wins calculation")
-		return nil
-	}
-
-	// Check if we've already processed this week
-	processed, err := models.IsWeekProcessed(db, leagueID, currentYear, lastCompletedWeek)
-	if err != nil {
-		return fmt.Errorf("failed to check if week is processed: %w", err)
-	}
-
-	if processed {
-		logging.Infof("Week %d already processed for expected wins", lastCompletedWeek)
-
-		// Check if regular season is complete and season needs finalization
-		if simulation.IsRegularSeasonComplete(db, leagueID, currentYear) {
-			// Check if season is already finalized
-			var seasonCount int64
-			db.Model(&models.SeasonExpectedWins{}).
-				Where("league_id = ? AND year = ?", leagueID, currentYear).
-				Count(&seasonCount)
-
-			if seasonCount == 0 {
-				logging.Infof("Regular season complete, finalizing season expected wins")
-				err = simulation.FinalizeSeasonExpectedWins(leagueID, currentYear)
-				if err != nil {
-					return fmt.Errorf("failed to finalize season expected wins: %w", err)
-				}
-				logging.Infof("Successfully finalized season expected wins")
-			}
-		}
-		return nil
-	}
-
-	// Process the newly completed week
-	logging.Infof("Processing expected wins for week %d", lastCompletedWeek)
-	err = simulation.ProcessWeeklyExpectedWins(leagueID, currentYear, lastCompletedWeek)
-	if err != nil {
-		return fmt.Errorf("failed to process weekly expected wins: %w", err)
-	}
-
-	logging.Infof("Successfully processed expected wins for week %d", lastCompletedWeek)
-
-	// Check if this completes the regular season
-	if simulation.IsRegularSeasonComplete(db, leagueID, currentYear) {
-		logging.Infof("Regular season complete after processing week %d, finalizing season", lastCompletedWeek)
-		err = simulation.FinalizeSeasonExpectedWins(leagueID, currentYear)
-		if err != nil {
-			return fmt.Errorf("failed to finalize season expected wins: %w", err)
-		}
-		logging.Infof("Successfully finalized season expected wins")
-	}
-
-	return nil
-}
 
 // ProcessExpectedWinsWithYear runs only the expected wins calculation without ETL.
 // The database must already be initialised (resolveLeagueID in main.go does this).
