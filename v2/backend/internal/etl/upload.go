@@ -451,10 +451,15 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		GameStats:       gameStats,
 	}
 
-	// Check if the box score already exists
+	// Check if the box score already exists for this player this week.
+	// Players are cross-league, so we key on (player_id, week, year) via the matchup
+	// join rather than (matchup_id, player_id) — otherwise running the ETL for a second
+	// league creates a duplicate row for any player who appears in both leagues.
 	var existingBoxScore models.BoxScore
-	if err := database.DB.First(&existingBoxScore, "matchup_id = ? AND player_id = ?",
-		matchupID, playerRecord.ID).Error; err != nil {
+	if err := database.DB.
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.week = ? AND matchups.year = ?", week, year).
+		Where("box_scores.player_id = ?", playerRecord.ID).
+		First(&existingBoxScore).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return fmt.Errorf("error checking existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
@@ -468,19 +473,7 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		existingBoxScore.ActualPoints = player.Points
 		existingBoxScore.ProjectedPoints = player.ProjectedPoints
 		existingBoxScore.SlotPosition = player.SlotPosition
-		existingBoxScore.GameStats = models.PlayerStats{
-			PassingYards:   stats.Breakdown[PassingYards],
-			PassingTDs:     stats.Breakdown[PassingTouchdowns],
-			Interceptions:  stats.Breakdown[Turnovers] - stats.Breakdown[LostFumbles],
-			RushingYards:   stats.Breakdown[RushingYards],
-			RushingTDs:     stats.Breakdown[RushingTouchdowns],
-			Receptions:     stats.Breakdown[ReceivingReceptions],
-			ReceivingYards: stats.Breakdown[ReceivingYards],
-			ReceivingTDs:   stats.Breakdown[ReceivingTouchdowns],
-			Fumbles:        stats.Breakdown[Fumbles],
-			FieldGoals:     stats.Breakdown[FieldGoalsMade],
-			ExtraPoints:    stats.Breakdown[ExtraPointsMade],
-		}
+		existingBoxScore.GameStats = gameStats
 		if err := database.DB.Save(&existingBoxScore).Error; err != nil {
 			return fmt.Errorf("error updating existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
