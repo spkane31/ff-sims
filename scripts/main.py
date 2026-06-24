@@ -476,9 +476,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Create output directory if it doesn't exist
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
+    league_subdir = os.path.join(args.output_dir, str(args.league_id), str(args.year))
+    os.makedirs(league_subdir, exist_ok=True)
 
     SWID = os.environ.get("SWID")
     ESPN_S2 = os.environ.get("ESPN_S2")
@@ -495,11 +494,11 @@ if __name__ == "__main__":
     logging.info(f"League ID: {args.league_id}\tYear: {league.year}\tCurrent Week: {league.current_week}")
 
     # Define file paths for outputs
-    teams_file = os.path.join(args.output_dir, f"teams_{args.year}.json")
-    matchups_file = os.path.join(args.output_dir, f"matchups_{args.year}.json")
-    box_score_file = os.path.join(args.output_dir, f"box_score_players_{args.year}.json")
-    draft_file = os.path.join(args.output_dir, f"draft_selections_{args.year}.json")
-    transactions_file = os.path.join(args.output_dir, f"transactions_{args.year}.json")
+    teams_file = os.path.join(league_subdir, f"teams_{args.year}.json")
+    matchups_file = os.path.join(league_subdir, f"matchups_{args.year}.json")
+    box_score_file = os.path.join(league_subdir, f"box_score_players_{args.year}.json")
+    draft_file = os.path.join(league_subdir, f"draft_selections_{args.year}.json")
+    transactions_file = os.path.join(league_subdir, f"transactions_{args.year}.json")
 
     # Create empty files to start with
     for file_path in [
