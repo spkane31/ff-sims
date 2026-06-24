@@ -33,6 +33,7 @@ export function useLeagueYears(leagueId: number) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchLeagueYears = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);

@@ -7,6 +7,7 @@ export function useSchedule(leagueId: number, options?: { gameType?: string }) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchSchedule = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
