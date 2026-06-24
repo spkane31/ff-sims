@@ -1,0 +1,134 @@
+package activities
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"go.temporal.io/sdk/temporal"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"workers/internal/models"
+	"workers/internal/sleeper"
+)
+
+// Seasons is the list of NFL seasons scraped per user discovery run.
+var Seasons = []string{"2022", "2023", "2024", "2025"}
+
+// DiscoveryActivities holds dependencies for user/league graph expansion activities.
+type DiscoveryActivities struct {
+	DB      *gorm.DB
+	Sleeper *sleeper.Client
+}
+
+// GetStaleUsers returns up to batchSize user IDs ordered by last_fetched_at ASC NULLS FIRST,
+// excluding users that have been permanently skipped (404).
+func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, batchSize int) ([]string, error) {
+	var users []models.SleeperUser
+	err := a.DB.WithContext(ctx).
+		Where("skipped_at IS NULL").
+		Order("CASE WHEN last_fetched_at IS NULL THEN 0 ELSE 1 END, last_fetched_at ASC").
+		Limit(batchSize).
+		Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(users))
+	for i, u := range users {
+		ids[i] = u.SleeperUserID
+	}
+	return ids, nil
+}
+
+// FetchUserLeagues fetches all leagues for userID across all configured seasons,
+// upserts them into sleeper_leagues and sleeper_league_users, and returns the discovered league IDs.
+// Returns a non-retryable NOT_FOUND error if the user no longer exists in Sleeper.
+func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, userID string) ([]string, error) {
+	var leagueIDs []string
+	for _, season := range Seasons {
+		leagues, err := a.Sleeper.GetUserLeagues(ctx, userID, "nfl", season)
+		if err != nil {
+			var nfe *sleeper.NotFoundError
+			if errors.As(err, &nfe) {
+				return nil, temporal.NewNonRetryableApplicationError(
+					"user not found: "+userID, "NOT_FOUND", err,
+				)
+			}
+			return nil, err
+		}
+		for _, l := range leagues {
+			row := models.SleeperLeague{
+				SleeperLeagueID: l.LeagueID,
+				Name:            l.Name,
+				Season:          l.Season,
+				Sport:           l.Sport,
+				Status:          l.Status,
+				TotalRosters:    l.TotalRosters,
+			}
+			if err := a.DB.WithContext(ctx).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&row).Error; err != nil {
+				return nil, err
+			}
+			junc := models.SleeperLeagueUser{
+				SleeperLeagueID: l.LeagueID,
+				SleeperUserID:   userID,
+			}
+			if err := a.DB.WithContext(ctx).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&junc).Error; err != nil {
+				return nil, err
+			}
+			leagueIDs = append(leagueIDs, l.LeagueID)
+		}
+	}
+	return leagueIDs, nil
+}
+
+// FetchLeagueMembers fetches all members of leagueID and upserts them as new sleeper_users
+// with last_fetched_at=NULL so they are picked up by future dispatcher runs.
+func (a *DiscoveryActivities) FetchLeagueMembers(ctx context.Context, leagueID string) error {
+	users, err := a.Sleeper.GetLeagueUsers(ctx, leagueID)
+	if err != nil {
+		var nfe *sleeper.NotFoundError
+		if errors.As(err, &nfe) {
+			return temporal.NewNonRetryableApplicationError(
+				"league not found: "+leagueID, "NOT_FOUND", err,
+			)
+		}
+		return err
+	}
+	for _, u := range users {
+		row := models.SleeperUser{
+			SleeperUserID: u.UserID,
+			Username:      u.Username,
+			DisplayName:   u.DisplayName,
+			Avatar:        u.Avatar,
+		}
+		if err := a.DB.WithContext(ctx).
+			Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MarkUserFetched sets last_fetched_at=now() on the given user.
+func (a *DiscoveryActivities) MarkUserFetched(ctx context.Context, userID string) error {
+	now := time.Now().UTC()
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperUser{}).
+		Where("sleeper_user_id = ?", userID).
+		Update("last_fetched_at", now).Error
+}
+
+// MarkUserSkipped sets skipped_at=now() so the user is excluded from future batches.
+func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, userID string) error {
+	now := time.Now().UTC()
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperUser{}).
+		Where("sleeper_user_id = ?", userID).
+		Update("skipped_at", now).Error
+}
