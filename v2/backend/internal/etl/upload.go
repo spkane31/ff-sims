@@ -696,6 +696,17 @@ func UploadWithOptions(directory string, leagueID uint, calculateExpectedWins bo
 		return fmt.Errorf("failed to read directory %s: %w", directory, err)
 	}
 
+	fileCount := 0
+	for _, f := range files {
+		if !f.IsDir() {
+			fileCount++
+		}
+	}
+	if fileCount == 0 {
+		logging.Warnf("No files found in %s, skipping", directory)
+		return nil
+	}
+
 	// Regex to extract file type from filename (pattern: {type}_{year}.json)
 	re := regexp.MustCompile(`^(.+)_\d{4}\.json$`)
 
