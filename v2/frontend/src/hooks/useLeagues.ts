@@ -52,3 +52,29 @@ export function useLeagueYears(leagueId: number) {
 
   return { years, isLoading, error };
 }
+
+export function useLeague(leagueId: number | undefined) {
+  const [league, setLeague] = useState<League | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (leagueId === undefined) {
+      setLeague(null);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    leaguesService
+      .getLeague(leagueId)
+      .then(setLeague)
+      .catch((err) =>
+        setError(err instanceof Error ? err : new Error("Failed to fetch league"))
+      )
+      .finally(() => setIsLoading(false));
+  }, [leagueId]);
+
+  return { league, isLoading, error };
+}
