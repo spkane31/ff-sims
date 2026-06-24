@@ -9,7 +9,7 @@ COPY frontend/ ./
 RUN NODE_OPTIONS="--max_old_space_size=2048" npm run build
 
 # Stage 2: Build Go backend
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.25-alpine AS backend-builder
 WORKDIR /app/backend
 
 # Accept build arguments
