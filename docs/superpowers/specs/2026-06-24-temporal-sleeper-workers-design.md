@@ -92,11 +92,18 @@ CREATE INDEX idx_sleeper_users_last_fetched ON sleeper_users (last_fetched_at AS
 CREATE TABLE sleeper_leagues (
     sleeper_league_id  TEXT        PRIMARY KEY,
     name               TEXT,
-    season             TEXT,          -- "2024", "2025"
-    sport              TEXT,          -- "nfl"
-    status             TEXT,          -- "in_season", "complete", etc.
+    season             TEXT,              -- "2024", "2025"
+    sport              TEXT,              -- "nfl"
+    status             TEXT,              -- "in_season", "complete", etc.
     total_rosters      INT,
-    last_fetched_at    TIMESTAMPTZ,   -- NULL = found but data not yet fetched
+    -- Scoring format (derived from API response for easy querying)
+    ppr                FLOAT,             -- 0 = standard, 0.5 = half PPR, 1.0 = full PPR (from scoring_settings.rec)
+    te_premium         FLOAT,             -- bonus reception points for TEs (from scoring_settings.bonus_rec_te)
+    is_superflex       BOOLEAN,           -- true if roster_positions contains "SUPER_FLEX"
+    -- Full raw settings stored for future use
+    scoring_settings   JSONB,             -- complete scoring_settings object from Sleeper API
+    roster_positions   JSONB,             -- array of roster slot strings, e.g. ["QB","WR","SUPER_FLEX",...]
+    last_fetched_at    TIMESTAMPTZ,       -- NULL = found but data not yet fetched
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -264,6 +271,10 @@ Handles one league. Idempotent.
 
 ```
 LeagueSyncWorkflow(leagueID string)
+  │
+  ├─ Activity: FetchLeagueDetails(leagueID)
+  │    → GET /v1/league/{id}
+  │    → Upsert scoring_settings, roster_positions, ppr, te_premium, is_superflex into sleeper_leagues
   │
   ├─ Activity: FetchLeagueDrafts(leagueID)
   │    → GET /v1/league/{id}/drafts
