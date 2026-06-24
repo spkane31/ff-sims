@@ -1,6 +1,20 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
+import { useLeague } from "@/hooks/useLeagues";
+
+const platformColors: Record<string, string> = {
+  espn: "bg-red-600",
+};
+
+function PlatformBadge({ platform }: { platform: string }) {
+  const color = platformColors[platform.toLowerCase()] ?? "bg-gray-500";
+  return (
+    <span className={`${color} text-white text-xs px-2 py-0.5 rounded-full font-semibold ml-2`}>
+      {platform.toUpperCase()}
+    </span>
+  );
+}
 
 const Header = () => {
   const router = useRouter();
@@ -8,6 +22,9 @@ const Header = () => {
 
   const { leagueId } = router.query;
   const lid = leagueId as string | undefined;
+  const lidNum = lid ? Number(lid) : undefined;
+
+  const { league, isLoading: isLeagueLoading } = useLeague(lidNum);
 
   const navItems = lid
     ? [
@@ -30,8 +47,17 @@ const Header = () => {
     <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md">
       <div className="container mx-auto px-4 py-4">
         <div className="flex justify-between items-center">
-          <Link href={lid ? `/league/${lid}` : "/"} className="text-2xl font-bold">
-            The League
+          <Link href={lid ? `/league/${lid}` : "/"} className="text-2xl font-bold flex items-center">
+            {league ? (
+              <>
+                {league.name}
+                <PlatformBadge platform={league.platform} />
+              </>
+            ) : lid && isLeagueLoading ? (
+              <span className="opacity-60">Loading…</span>
+            ) : (
+              "The League"
+            )}
           </Link>
 
           {/* Desktop Navigation */}
