@@ -18,7 +18,7 @@ var DB *gorm.DB
 // Initialize sets up the database connection
 func Initialize(cfg *config.Config) error {
 	var err error
-	slog.Info("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
+	slog.Debug("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
 	DB, err = gorm.Open(postgres.Open(cfg.DB.ConnectionString), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
