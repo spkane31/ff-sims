@@ -14,6 +14,7 @@ export function useTeams(leagueId: number): UseTeamsReturn {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeams = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
@@ -39,6 +40,7 @@ export function useTeam(leagueId: number, teamId: number) {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTeam = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);

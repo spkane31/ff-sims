@@ -14,6 +14,7 @@ export function useTransactions(leagueId: number): UseTransactionsReturn {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTransactions = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
@@ -46,6 +47,7 @@ export function useDraftPicks(leagueId: number, year: number = 2024): UseDraftPi
   const [error, setError] = useState<Error | null>(null);
 
   const fetchDraftPicks = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
