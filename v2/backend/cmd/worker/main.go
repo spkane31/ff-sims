@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"os"
 	"os/signal"
@@ -27,13 +28,7 @@ func main() {
 		log.Fatalf("db connect: %v", err)
 	}
 
-	temporalHost := getEnv("TEMPORAL_HOST", "localhost:7233")
-	temporalNS := getEnv("TEMPORAL_NAMESPACE", "default")
-
-	c, err := client.Dial(client.Options{
-		HostPort:  temporalHost,
-		Namespace: temporalNS,
-	})
+	c, err := client.Dial(temporalClientOptions())
 	if err != nil {
 		log.Fatalf("temporal dial: %v", err)
 	}
@@ -88,4 +83,35 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// temporalClientOptions returns client.Options configured for either Temporal Cloud
+// (when TEMPORAL_NAMESPACE_ENDPOINT is set) or a local dev server.
+//
+// Temporal Cloud env vars:
+//   TEMPORAL_NAMESPACE_ENDPOINT  e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
+//   TEMPORAL_NAMESPACE           e.g. ff-sims.b3i2g
+//   TEMPORAL_API_KEY             API key for authentication
+//
+// Local dev env vars (fallbacks):
+//   TEMPORAL_HOST       default localhost:7233
+//   TEMPORAL_NAMESPACE  default "default"
+func temporalClientOptions() client.Options {
+	if endpoint := os.Getenv("TEMPORAL_NAMESPACE_ENDPOINT"); endpoint != "" {
+		opts := client.Options{
+			HostPort:  endpoint,
+			Namespace: os.Getenv("TEMPORAL_NAMESPACE"),
+			ConnectionOptions: client.ConnectionOptions{
+				TLS: &tls.Config{},
+			},
+		}
+		if apiKey := os.Getenv("TEMPORAL_API_KEY"); apiKey != "" {
+			opts.Credentials = client.NewAPIKeyStaticCredentials(apiKey)
+		}
+		return opts
+	}
+	return client.Options{
+		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
+		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
+	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
@@ -62,10 +63,7 @@ func run(ctx context.Context, username string) error {
 		return fmt.Errorf("insert user: %w", err)
 	}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
-		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
-	})
+	c, err := client.Dial(temporalClientOptions())
 	if err != nil {
 		return fmt.Errorf("temporal dial: %w", err)
 	}
@@ -92,4 +90,24 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func temporalClientOptions() client.Options {
+	if endpoint := os.Getenv("TEMPORAL_NAMESPACE_ENDPOINT"); endpoint != "" {
+		opts := client.Options{
+			HostPort:  endpoint,
+			Namespace: os.Getenv("TEMPORAL_NAMESPACE"),
+			ConnectionOptions: client.ConnectionOptions{
+				TLS: &tls.Config{},
+			},
+		}
+		if apiKey := os.Getenv("TEMPORAL_API_KEY"); apiKey != "" {
+			opts.Credentials = client.NewAPIKeyStaticCredentials(apiKey)
+		}
+		return opts
+	}
+	return client.Options{
+		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
+		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
+	}
 }
