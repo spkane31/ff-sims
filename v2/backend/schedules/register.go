@@ -17,7 +17,7 @@ func Register(ctx context.Context, c client.Client) error {
 		ID: "sleeper-discovery-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 15 * time.Minute},
+				{Every: 10 * time.Minute},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
@@ -32,7 +32,7 @@ func Register(ctx context.Context, c client.Client) error {
 		ID: "sleeper-draft-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 15 * time.Minute},
+				{Every: 10 * time.Minute},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
@@ -47,7 +47,7 @@ func Register(ctx context.Context, c client.Client) error {
 		ID: "sleeper-transaction-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 15 * time.Minute},
+				{Every: 10 * time.Minute},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
@@ -63,9 +63,9 @@ func Register(ctx context.Context, c client.Client) error {
 		Spec: client.ScheduleSpec{
 			Calendars: []client.ScheduleCalendarSpec{
 				{
-					Hour:   []client.ScheduleRange{{Start: 3}},
-					Minute: []client.ScheduleRange{{Start: 0}},
-					Comment: "Daily at 03:00 UTC",
+					DayOfWeek: []client.ScheduleRange{{Start: 2}}, // Tuesday
+					Hour:      []client.ScheduleRange{{Start: 8}}, // 03:00 EST (UTC-5)
+					Minute:    []client.ScheduleRange{{Start: 0}},
 				},
 			},
 		},
