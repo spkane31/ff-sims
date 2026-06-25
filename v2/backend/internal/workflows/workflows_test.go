@@ -19,18 +19,12 @@ func TestDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	da := &activities.DiscoveryActivities{}
-	dfa := &activities.DataFetchActivities{}
-
 	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).
 		Return([]string{"u1", "u2"}, nil)
-	env.OnActivity(dfa.GetStaleLeagues, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
-		Return([]string{"lg1"}, nil)
 
 	env.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
-	env.RegisterWorkflow(workflows.LeagueSyncWorkflow)
 	env.OnWorkflow(workflows.UserDiscoveryWorkflow, mock.Anything, workflows.UserDiscoveryParams{UserID: "u1"}).Return(nil)
 	env.OnWorkflow(workflows.UserDiscoveryWorkflow, mock.Anything, workflows.UserDiscoveryParams{UserID: "u2"}).Return(nil)
-	env.OnWorkflow(workflows.LeagueSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
@@ -44,10 +38,7 @@ func TestDispatcher_EmptyBatch(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	da := &activities.DiscoveryActivities{}
-	dfa := &activities.DataFetchActivities{}
-
 	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).Return([]string{}, nil)
-	env.OnActivity(dfa.GetStaleLeagues, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).Return([]string{}, nil)
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
@@ -106,62 +97,6 @@ func TestUserDiscovery_MemberFetchFailureContinues(t *testing.T) {
 	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
 
 	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "u1"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-// ---- LeagueSyncWorkflow ----
-
-func TestLeagueSync_FullPath(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).Return([]string{"d1", "d2"}, nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).Return(nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d2"}).Return(nil)
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-func TestLeagueSync_NotFoundCallsSkip(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "gone"}).
-		Return(temporal.NewNonRetryableApplicationError("league not found", "NOT_FOUND", nil))
-	env.OnActivity(dfa.MarkLeagueSkipped, mock.Anything, activities.MarkLeagueSkippedParams{LeagueID: "gone"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "gone"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-func TestLeagueSync_DraftPicksFailureContinues(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).Return([]string{"d1"}, nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).
-		Return(temporal.NewApplicationError("timeout", "TIMEOUT", nil))
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())

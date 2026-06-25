@@ -28,6 +28,36 @@ func Register(ctx context.Context, c client.Client) error {
 		return err
 	}
 
+	if err := upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-draft-sync-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{Every: 15 * time.Minute},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:  workflows.DraftSyncDispatcher,
+			TaskQueue: workflows.TaskQueueDrafts,
+		},
+	}); err != nil {
+		return err
+	}
+
+	if err := upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-transaction-sync-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{Every: 15 * time.Minute},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:  workflows.TransactionSyncDispatcher,
+			TaskQueue: workflows.TaskQueueTransactions,
+		},
+	}); err != nil {
+		return err
+	}
+
 	return upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-player-sync-schedule",
 		Spec: client.ScheduleSpec{

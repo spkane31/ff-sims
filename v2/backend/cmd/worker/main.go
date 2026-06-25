@@ -49,17 +49,24 @@ func main() {
 	dw.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
 	dw.RegisterActivity(da)
 
-	// Data worker: LeagueSyncWorkflow
-	dataw := worker.New(c, workflows.TaskQueueData, worker.Options{})
-	dataw.RegisterWorkflow(workflows.LeagueSyncWorkflow)
-	dataw.RegisterActivity(dfa)
+	// Drafts worker: DraftSyncDispatcher + LeagueDraftSyncWorkflow
+	draftsw := worker.New(c, workflows.TaskQueueDrafts, worker.Options{})
+	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
+	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
+	draftsw.RegisterActivity(dfa)
+
+	// Transactions worker: TransactionSyncDispatcher + LeagueTransactionSyncWorkflow
+	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{})
+	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
+	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
+	transactionsw.RegisterActivity(dfa)
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow
 	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{})
 	psw.RegisterWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 	psw.RegisterActivity(psa)
 
-	workers := []worker.Worker{dw, dataw, psw}
+	workers := []worker.Worker{dw, draftsw, transactionsw, psw}
 	for _, w := range workers {
 		if err := w.Start(); err != nil {
 			log.Fatalf("worker start: %v", err)
@@ -89,13 +96,15 @@ func getEnv(key, def string) string {
 // (when TEMPORAL_NAMESPACE_ENDPOINT is set) or a local dev server.
 //
 // Temporal Cloud env vars:
-//   TEMPORAL_NAMESPACE_ENDPOINT  e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
-//   TEMPORAL_NAMESPACE           e.g. ff-sims.b3i2g
-//   TEMPORAL_API_KEY             API key for authentication
+//
+//	TEMPORAL_NAMESPACE_ENDPOINT  e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
+//	TEMPORAL_NAMESPACE           e.g. ff-sims.b3i2g
+//	TEMPORAL_API_KEY             API key for authentication
 //
 // Local dev env vars (fallbacks):
-//   TEMPORAL_HOST       default localhost:7233
-//   TEMPORAL_NAMESPACE  default "default"
+//
+//	TEMPORAL_HOST       default localhost:7233
+//	TEMPORAL_NAMESPACE  default "default"
 func temporalClientOptions() client.Options {
 	if endpoint := os.Getenv("TEMPORAL_NAMESPACE_ENDPOINT"); endpoint != "" {
 		opts := client.Options{

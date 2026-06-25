@@ -10,7 +10,6 @@ import (
 
 const (
 	TaskQueueDiscovery    = "sleeper-discovery"
-	TaskQueueData         = "sleeper-data"         // removed in Task 6
 	TaskQueueDrafts       = "sleeper-drafts"
 	TaskQueueTransactions = "sleeper-transactions"
 	TaskQueuePlayerSync   = "sleeper-player-sync"
