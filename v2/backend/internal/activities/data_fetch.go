@@ -201,6 +201,64 @@ func (a *DataFetchActivities) MarkLeagueFetched(ctx context.Context, params Mark
 		Update("last_fetched_at", now).Error
 }
 
+// GetStaleLeaguesForDrafts returns up to batchSize league IDs that have had their
+// details fetched (last_fetched_at IS NOT NULL) but whose drafts are stale,
+// ordered NULL first then oldest.
+func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, params GetStaleLeaguesParams) ([]string, error) {
+	var leagues []models.SleeperLeague
+	err := a.DB.WithContext(ctx).
+		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL").
+		Order("CASE WHEN last_drafts_fetched_at IS NULL THEN 0 ELSE 1 END, last_drafts_fetched_at ASC").
+		Limit(params.BatchSize).
+		Find(&leagues).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(leagues))
+	for i, l := range leagues {
+		ids[i] = l.SleeperLeagueID
+	}
+	return ids, nil
+}
+
+// GetStaleLeaguesForTransactions returns up to batchSize league IDs that have had their
+// details fetched (last_fetched_at IS NOT NULL) but whose transactions are stale,
+// ordered NULL first then oldest.
+func (a *DataFetchActivities) GetStaleLeaguesForTransactions(ctx context.Context, params GetStaleLeaguesParams) ([]string, error) {
+	var leagues []models.SleeperLeague
+	err := a.DB.WithContext(ctx).
+		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL").
+		Order("CASE WHEN last_transactions_fetched_at IS NULL THEN 0 ELSE 1 END, last_transactions_fetched_at ASC").
+		Limit(params.BatchSize).
+		Find(&leagues).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(leagues))
+	for i, l := range leagues {
+		ids[i] = l.SleeperLeagueID
+	}
+	return ids, nil
+}
+
+// MarkLeagueDraftsFetched sets last_drafts_fetched_at=now() on the given league.
+func (a *DataFetchActivities) MarkLeagueDraftsFetched(ctx context.Context, params MarkLeagueFetchedParams) error {
+	now := time.Now().UTC()
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", params.LeagueID).
+		Update("last_drafts_fetched_at", now).Error
+}
+
+// MarkLeagueTransactionsFetched sets last_transactions_fetched_at=now() on the given league.
+func (a *DataFetchActivities) MarkLeagueTransactionsFetched(ctx context.Context, params MarkLeagueFetchedParams) error {
+	now := time.Now().UTC()
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", params.LeagueID).
+		Update("last_transactions_fetched_at", now).Error
+}
+
 // MarkLeagueSkipped sets skipped_at=now() so the league is excluded from future batches.
 func (a *DataFetchActivities) MarkLeagueSkipped(ctx context.Context, params MarkLeagueSkippedParams) error {
 	now := time.Now().UTC()

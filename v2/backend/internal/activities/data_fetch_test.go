@@ -192,3 +192,101 @@ func TestMarkLeagueFetched_SetsTimestamp(t *testing.T) {
 		t.Error("expected last_fetched_at to be set")
 	}
 }
+
+func TestGetStaleLeaguesForDrafts_NullFirst(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	old := now.Add(-1 * time.Hour)
+
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", LastDraftsFetchedAt: &now, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", LastDraftsFetchedAt: &old, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", LastFetchedAt: &now})
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	ids, err := dfa.GetStaleLeaguesForDrafts(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 2})
+	if err != nil {
+		t.Fatalf("GetStaleLeaguesForDrafts error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2, got %d: %v", len(ids), ids)
+	}
+	if ids[0] != "lg-null" {
+		t.Errorf("expected lg-null first, got %q", ids[0])
+	}
+	if ids[1] != "lg-old" {
+		t.Errorf("expected lg-old second, got %q", ids[1])
+	}
+}
+
+func TestGetStaleLeaguesForDrafts_RequiresDetailsFetched(t *testing.T) {
+	db := newTestDB(t)
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-no-details"})
+	now := time.Now()
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-ready", LastFetchedAt: &now})
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	ids, err := dfa.GetStaleLeaguesForDrafts(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "lg-ready" {
+		t.Errorf("expected [lg-ready], got %v", ids)
+	}
+}
+
+func TestGetStaleLeaguesForTransactions_NullFirst(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	old := now.Add(-1 * time.Hour)
+
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", LastTransactionsFetchedAt: &now, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", LastTransactionsFetchedAt: &old, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", LastFetchedAt: &now})
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	ids, err := dfa.GetStaleLeaguesForTransactions(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 2})
+	if err != nil {
+		t.Fatalf("GetStaleLeaguesForTransactions error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2, got %d: %v", len(ids), ids)
+	}
+	if ids[0] != "lg-null" {
+		t.Errorf("expected lg-null first, got %q", ids[0])
+	}
+	if ids[1] != "lg-old" {
+		t.Errorf("expected lg-old second, got %q", ids[1])
+	}
+}
+
+func TestMarkLeagueDraftsFetched_SetsTimestamp(t *testing.T) {
+	db := newTestDB(t)
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1"})
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := dfa.MarkLeagueDraftsFetched(context.Background(), activities.MarkLeagueFetchedParams{LeagueID: "lg1"}); err != nil {
+		t.Fatalf("MarkLeagueDraftsFetched error: %v", err)
+	}
+
+	var l models.SleeperLeague
+	db.First(&l, "sleeper_league_id = ?", "lg1")
+	if l.LastDraftsFetchedAt == nil {
+		t.Error("expected last_drafts_fetched_at to be set")
+	}
+}
+
+func TestMarkLeagueTransactionsFetched_SetsTimestamp(t *testing.T) {
+	db := newTestDB(t)
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1"})
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := dfa.MarkLeagueTransactionsFetched(context.Background(), activities.MarkLeagueFetchedParams{LeagueID: "lg1"}); err != nil {
+		t.Fatalf("MarkLeagueTransactionsFetched error: %v", err)
+	}
+
+	var l models.SleeperLeague
+	db.First(&l, "sleeper_league_id = ?", "lg1")
+	if l.LastTransactionsFetchedAt == nil {
+		t.Error("expected last_transactions_fetched_at to be set")
+	}
+}
