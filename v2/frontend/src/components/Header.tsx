@@ -37,6 +37,8 @@ const Header = () => {
       ]
     : [
         { name: "Home", path: "/" },
+        { name: "Trade Data", path: "/sleeper/trades" },
+        { name: "Draft Data", path: "/sleeper/drafts" },
       ];
 
   const toggleMobileMenu = () => {

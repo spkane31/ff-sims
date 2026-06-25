@@ -22,13 +22,18 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o main \
     -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
     ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
 
 # Stage 3: Final runtime image with Go serving everything
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates curl
 
-# Copy Go backend binary
+# Copy Go backend binaries
 COPY --from=backend-builder /app/backend/main /app/backend/
+COPY --from=backend-builder /app/backend/worker /app/backend/
+
+# Entrypoint: start Temporal worker in background, then run HTTP server
+RUN printf '#!/bin/sh\n/app/backend/worker &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy Next.js build output
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
@@ -50,5 +55,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD /healthcheck.sh
 
-# Start the Go server
-CMD ["/app/backend/main"]
+# Start worker (background) + HTTP server (foreground)
+CMD ["/entrypoint.sh"]
