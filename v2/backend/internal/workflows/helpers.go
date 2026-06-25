@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	TaskQueueDiscovery  = "sleeper-discovery"
-	TaskQueueData       = "sleeper-data"
-	TaskQueuePlayerSync = "sleeper-player-sync"
-	BatchSize           = 25
+	TaskQueueDiscovery    = "sleeper-discovery"
+	TaskQueueData         = "sleeper-data"         // removed in Task 6
+	TaskQueueDrafts       = "sleeper-drafts"
+	TaskQueueTransactions = "sleeper-transactions"
+	TaskQueuePlayerSync   = "sleeper-player-sync"
+	BatchSize             = 25
 )
 
 var defaultActivityOptions = workflow.ActivityOptions{

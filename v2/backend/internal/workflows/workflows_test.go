@@ -165,6 +165,132 @@ func TestLeagueSync_DraftPicksFailureContinues(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+// ---- DraftSyncDispatcher ----
+
+func TestDraftSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+		Return([]string{"lg1", "lg2"}, nil)
+
+	env.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
+	env.OnWorkflow(workflows.LeagueDraftSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
+	env.OnWorkflow(workflows.LeagueDraftSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg2"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestDraftSyncDispatcher_EmptyBatch(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+		Return([]string{}, nil)
+
+	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+}
+
+// ---- LeagueDraftSyncWorkflow ----
+
+func TestLeagueDraftSync_FullPath(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).
+		Return([]string{"d1", "d2"}, nil)
+	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).Return(nil)
+	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d2"}).Return(nil)
+	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestLeagueDraftSync_NotFoundCallsSkip(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "gone"}).
+		Return(nil, temporal.NewNonRetryableApplicationError("league not found", "NOT_FOUND", nil))
+	env.OnActivity(dfa.MarkLeagueSkipped, mock.Anything, activities.MarkLeagueSkippedParams{LeagueID: "gone"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "gone"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestLeagueDraftSync_PicksFailureContinues(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).
+		Return([]string{"d1"}, nil)
+	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).
+		Return(temporal.NewApplicationError("timeout", "TIMEOUT", nil))
+	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// ---- TransactionSyncDispatcher ----
+
+func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+		Return([]string{"lg1"}, nil)
+
+	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
+	env.OnWorkflow(workflows.LeagueTransactionSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// ---- LeagueTransactionSyncWorkflow ----
+
+func TestLeagueTransactionSync_FullPath(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(nil)
+	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.LeagueTransactionSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
 // ---- PlayerDatabaseSyncWorkflow ----
 
 func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
