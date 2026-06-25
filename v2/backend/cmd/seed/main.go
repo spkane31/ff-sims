@@ -98,7 +98,7 @@ func temporalClientOptions() client.Options {
 			HostPort:  endpoint,
 			Namespace: os.Getenv("TEMPORAL_NAMESPACE"),
 			ConnectionOptions: client.ConnectionOptions{
-				TLS: &tls.Config{},
+				TLS: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Temporal Cloud uses self-signed cert on tmprl-test.cloud
 			},
 		}
 		if apiKey := os.Getenv("TEMPORAL_API_KEY"); apiKey != "" {
