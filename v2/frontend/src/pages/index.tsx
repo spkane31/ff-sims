@@ -1,9 +1,11 @@
 import Layout from "../components/Layout";
 import Link from "next/link";
 import { useLeagues } from "../hooks/useLeagues";
+import { useSleeperStats } from "../hooks/useSleeperData";
 
 export default function Home() {
   const { leagues, isLoading, error } = useLeagues();
+  const { stats: sleeperStats, isLoading: sleeperLoading } = useSleeperStats();
 
   return (
     <Layout>
@@ -46,6 +48,31 @@ export default function Home() {
                   )}
                 </div>
                 <p className="mt-4 text-blue-600 font-medium text-sm">Open league →</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="py-6">
+          <h2 className="text-2xl font-semibold mb-2">Sleeper Data</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">
+            Trade and draft data collected from Sleeper leagues across the network.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              { label: "Leagues", count: sleeperStats?.league_count ?? null, link: "/sleeper/drafts", description: "Total leagues tracked" },
+              { label: "Trades", count: sleeperStats?.trade_count ?? null, link: "/sleeper/trades", description: "Completed trades recorded" },
+              { label: "Drafts", count: sleeperStats?.draft_count ?? null, link: "/sleeper/drafts", description: "Completed drafts with picks" },
+            ].map((card) => (
+              <Link key={card.label} href={card.link}>
+                <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer border border-gray-100 dark:border-gray-600">
+                  <div className="text-3xl font-bold text-blue-600 mb-1">
+                    {sleeperLoading ? <span className="text-gray-400">—</span> : (card.count ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-lg font-medium text-gray-800 dark:text-gray-100">{card.label}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{card.description}</div>
+                  <div className="mt-4 text-blue-600 text-sm font-medium">Explore →</div>
+                </div>
               </Link>
             ))}
           </div>

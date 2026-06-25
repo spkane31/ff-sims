@@ -205,3 +205,48 @@ export interface GetSimulationsResponse {
 export interface GetSimulationResponse {
   data: Simulation;
 }
+
+// Sleeper scraper data types
+
+export interface SleeperStats {
+  league_count: number;
+  trade_count: number;
+  draft_count: number;
+}
+
+export interface SleeperTrade {
+  id: string;
+  league_id: string;
+  league_name: string;
+  season: string;
+  status: string;
+  adds: Record<string, number> | null;
+  drops: Record<string, number> | null;
+  created_at: number;
+}
+
+export interface SleeperDraft {
+  id: string;
+  league_id: string;
+  league_name: string;
+  type: string;
+  status: string;
+  season: string;
+  pick_count: number;
+}
+
+export interface SleeperTradesResponse {
+  trades: SleeperTrade[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface SleeperDraftsResponse {
+  drafts: SleeperDraft[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
