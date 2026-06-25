@@ -23,6 +23,10 @@ type ServerConfig struct {
 // DBConfig contains database-specific configuration
 type DBConfig struct {
 	ConnectionString string
+	// Pool limits prevent exhausting connection slots on managed-DB instances.
+	PoolMaxOpenConns    int
+	PoolMaxIdleConns    int
+	PoolConnMaxLifetime int // seconds
 }
 
 // Load reads the configuration from environment variables
@@ -33,7 +37,10 @@ func Load() (*Config, error) {
 			Env:  getEnv("ENV", "development"),
 		},
 		DB: DBConfig{
-			ConnectionString: getEnv("DATABASE_URL", getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims")),
+			ConnectionString:    getEnv("DATABASE_URL", getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims")),
+			PoolMaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 10),
+			PoolMaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 5),
+			PoolConnMaxLifetime: getEnvAsInt("DB_CONN_MAX_LIFETIME_SECS", 300),
 		},
 	}
 

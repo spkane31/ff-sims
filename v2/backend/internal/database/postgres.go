@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"time"
 
 	"backend/internal/config"
 
@@ -15,7 +16,10 @@ import (
 // DB is the global database instance
 var DB *gorm.DB
 
-// Initialize sets up the database connection
+// Initialize sets up the database connection and configures the connection pool.
+// Pool limits are required to avoid exhausting connection slots on managed-DB
+// instances (e.g. DigitalOcean PostgreSQL) when multiple Temporal workers run
+// high-concurrency activities against the same database.
 func Initialize(cfg *config.Config) error {
 	var err error
 	slog.Debug("Initializing database connection", "connectionString", cfg.DB.ConnectionString)
@@ -26,6 +30,15 @@ func Initialize(cfg *config.Config) error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("Connected to database successfully")
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("get underlying sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(cfg.DB.PoolMaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.DB.PoolMaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.DB.PoolConnMaxLifetime) * time.Second)
+
+	log.Printf("Connected to database (maxOpen=%d, maxIdle=%d, connLifetime=%ds)",
+		cfg.DB.PoolMaxOpenConns, cfg.DB.PoolMaxIdleConns, cfg.DB.PoolConnMaxLifetime)
 	return nil
 }
