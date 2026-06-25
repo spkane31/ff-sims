@@ -14,6 +14,11 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 	da := &activities.DiscoveryActivities{}
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
+	dataActCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:           TaskQueueData,
+		StartToCloseTimeout: defaultActivityOptions.StartToCloseTimeout,
+		RetryPolicy:         defaultActivityOptions.RetryPolicy,
+	})
 
 	var userIDs []string
 	if err := workflow.ExecuteActivity(actCtx, da.GetStaleUsers, activities.GetStaleUsersParams{BatchSize: BatchSize}).Get(ctx, &userIDs); err != nil {
@@ -28,7 +33,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 	}
 
 	var leagueIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeagues, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &leagueIDs); err != nil {
+	if err := workflow.ExecuteActivity(dataActCtx, dfa.GetStaleLeagues, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &leagueIDs); err != nil {
 		return err
 	}
 	for _, lid := range leagueIDs {
