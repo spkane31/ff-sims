@@ -1,5 +1,29 @@
 package sleeper
 
+import "encoding/json"
+
+// FlexibleString unmarshals a JSON string or bare number as a string.
+// Sleeper's API inconsistently returns some ID fields (espn_id, yahoo_id)
+// as either a quoted string or a bare number depending on the player.
+type FlexibleString string
+
+func (s *FlexibleString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var v string
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		*s = FlexibleString(v)
+		return nil
+	}
+	*s = FlexibleString(b)
+	return nil
+}
+
 type User struct {
 	UserID      string `json:"user_id"`
 	Username    string `json:"username"`
@@ -57,8 +81,8 @@ type Transaction struct {
 // Player is one entry from the map returned by GET /v1/players/nfl.
 // The map key is the player_id; the struct duplicates it for convenience.
 type Player struct {
-	EspnID   string `json:"espn_id"`
-	YahooID  string `json:"yahoo_id"`
+	EspnID  FlexibleString `json:"espn_id"`
+	YahooID FlexibleString `json:"yahoo_id"`
 	FullName string `json:"full_name"`
 	Position string `json:"position"`
 	Team     string `json:"team"`
