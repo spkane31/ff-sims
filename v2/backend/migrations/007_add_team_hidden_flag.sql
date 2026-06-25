@@ -1,0 +1,7 @@
+-- +goose Up
+
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT false;
+
+-- +goose Down
+
+ALTER TABLE teams DROP COLUMN IF EXISTS hidden;

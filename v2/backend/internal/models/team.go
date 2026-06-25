@@ -23,6 +23,7 @@ type Team struct {
 	Ties     int     `json:"ties" gorm:"default:0"`
 	Points   float64 `json:"points" gorm:"default:0"`
 	Year     uint    `json:"year"`
+	Hidden   bool    `json:"hidden" gorm:"default:false"`
 
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`

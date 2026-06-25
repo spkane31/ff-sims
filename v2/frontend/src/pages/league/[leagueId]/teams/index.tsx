@@ -29,53 +29,10 @@ export default function Teams() {
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
-  const filteredTeams = useMemo(
-    () =>
-      teams?.filter(
-        (team) =>
-          !team.owner.includes("Knapp") && !team.owner.includes("Landry")
-      ),
-    [teams]
-  );
-
-  // Calculate adjusted records (excluding games against filtered-out teams)
-  const adjustedRecords = useMemo(() => {
-    if (!schedule?.data?.matchups || !filteredTeams) {
-      return new Map<string, { wins: number; losses: number }>();
-    }
-
-    const records = new Map<string, { wins: number; losses: number }>();
-
-    // Initialize records for all teams
-    filteredTeams.forEach((team) => {
-      records.set(team.espnId, { wins: 0, losses: 0 });
-    });
-
-    // Count wins/losses only against teams in filteredTeams
-    schedule.data.matchups.forEach((matchup) => {
-      if (matchup.homeScore > 0 || matchup.awayScore > 0) {
-        const homeId = matchup.homeTeamESPNID.toString();
-        const awayId = matchup.awayTeamESPNID.toString();
-
-        // Only count if both teams are in filteredTeams
-        if (records.has(homeId) && records.has(awayId)) {
-          if (matchup.homeScore > matchup.awayScore) {
-            records.get(homeId)!.wins++;
-            records.get(awayId)!.losses++;
-          } else if (matchup.awayScore > matchup.homeScore) {
-            records.get(awayId)!.wins++;
-            records.get(homeId)!.losses++;
-          }
-        }
-      }
-    });
-
-    return records;
-  }, [schedule, filteredTeams]);
-
-  // Calculate head-to-head records between teams
+  // Calculate head-to-head records between active teams (games vs hidden teams
+  // are excluded from the grid since those teams aren't in the API response)
   const headToHeadRecords = useMemo(() => {
-    if (!schedule?.data?.matchups || !filteredTeams) {
+    if (!schedule?.data?.matchups || !teams) {
       return new Map<string, Map<string, { wins: number; losses: number }>>();
     }
 
@@ -85,8 +42,8 @@ export default function Teams() {
       Map<string, { wins: number; losses: number }>
     >();
 
-    // Initialize records for all teams
-    filteredTeams.forEach((team) => {
+    // Initialize records for all active teams
+    teams.forEach((team) => {
       records.set(team.espnId, new Map());
     });
 
@@ -96,7 +53,7 @@ export default function Teams() {
         const homeId = matchup.homeTeamESPNID.toString();
         const awayId = matchup.awayTeamESPNID.toString();
 
-        // Skip if either team is not in filteredTeams
+        // Skip if either team is not an active (non-hidden) team
         if (!records.has(homeId) || !records.has(awayId)) {
           return;
         }
@@ -127,7 +84,7 @@ export default function Teams() {
     });
 
     return records;
-  }, [schedule, filteredTeams]);
+  }, [schedule, teams]);
 
   // Calculate league statistics from schedule data
   const leagueStats = useMemo(() => {
@@ -257,9 +214,9 @@ export default function Teams() {
   };
 
   const sortedTeams =
-    isLoading || !filteredTeams
+    isLoading || !teams
       ? []
-      : [...filteredTeams].sort((a, b) => {
+      : [...teams].sort((a, b) => {
           let fieldA: string | number;
           let fieldB: string | number;
 
@@ -269,12 +226,12 @@ export default function Teams() {
               fieldB = b.name;
               break;
             case "wins":
-              fieldA = adjustedRecords.get(a.espnId)?.wins ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.wins ?? 0;
+              fieldA = a.record.wins;
+              fieldB = b.record.wins;
               break;
             case "losses":
-              fieldA = adjustedRecords.get(a.espnId)?.losses ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.losses ?? 0;
+              fieldA = a.record.losses;
+              fieldB = b.record.losses;
               break;
             case "pf":
               fieldA = a.points.scored;
@@ -431,18 +388,15 @@ export default function Teams() {
                           </div>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.wins ?? 0}
+                          {team.record.wins}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.losses ?? 0}
+                          {team.record.losses}
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
-                            const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
+                            const totalGames =
+                              team.record.wins + team.record.losses + team.record.ties;
                             const avgPF =
                               totalGames > 0
                                 ? team.points.scored / totalGames
@@ -464,11 +418,8 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
-                            const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
+                            const totalGames =
+                              team.record.wins + team.record.losses + team.record.ties;
                             const avgPA =
                               totalGames > 0
                                 ? team.points.against / totalGames
@@ -490,11 +441,8 @@ export default function Teams() {
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           {(() => {
-                            const wins =
-                              adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses =
-                              adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
+                            const totalGames =
+                              team.record.wins + team.record.losses + team.record.ties;
                             const totalDiff =
                               team.points.scored - team.points.against;
                             const avgDiff =
@@ -546,7 +494,7 @@ export default function Teams() {
 
         <section>
           <AllTimeMatchupsGrid
-            teams={filteredTeams}
+            teams={teams}
             headToHeadRecords={headToHeadRecords}
           />
         </section>
@@ -564,11 +512,6 @@ export default function Teams() {
                     <div className="py-2 text-sm text-gray-500">Loading...</div>
                   ) : teams && teams.length > 0 ? (
                     [...teams]
-                      .filter(
-                        (team) =>
-                          !team.owner.includes("Knapp") &&
-                          !team.owner.includes("Landry")
-                      )
                       .sort((a, b) => b.points.scored - a.points.scored)
                       .slice(0, 3)
                       .map((team) => (
@@ -608,11 +551,6 @@ export default function Teams() {
                     <div className="py-2 text-sm text-gray-500">Loading...</div>
                   ) : teams && teams.length > 0 ? (
                     [...teams]
-                      .filter(
-                        (team) =>
-                          !team.owner.includes("Knapp") &&
-                          !team.owner.includes("Landry")
-                      )
                       .sort((a, b) => b.points.against - a.points.against)
                       .slice(0, 3)
                       .map((team) => (
