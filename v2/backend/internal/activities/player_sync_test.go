@@ -3,6 +3,7 @@ package activities_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,6 +71,32 @@ func TestFetchAndUpsertAllPlayers_Idempotent(t *testing.T) {
 	db.Model(&models.SleeperPlayer{}).Count(&count)
 	if count != 1 {
 		t.Errorf("expected 1 player after 2 runs, got %d", count)
+	}
+}
+
+func TestFetchAndUpsertAllPlayers_NumericYahooAndEspnID(t *testing.T) {
+	db := newTestDB(t)
+
+	// Simulate Sleeper returning yahoo_id and espn_id as bare JSON numbers,
+	// which it does inconsistently for some players.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"4017":{"full_name":"Josh Allen","position":"QB","team":"BUF","espn_id":3054211,"yahoo_id":30942,"age":28,"years_exp":7}}`)
+	}))
+	defer srv.Close()
+
+	psa := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	if err := psa.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+		t.Fatalf("FetchAndUpsertAllPlayers error: %v", err)
+	}
+
+	var p models.SleeperPlayer
+	db.First(&p, "sleeper_player_id = ?", "4017")
+	if p.YahooID != "30942" {
+		t.Errorf("expected yahoo_id '30942', got %q", p.YahooID)
+	}
+	if p.EspnID != "3054211" {
+		t.Errorf("expected espn_id '3054211', got %q", p.EspnID)
 	}
 }
 

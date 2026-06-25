@@ -33,8 +33,8 @@ func (a *PlayerSyncActivities) FetchAndUpsertAllPlayers(ctx context.Context) err
 	for id, p := range players {
 		batch = append(batch, models.SleeperPlayer{
 			SleeperPlayerID: id,
-			EspnID:          p.EspnID,
-			YahooID:         p.YahooID,
+			EspnID:          string(p.EspnID),
+			YahooID:         string(p.YahooID),
 			FullName:        p.FullName,
 			Position:        p.Position,
 			NflTeam:         p.Team,
