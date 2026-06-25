@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -19,16 +20,28 @@ type SleeperStatsResponse struct {
 	DraftCount  int64 `json:"draft_count"`
 }
 
+// TradeSidePlayer is a single player in one side of a trade.
+type TradeSidePlayer struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Position string `json:"position"`
+}
+
+// TradeSide groups the players received by one roster in a trade.
+type TradeSide struct {
+	RosterID int               `json:"roster_id"`
+	Players  []TradeSidePlayer `json:"players"`
+}
+
 // SleeperTradeItem is a single row in the trades list.
 type SleeperTradeItem struct {
-	ID         string          `json:"id"`
-	LeagueID   string          `json:"league_id"`
-	LeagueName string          `json:"league_name"`
-	Season     string          `json:"season"`
-	Status     string          `json:"status"`
-	Adds       json.RawMessage `json:"adds"`
-	Drops      json.RawMessage `json:"drops"`
-	CreatedAt  int64           `json:"created_at"`
+	ID         string      `json:"id"`
+	LeagueID   string      `json:"league_id"`
+	LeagueName string      `json:"league_name"`
+	Season     string      `json:"season"`
+	Status     string      `json:"status"`
+	Sides      []TradeSide `json:"sides"`
+	CreatedAt  int64       `json:"created_at"`
 }
 
 // SleeperTradesResponse is the paginated response for GET /api/v1/sleeper/trades.
@@ -60,6 +73,33 @@ type SleeperDraftsResponse struct {
 	TotalPages int                `json:"total_pages"`
 }
 
+// buildTradeSides groups the adds map (player_id → roster_id) into per-roster
+// slices with player names resolved from the lookup. Players missing from the
+// lookup fall back to name=player_id, position="". Sides are sorted by
+// roster_id ascending; players within each side are sorted by name ascending.
+func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer) []TradeSide {
+	sideMap := map[int][]TradeSidePlayer{}
+	for playerID, rosterID := range adds {
+		p, ok := players[playerID]
+		if !ok {
+			p = TradeSidePlayer{ID: playerID, Name: playerID}
+		}
+		sideMap[rosterID] = append(sideMap[rosterID], p)
+	}
+	rosterIDs := make([]int, 0, len(sideMap))
+	for id := range sideMap {
+		rosterIDs = append(rosterIDs, id)
+	}
+	sort.Ints(rosterIDs)
+	sides := make([]TradeSide, len(rosterIDs))
+	for i, rid := range rosterIDs {
+		ps := sideMap[rid]
+		sort.Slice(ps, func(a, b int) bool { return ps[a].Name < ps[b].Name })
+		sides[i] = TradeSide{RosterID: rid, Players: ps}
+	}
+	return sides
+}
+
 // GetSleeperStats returns counts of leagues, trades, and completed drafts in the Sleeper DB.
 func GetSleeperStats(c *gin.Context) {
 	var leagueCount, tradeCount, draftCount int64
@@ -83,7 +123,8 @@ func GetSleeperStats(c *gin.Context) {
 	})
 }
 
-// GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency.
+// GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
+// with each trade's adds grouped by roster into named sides.
 func GetSleeperTrades(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
@@ -95,7 +136,6 @@ func GetSleeperTrades(c *gin.Context) {
 		Season               string          `gorm:"column:season"`
 		Status               string          `gorm:"column:status"`
 		Adds                 json.RawMessage `gorm:"column:adds"`
-		Drops                json.RawMessage `gorm:"column:drops"`
 		CreatedAtSleeper     int64           `gorm:"column:created_at_sleeper"`
 	}
 
@@ -103,12 +143,44 @@ func GetSleeperTrades(c *gin.Context) {
 	var total int64
 
 	db := database.DB.Table("sleeper_transactions t").
-		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.drops, t.created_at_sleeper").
+		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.created_at_sleeper").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 
 	db.Count(&total)
 	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
+
+	// Decode adds and collect all unique player IDs on this page.
+	addsPerRow := make([]map[string]int, len(rows))
+	playerIDSet := map[string]struct{}{}
+	for i, r := range rows {
+		var adds map[string]int
+		if len(r.Adds) > 0 {
+			_ = json.Unmarshal(r.Adds, &adds)
+		}
+		addsPerRow[i] = adds
+		for pid := range adds {
+			playerIDSet[pid] = struct{}{}
+		}
+	}
+
+	// Batch-fetch player names for all players on this page.
+	playerLookup := map[string]TradeSidePlayer{}
+	if len(playerIDSet) > 0 {
+		ids := make([]string, 0, len(playerIDSet))
+		for id := range playerIDSet {
+			ids = append(ids, id)
+		}
+		var players []models.SleeperPlayer
+		database.DB.Where("sleeper_player_id IN ?", ids).Find(&players)
+		for _, p := range players {
+			playerLookup[p.SleeperPlayerID] = TradeSidePlayer{
+				ID:       p.SleeperPlayerID,
+				Name:     p.FullName,
+				Position: p.Position,
+			}
+		}
+	}
 
 	items := make([]SleeperTradeItem, len(rows))
 	for i, r := range rows {
@@ -118,8 +190,7 @@ func GetSleeperTrades(c *gin.Context) {
 			LeagueName: r.LeagueName,
 			Season:     r.Season,
 			Status:     r.Status,
-			Adds:       r.Adds,
-			Drops:      r.Drops,
+			Sides:      buildTradeSides(addsPerRow[i], playerLookup),
 			CreatedAt:  r.CreatedAtSleeper,
 		}
 	}
