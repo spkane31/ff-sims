@@ -214,14 +214,24 @@ export interface SleeperStats {
   draft_count: number;
 }
 
+export interface TradeSidePlayer {
+  id: string;
+  name: string;
+  position: string;
+}
+
+export interface TradeSide {
+  roster_id: number;
+  players: TradeSidePlayer[];
+}
+
 export interface SleeperTrade {
   id: string;
   league_id: string;
   league_name: string;
   season: string;
   status: string;
-  adds: Record<string, number> | null;
-  drops: Record<string, number> | null;
+  sides: TradeSide[];
   created_at: number;
 }
 
