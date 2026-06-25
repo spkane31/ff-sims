@@ -30,8 +30,10 @@ type SleeperLeague struct {
 	IsSuperflex     *bool           `gorm:"column:is_superflex"`
 	ScoringSettings json.RawMessage `gorm:"column:scoring_settings;type:jsonb"`
 	RosterPositions json.RawMessage `gorm:"column:roster_positions;type:jsonb"`
-	LastFetchedAt   *time.Time      `gorm:"column:last_fetched_at"`
-	SkippedAt       *time.Time      `gorm:"column:skipped_at"`
+	LastFetchedAt             *time.Time      `gorm:"column:last_fetched_at"`
+	LastDraftsFetchedAt       *time.Time      `gorm:"column:last_drafts_fetched_at"`
+	LastTransactionsFetchedAt *time.Time      `gorm:"column:last_transactions_fetched_at"`
+	SkippedAt                 *time.Time      `gorm:"column:skipped_at"`
 	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime"`
 }
