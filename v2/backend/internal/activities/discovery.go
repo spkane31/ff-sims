@@ -2,6 +2,7 @@ package activities
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -131,4 +132,48 @@ func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, params MarkUs
 		Model(&models.SleeperUser{}).
 		Where("sleeper_user_id = ?", params.UserID).
 		Update("skipped_at", now).Error
+}
+
+// FetchLeagueDetails fetches league metadata from Sleeper and stamps last_fetched_at.
+// Called during user discovery so league metadata is populated before draft/transaction sync.
+func (a *DiscoveryActivities) FetchLeagueDetails(ctx context.Context, params FetchLeagueDetailsParams) error {
+	league, err := a.Sleeper.GetLeague(ctx, params.LeagueID)
+	if err != nil {
+		var nfe *sleeper.NotFoundError
+		if errors.As(err, &nfe) {
+			return temporal.NewNonRetryableApplicationError(
+				"league not found: "+params.LeagueID, "NOT_FOUND", err,
+			)
+		}
+		return err
+	}
+
+	scoringJSON, _ := json.Marshal(league.ScoringSettings)
+	rosterJSON, _ := json.Marshal(league.RosterPositions)
+
+	ppr := league.ScoringSettings["rec"]
+	tePremium := league.ScoringSettings["bonus_rec_te"]
+	isSuperflex := false
+	for _, pos := range league.RosterPositions {
+		if pos == "SUPER_FLEX" {
+			isSuperflex = true
+			break
+		}
+	}
+
+	now := time.Now().UTC()
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", params.LeagueID).
+		Updates(map[string]interface{}{
+			"name":             league.Name,
+			"status":           league.Status,
+			"total_rosters":    league.TotalRosters,
+			"ppr":              ppr,
+			"te_premium":       tePremium,
+			"is_superflex":     isSuperflex,
+			"scoring_settings": scoringJSON,
+			"roster_positions": rosterJSON,
+			"last_fetched_at":  now,
+		}).Error
 }

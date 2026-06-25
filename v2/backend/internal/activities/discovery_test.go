@@ -190,3 +190,53 @@ func TestMarkUserSkipped_SetsTimestamp(t *testing.T) {
 		t.Error("expected skipped_at to be set")
 	}
 }
+
+func TestFetchLeagueDetails_Discovery_SetsScoring(t *testing.T) {
+	db := newTestDB(t)
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1"})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(sleeper.League{
+			LeagueID:        "lg1",
+			Name:            "My League",
+			Status:          "complete",
+			TotalRosters:    12,
+			ScoringSettings: map[string]float64{"rec": 0.5, "bonus_rec_te": 0.5},
+			RosterPositions: []string{"QB", "WR", "SUPER_FLEX", "BN"},
+		})
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	if err := da.FetchLeagueDetails(context.Background(), activities.FetchLeagueDetailsParams{LeagueID: "lg1"}); err != nil {
+		t.Fatalf("FetchLeagueDetails error: %v", err)
+	}
+
+	var l models.SleeperLeague
+	db.First(&l, "sleeper_league_id = ?", "lg1")
+	if l.PPR == nil || *l.PPR != 0.5 {
+		t.Errorf("expected PPR 0.5, got %v", l.PPR)
+	}
+	if l.IsSuperflex == nil || !*l.IsSuperflex {
+		t.Error("expected is_superflex = true")
+	}
+	if l.LastFetchedAt == nil {
+		t.Error("expected last_fetched_at to be stamped")
+	}
+}
+
+func TestFetchLeagueDetails_Discovery_NotFound(t *testing.T) {
+	db := newTestDB(t)
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "gone"})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	err := da.FetchLeagueDetails(context.Background(), activities.FetchLeagueDetailsParams{LeagueID: "gone"})
+	if err == nil {
+		t.Fatal("expected NOT_FOUND error")
+	}
+}
