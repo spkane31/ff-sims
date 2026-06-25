@@ -22,7 +22,10 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 			TaskQueue:         TaskQueueTransactions,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueTransactionSyncWorkflow, LeagueSyncParams{LeagueID: lid})
+		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueTransactionSyncWorkflow, LeagueSyncParams{LeagueID: lid})
+		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+			workflow.GetLogger(ctx).Warn("failed to start LeagueTransactionSyncWorkflow", "leagueID", lid, "error", err)
+		}
 	}
 	return nil
 }

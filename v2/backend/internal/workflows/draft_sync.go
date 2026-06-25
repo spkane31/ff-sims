@@ -22,7 +22,10 @@ func DraftSyncDispatcher(ctx workflow.Context) error {
 			TaskQueue:         TaskQueueDrafts,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueDraftSyncWorkflow, LeagueSyncParams{LeagueID: lid})
+		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueDraftSyncWorkflow, LeagueSyncParams{LeagueID: lid})
+		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+			workflow.GetLogger(ctx).Warn("failed to start LeagueDraftSyncWorkflow", "leagueID", lid, "error", err)
+		}
 	}
 	return nil
 }

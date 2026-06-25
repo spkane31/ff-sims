@@ -23,7 +23,10 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 			TaskQueue:         TaskQueueDiscovery,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), UserDiscoveryWorkflow, UserDiscoveryParams{UserID: uid})
+		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), UserDiscoveryWorkflow, UserDiscoveryParams{UserID: uid})
+		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+			workflow.GetLogger(ctx).Warn("failed to start UserDiscoveryWorkflow", "userID", uid, "error", err)
+		}
 	}
 	return nil
 }
