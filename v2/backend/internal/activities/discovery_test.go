@@ -104,7 +104,7 @@ func TestFetchUserLeagues_UpsertsLeagues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchUserLeagues error: %v", err)
 	}
-	// 4 seasons × 1 league each = 4 entries for "lg1" (deduped in DB)
+	// 6 seasons × 1 league each = 6 entries for "lg1" (deduped in DB)
 	if len(leagueIDs) == 0 {
 		t.Fatal("expected at least one leagueID")
 	}

@@ -64,6 +64,7 @@ func TestUserDiscovery_CallsMarkFetchedOnSuccess(t *testing.T) {
 	da := &activities.DiscoveryActivities{}
 	env.OnActivity(da.FetchUserLeagues, mock.Anything, activities.FetchUserLeaguesParams{UserID: "u1"}).Return([]string{"lg1"}, nil)
 	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg1"}).Return(nil)
+	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
 	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
 
 	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "u1"})
@@ -96,10 +97,12 @@ func TestUserDiscovery_MemberFetchFailureContinues(t *testing.T) {
 	da := &activities.DiscoveryActivities{}
 	env.OnActivity(da.FetchUserLeagues, mock.Anything, activities.FetchUserLeaguesParams{UserID: "u1"}).
 		Return([]string{"lg1", "lg2"}, nil)
-	// lg1 fails, lg2 succeeds — workflow should still complete
+	// lg1 member fetch fails, but FetchLeagueDetails still runs for both
 	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg1"}).
 		Return(temporal.NewApplicationError("network error", "NETWORK", nil))
+	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
 	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg2"}).Return(nil)
+	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg2"}).Return(nil)
 	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
 
 	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "u1"})

@@ -25,8 +25,11 @@ func UserDiscoveryWorkflow(ctx workflow.Context, params UserDiscoveryParams) err
 
 	for _, lid := range leagueIDs {
 		if err := workflow.ExecuteActivity(actCtx, da.FetchLeagueMembers, activities.FetchLeagueMembersParams{LeagueID: lid}).Get(ctx, nil); err != nil {
-			// Don't fail the whole workflow if one league's members can't be fetched
 			workflow.GetLogger(ctx).Warn("FetchLeagueMembers failed, continuing",
+				"leagueID", lid, "error", err)
+		}
+		if err := workflow.ExecuteActivity(actCtx, da.FetchLeagueDetails, activities.FetchLeagueDetailsParams{LeagueID: lid}).Get(ctx, nil); err != nil {
+			workflow.GetLogger(ctx).Warn("FetchLeagueDetails failed, continuing",
 				"leagueID", lid, "error", err)
 		}
 	}

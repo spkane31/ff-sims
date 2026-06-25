@@ -15,7 +15,7 @@ import (
 )
 
 // Seasons is the list of NFL seasons scraped per user discovery run.
-var Seasons = []string{"2022", "2023", "2024", "2025"}
+var Seasons = []string{"2020", "2021", "2022", "2023", "2024", "2025"}
 
 // DiscoveryActivities holds dependencies for user/league graph expansion activities.
 type DiscoveryActivities struct {
