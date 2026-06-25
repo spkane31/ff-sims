@@ -16,7 +16,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var userIDs []string
-	if err := workflow.ExecuteActivity(actCtx, da.GetStaleUsers, BatchSize).Get(ctx, &userIDs); err != nil {
+	if err := workflow.ExecuteActivity(actCtx, da.GetStaleUsers, activities.GetStaleUsersParams{BatchSize: BatchSize}).Get(ctx, &userIDs); err != nil {
 		return err
 	}
 	for _, uid := range userIDs {
@@ -24,11 +24,11 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 			TaskQueue:         TaskQueueDiscovery,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), UserDiscoveryWorkflow, uid)
+		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), UserDiscoveryWorkflow, UserDiscoveryParams{UserID: uid})
 	}
 
 	var leagueIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeagues, BatchSize).Get(ctx, &leagueIDs); err != nil {
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeagues, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &leagueIDs); err != nil {
 		return err
 	}
 	for _, lid := range leagueIDs {
@@ -36,7 +36,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 			TaskQueue:         TaskQueueData,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueSyncWorkflow, lid)
+		workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueSyncWorkflow, LeagueSyncParams{LeagueID: lid})
 	}
 
 	return nil

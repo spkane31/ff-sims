@@ -49,7 +49,7 @@ func TestGetStaleUsers_NullFirst(t *testing.T) {
 	db.Create(&models.SleeperUser{SleeperUserID: "c"}) // NULL last_fetched_at
 
 	da := &activities.DiscoveryActivities{DB: db}
-	ids, err := da.GetStaleUsers(context.Background(), 2)
+	ids, err := da.GetStaleUsers(context.Background(), activities.GetStaleUsersParams{BatchSize: 2})
 	if err != nil {
 		t.Fatalf("GetStaleUsers error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestGetStaleUsers_ExcludesSkipped(t *testing.T) {
 	db.Create(&models.SleeperUser{SleeperUserID: "normal"})
 
 	da := &activities.DiscoveryActivities{DB: db}
-	ids, err := da.GetStaleUsers(context.Background(), 10)
+	ids, err := da.GetStaleUsers(context.Background(), activities.GetStaleUsersParams{BatchSize: 10})
 	if err != nil {
 		t.Fatalf("GetStaleUsers error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestFetchUserLeagues_UpsertsLeagues(t *testing.T) {
 		Sleeper: sleeper.NewWithBaseURL(srv.URL),
 	}
 
-	leagueIDs, err := da.FetchUserLeagues(context.Background(), "user1")
+	leagueIDs, err := da.FetchUserLeagues(context.Background(), activities.FetchUserLeaguesParams{UserID: "user1"})
 	if err != nil {
 		t.Fatalf("FetchUserLeagues error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestFetchLeagueMembers_InsertsUsers(t *testing.T) {
 		Sleeper: sleeper.NewWithBaseURL(srv.URL),
 	}
 
-	if err := da.FetchLeagueMembers(context.Background(), "lg1"); err != nil {
+	if err := da.FetchLeagueMembers(context.Background(), activities.FetchLeagueMembersParams{LeagueID: "lg1"}); err != nil {
 		t.Fatalf("FetchLeagueMembers error: %v", err)
 	}
 
@@ -164,7 +164,7 @@ func TestMarkUserFetched_SetsTimestamp(t *testing.T) {
 	db.Create(&models.SleeperUser{SleeperUserID: "u1"})
 
 	da := &activities.DiscoveryActivities{DB: db}
-	if err := da.MarkUserFetched(context.Background(), "u1"); err != nil {
+	if err := da.MarkUserFetched(context.Background(), activities.MarkUserFetchedParams{UserID: "u1"}); err != nil {
 		t.Fatalf("MarkUserFetched error: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestMarkUserSkipped_SetsTimestamp(t *testing.T) {
 	db.Create(&models.SleeperUser{SleeperUserID: "u1"})
 
 	da := &activities.DiscoveryActivities{DB: db}
-	if err := da.MarkUserSkipped(context.Background(), "u1"); err != nil {
+	if err := da.MarkUserSkipped(context.Background(), activities.MarkUserSkippedParams{UserID: "u1"}); err != nil {
 		t.Fatalf("MarkUserSkipped error: %v", err)
 	}
 

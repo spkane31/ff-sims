@@ -24,12 +24,12 @@ type DiscoveryActivities struct {
 
 // GetStaleUsers returns up to batchSize user IDs ordered by last_fetched_at ASC NULLS FIRST,
 // excluding users that have been permanently skipped (404).
-func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, batchSize int) ([]string, error) {
+func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, params GetStaleUsersParams) ([]string, error) {
 	var users []models.SleeperUser
 	err := a.DB.WithContext(ctx).
 		Where("skipped_at IS NULL").
 		Order("CASE WHEN last_fetched_at IS NULL THEN 0 ELSE 1 END, last_fetched_at ASC").
-		Limit(batchSize).
+		Limit(params.BatchSize).
 		Find(&users).Error
 	if err != nil {
 		return nil, err
@@ -44,15 +44,15 @@ func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, batchSize int) 
 // FetchUserLeagues fetches all leagues for userID across all configured seasons,
 // upserts them into sleeper_leagues and sleeper_league_users, and returns the discovered league IDs.
 // Returns a non-retryable NOT_FOUND error if the user no longer exists in Sleeper.
-func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, userID string) ([]string, error) {
+func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, params FetchUserLeaguesParams) ([]string, error) {
 	var leagueIDs []string
 	for _, season := range Seasons {
-		leagues, err := a.Sleeper.GetUserLeagues(ctx, userID, "nfl", season)
+		leagues, err := a.Sleeper.GetUserLeagues(ctx, params.UserID, "nfl", season)
 		if err != nil {
 			var nfe *sleeper.NotFoundError
 			if errors.As(err, &nfe) {
 				return nil, temporal.NewNonRetryableApplicationError(
-					"user not found: "+userID, "NOT_FOUND", err,
+					"user not found: "+params.UserID, "NOT_FOUND", err,
 				)
 			}
 			return nil, err
@@ -73,7 +73,7 @@ func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, userID strin
 			}
 			junc := models.SleeperLeagueUser{
 				SleeperLeagueID: l.LeagueID,
-				SleeperUserID:   userID,
+				SleeperUserID:   params.UserID,
 			}
 			if err := a.DB.WithContext(ctx).
 				Clauses(clause.OnConflict{DoNothing: true}).
@@ -88,13 +88,13 @@ func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, userID strin
 
 // FetchLeagueMembers fetches all members of leagueID and upserts them as new sleeper_users
 // with last_fetched_at=NULL so they are picked up by future dispatcher runs.
-func (a *DiscoveryActivities) FetchLeagueMembers(ctx context.Context, leagueID string) error {
-	users, err := a.Sleeper.GetLeagueUsers(ctx, leagueID)
+func (a *DiscoveryActivities) FetchLeagueMembers(ctx context.Context, params FetchLeagueMembersParams) error {
+	users, err := a.Sleeper.GetLeagueUsers(ctx, params.LeagueID)
 	if err != nil {
 		var nfe *sleeper.NotFoundError
 		if errors.As(err, &nfe) {
 			return temporal.NewNonRetryableApplicationError(
-				"league not found: "+leagueID, "NOT_FOUND", err,
+				"league not found: "+params.LeagueID, "NOT_FOUND", err,
 			)
 		}
 		return err
@@ -116,19 +116,19 @@ func (a *DiscoveryActivities) FetchLeagueMembers(ctx context.Context, leagueID s
 }
 
 // MarkUserFetched sets last_fetched_at=now() on the given user.
-func (a *DiscoveryActivities) MarkUserFetched(ctx context.Context, userID string) error {
+func (a *DiscoveryActivities) MarkUserFetched(ctx context.Context, params MarkUserFetchedParams) error {
 	now := time.Now().UTC()
 	return a.DB.WithContext(ctx).
 		Model(&models.SleeperUser{}).
-		Where("sleeper_user_id = ?", userID).
+		Where("sleeper_user_id = ?", params.UserID).
 		Update("last_fetched_at", now).Error
 }
 
 // MarkUserSkipped sets skipped_at=now() so the user is excluded from future batches.
-func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, userID string) error {
+func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, params MarkUserSkippedParams) error {
 	now := time.Now().UTC()
 	return a.DB.WithContext(ctx).
 		Model(&models.SleeperUser{}).
-		Where("sleeper_user_id = ?", userID).
+		Where("sleeper_user_id = ?", params.UserID).
 		Update("skipped_at", now).Error
 }

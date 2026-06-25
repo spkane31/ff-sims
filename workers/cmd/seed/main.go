@@ -73,7 +73,7 @@ func run(ctx context.Context, username string) error {
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "seed-" + user.UserID,
 		TaskQueue: workflows.TaskQueueDiscovery,
-	}, workflows.UserDiscoveryWorkflow, user.UserID)
+	}, workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: user.UserID})
 	if err != nil {
 		return fmt.Errorf("start workflow: %w", err)
 	}

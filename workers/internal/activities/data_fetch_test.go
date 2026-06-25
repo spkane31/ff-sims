@@ -24,7 +24,7 @@ func TestGetStaleLeagues_NullFirst(t *testing.T) {
 	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null"}) // NULL last_fetched_at
 
 	dfa := &activities.DataFetchActivities{DB: db}
-	ids, err := dfa.GetStaleLeagues(context.Background(), 2)
+	ids, err := dfa.GetStaleLeagues(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 2})
 	if err != nil {
 		t.Fatalf("GetStaleLeagues error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestGetStaleLeagues_ExcludesSkipped(t *testing.T) {
 	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-ok"})
 
 	dfa := &activities.DataFetchActivities{DB: db}
-	ids, err := dfa.GetStaleLeagues(context.Background(), 10)
+	ids, err := dfa.GetStaleLeagues(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 10})
 	if err != nil {
 		t.Fatalf("GetStaleLeagues error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestFetchLeagueDetails_SetsScoring(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := dfa.FetchLeagueDetails(context.Background(), "lg1"); err != nil {
+	if err := dfa.FetchLeagueDetails(context.Background(), activities.FetchLeagueDetailsParams{LeagueID: "lg1"}); err != nil {
 		t.Fatalf("FetchLeagueDetails error: %v", err)
 	}
 
@@ -106,7 +106,7 @@ func TestFetchLeagueDetails_StandardScoring(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := dfa.FetchLeagueDetails(context.Background(), "lg2"); err != nil {
+	if err := dfa.FetchLeagueDetails(context.Background(), activities.FetchLeagueDetailsParams{LeagueID: "lg2"}); err != nil {
 		t.Fatalf("FetchLeagueDetails error: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestFetchLeagueDrafts_ReturnsCompletedOnly(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	completedIDs, err := dfa.FetchLeagueDrafts(context.Background(), "lg1")
+	completedIDs, err := dfa.FetchLeagueDrafts(context.Background(), activities.FetchLeagueDraftsParams{LeagueID: "lg1"})
 	if err != nil {
 		t.Fatalf("FetchLeagueDrafts error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestFetchLeagueTransactions_InsertsAndSkips404(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := dfa.FetchLeagueTransactions(context.Background(), "lg1"); err != nil {
+	if err := dfa.FetchLeagueTransactions(context.Background(), activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}); err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestMarkLeagueFetched_SetsTimestamp(t *testing.T) {
 	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1"})
 
 	dfa := &activities.DataFetchActivities{DB: db}
-	if err := dfa.MarkLeagueFetched(context.Background(), "lg1"); err != nil {
+	if err := dfa.MarkLeagueFetched(context.Background(), activities.MarkLeagueFetchedParams{LeagueID: "lg1"}); err != nil {
 		t.Fatalf("MarkLeagueFetched error: %v", err)
 	}
 
