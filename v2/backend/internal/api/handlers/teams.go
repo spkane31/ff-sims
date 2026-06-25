@@ -101,6 +101,9 @@ func GetTeams(c *gin.Context) {
 	resp := GetTeamsResponse{}
 
 	for _, team := range allTeams {
+		if team.Hidden {
+			continue
+		}
 		resp.Teams = append(resp.Teams, TeamResponse{
 			ID:        fmt.Sprintf("%d", team.ID),
 			ESPNID:    fmt.Sprintf("%d", team.ESPNID),
