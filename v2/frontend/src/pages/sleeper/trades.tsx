@@ -14,9 +14,11 @@ function formatDate(unixMs: number): string {
   });
 }
 
-function playerList(map: SleeperTrade["adds"] | SleeperTrade["drops"]): string {
-  if (!map || Object.keys(map).length === 0) return "—";
-  return Object.keys(map).join(", ");
+function sideLabel(side: SleeperTrade["sides"][number] | undefined): string {
+  if (!side || side.players.length === 0) return "—";
+  return side.players
+    .map((p) => (p.position ? `${p.name} (${p.position})` : p.name))
+    .join(", ");
 }
 
 export default function SleeperTradesPage() {
@@ -46,8 +48,8 @@ export default function SleeperTradesPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Season</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Players Added</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Players Dropped</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -77,10 +79,10 @@ export default function SleeperTradesPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {playerList(trade.adds)}
+                      {sideLabel(trade.sides?.[0])}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {playerList(trade.drops)}
+                      {sideLabel(trade.sides?.[1])}
                     </td>
                   </tr>
                 ))
@@ -89,7 +91,6 @@ export default function SleeperTradesPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
             <button
