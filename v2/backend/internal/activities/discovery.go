@@ -149,7 +149,17 @@ func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, params MarkUs
 
 // FetchLeagueDetails fetches league metadata from Sleeper and stamps last_fetched_at.
 // Called during user discovery so league metadata is populated before draft/transaction sync.
+// Skips the API call for leagues already marked complete — their metadata is immutable.
 func (a *DiscoveryActivities) FetchLeagueDetails(ctx context.Context, params FetchLeagueDetailsParams) error {
+	var existing models.SleeperLeague
+	if err := a.DB.WithContext(ctx).
+		Where("sleeper_league_id = ?", params.LeagueID).
+		First(&existing).Error; err == nil {
+		if existing.Status == "complete" && existing.LastFetchedAt != nil {
+			return nil
+		}
+	}
+
 	league, err := a.Sleeper.GetLeague(ctx, params.LeagueID)
 	if err != nil {
 		var nfe *sleeper.NotFoundError

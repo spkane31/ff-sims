@@ -5,5 +5,6 @@ type UserDiscoveryParams struct {
 }
 
 type LeagueSyncParams struct {
-	LeagueID string
+	LeagueID       string
+	LastLegFetched *int
 }
