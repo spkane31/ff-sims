@@ -28,6 +28,7 @@ type SleeperLeague struct {
 	PPR             *float64        `gorm:"column:ppr"`
 	TEPremium       *float64        `gorm:"column:te_premium"`
 	IsSuperflex     *bool           `gorm:"column:is_superflex"`
+	DraftType       string          `gorm:"column:draft_type"`
 	ScoringSettings json.RawMessage `gorm:"column:scoring_settings;type:jsonb"`
 	RosterPositions json.RawMessage `gorm:"column:roster_positions;type:jsonb"`
 	LastFetchedAt             *time.Time      `gorm:"column:last_fetched_at"`

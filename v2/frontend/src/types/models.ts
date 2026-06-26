@@ -260,3 +260,28 @@ export interface SleeperDraftsResponse {
   limit: number;
   total_pages: number;
 }
+
+export interface SleeperTransaction {
+  id: string;
+  league_id: string;
+  league_name: string;
+  season: string;
+  type: string;
+  status: string;
+  created_at: number;
+  player_count: number;
+}
+
+export interface SleeperTransactionsResponse {
+  transactions: SleeperTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface SleeperLeagueFilters {
+  league_size?: string;
+  scoring_format?: string;
+  draft_type?: string;
+}

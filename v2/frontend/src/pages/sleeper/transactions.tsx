@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import LeagueFilterBar from "../../components/LeagueFilterBar";
-import { useSleeperTrades } from "../../hooks/useSleeperData";
-import { SleeperLeagueFilters, SleeperTrade } from "../../types/models";
+import { useSleeperTransactions } from "../../hooks/useSleeperData";
+import { SleeperLeagueFilters } from "../../types/models";
 
 const LIMIT = 25;
 
@@ -16,11 +16,13 @@ function formatDate(unixMs: number): string {
   });
 }
 
-function sideLabel(side: SleeperTrade["sides"][number] | undefined): string {
-  if (!side || side.players.length === 0) return "—";
-  return side.players
-    .map((p) => (p.position ? `${p.name} (${p.position})` : p.name))
-    .join(", ");
+function txTypeLabel(type: string): string {
+  switch (type) {
+    case "trade": return "Trade";
+    case "waiver": return "Waiver";
+    case "free_agent": return "Free agent";
+    default: return type;
+  }
 }
 
 function filtersFromQuery(query: Record<string, string | string[] | undefined>): SleeperLeagueFilters {
@@ -31,57 +33,75 @@ function filtersFromQuery(query: Record<string, string | string[] | undefined>):
   };
 }
 
-export default function SleeperTradesPage() {
+export default function SleeperTransactionsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<SleeperLeagueFilters>({});
+  const [txType, setTxType] = useState("");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!router.isReady) return;
     setFilters(filtersFromQuery(router.query));
+    setTxType(typeof router.query.type === "string" ? router.query.type : "");
     const p = parseInt(router.query.page as string);
     if (p > 0) setPage(p);
     setReady(true);
   }, [router.isReady, router.query]);
 
-  const { items, total, totalPages, isLoading, error } = useSleeperTrades(
+  const { items, total, totalPages, isLoading, error } = useSleeperTransactions(
     ready ? page : 1,
     LIMIT,
+    ready ? txType : "",
     ready ? filters : {}
   );
+
+  function buildQuery(nextFilters: SleeperLeagueFilters, nextType: string, nextPage: number) {
+    const q: Record<string, string> = { page: String(nextPage) };
+    if (nextType) q.type = nextType;
+    if (nextFilters.league_size) q.league_size = nextFilters.league_size;
+    if (nextFilters.scoring_format) q.scoring_format = nextFilters.scoring_format;
+    if (nextFilters.draft_type) q.draft_type = nextFilters.draft_type;
+    return q;
+  }
 
   function applyFilters(next: SleeperLeagueFilters) {
     setFilters(next);
     setPage(1);
-    const q: Record<string, string> = { page: "1" };
-    if (next.league_size) q.league_size = next.league_size;
-    if (next.scoring_format) q.scoring_format = next.scoring_format;
-    if (next.draft_type) q.draft_type = next.draft_type;
-    router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+    router.push({ pathname: router.pathname, query: buildQuery(next, txType, 1) }, undefined, { shallow: true });
+  }
+
+  function applyTxType(next: string) {
+    setTxType(next);
+    setPage(1);
+    router.push({ pathname: router.pathname, query: buildQuery(filters, next, 1) }, undefined, { shallow: true });
   }
 
   function goToPage(p: number) {
     setPage(p);
-    const q: Record<string, string> = { ...router.query as Record<string, string>, page: String(p) };
-    router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+    router.push({ pathname: router.pathname, query: buildQuery(filters, txType, p) }, undefined, { shallow: true });
   }
 
   return (
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-blue-600">Sleeper Trades</h1>
+          <h1 className="text-3xl font-bold text-blue-600">Sleeper Transactions</h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
+            {isLoading ? "Loading…" : `${total.toLocaleString()} transactions`}
           </p>
         </div>
 
-        <LeagueFilterBar filters={filters} onChange={applyFilters} />
+        <LeagueFilterBar
+          filters={filters}
+          onChange={applyFilters}
+          txType={txType}
+          onTxTypeChange={applyTxType}
+        />
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-            Failed to load trades: {error.message}
+            Failed to load transactions: {error.message}
           </div>
         )}
 
@@ -90,10 +110,10 @@ export default function SleeperTradesPage() {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Type</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Season</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Players</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -102,31 +122,39 @@ export default function SleeperTradesPage() {
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Loading trades…</span>
+                      <span>Loading transactions…</span>
                     </div>
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No trades found.
+                    No transactions found.
                   </td>
                 </tr>
               ) : (
-                items.map((trade) => (
-                  <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                items.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {formatDate(trade.created_at)}
+                      {formatDate(tx.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                        tx.type === "trade"
+                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+                          : tx.type === "waiver"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                      }`}>
+                        {txTypeLabel(tx.type)}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                      {trade.league_name}
+                      {tx.league_name}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {sideLabel(trade.sides?.[0])}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {sideLabel(trade.sides?.[1])}
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{tx.season}</td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                      {tx.player_count}
                     </td>
                   </tr>
                 ))
