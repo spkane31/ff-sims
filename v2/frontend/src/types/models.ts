@@ -223,6 +223,7 @@ export interface TradeSidePlayer {
 export interface TradeSide {
   roster_id: number;
   players: TradeSidePlayer[];
+  picks: string[];
 }
 
 export interface SleeperTrade {
