@@ -91,7 +91,7 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 
 	ensureSide := func(rosterID int) *TradeSide {
 		if _, ok := sideMap[rosterID]; !ok {
-			sideMap[rosterID] = &TradeSide{RosterID: rosterID}
+			sideMap[rosterID] = &TradeSide{RosterID: rosterID, Players: []TradeSidePlayer{}, Picks: []string{}}
 		}
 		return sideMap[rosterID]
 	}
