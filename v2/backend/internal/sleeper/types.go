@@ -31,6 +31,11 @@ type User struct {
 	Avatar      string `json:"avatar"`
 }
 
+type LeagueSettings struct {
+	// Type encodes the league format: 0=redraft, 1=keeper, 2=dynasty.
+	Type int `json:"type"`
+}
+
 type League struct {
 	LeagueID        string             `json:"league_id"`
 	Name            string             `json:"name"`
@@ -38,6 +43,7 @@ type League struct {
 	Sport           string             `json:"sport"`
 	Status          string             `json:"status"`
 	TotalRosters    int                `json:"total_rosters"`
+	Settings        LeagueSettings     `json:"settings"`
 	ScoringSettings map[string]float64 `json:"scoring_settings"`
 	RosterPositions []string           `json:"roster_positions"`
 }

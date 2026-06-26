@@ -125,6 +125,19 @@ func (a *DiscoveryActivities) MarkUserFetched(ctx context.Context, params MarkUs
 		Update("last_fetched_at", now).Error
 }
 
+// sleeperLeagueType converts the integer type from Sleeper's league settings to a string.
+// Sleeper encodes: 0=redraft, 1=keeper, 2=dynasty.
+func sleeperLeagueType(t int) string {
+	switch t {
+	case 1:
+		return "keeper"
+	case 2:
+		return "dynasty"
+	default:
+		return "redraft"
+	}
+}
+
 // MarkUserSkipped sets skipped_at=now() so the user is excluded from future batches.
 func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, params MarkUserSkippedParams) error {
 	now := time.Now().UTC()
@@ -161,6 +174,8 @@ func (a *DiscoveryActivities) FetchLeagueDetails(ctx context.Context, params Fet
 		}
 	}
 
+	leagueType := sleeperLeagueType(league.Settings.Type)
+
 	now := time.Now().UTC()
 	return a.DB.WithContext(ctx).
 		Model(&models.SleeperLeague{}).
@@ -172,6 +187,7 @@ func (a *DiscoveryActivities) FetchLeagueDetails(ctx context.Context, params Fet
 			"ppr":              ppr,
 			"te_premium":       tePremium,
 			"is_superflex":     isSuperflex,
+			"league_type":      leagueType,
 			"scoring_settings": scoringJSON,
 			"roster_positions": rosterJSON,
 			"last_fetched_at":  now,
