@@ -285,4 +285,5 @@ export interface SleeperLeagueFilters {
   league_size?: string;
   scoring_format?: string;
   draft_type?: string;
+  league_type?: string;
 }

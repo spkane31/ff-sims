@@ -20,6 +20,12 @@ const DRAFT_TYPES = [
   { value: 'auction', label: 'Auction' },
   { value: 'linear', label: 'Linear' },
 ];
+const LEAGUE_TYPES = [
+  { value: '', label: 'Any league type' },
+  { value: 'redraft', label: 'Redraft' },
+  { value: 'keeper', label: 'Keeper' },
+  { value: 'dynasty', label: 'Dynasty' },
+];
 const TX_TYPES = [
   { value: '', label: 'All types' },
   { value: 'trade', label: 'Trade' },
@@ -37,7 +43,7 @@ export default function LeagueFilterBar({
   onTxTypeChange,
 }: LeagueFilterBarProps) {
   const hasFilters =
-    !!filters.league_size || !!filters.scoring_format || !!filters.draft_type || !!txType;
+    !!filters.league_size || !!filters.scoring_format || !!filters.draft_type || !!filters.league_type || !!txType;
 
   function set(key: keyof SleeperLeagueFilters, value: string) {
     onChange({ ...filters, [key]: value || undefined });
@@ -91,6 +97,17 @@ export default function LeagueFilterBar({
       >
         {DRAFT_TYPES.map(d => (
           <option key={d.value} value={d.value}>{d.label}</option>
+        ))}
+      </select>
+
+      <select
+        className={selectClass}
+        value={filters.league_type ?? ''}
+        onChange={e => set('league_type', e.target.value)}
+        aria-label="League type"
+      >
+        {LEAGUE_TYPES.map(l => (
+          <option key={l.value} value={l.value}>{l.label}</option>
         ))}
       </select>
 
