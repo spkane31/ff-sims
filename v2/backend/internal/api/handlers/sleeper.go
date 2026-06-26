@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -28,10 +29,11 @@ type TradeSidePlayer struct {
 	Position string `json:"position"`
 }
 
-// TradeSide groups the players received by one roster in a trade.
+// TradeSide groups the assets received by one roster in a trade.
 type TradeSide struct {
 	RosterID int               `json:"roster_id"`
 	Players  []TradeSidePlayer `json:"players"`
+	Picks    []string          `json:"picks"`
 }
 
 // SleeperTradeItem is a single row in the trades list.
@@ -74,19 +76,49 @@ type SleeperDraftsResponse struct {
 	TotalPages int                `json:"total_pages"`
 }
 
-// buildTradeSides groups the adds map (player_id → roster_id) into per-roster
-// slices with player names resolved from the lookup. Players missing from the
-// lookup fall back to name=player_id, position="". Sides are sorted by
-// roster_id ascending; players within each side are sorted by name ascending.
-func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer) []TradeSide {
-	sideMap := map[int][]TradeSidePlayer{}
+// tradePick is the shape of one entry in the draft_picks JSON array on a Sleeper transaction.
+type tradePick struct {
+	Season  string `json:"season"`
+	Round   int    `json:"round"`
+	OwnerID int    `json:"owner_id"` // roster receiving the pick
+}
+
+// buildTradeSides groups adds (player_id → roster_id) and draft picks into
+// per-roster sides. Sides are sorted by roster_id; players within each side
+// are sorted by name.
+func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, rawPicks []byte) []TradeSide {
+	sideMap := map[int]*TradeSide{}
+
+	ensureSide := func(rosterID int) *TradeSide {
+		if _, ok := sideMap[rosterID]; !ok {
+			sideMap[rosterID] = &TradeSide{RosterID: rosterID}
+		}
+		return sideMap[rosterID]
+	}
+
 	for playerID, rosterID := range adds {
 		p, ok := players[playerID]
 		if !ok {
 			p = TradeSidePlayer{ID: playerID, Name: playerID}
 		}
-		sideMap[rosterID] = append(sideMap[rosterID], p)
+		s := ensureSide(rosterID)
+		s.Players = append(s.Players, p)
 	}
+
+	if len(rawPicks) > 0 {
+		var picks []tradePick
+		if err := json.Unmarshal(rawPicks, &picks); err == nil {
+			for _, pk := range picks {
+				if pk.OwnerID == 0 {
+					continue
+				}
+				label := fmt.Sprintf("%s Round %d pick", pk.Season, pk.Round)
+				s := ensureSide(pk.OwnerID)
+				s.Picks = append(s.Picks, label)
+			}
+		}
+	}
+
 	rosterIDs := make([]int, 0, len(sideMap))
 	for id := range sideMap {
 		rosterIDs = append(rosterIDs, id)
@@ -94,9 +126,10 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer) []
 	sort.Ints(rosterIDs)
 	sides := make([]TradeSide, len(rosterIDs))
 	for i, rid := range rosterIDs {
-		ps := sideMap[rid]
-		sort.Slice(ps, func(a, b int) bool { return ps[a].Name < ps[b].Name })
-		sides[i] = TradeSide{RosterID: rid, Players: ps}
+		s := sideMap[rid]
+		sort.Slice(s.Players, func(a, b int) bool { return s.Players[a].Name < s.Players[b].Name })
+		sort.Strings(s.Picks)
+		sides[i] = *s
 	}
 	return sides
 }
@@ -162,6 +195,7 @@ func GetSleeperTrades(c *gin.Context) {
 		Season               string          `gorm:"column:season"`
 		Status               string          `gorm:"column:status"`
 		Adds                 json.RawMessage `gorm:"column:adds"`
+		DraftPicks           json.RawMessage `gorm:"column:draft_picks"`
 		CreatedAtSleeper     int64           `gorm:"column:created_at_sleeper"`
 	}
 
@@ -169,7 +203,7 @@ func GetSleeperTrades(c *gin.Context) {
 	var total int64
 
 	db := database.DB.Table("sleeper_transactions t").
-		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.created_at_sleeper").
+		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.draft_picks, t.created_at_sleeper").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 	db = applyLeagueFilters(db, c, "l")
@@ -217,7 +251,7 @@ func GetSleeperTrades(c *gin.Context) {
 			LeagueName: r.LeagueName,
 			Season:     r.Season,
 			Status:     r.Status,
-			Sides:      buildTradeSides(addsPerRow[i], playerLookup),
+			Sides:      buildTradeSides(addsPerRow[i], playerLookup, r.DraftPicks),
 			CreatedAt:  r.CreatedAtSleeper,
 		}
 	}
