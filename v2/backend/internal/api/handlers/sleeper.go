@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"backend/internal/database"
 	"backend/internal/models"
@@ -123,8 +124,33 @@ func GetSleeperStats(c *gin.Context) {
 	})
 }
 
+// applyLeagueFilters appends league-level filter conditions to a GORM query.
+// leagueAlias is the SQL alias used for sleeper_leagues (e.g. "l").
+func applyLeagueFilters(db *gorm.DB, c *gin.Context, leagueAlias string) *gorm.DB {
+	if v := c.Query("league_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			db = db.Where(leagueAlias+".total_rosters = ?", n)
+		}
+	}
+	if v := c.Query("scoring_format"); v != "" {
+		switch v {
+		case "standard":
+			db = db.Where(leagueAlias+".ppr = ?", 0)
+		case "half_ppr":
+			db = db.Where(leagueAlias+".ppr = ?", 0.5)
+		case "ppr":
+			db = db.Where(leagueAlias+".ppr = ?", 1)
+		}
+	}
+	if v := c.Query("draft_type"); v != "" {
+		db = db.Where(leagueAlias+".draft_type = ?", v)
+	}
+	return db
+}
+
 // GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
 // with each trade's adds grouped by roster into named sides.
+// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear).
 func GetSleeperTrades(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
@@ -146,6 +172,7 @@ func GetSleeperTrades(c *gin.Context) {
 		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.created_at_sleeper").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
+	db = applyLeagueFilters(db, c, "l")
 
 	db.Count(&total)
 	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
@@ -253,6 +280,88 @@ func GetSleeperDrafts(c *gin.Context) {
 		Page:       page,
 		Limit:      limit,
 		TotalPages: totalPages,
+	})
+}
+
+// SleeperTransactionItem is a single row in the transactions list.
+type SleeperTransactionItem struct {
+	ID           string `json:"id"`
+	LeagueID     string `json:"league_id"`
+	LeagueName   string `json:"league_name"`
+	Season       string `json:"season"`
+	Type         string `json:"type"`
+	Status       string `json:"status"`
+	CreatedAt    int64  `json:"created_at"`
+	PlayerCount  int    `json:"player_count"`
+}
+
+// SleeperTransactionsResponse is the paginated response for GET /api/v1/sleeper/transactions.
+type SleeperTransactionsResponse struct {
+	Transactions []SleeperTransactionItem `json:"transactions"`
+	Total        int64                    `json:"total"`
+	Page         int                      `json:"page"`
+	Limit        int                      `json:"limit"`
+	TotalPages   int                      `json:"total_pages"`
+}
+
+// GetSleeperTransactions returns a paginated list of all Sleeper transactions.
+// Supports query filters: type (trade|waiver|free_agent), league_size, scoring_format, draft_type.
+func GetSleeperTransactions(c *gin.Context) {
+	page, limit := parsePagination(c)
+	offset := (page - 1) * limit
+
+	type txRow struct {
+		SleeperTransactionID string          `gorm:"column:sleeper_transaction_id"`
+		SleeperLeagueID      string          `gorm:"column:sleeper_league_id"`
+		LeagueName           string          `gorm:"column:league_name"`
+		Season               string          `gorm:"column:season"`
+		Type                 string          `gorm:"column:type"`
+		Status               string          `gorm:"column:status"`
+		CreatedAtSleeper     int64           `gorm:"column:created_at_sleeper"`
+		Adds                 json.RawMessage `gorm:"column:adds"`
+	}
+
+	var rows []txRow
+	var total int64
+
+	db := database.DB.Table("sleeper_transactions t").
+		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.type, t.status, t.created_at_sleeper, t.adds").
+		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
+		Where("t.status = ?", "complete")
+
+	if txType := c.Query("type"); txType != "" {
+		db = db.Where("t.type = ?", txType)
+	}
+	db = applyLeagueFilters(db, c, "l")
+
+	db.Count(&total)
+	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
+
+	items := make([]SleeperTransactionItem, len(rows))
+	for i, r := range rows {
+		var adds map[string]int
+		if len(r.Adds) > 0 {
+			_ = json.Unmarshal(r.Adds, &adds)
+		}
+		items[i] = SleeperTransactionItem{
+			ID:          r.SleeperTransactionID,
+			LeagueID:    r.SleeperLeagueID,
+			LeagueName:  r.LeagueName,
+			Season:      r.Season,
+			Type:        r.Type,
+			Status:      r.Status,
+			CreatedAt:   r.CreatedAtSleeper,
+			PlayerCount: len(adds),
+		}
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	c.JSON(http.StatusOK, SleeperTransactionsResponse{
+		Transactions: items,
+		Total:        total,
+		Page:         page,
+		Limit:        limit,
+		TotalPages:   totalPages,
 	})
 }
 
