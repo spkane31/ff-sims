@@ -19,7 +19,7 @@ function formatDate(unixMs: number): string {
 function sideLabel(side: SleeperTrade["sides"][number] | undefined): string {
   if (!side) return "—";
   const parts: string[] = [
-    ...side.players.map((p) => (p.position ? `${p.name} (${p.position})` : p.name)),
+    ...(side.players ?? []).map((p) => (p.position ? `${p.name} (${p.position})` : p.name)),
     ...(side.picks ?? []),
   ];
   return parts.length > 0 ? parts.join(", ") : "—";
