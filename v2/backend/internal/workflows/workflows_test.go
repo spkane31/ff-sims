@@ -200,7 +200,7 @@ func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 
 	dfa := &activities.DataFetchActivities{}
 	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
-		Return([]string{"lg1"}, nil)
+		Return([]activities.LeagueTransactionState{{LeagueID: "lg1"}}, nil)
 
 	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
 	env.OnWorkflow(workflows.LeagueTransactionSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
@@ -219,10 +219,29 @@ func TestLeagueTransactionSync_FullPath(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
+	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(5, nil)
+	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 5}).Return(nil)
 
 	env.ExecuteWorkflow(workflows.LeagueTransactionSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestLeagueTransactionSync_WithLegCursor(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	lastLeg := 8
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{
+		LeagueID:       "lg1",
+		LastLegFetched: &lastLeg,
+	}).Return(10, nil)
+	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 10}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.LeagueTransactionSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1", LastLegFetched: &lastLeg})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())

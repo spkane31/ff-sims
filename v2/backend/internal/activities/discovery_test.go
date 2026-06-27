@@ -240,3 +240,28 @@ func TestFetchLeagueDetails_Discovery_NotFound(t *testing.T) {
 		t.Fatal("expected NOT_FOUND error")
 	}
 }
+
+func TestFetchLeagueDetails_SkipsCompletedLeague(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	db.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg-done",
+		Status:          "complete",
+		LastFetchedAt:   &now,
+	})
+
+	apiCalled := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalled = true
+		json.NewEncoder(w).Encode(sleeper.League{})
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	if err := da.FetchLeagueDetails(context.Background(), activities.FetchLeagueDetailsParams{LeagueID: "lg-done"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if apiCalled {
+		t.Error("Sleeper API should not be called for a completed league")
+	}
+}

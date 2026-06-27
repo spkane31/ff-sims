@@ -13,32 +13,42 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
-	var leagueIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForTransactions, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &leagueIDs); err != nil {
+	var states []activities.LeagueTransactionState
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForTransactions, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &states); err != nil {
 		return err
 	}
-	for _, lid := range leagueIDs {
+	for _, s := range states {
 		cwo := workflow.ChildWorkflowOptions{
 			TaskQueue:         TaskQueueTransactions,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
-		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueTransactionSyncWorkflow, LeagueSyncParams{LeagueID: lid})
+		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueTransactionSyncWorkflow, LeagueSyncParams{
+			LeagueID:       s.LeagueID,
+			LastLegFetched: s.LastLegFetched,
+		})
 		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
-			workflow.GetLogger(ctx).Warn("failed to start LeagueTransactionSyncWorkflow", "leagueID", lid, "error", err)
+			workflow.GetLogger(ctx).Warn("failed to start LeagueTransactionSyncWorkflow", "leagueID", s.LeagueID, "error", err)
 		}
 	}
 	return nil
 }
 
-// LeagueTransactionSyncWorkflow fetches all transaction rounds (1–18) for a single league,
-// then stamps last_transactions_fetched_at.
+// LeagueTransactionSyncWorkflow fetches transactions for a single league starting from the
+// leg cursor, then stamps last_transactions_fetched_at and advances the leg cursor.
 func LeagueTransactionSyncWorkflow(ctx workflow.Context, params LeagueSyncParams) error {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
-	if err := workflow.ExecuteActivity(actCtx, dfa.FetchLeagueTransactions, activities.FetchLeagueTransactionsParams{LeagueID: params.LeagueID}).Get(ctx, nil); err != nil {
+	var maxLeg int
+	if err := workflow.ExecuteActivity(actCtx, dfa.FetchLeagueTransactions, activities.FetchLeagueTransactionsParams{
+		LeagueID:       params.LeagueID,
+		LastLegFetched: params.LastLegFetched,
+	}).Get(ctx, &maxLeg); err != nil {
 		return err
 	}
 
-	return workflow.ExecuteActivity(actCtx, dfa.MarkLeagueTransactionsFetched, activities.MarkLeagueFetchedParams{LeagueID: params.LeagueID}).Get(ctx, nil)
+	return workflow.ExecuteActivity(actCtx, dfa.MarkLeagueTransactionsFetched, activities.MarkLeagueTransactionsFetchedParams{
+		LeagueID: params.LeagueID,
+		MaxLeg:   maxLeg,
+	}).Get(ctx, nil)
 }

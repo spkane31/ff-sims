@@ -37,11 +37,23 @@ type FetchDraftPicksParams struct {
 }
 
 type FetchLeagueTransactionsParams struct {
-	LeagueID string
+	LeagueID       string
+	LastLegFetched *int
+}
+
+// LeagueTransactionState carries the league ID and leg cursor returned by GetStaleLeaguesForTransactions.
+type LeagueTransactionState struct {
+	LeagueID       string
+	LastLegFetched *int
 }
 
 type MarkLeagueFetchedParams struct {
 	LeagueID string
+}
+
+type MarkLeagueTransactionsFetchedParams struct {
+	LeagueID string
+	MaxLeg   int
 }
 
 type MarkLeagueSkippedParams struct {
