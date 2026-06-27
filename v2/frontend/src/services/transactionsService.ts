@@ -11,15 +11,18 @@ export interface DraftPick {
   year: number;
 }
 
-export interface DraftPicksResponse {
+export interface DraftPicksPagedResponse {
   draft_picks: DraftPick[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
 }
 
 export interface Transaction {
   id: number;
   date: string;
   type: 'draft' | 'trade' | 'waiver';
-  description: string;
   teams: string[];
   players: {
     id: string;
@@ -30,19 +33,37 @@ export interface Transaction {
   }[];
 }
 
-export interface TransactionsResponse {
+export interface TransactionsPagedResponse {
   transactions: Transaction[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
 }
 
 /**
  * Transactions API service
  */
 export const transactionsService = {
-  getDraftPicks: async (leagueId: number, year: number = 2024): Promise<DraftPicksResponse> => {
-    return apiClient.get<DraftPicksResponse>(`/leagues/${leagueId}/transactions/draft-picks?year=${year}`);
+  getDraftPicks: async (
+    leagueId: number,
+    year: number = 2024,
+    page = 1,
+    limit = 25
+  ): Promise<DraftPicksPagedResponse> => {
+    return apiClient.get<DraftPicksPagedResponse>(
+      `/leagues/${leagueId}/transactions/draft-picks?year=${year}&page=${page}&limit=${limit}`
+    );
   },
 
-  getAllTransactions: async (leagueId: number): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>(`/leagues/${leagueId}/transactions`);
+  getAllTransactions: async (
+    leagueId: number,
+    page = 1,
+    limit = 25,
+    year?: number
+  ): Promise<TransactionsPagedResponse> => {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (year) params.set('year', String(year));
+    return apiClient.get<TransactionsPagedResponse>(`/leagues/${leagueId}/transactions?${params}`);
   },
 };

@@ -1,12 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useSleeperDrafts } from "../../hooks/useSleeperData";
 
 const LIMIT = 25;
 
 export default function SleeperDraftsPage() {
+  const router = useRouter();
   const [page, setPage] = useState(1);
-  const { items, total, totalPages, isLoading, error } = useSleeperDrafts(page, LIMIT);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const p = parseInt(router.query.page as string);
+    if (p > 0) setPage(p);
+    setReady(true);
+  }, [router.isReady, router.query.page]);
+
+  const { items, total, totalPages, isLoading, error } = useSleeperDrafts(
+    ready ? page : 1,
+    LIMIT
+  );
+
+  function goToPage(p: number) {
+    setPage(p);
+    router.push({ pathname: router.pathname, query: { page: String(p) } }, undefined, { shallow: true });
+  }
 
   return (
     <Layout>
@@ -68,12 +87,11 @@ export default function SleeperDraftsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
             <button
               className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => goToPage(page - 1)}
               disabled={page <= 1 || isLoading}
             >
               Previous
@@ -83,7 +101,7 @@ export default function SleeperDraftsPage() {
             </span>
             <button
               className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => goToPage(page + 1)}
               disabled={page >= totalPages || isLoading}
             >
               Next

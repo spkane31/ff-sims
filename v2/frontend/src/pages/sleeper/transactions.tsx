@@ -30,6 +30,7 @@ function filtersFromQuery(query: Record<string, string | string[] | undefined>):
     league_size: typeof query.league_size === "string" ? query.league_size : undefined,
     scoring_format: typeof query.scoring_format === "string" ? query.scoring_format : undefined,
     draft_type: typeof query.draft_type === "string" ? query.draft_type : undefined,
+    league_type: typeof query.league_type === "string" ? query.league_type : undefined,
   };
 }
 
@@ -62,6 +63,7 @@ export default function SleeperTransactionsPage() {
     if (nextFilters.league_size) q.league_size = nextFilters.league_size;
     if (nextFilters.scoring_format) q.scoring_format = nextFilters.scoring_format;
     if (nextFilters.draft_type) q.draft_type = nextFilters.draft_type;
+    if (nextFilters.league_type) q.league_type = nextFilters.league_type;
     return q;
   }
 
