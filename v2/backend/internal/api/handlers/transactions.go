@@ -126,15 +126,18 @@ func GetDraftPicks(c *gin.Context) {
 }
 
 func GetTransactions(c *gin.Context) {
-	leagueID, ok := parseLeagueID(c)
-	if !ok {
-		return
-	}
-
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
 
-	db := database.DB.Where("league_id = ?", leagueID)
+	db := database.DB.Model(&models.Transaction{})
+
+	// leagueId path param is optional; omit filter when not present or not numeric.
+	if raw := c.Param("leagueId"); raw != "" {
+		if id, err := strconv.ParseUint(raw, 10, 32); err == nil && id > 0 {
+			db = db.Where("league_id = ?", id)
+		}
+	}
+
 	if year := c.Query("year"); year != "" {
 		if y, err := strconv.Atoi(year); err == nil {
 			db = db.Where("year = ?", y)
@@ -142,7 +145,7 @@ func GetTransactions(c *gin.Context) {
 	}
 
 	var total int64
-	db.Model(&models.Transaction{}).Count(&total)
+	db.Count(&total)
 
 	var txs []models.Transaction
 	db.Preload("Team").Preload("Player").
