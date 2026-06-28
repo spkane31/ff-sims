@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main \
 RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
-FROM python:3.12-slim AS espn-worker-builder
+FROM python:3.12-alpine AS espn-worker-builder
 WORKDIR /app/workers/espn
 RUN pip install --no-cache-dir uv
 COPY workers/espn/pyproject.toml workers/espn/uv.lock ./
