@@ -48,7 +48,7 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
                 for bs in entries:
                     if not hasattr(bs, "home_team") or not hasattr(bs, "away_team"):
                         continue
-                    if bs.home_team == 0 or bs.away_team == 0:
+                    if not bs.home_team or not bs.away_team:
                         continue
 
                     home_db_id = team_map.get(bs.home_team.team_id)
