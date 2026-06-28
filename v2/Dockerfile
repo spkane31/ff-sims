@@ -42,7 +42,7 @@ COPY workers/espn/ ./
 # because the runtime image already carries the identical interpreter and stdlib.
 FROM python:3.12-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl \
+    ca-certificates curl openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Go backend binaries (statically linked — no libc dependency)
