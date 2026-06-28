@@ -25,7 +25,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main \
 RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
-FROM python:3.12-slim AS espn-worker-builder
+# Pin to bookworm so the compiled Python and .venv extensions share glibc 2.36
+# with the runtime stage. The untagged python:3.12-slim moved to Trixie (glibc 2.38)
+# which is incompatible with debian:bookworm-slim.
+FROM python:3.12-slim-bookworm AS espn-worker-builder
 WORKDIR /app/workers/espn
 RUN pip install --no-cache-dir uv
 COPY workers/espn/pyproject.toml workers/espn/uv.lock ./
@@ -33,28 +36,28 @@ RUN uv sync --frozen --no-dev
 COPY workers/espn/ ./
 
 # Stage 4: Final runtime image with Go serving everything
-# debian:bookworm-slim shares glibc with python:3.12-slim so the Python runtime
-# and uv binaries copied from the builder execute without a compatibility shim.
-# The Go binaries are CGO_ENABLED=0 (statically linked) and work on any Linux.
-FROM debian:bookworm-slim
+# python:3.12-slim-bookworm provides the Python runtime that matches the builder,
+# eliminating glibc version mismatches. Go binaries are CGO_ENABLED=0 (statically
+# linked) and work on any Linux. We skip copying Python itself from the builder
+# because the runtime image already carries the identical interpreter and stdlib.
+FROM python:3.12-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Go backend binaries
+# Copy Go backend binaries (statically linked — no libc dependency)
 COPY --from=backend-builder /app/backend/main /app/backend/
 COPY --from=backend-builder /app/backend/worker /app/backend/
 
-# Copy Python ESPN worker and its virtualenv
+# Copy Python ESPN worker, its virtualenv, and uv
+# Python interpreter + stdlib are already present in the base image.
 COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
-COPY --from=espn-worker-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
-COPY --from=espn-worker-builder /usr/local/lib/libpython3.12.so.1.0 /usr/local/lib/libpython3.12.so.1.0
-COPY --from=espn-worker-builder /usr/local/bin/python3.12 /usr/local/bin/python3.12
 COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
-RUN ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3 && ldconfig
 
 # Entrypoint: Go Sleeper worker + Python ESPN worker + HTTP server
-RUN printf '#!/bin/sh\n/app/backend/worker &\ncd /app/workers/espn && uv run python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+# --no-sync: venv was frozen at build time; prevents uv from attempting network
+# access inside the container if the lockfile appears out-of-date.
+RUN printf '#!/bin/sh\n/app/backend/worker &\ncd /app/workers/espn && uv run --no-sync python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy Next.js build output
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
