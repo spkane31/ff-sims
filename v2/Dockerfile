@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main \
 RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
-FROM python:3.12-alpine AS espn-worker-builder
+FROM python:3.12-slim AS espn-worker-builder
 WORKDIR /app/workers/espn
 RUN pip install --no-cache-dir uv
 COPY workers/espn/pyproject.toml workers/espn/uv.lock ./
@@ -33,8 +33,13 @@ RUN uv sync --frozen --no-dev
 COPY workers/espn/ ./
 
 # Stage 4: Final runtime image with Go serving everything
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates curl libstdc++ libgcc
+# debian:bookworm-slim shares glibc with python:3.12-slim so the Python runtime
+# and uv binaries copied from the builder execute without a compatibility shim.
+# The Go binaries are CGO_ENABLED=0 (statically linked) and work on any Linux.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy Go backend binaries
 COPY --from=backend-builder /app/backend/main /app/backend/
@@ -42,7 +47,6 @@ COPY --from=backend-builder /app/backend/worker /app/backend/
 
 # Copy Python ESPN worker and its virtualenv
 COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
-# Copy Python runtime from the slim builder so Alpine can run it
 COPY --from=espn-worker-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=espn-worker-builder /usr/local/bin/python3.12 /usr/local/bin/python3.12
 COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
