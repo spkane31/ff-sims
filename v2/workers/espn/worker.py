@@ -38,12 +38,14 @@ from temporalio.worker import Worker
 
 from activities.credentials import get_any_espn_credentials, get_espn_credentials, get_espn_leagues
 from activities.draft import fetch_and_upsert_draft, mark_draft_fetched
+from activities.expected_wins import calculate_and_store_expected_wins, get_matchup_years
 from activities.player_status import mark_players_updated, update_active_players
 from activities.schedule import fetch_and_upsert_schedule, mark_schedule_fetched
 from activities.teams import fetch_and_upsert_teams, mark_teams_fetched
 from activities.transactions import fetch_and_upsert_transactions, mark_transactions_fetched
 from workflows.dispatcher import ESPNSyncDispatcher
 from workflows.draft import ESPNDraftSyncWorkflow
+from workflows.expected_wins import ExpectedWinsBackfillWorkflow
 from workflows.league_sync import LeagueESPNSyncWorkflow
 from workflows.player_status import ESPNPlayerStatusSyncWorkflow
 from workflows.schedule import ESPNScheduleSyncWorkflow
@@ -149,6 +151,8 @@ async def main() -> None:
         mark_transactions_fetched,
         update_active_players,
         mark_players_updated,
+        get_matchup_years,
+        calculate_and_store_expected_wins,
     ]
 
     all_workflows = [
@@ -159,6 +163,7 @@ async def main() -> None:
         ESPNDraftSyncWorkflow,
         ESPNTransactionSyncWorkflow,
         ESPNPlayerStatusSyncWorkflow,
+        ExpectedWinsBackfillWorkflow,
     ]
 
     with ThreadPoolExecutor(max_workers=20) as executor:
