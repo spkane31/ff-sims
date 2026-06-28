@@ -24,16 +24,32 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main \
     ./cmd/server
 RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
 
-# Stage 3: Final runtime image with Go serving everything
+# Stage 3: Build Python ESPN worker
+FROM python:3.12-slim AS espn-worker-builder
+WORKDIR /app/workers/espn
+RUN pip install --no-cache-dir uv
+COPY workers/espn/pyproject.toml workers/espn/uv.lock ./
+RUN uv sync --frozen --no-dev
+COPY workers/espn/ ./
+
+# Stage 4: Final runtime image with Go serving everything
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates curl
+RUN apk --no-cache add ca-certificates curl libstdc++ libgcc
 
 # Copy Go backend binaries
 COPY --from=backend-builder /app/backend/main /app/backend/
 COPY --from=backend-builder /app/backend/worker /app/backend/
 
-# Entrypoint: start Temporal worker in background, then run HTTP server
-RUN printf '#!/bin/sh\n/app/backend/worker &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Copy Python ESPN worker and its virtualenv
+COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
+# Copy Python runtime from the slim builder so Alpine can run it
+COPY --from=espn-worker-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=espn-worker-builder /usr/local/bin/python3.12 /usr/local/bin/python3.12
+COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
+RUN ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
+
+# Entrypoint: Go Sleeper worker + Python ESPN worker + HTTP server
+RUN printf '#!/bin/sh\n/app/backend/worker &\ncd /app/workers/espn && uv run python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy Next.js build output
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
