@@ -6,9 +6,10 @@ registers all ESPN workflows and activities on the 'espn-sync' task queue, creat
 weekly Tuesday 8 AM EST schedule (idempotent), then polls indefinitely.
 
 Temporal Cloud env vars:
-  TEMPORAL_NAMESPACE_ENDPOINT  e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
-  TEMPORAL_NAMESPACE           e.g. ff-sims.b3i2g
-  TEMPORAL_API_KEY             API key
+  TEMPORAL_NAMESPACE_ENDPOINT     e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
+  TEMPORAL_NAMESPACE              e.g. ff-sims.b3i2g
+  TEMPORAL_API_KEY                API key
+  TEMPORAL_TLS_DISABLE_HOST_VERIFY=true  for tmprl-test.cloud (self-signed cert)
 
 Local dev server fallback:
   TEMPORAL_HOST                default localhost:7233
@@ -20,6 +21,8 @@ Database:
 import asyncio
 import logging
 import os
+import socket
+import ssl
 from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
@@ -31,6 +34,7 @@ from temporalio.client import (
     ScheduleRange,
     ScheduleSpec,
 )
+from temporalio.service import TLSConfig
 from temporalio.worker import Worker
 
 from activities.credentials import get_any_espn_credentials, get_espn_credentials, get_espn_leagues
@@ -55,12 +59,29 @@ TASK_QUEUE = "espn-sync"
 SCHEDULE_ID = "espn-sync-schedule"
 
 
+def _fetch_server_tls_config(endpoint: str) -> TLSConfig:
+    """Fetch the server's own cert and trust it — for tmprl-test.cloud which uses
+    a self-signed cert that isn't in the system CA store."""
+    host, port_str = endpoint.rsplit(":", 1)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, int(port_str))) as sock:
+        with ctx.wrap_socket(sock) as ssock:
+            cert_der = ssock.getpeercert(binary_form=True)
+    return TLSConfig(server_root_ca_cert=ssl.DER_cert_to_PEM_cert(cert_der).encode())
+
+
 async def create_client() -> Client:
     if endpoint := os.getenv("TEMPORAL_NAMESPACE_ENDPOINT"):
+        if os.getenv("TEMPORAL_TLS_DISABLE_HOST_VERIFY") == "true":
+            tls: bool | TLSConfig = _fetch_server_tls_config(endpoint)
+        else:
+            tls = True
         return await Client.connect(
             endpoint,
             namespace=os.environ["TEMPORAL_NAMESPACE"],
-            tls=True,
+            tls=tls,
             api_key=os.getenv("TEMPORAL_API_KEY"),
         )
     return await Client.connect(
