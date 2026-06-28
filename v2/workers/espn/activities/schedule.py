@@ -25,30 +25,43 @@ def _upsert_player(cur, espn_id: int, name: str, position: str) -> int:
 
 @activity.defn
 def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
+    logger.info("fetch_and_upsert_schedule START league=%s year=%d", params.espn_league_id, params.year)
     league = League(
         league_id=int(params.espn_league_id),
         year=params.year,
         espn_s2=params.espn_s2,
         swid=params.swid,
     )
+    logger.info("League loaded: current_week=%d year=%d", league.current_week, league.year)
 
     with get_connection() as conn:
         league_id = resolve_league_id(conn, params.espn_league_id)
         with conn.cursor() as cur:
             cur.execute("SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,))
             team_map = {row[0]: row[1] for row in cur.fetchall()}
+        logger.info("Team map loaded: %d teams for league_id=%d", len(team_map), league_id)
 
         with conn.cursor() as cur:
             for week in range(1, 18):
                 if week > league.current_week and datetime.now().year == league.year:
                     break
 
+                activity.heartbeat(f"week {week}")
+                logger.info(
+                    "Processing schedule week %d/%d for league %s year %d",
+                    week, min(17, league.current_week), params.espn_league_id, params.year,
+                )
                 entries = league.box_scores(week=week)
 
                 for bs in entries:
                     if not hasattr(bs, "home_team") or not hasattr(bs, "away_team"):
+                        logger.debug("Skipping box score with no home/away_team attr: %r", bs)
                         continue
                     if not bs.home_team or not bs.away_team:
+                        logger.debug(
+                            "Skipping box score week %d — home=%r away=%r",
+                            week, bs.home_team, bs.away_team,
+                        )
                         continue
 
                     home_db_id = team_map.get(bs.home_team.team_id)
