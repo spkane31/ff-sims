@@ -9,7 +9,6 @@ Temporal Cloud env vars:
   TEMPORAL_NAMESPACE_ENDPOINT     e.g. ff-sims.b3i2g.tmprl-test.cloud:7233
   TEMPORAL_NAMESPACE              e.g. ff-sims.b3i2g
   TEMPORAL_API_KEY                API key
-  TEMPORAL_TLS_DISABLE_HOST_VERIFY=true  for tmprl-test.cloud (self-signed cert)
 
 Local dev server fallback:
   TEMPORAL_HOST                default localhost:7233
@@ -21,8 +20,8 @@ Database:
 import asyncio
 import logging
 import os
-import socket
-import ssl
+import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
@@ -60,36 +59,43 @@ SCHEDULE_ID = "espn-sync-schedule"
 
 
 def _fetch_server_tls_config(endpoint: str) -> TLSConfig:
-    """Fetch the server's full cert chain and trust it — for tmprl-test.cloud (custom CA).
+    """Trust whatever cert chain the server presents — equivalent to InsecureSkipVerify=true in Go.
 
-    Uses get_unverified_chain() (Python 3.13+) to capture the full chain including
-    intermediates and root CA, so rustls can validate the certificate.
+    Uses `openssl s_client -showcerts` to capture every cert in the chain (leaf,
+    intermediates, and root CA). Passing the full chain as server_root_ca_cert lets
+    rustls build a valid path even when the CA is not in the system trust store, which
+    is the common case for tmprl-test.cloud and other custom-CA Temporal environments.
+
+    Python 3.12's ssl module only exposes the leaf cert via getpeercert(), which fails
+    as a rustls trust anchor because its CA bit is false. This approach works on any
+    Python version and requires openssl to be installed in the container.
     """
     host, port_str = endpoint.rsplit(":", 1)
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    with socket.create_connection((host, int(port_str))) as raw:
-        with ctx.wrap_socket(raw, server_hostname=host) as ssock:
-            try:
-                chain: list[bytes] = ssock.get_unverified_chain()  # Python 3.13+
-            except AttributeError:
-                chain = [ssock.getpeercert(binary_form=True)]
-    return TLSConfig(
-        server_root_ca_cert=b"".join(ssl.DER_cert_to_PEM_cert(der).encode() for der in chain)
+    result = subprocess.run(
+        ["openssl", "s_client", "-connect", f"{host}:{port_str}", "-showcerts"],
+        input=b"",
+        capture_output=True,
+        timeout=10,
     )
+    pem_certs = re.findall(
+        rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+        result.stdout,
+        re.DOTALL,
+    )
+    if not pem_certs:
+        raise RuntimeError(
+            f"Could not retrieve TLS certificate chain from {endpoint} — "
+            "is the endpoint reachable and is openssl installed in the container?"
+        )
+    return TLSConfig(server_root_ca_cert=b"\n".join(pem_certs))
 
 
 async def create_client() -> Client:
     if endpoint := os.getenv("TEMPORAL_NAMESPACE_ENDPOINT"):
-        if os.getenv("TEMPORAL_TLS_DISABLE_HOST_VERIFY") == "true":
-            tls: bool | TLSConfig = _fetch_server_tls_config(endpoint)
-        else:
-            tls = True
         return await Client.connect(
             endpoint,
             namespace=os.environ["TEMPORAL_NAMESPACE"],
-            tls=tls,
+            tls=_fetch_server_tls_config(endpoint),
             api_key=os.getenv("TEMPORAL_API_KEY"),
         )
     return await Client.connect(
