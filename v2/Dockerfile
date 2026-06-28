@@ -48,9 +48,10 @@ COPY --from=backend-builder /app/backend/worker /app/backend/
 # Copy Python ESPN worker and its virtualenv
 COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
 COPY --from=espn-worker-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=espn-worker-builder /usr/local/lib/libpython3.12.so.1.0 /usr/local/lib/libpython3.12.so.1.0
 COPY --from=espn-worker-builder /usr/local/bin/python3.12 /usr/local/bin/python3.12
 COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
-RUN ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
+RUN ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3 && ldconfig
 
 # Entrypoint: Go Sleeper worker + Python ESPN worker + HTTP server
 RUN printf '#!/bin/sh\n/app/backend/worker &\ncd /app/workers/espn && uv run python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
