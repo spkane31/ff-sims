@@ -1,9 +1,15 @@
 import os
+from pathlib import Path
 import pytest
 import psycopg
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load from v2/backend/.env (two levels up from tests/)
+_env_path = Path(__file__).parent.parent.parent.parent / "backend" / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path, override=False)
+else:
+    load_dotenv(override=False)
 
 
 @pytest.fixture

@@ -1,8 +1,17 @@
 import os
+from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-load_dotenv()
+# Walk up from this file to find the backend .env (v2/backend/.env)
+_here = Path(__file__).parent
+for _p in [_here, _here.parent, _here.parent.parent]:
+    _env = _p / "backend" / ".env"
+    if _env.exists():
+        load_dotenv(_env, override=False)
+        break
+else:
+    load_dotenv(override=False)
 
 
 def get_connection() -> psycopg.Connection:
