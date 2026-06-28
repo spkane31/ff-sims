@@ -60,16 +60,24 @@ SCHEDULE_ID = "espn-sync-schedule"
 
 
 def _fetch_server_tls_config(endpoint: str) -> TLSConfig:
-    """Fetch the server's own cert and trust it — for tmprl-test.cloud which uses
-    a self-signed cert that isn't in the system CA store."""
+    """Fetch the server's full cert chain and trust it — for tmprl-test.cloud (custom CA).
+
+    Uses get_unverified_chain() (Python 3.13+) to capture the full chain including
+    intermediates and root CA, so rustls can validate the certificate.
+    """
     host, port_str = endpoint.rsplit(":", 1)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    with socket.create_connection((host, int(port_str))) as sock:
-        with ctx.wrap_socket(sock) as ssock:
-            cert_der = ssock.getpeercert(binary_form=True)
-    return TLSConfig(server_root_ca_cert=ssl.DER_cert_to_PEM_cert(cert_der).encode())
+    with socket.create_connection((host, int(port_str))) as raw:
+        with ctx.wrap_socket(raw, server_hostname=host) as ssock:
+            try:
+                chain: list[bytes] = ssock.get_unverified_chain()  # Python 3.13+
+            except AttributeError:
+                chain = [ssock.getpeercert(binary_form=True)]
+    return TLSConfig(
+        server_root_ca_cert=b"".join(ssl.DER_cert_to_PEM_cert(der).encode() for der in chain)
+    )
 
 
 async def create_client() -> Client:
