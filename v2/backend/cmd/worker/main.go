@@ -50,13 +50,19 @@ func main() {
 	dw.RegisterActivity(da)
 
 	// Drafts worker: DraftSyncDispatcher + LeagueDraftSyncWorkflow
-	draftsw := worker.New(c, workflows.TaskQueueDrafts, worker.Options{})
+	draftsw := worker.New(c, workflows.TaskQueueDrafts, worker.Options{
+		MaxConcurrentActivityExecutionSize: 100,
+		MaxConcurrentWorkflowTaskPollers:   10,
+	})
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
 	draftsw.RegisterActivity(dfa)
 
 	// Transactions worker: TransactionSyncDispatcher + LeagueTransactionSyncWorkflow
-	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{})
+	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{
+		MaxConcurrentActivityExecutionSize: 100,
+		MaxConcurrentWorkflowTaskPollers:   10,
+	})
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
 	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
 	transactionsw.RegisterActivity(dfa)

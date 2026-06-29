@@ -14,7 +14,7 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var states []activities.LeagueTransactionState
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForTransactions, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &states); err != nil {
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForTransactions, activities.GetStaleLeaguesParams{BatchSize: SyncBatchSize}).Get(ctx, &states); err != nil {
 		return err
 	}
 	for _, s := range states {

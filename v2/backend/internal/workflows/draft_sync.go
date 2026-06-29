@@ -14,7 +14,7 @@ func DraftSyncDispatcher(ctx workflow.Context) error {
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var leagueIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForDrafts, activities.GetStaleLeaguesParams{BatchSize: BatchSize}).Get(ctx, &leagueIDs); err != nil {
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForDrafts, activities.GetStaleLeaguesParams{BatchSize: SyncBatchSize}).Get(ctx, &leagueIDs); err != nil {
 		return err
 	}
 	for _, lid := range leagueIDs {
