@@ -1,5 +1,4 @@
 import logging
-import random
 from dataclasses import dataclass
 
 from temporalio import activity
@@ -46,6 +45,10 @@ def _run_monte_carlo(
     Random-schedule Monte Carlo: for each simulation shuffle teams into random
     pairings per week and accumulate win totals.  Mirrors Go's runScheduleSimulations.
     """
+    import random  # lazy import: random seeds with os.urandom() at import time, which
+                   # the Temporal sandbox restricts — importing here avoids triggering
+                   # that at module-load time (which happens in the workflow sandbox context)
+
     team_ids = list(team_scores.keys())
     if not team_ids or len(team_ids) % 2 != 0:
         return {}
