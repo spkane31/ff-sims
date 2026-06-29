@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -138,17 +142,37 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 func GetSleeperStats(c *gin.Context) {
 	var leagueCount, tradeCount, draftCount int64
 
-	database.DB.Model(&models.SleeperLeague{}).
-		Where("last_fetched_at IS NOT NULL").
-		Count(&leagueCount)
+	ctx, cleanup := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cleanup()
 
-	database.DB.Model(&models.SleeperTransaction{}).
-		Where("type = ? AND status = ?", "trade", "complete").
-		Count(&tradeCount)
+	g, ctx := errgroup.WithContext(ctx)
 
-	database.DB.Model(&models.SleeperDraft{}).
-		Where("status = ?", "complete").
-		Count(&draftCount)
+	g.Go(func() error {
+		return database.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
+			Where("last_fetched_at IS NOT NULL").
+			Count(&leagueCount).Error
+	})
+
+	g.Go(func() error {
+		return database.DB.WithContext(ctx).Model(&models.SleeperTransaction{}).
+			Where("type = ? AND status = ?", "trade", "complete").
+			Count(&tradeCount).Error
+	})
+
+	g.Go(func() error {
+		return database.DB.WithContext(ctx).Model(&models.SleeperDraft{}).
+			Where("status = ?", "complete").
+			Count(&draftCount).Error
+	})
+
+	if err := g.Wait(); err != nil {
+		if ctx.Err() != nil {
+			c.JSON(http.StatusRequestTimeout, map[string]string{"msg": "request timed out"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, map[string]string{"msg": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, SleeperStatsResponse{
 		LeagueCount: leagueCount,
@@ -322,14 +346,14 @@ func GetSleeperDrafts(c *gin.Context) {
 
 // SleeperTransactionItem is a single row in the transactions list.
 type SleeperTransactionItem struct {
-	ID           string `json:"id"`
-	LeagueID     string `json:"league_id"`
-	LeagueName   string `json:"league_name"`
-	Season       string `json:"season"`
-	Type         string `json:"type"`
-	Status       string `json:"status"`
-	CreatedAt    int64  `json:"created_at"`
-	PlayerCount  int    `json:"player_count"`
+	ID          string `json:"id"`
+	LeagueID    string `json:"league_id"`
+	LeagueName  string `json:"league_name"`
+	Season      string `json:"season"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	CreatedAt   int64  `json:"created_at"`
+	PlayerCount int    `json:"player_count"`
 }
 
 // SleeperTransactionsResponse is the paginated response for GET /api/v1/sleeper/transactions.

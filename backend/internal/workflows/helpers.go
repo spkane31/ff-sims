@@ -13,7 +13,7 @@ const (
 	TaskQueueDrafts       = "sleeper-drafts"
 	TaskQueueTransactions = "sleeper-transactions"
 	TaskQueuePlayerSync   = "sleeper-player-sync"
-	BatchSize             = 25
+	BatchSize             = 10
 	SyncBatchSize         = 200
 )
 
