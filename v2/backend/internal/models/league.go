@@ -13,11 +13,15 @@ type League struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	ScoringType  string `json:"scoring_type"` // Standard, PPR, Half-PPR
-	Teams        []Team `json:"teams,omitempty"`
-	Season       int    `json:"season"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ScoringType string `json:"scoring_type"` // Standard, PPR, Half-PPR
+	Teams       []Team `json:"teams,omitempty"`
+	Season      int    `json:"season"`
+
+	// Platform identification — used by the ETL to look up the league
+	Platform   string `json:"platform"`    // "ESPN", "Sleeper", "Yahoo"
+	ExternalID string `json:"external_id"` // Platform-assigned league ID (e.g. "345674")
 	CurrentWeek  int    `json:"current_week"`
 	TotalWeeks   int    `json:"total_weeks" gorm:"default:17"`
 	PlayoffWeeks int    `json:"playoff_weeks" gorm:"default:3"`

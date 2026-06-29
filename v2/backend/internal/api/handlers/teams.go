@@ -47,8 +47,13 @@ type TeamPoints struct {
 	Against float64 `json:"against"`
 }
 
-// GetTeams returns all teams
+// GetTeams returns all teams in a league.
 func GetTeams(c *gin.Context) {
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+
 	allTeams, teamsErr := []models.Team{}, error(nil)
 	fullSchedule, scheduleErr := []models.Matchup{}, error(nil)
 
@@ -57,7 +62,9 @@ func GetTeams(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if teamsErr = database.DB.Model(&models.Team{}).Preload("NameHistory").Find(&allTeams).Error; teamsErr != nil {
+		if teamsErr = database.DB.Model(&models.Team{}).
+			Where("league_id = ?", leagueID).
+			Preload("NameHistory").Find(&allTeams).Error; teamsErr != nil {
 			slog.Error("Failed to fetch teams from database", "error", teamsErr)
 		}
 	}()
@@ -66,7 +73,7 @@ func GetTeams(c *gin.Context) {
 	go func() {
 		defer wg.Done()
 		if scheduleErr = database.DB.Model(&models.Matchup{}).
-			Where("completed = true").
+			Where("league_id = ? AND completed = true", leagueID).
 			Find(&fullSchedule).Error; scheduleErr != nil {
 			slog.Error("Failed to fetch full schedule from database", "error", scheduleErr)
 		}
@@ -85,12 +92,18 @@ func GetTeams(c *gin.Context) {
 		return
 	}
 
-	slog.Info("Fetched teams from database", "count", len(allTeams))
-	slog.Info("Fetched full schedule from database", "count", len(fullSchedule))
+	slog.Info("Fetched teams from database", "count", len(allTeams), "leagueId", leagueID)
+	for _, t := range allTeams {
+		slog.Info("GetTeams team", "leagueId", leagueID, "dbId", t.ID, "espnId", t.ESPNID, "owner", t.Owner)
+	}
+	slog.Info("Fetched full schedule from database", "count", len(fullSchedule), "leagueId", leagueID)
 
 	resp := GetTeamsResponse{}
 
 	for _, team := range allTeams {
+		if team.Hidden {
+			continue
+		}
 		resp.Teams = append(resp.Teams, TeamResponse{
 			ID:        fmt.Sprintf("%d", team.ID),
 			ESPNID:    fmt.Sprintf("%d", team.ESPNID),
@@ -182,11 +195,15 @@ func GetTeams(c *gin.Context) {
 
 // GetTeamByID returns detailed information about a team including schedule, players, draft, and transactions
 func GetTeamByID(c *gin.Context) {
-	id := c.Param("id")
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+	id := c.Param("teamId")
 
-	slog.Info("Fetching team by ID", "id", id)
+	slog.Info("Fetching team by ID", "id", id, "leagueId", leagueID)
 
-	teamMap, err := database.GetTeamsIDMap()
+	teamMap, err := database.GetTeamsIDMapByLeague(leagueID)
 	if err != nil {
 		slog.Error("Failed to fetch teams ID map", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch team data"})
@@ -195,7 +212,7 @@ func GetTeamByID(c *gin.Context) {
 
 	// Fetch the team
 	var team models.Team
-	if err := database.DB.Where("espn_id = ?", id).First(&team).Error; err != nil {
+	if err := database.DB.Where("espn_id = ? AND league_id = ?", id, leagueID).First(&team).Error; err != nil {
 		slog.Error("Failed to fetch team from database", "error", err, "id", id)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
 		return
@@ -204,14 +221,14 @@ func GetTeamByID(c *gin.Context) {
 
 	// Fetch team's schedule (all matchups for this team, including incomplete games for display)
 	var schedule []models.Matchup
-	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND completed = true", team.ID, team.ID).
+	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND league_id = ? AND completed = true", team.ID, team.ID, leagueID).
 		Order("year desc, week asc").Find(&schedule).Error; err != nil {
 		slog.Error("Failed to fetch team schedule", "error", err, "team_id", team.ID)
 	}
 
 	// Fetch full schedule for playoff detection (only completed games needed for playoff logic)
 	var fullSchedule []models.Matchup
-	if err := database.DB.Model(&models.Matchup{}).Where("completed = true").Find(&fullSchedule).Error; err != nil {
+	if err := database.DB.Model(&models.Matchup{}).Where("league_id = ? AND completed = true", leagueID).Find(&fullSchedule).Error; err != nil {
 		slog.Error("Failed to fetch full schedule for playoff detection", "error", err)
 	}
 
@@ -518,9 +535,12 @@ type TransactionPlayer struct {
 	Name string `json:"name"`
 }
 
-// GetCurrentSeasonStandings returns current season standings with expected wins
-// GET /api/teams/standings/{year}
+// GetCurrentSeasonStandings returns current season standings with expected wins.
 func GetCurrentSeasonStandings(c *gin.Context) {
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
 	yearParam := c.Param("year")
 	year, err := strconv.ParseUint(yearParam, 10, 32)
 	if err != nil {
@@ -529,9 +549,9 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	}
 	yearUint := uint(year)
 
-	// Fetch all teams
+	// Fetch all teams in this league
 	var allTeams []models.Team
-	if err := database.DB.Find(&allTeams).Error; err != nil {
+	if err := database.DB.Where("league_id = ?", leagueID).Find(&allTeams).Error; err != nil {
 		slog.Error("Failed to fetch teams from database", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch teams"})
 		return
@@ -539,14 +559,14 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 
 	// Fetch current year's matchups
 	var matchups []models.Matchup
-	if err := database.DB.Where("year = ? AND completed = true", yearUint).Find(&matchups).Error; err != nil {
+	if err := database.DB.Where("league_id = ? AND year = ? AND completed = true", leagueID, yearUint).Find(&matchups).Error; err != nil {
 		slog.Error("Failed to fetch matchups", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch matchups"})
 		return
 	}
 
 	// Get all weekly expected wins data for the year and aggregate by team
-	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, 345674, yearUint) // Assuming league ID 1
+	weeklyExpectedWins, err := models.GetAllWeeklyExpectedWins(database.DB, leagueID, yearUint)
 	if err != nil && err.Error() != "record not found" {
 		slog.Error("Failed to fetch weekly expected wins", "error", err)
 	}
@@ -581,11 +601,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	// Build standings response
 	var standings []CurrentSeasonStandingResponse
 	for _, team := range allTeams {
-		// Skip dummy teams
-		if team.ESPNID == 2 || team.ESPNID == 8 {
-			continue
-		}
-
 		standing := CurrentSeasonStandingResponse{
 			TeamID:   team.ID,
 			ESPNID:   fmt.Sprintf("%d", team.ESPNID),

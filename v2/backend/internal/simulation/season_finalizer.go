@@ -153,7 +153,7 @@ func GetSeasonExpectedWinsRankings(leagueID uint, year uint) (*SeasonRankings, e
 	// By Luck (positive luck = over-performed)
 	err = db.Where("league_id = ? AND year = ?", leagueID, year).
 		Preload("Team").
-		Order("win_luck DESC").
+		Order("(actual_wins - expected_wins) DESC").
 		Find(&rankings.ByLuck).Error
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func GetSeasonExpectedWinsRankings(leagueID uint, year uint) (*SeasonRankings, e
 	// By Unlucky (negative luck = under-performed)
 	err = db.Where("league_id = ? AND year = ?", leagueID, year).
 		Preload("Team").
-		Order("win_luck ASC").
+		Order("(actual_wins - expected_wins) ASC").
 		Find(&rankings.ByUnlucky).Error
 	if err != nil {
 		return nil, err

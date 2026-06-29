@@ -1,18 +1,15 @@
 package handlers
 
 import (
-	"backend/internal/database"
-	"backend/internal/models"
-	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-)
 
-type GetTransactionsResponse struct {
-	Transactions []Transaction `json:"transactions"`
-}
+	"backend/internal/database"
+	"backend/internal/models"
+)
 
 type TransactionType string
 
@@ -23,12 +20,11 @@ const (
 )
 
 type Transaction struct {
-	ID          string              `json:"id"`
-	Date        string              `json:"date"`
-	Type        TransactionType     `json:"type"`
-	Description string              `json:"description"`
-	Teams       []string            `json:"teams"`
-	Players     []PlayerTransaction `json:"players"`
+	ID      string              `json:"id"`
+	Date    string              `json:"date"`
+	Type    TransactionType     `json:"type"`
+	Teams   []string            `json:"teams"`
+	Players []PlayerTransaction `json:"players"`
 }
 
 type PlayerTransaction struct {
@@ -39,12 +35,39 @@ type PlayerTransaction struct {
 	Points   float64 `json:"points,omitempty"`
 }
 
-type GetDraftPicksResponse struct {
+type GetTransactionsPagedResponse struct {
+	Transactions []Transaction `json:"transactions"`
+	Total        int64         `json:"total"`
+	Page         int           `json:"page"`
+	Limit        int           `json:"limit"`
+	TotalPages   int           `json:"total_pages"`
+}
+
+type GetDraftPicksPagedResponse struct {
 	DraftPicks []DraftPickResponse `json:"draft_picks"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page"`
+	Limit      int                 `json:"limit"`
+	TotalPages int                 `json:"total_pages"`
+}
+
+func txTypeFromModel(t string) TransactionType {
+	switch t {
+	case "TRADED":
+		return TransactionTypeTrade
+	case "ADDED", "DROPPED":
+		return TransactionTypeWaiver
+	default:
+		return TransactionTypeDraft
+	}
 }
 
 func GetDraftPicks(c *gin.Context) {
-	// Get year parameter, default to 2024
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+
 	yearStr := c.DefaultQuery("year", "2024")
 	year, err := strconv.Atoi(yearStr)
 	if err != nil {
@@ -52,23 +75,27 @@ func GetDraftPicks(c *gin.Context) {
 		return
 	}
 
-	// Get league ID parameter, default to 345674
-	leagueIDStr := c.DefaultQuery("league_id", "345674")
-	leagueID, err := strconv.Atoi(leagueIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league_id parameter"})
-		return
-	}
+	page, limit := parsePagination(c)
+	offset := (page - 1) * limit
 
-	// Fetch draft selections from database
-	draftSelections, err := models.GetLeagueDraftSelections(database.DB, uint(leagueID), uint(year))
-	if err != nil {
+	var total int64
+	database.DB.Model(&models.DraftSelection{}).
+		Where("league_id = ? AND year = ?", leagueID, uint(year)).
+		Count(&total)
+
+	var draftSelections []models.DraftSelection
+	if err := database.DB.
+		Where("league_id = ? AND year = ?", leagueID, uint(year)).
+		Order("round asc, pick asc").
+		Preload("Team").
+		Preload("Player").
+		Limit(limit).Offset(offset).
+		Find(&draftSelections).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch draft selections"})
 		return
 	}
 
-	// Transform to response format
-	var draftPicks []DraftPickResponse
+	draftPicks := make([]DraftPickResponse, 0, len(draftSelections))
 	for _, selection := range draftSelections {
 		teamOwner := ""
 		teamID := 0
@@ -76,9 +103,8 @@ func GetDraftPicks(c *gin.Context) {
 			teamOwner = selection.Team.Owner
 			teamID = int(selection.Team.ESPNID)
 		}
-
 		draftPicks = append(draftPicks, DraftPickResponse{
-			PlayerID: fmt.Sprintf("%d", selection.PlayerID),
+			PlayerID: strconv.FormatUint(uint64(selection.PlayerID), 10),
 			Round:    int(selection.Round),
 			Pick:     int(selection.Pick),
 			Player:   selection.PlayerName,
@@ -89,30 +115,76 @@ func GetDraftPicks(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, GetDraftPicksResponse{
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	c.JSON(http.StatusOK, GetDraftPicksPagedResponse{
 		DraftPicks: draftPicks,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		TotalPages: totalPages,
 	})
 }
 
 func GetTransactions(c *gin.Context) {
-	c.JSON(200, GetTransactionsResponse{
-		Transactions: []Transaction{
-			{
-				ID:          "1",
-				Date:        "Aug 25, 2024",
-				Type:        TransactionTypeDraft,
-				Description: "Team A drafted Cooper Kupp with the 8th overall pick.",
-				Teams:       []string{"Team A"},
-				Players: []PlayerTransaction{
-					{
-						ID:       "1",
-						Name:     "Cooper Kupp",
-						Position: "WR",
-						Team:     "Los Angeles Rams",
-						Points:   256.5,
-					},
-				},
-			},
-		},
+	page, limit := parsePagination(c)
+	offset := (page - 1) * limit
+
+	db := database.DB.Model(&models.Transaction{})
+
+	// leagueId path param is optional; omit filter when not present or not numeric.
+	if raw := c.Param("leagueId"); raw != "" {
+		if id, err := strconv.ParseUint(raw, 10, 32); err == nil && id > 0 {
+			db = db.Where("league_id = ?", id)
+		}
+	}
+
+	if year := c.Query("year"); year != "" {
+		if y, err := strconv.Atoi(year); err == nil {
+			db = db.Where("year = ?", y)
+		}
+	}
+
+	var total int64
+	db.Count(&total)
+
+	var txs []models.Transaction
+	db.Preload("Team").Preload("Player").
+		Order("date desc").
+		Limit(limit).Offset(offset).
+		Find(&txs)
+
+	items := make([]Transaction, len(txs))
+	for i, tx := range txs {
+		teamName := ""
+		if tx.Team != nil {
+			teamName = tx.Team.Owner
+		}
+		playerPos := ""
+		playerTeam := ""
+		if tx.Player != nil {
+			playerPos = tx.Player.Position
+			playerTeam = tx.Player.Team
+		}
+		items[i] = Transaction{
+			ID:   strconv.FormatUint(uint64(tx.ID), 10),
+			Date: tx.Date.Format("Jan 02, 2006"),
+			Type: txTypeFromModel(tx.TransactionType),
+			Teams: []string{teamName},
+			Players: []PlayerTransaction{{
+				ID:       strconv.FormatUint(uint64(tx.PlayerID), 10),
+				Name:     tx.PlayerName,
+				Position: playerPos,
+				Team:     playerTeam,
+			}},
+		}
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	c.JSON(http.StatusOK, GetTransactionsPagedResponse{
+		Transactions: items,
+		Total:        total,
+		Page:         page,
+		Limit:        limit,
+		TotalPages:   totalPages,
 	})
 }

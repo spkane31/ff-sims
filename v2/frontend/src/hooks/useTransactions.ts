@@ -1,119 +1,91 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  Transaction,
-  DraftPick,
-  transactionsService,
-} from "../services/transactionsService";
+import { Transaction, DraftPick, transactionsService } from "../services/transactionsService";
 
 interface UseTransactionsReturn {
   transactions: Transaction[];
+  total: number;
+  totalPages: number;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
 }
 
-/**
- * Hook for fetching transactions data
- */
-export function useTransactions(): UseTransactionsReturn {
+export function useTransactions(
+  leagueId: number,
+  page = 1,
+  limit = 25,
+  year?: number
+): UseTransactionsReturn {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchTransactions = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
-      const data = await transactionsService.getAllTransactions();
+      const data = await transactionsService.getAllTransactions(leagueId, page, limit, year);
       setTransactions(data.transactions);
+      setTotal(data.total);
+      setTotalPages(data.total_pages);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err
-          : new Error("An error occurred while fetching transactions")
-      );
+      setError(err instanceof Error ? err : new Error("An error occurred while fetching transactions"));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [leagueId, page, limit, year]);
 
   useEffect(() => {
     fetchTransactions();
   }, [fetchTransactions]);
 
-  return { transactions, isLoading, error, refetch: fetchTransactions };
-}
-
-/**
- * Hook for fetching a single transaction by ID
- */
-export function useTransaction(transactionId: number) {
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchTransaction = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await transactionsService.getTransactionById(transactionId);
-      setTransaction(data.transactions[0] || null); // Assuming the API returns an array
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err
-          : new Error("An error occurred while fetching transaction")
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [transactionId]);
-
-  useEffect(() => {
-    if (transactionId) {
-      fetchTransaction();
-    }
-  }, [transactionId, fetchTransaction]);
-
-  return { transaction, isLoading, error, refetch: fetchTransaction };
+  return { transactions, total, totalPages, isLoading, error, refetch: fetchTransactions };
 }
 
 interface UseDraftPicksReturn {
   draftPicks: DraftPick[];
+  total: number;
+  totalPages: number;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
 }
 
-/**
- * Hook for fetching draft picks data
- */
-export function useDraftPicks(year: number = 2024): UseDraftPicksReturn {
+export function useDraftPicks(
+  leagueId: number,
+  year: number = 2024,
+  page = 1,
+  limit = 25
+): UseDraftPicksReturn {
   const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
   const fetchDraftPicks = useCallback(async () => {
+    if (!leagueId) return;
     try {
       setIsLoading(true);
       setError(null);
-      const data = await transactionsService.getDraftPicks(year);
+      const data = await transactionsService.getDraftPicks(leagueId, year, page, limit);
       setDraftPicks(data.draft_picks || []);
+      setTotal(data.total);
+      setTotalPages(data.total_pages);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err
-          : new Error("An error occurred while fetching draft picks")
-      );
-      setDraftPicks([]); // Set empty array on error
+      setError(err instanceof Error ? err : new Error("An error occurred while fetching draft picks"));
+      setDraftPicks([]);
     } finally {
       setIsLoading(false);
     }
-  }, [year]);
+  }, [leagueId, year, page, limit]);
 
   useEffect(() => {
     fetchDraftPicks();
   }, [fetchDraftPicks]);
 
-  return { draftPicks, isLoading, error, refetch: fetchDraftPicks };
+  return { draftPicks, total, totalPages, isLoading, error, refetch: fetchDraftPicks };
 }
