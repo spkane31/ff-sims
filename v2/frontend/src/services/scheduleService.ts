@@ -93,45 +93,20 @@ export interface GetMatchupDetailResponse {
  * Schedule API service
  */
 export const scheduleService = {
-  /**
-   * Get the full schedule
-   */
-  getFullSchedule: async (gameType?: string): Promise<GetMatchupsResponse> => {
+  getFullSchedule: async (leagueId: number, gameType?: string): Promise<GetMatchupsResponse> => {
     const params = new URLSearchParams();
     if (gameType && gameType !== "all") {
       params.append("gameType", gameType);
     }
     const queryString = params.toString() ? `?${params.toString()}` : "";
-    return apiClient.get<GetMatchupsResponse>(`/schedules${queryString}`);
+    return apiClient.get<GetMatchupsResponse>(`/leagues/${leagueId}/schedules${queryString}`);
   },
 
-  /**
-   * Get the schedule for a specific year
-   */
-  getScheduleByYear: async (year: number): Promise<Game[]> => {
-    return apiClient.get<Game[]>(`/schedules?year=${year}`);
+  getScheduleByYear: async (leagueId: number, year: number): Promise<GetMatchupsResponse> => {
+    return apiClient.get<GetMatchupsResponse>(`/leagues/${leagueId}/schedules?year=${year}`);
   },
 
-  /**
-   * Get all completed games
-   */
-  getCompletedGames: async (): Promise<Game[]> => {
-    return apiClient.get<Game[]>("/schedules/completed");
-  },
-
-  /**
-   * Get schedule for a specific team
-   */
-  getTeamSchedule: async (teamId: number): Promise<Game[]> => {
-    return apiClient.get<Game[]>(`/schedules/team/${teamId}`);
-  },
-
-  /**
-   * Get details for a specific matchup
-   */
-  getMatchupById: async (
-    matchupId: string
-  ): Promise<GetMatchupDetailResponse> => {
-    return apiClient.get<GetMatchupDetailResponse>(`/schedules/${matchupId}`);
+  getMatchupById: async (leagueId: number, matchupId: string): Promise<GetMatchupDetailResponse> => {
+    return apiClient.get<GetMatchupDetailResponse>(`/leagues/${leagueId}/schedules/${matchupId}`);
   },
 };

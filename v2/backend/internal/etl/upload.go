@@ -1,14 +1,12 @@
 package etl
 
 import (
-	"backend/internal/config"
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
 	"backend/internal/simulation"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -16,8 +14,6 @@ import (
 
 	"gorm.io/gorm"
 )
-
-const leagueID = 345674
 
 // processBoxScorePlayers processes box score players data
 func processBoxScorePlayers(filePath string) error {
@@ -37,7 +33,7 @@ type DraftSelection struct {
 }
 
 // processDraftSelections processes draft selections data
-func processDraftSelections(filePath string) error {
+func processDraftSelections(filePath string, leagueID uint) error {
 	logging.Infof("Processing draft selections data from: %s", filePath)
 
 	data, err := os.ReadFile(filePath)
@@ -201,7 +197,7 @@ const (
 )
 
 // processMatchups processes matchups data
-func processMatchups(filePath string) error {
+func processMatchups(filePath string, leagueID uint) error {
 	logging.Infof("Processing matchups data from: %s", filePath)
 
 	data, err := os.ReadFile(filePath)
@@ -271,7 +267,6 @@ func processMatchups(filePath string) error {
 			LeagueID:                   leagueID,
 			Week:                       uint(matchup.Week),
 			Year:                       uint(matchup.Year),
-			Season:                     int(matchup.Year),
 			HomeTeamID:                 homeTeamID, // Use mapped internal ID instead of ESPN ID
 			AwayTeamID:                 awayTeamID, // Use mapped internal ID instead of ESPN ID
 			HomeTeamFinalScore:         matchup.HomeTeamFinalScore,
@@ -309,7 +304,6 @@ func processMatchups(filePath string) error {
 			existingMatchup.GameType = matchup.GameType
 			existingMatchup.Week = uint(matchup.Week)
 			existingMatchup.Year = uint(matchup.Year)
-			existingMatchup.Season = int(matchup.Year)
 
 			if err := database.DB.Save(&existingMatchup).Error; err != nil {
 				return fmt.Errorf("error updating existing matchup for home team ESPN ID %d: %w", matchup.HomeTeamID, err)
@@ -449,8 +443,6 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		MatchupID: matchupID,
 		PlayerID:  playerRecord.ID,
 		TeamID:    teamID,
-		Week:      week,
-		Year:      year,
 
 		SlotPosition: player.SlotPosition,
 
@@ -459,10 +451,15 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		GameStats:       gameStats,
 	}
 
-	// Check if the box score already exists
+	// Check if the box score already exists for this player this week.
+	// Players are cross-league, so we key on (player_id, week, year) via the matchup
+	// join rather than (matchup_id, player_id) — otherwise running the ETL for a second
+	// league creates a duplicate row for any player who appears in both leagues.
 	var existingBoxScore models.BoxScore
-	if err := database.DB.First(&existingBoxScore, "matchup_id = ? AND player_id = ? AND week = ? AND year = ?",
-		matchupID, playerRecord.ID, week, year).Error; err != nil {
+	if err := database.DB.
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.week = ? AND matchups.year = ?", week, year).
+		Where("box_scores.player_id = ?", playerRecord.ID).
+		First(&existingBoxScore).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return fmt.Errorf("error checking existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
@@ -476,19 +473,7 @@ func processPlayerLineUp(player PlayerLineup, teamID, matchupID, week, year uint
 		existingBoxScore.ActualPoints = player.Points
 		existingBoxScore.ProjectedPoints = player.ProjectedPoints
 		existingBoxScore.SlotPosition = player.SlotPosition
-		existingBoxScore.GameStats = models.PlayerStats{
-			PassingYards:   stats.Breakdown[PassingYards],
-			PassingTDs:     stats.Breakdown[PassingTouchdowns],
-			Interceptions:  stats.Breakdown[Turnovers] - stats.Breakdown[LostFumbles],
-			RushingYards:   stats.Breakdown[RushingYards],
-			RushingTDs:     stats.Breakdown[RushingTouchdowns],
-			Receptions:     stats.Breakdown[ReceivingReceptions],
-			ReceivingYards: stats.Breakdown[ReceivingYards],
-			ReceivingTDs:   stats.Breakdown[ReceivingTouchdowns],
-			Fumbles:        stats.Breakdown[Fumbles],
-			FieldGoals:     stats.Breakdown[FieldGoalsMade],
-			ExtraPoints:    stats.Breakdown[ExtraPointsMade],
-		}
+		existingBoxScore.GameStats = gameStats
 		if err := database.DB.Save(&existingBoxScore).Error; err != nil {
 			return fmt.Errorf("error updating existing box score for player ID %d: %w", playerRecord.ID, err)
 		}
@@ -507,7 +492,7 @@ type Team struct {
 }
 
 // processTeams processes teams data
-func processTeams(filePath string) ([]*models.Team, error) {
+func processTeams(filePath string, leagueID uint) ([]*models.Team, error) {
 	logging.Infof("Processing teams data from: %s", filePath)
 
 	data, err := os.ReadFile(filePath)
@@ -526,13 +511,13 @@ func processTeams(filePath string) ([]*models.Team, error) {
 		logging.Infof("Team - ESPN ID: %d, Owner: %s, Nickname: %s, Year: %d",
 			team.ESPNID, team.Owner, team.Nickname, team.Year)
 
-		// Check if team already exists
+		// Check if team already exists within this league
 		var existingTeam models.Team
-		if err := database.DB.First(&existingTeam, "espn_id = ?", team.ESPNID).Error; err != nil {
+		if err := database.DB.First(&existingTeam, "espn_id = ? AND league_id = ?", team.ESPNID, leagueID).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return nil, fmt.Errorf("error checking existing team with ESPN ID %d: %w", team.ESPNID, err)
 			}
-			// Team does not exist, create a new one
+			// Team does not exist in this league, create a new one
 			newTeam := &models.Team{
 				LeagueID: leagueID,
 				ESPNID:   uint(team.ESPNID),
@@ -545,7 +530,7 @@ func processTeams(filePath string) ([]*models.Team, error) {
 			logging.Infof("Created new team: %+v", newTeam)
 			createdTeams = append(createdTeams, newTeam)
 		} else {
-			// Team exists, update its details
+			// Team exists in this league, update its details
 			existingTeam.Name = team.Nickname
 			existingTeam.Owner = team.Owner
 			if err := database.DB.Save(&existingTeam).Error; err != nil {
@@ -572,7 +557,7 @@ type Transaction struct {
 }
 
 // processTransactions processes transactions data
-func processTransactions(filePath string) error {
+func processTransactions(filePath string, leagueID uint) error {
 	logging.Infof("Processing transactions data from: %s", filePath)
 
 	// Read the file content
@@ -650,10 +635,10 @@ func processTransactions(filePath string) error {
 			logging.Infof("Created new player: %+v", player)
 		}
 
-		// Get the team by ESPN ID
+		// Get the team by ESPN ID scoped to this league
 		var team models.Team
-		if err := database.DB.First(&team, "espn_id = ?", t.TeamESPNID).Error; err != nil {
-			return fmt.Errorf("error checking team with ESPN ID %d: %w", t.TeamESPNID, err)
+		if err := database.DB.Where("espn_id = ? AND league_id = ?", t.TeamESPNID, leagueID).First(&team).Error; err != nil {
+			return fmt.Errorf("error checking team with ESPN ID %d in league %d: %w", t.TeamESPNID, leagueID, err)
 		}
 
 		transactionsRecord := &models.Transaction{
@@ -669,7 +654,7 @@ func processTransactions(filePath string) error {
 
 		// Check if the transaction already exists
 		var existingTransaction models.Transaction
-		if err := database.DB.First(&existingTransaction, "team_id = ? AND player_id = ? AND date = ?", t.TeamESPNID, t.PlayerID, t.Date).Error; err != nil {
+		if err := database.DB.First(&existingTransaction, "team_id = ? AND player_id = ? AND date = ?", team.ID, player.ID, t.Date).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
 				return fmt.Errorf("error checking existing transaction for team ESPN ID %d and player ID %d: %w", t.TeamESPNID, t.PlayerID, err)
 			}
@@ -695,12 +680,12 @@ func processTransactions(filePath string) error {
 	return nil
 }
 
-func Upload(directory string) error {
-	return UploadWithOptions(directory, true)
+func Upload(directory string, leagueID uint) error {
+	return UploadWithOptions(directory, leagueID, true)
 }
 
 // UploadWithOptions processes ETL with options for expected wins calculation
-func UploadWithOptions(directory string, calculateExpectedWins bool) error {
+func UploadWithOptions(directory string, leagueID uint, calculateExpectedWins bool) error {
 	// Read files from the specified directory
 	if directory == "" {
 		return fmt.Errorf("data directory cannot be empty")
@@ -711,36 +696,15 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		return fmt.Errorf("failed to read directory %s: %w", directory, err)
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Error loading configuration: %v", err)
-	}
-	if err := database.Initialize(cfg); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-
-	// First, ensure the league exists
-	var league models.League
-	if err := database.DB.First(&league, leagueID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			// Create the league if it doesn't exist
-			league = models.League{
-				ID:          leagueID,
-				Name:        "Fantasy Football League",
-				Description: "Default league created by ETL process",
-				ScoringType: "PPR", // Assuming PPR scoring
-				Season:      2024,  // Using the default year from the filename
-				CurrentWeek: 1,
-			}
-			if createErr := database.DB.Create(&league).Error; createErr != nil {
-				return fmt.Errorf("error creating league with ID %d: %w", leagueID, createErr)
-			}
-			logging.Infof("Created new league with ID %d", leagueID)
-		} else {
-			return fmt.Errorf("error checking if league with ID %d exists: %w", leagueID, err)
+	fileCount := 0
+	for _, f := range files {
+		if !f.IsDir() {
+			fileCount++
 		}
-	} else {
-		logging.Infof("Found existing league: %s (ID: %d)", league.Name, league.ID)
+	}
+	if fileCount == 0 {
+		logging.Warnf("No files found in %s, skipping", directory)
+		return nil
 	}
 
 	// Regex to extract file type from filename (pattern: {type}_{year}.json)
@@ -767,7 +731,7 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 
 		if fileType == "teams" {
 			logging.Infof("Processing teams file: %s", filePath)
-			createdTeams, err = processTeams(filePath)
+			createdTeams, err = processTeams(filePath, leagueID)
 			if err != nil {
 				return fmt.Errorf("error processing file %s: %w", filePath, err)
 			}
@@ -795,13 +759,13 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		case "box_score_players":
 			processErr = processBoxScorePlayers(filePath)
 		case "draft_selections":
-			processErr = processDraftSelections(filePath)
+			processErr = processDraftSelections(filePath, leagueID)
 		case "matchups":
-			processErr = processMatchups(filePath)
+			processErr = processMatchups(filePath, leagueID)
 		case "transactions":
-			processErr = processTransactions(filePath)
+			processErr = processTransactions(filePath, leagueID)
 		case "pure_matchups":
-			processErr = processPureMatchups(filePath, createdTeams)
+			processErr = processPureMatchups(filePath, leagueID, createdTeams)
 		default:
 			logging.Warnf("Unrecognized file type %s in file %s, skipping", fileType, file.Name())
 			continue
@@ -812,12 +776,14 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 		}
 	}
 
-	// After all data is processed, calculate expected wins for any new/updated weeks
+	// After all data is processed, calculate expected wins for all years.
+	// processExpectedWinsAllYearsWithRecalc queries distinct years from matchups,
+	// processes every week via upserts, and finalizes the season aggregate — so it
+	// is correct for both a first-time historical load and an incremental weekly update.
 	if calculateExpectedWins {
 		logging.Infof("Processing expected wins calculations after ETL update")
-		if err := processExpectedWinsAfterETL(); err != nil {
+		if err := processExpectedWinsAllYearsWithRecalc(leagueID); err != nil {
 			logging.Warnf("Failed to process expected wins after ETL: %v", err)
-			// Don't return error as ETL was successful, just log the warning
 		}
 	} else {
 		logging.Infof("Skipping expected wins calculations (disabled by flag)")
@@ -826,94 +792,20 @@ func UploadWithOptions(directory string, calculateExpectedWins bool) error {
 	return nil
 }
 
-// processExpectedWinsAfterETL calculates expected wins for any newly completed weeks
-func processExpectedWinsAfterETL() error {
-	db := database.DB
 
-	// Get the current year for processing
-	currentYear := uint(time.Now().Year())
-
-	// Find the most recent completed week for this league
-	lastCompletedWeek, err := models.GetLastCompletedWeek(db, leagueID, currentYear)
-	if err != nil || lastCompletedWeek == 0 {
-		logging.Infof("No completed weeks found for expected wins calculation")
-		return nil
-	}
-
-	// Check if we've already processed this week
-	processed, err := models.IsWeekProcessed(db, leagueID, currentYear, lastCompletedWeek)
-	if err != nil {
-		return fmt.Errorf("failed to check if week is processed: %w", err)
-	}
-
-	if processed {
-		logging.Infof("Week %d already processed for expected wins", lastCompletedWeek)
-
-		// Check if regular season is complete and season needs finalization
-		if simulation.IsRegularSeasonComplete(db, leagueID, currentYear) {
-			// Check if season is already finalized
-			var seasonCount int64
-			db.Model(&models.SeasonExpectedWins{}).
-				Where("league_id = ? AND year = ?", leagueID, currentYear).
-				Count(&seasonCount)
-
-			if seasonCount == 0 {
-				logging.Infof("Regular season complete, finalizing season expected wins")
-				err = simulation.FinalizeSeasonExpectedWins(leagueID, currentYear)
-				if err != nil {
-					return fmt.Errorf("failed to finalize season expected wins: %w", err)
-				}
-				logging.Infof("Successfully finalized season expected wins")
-			}
-		}
-		return nil
-	}
-
-	// Process the newly completed week
-	logging.Infof("Processing expected wins for week %d", lastCompletedWeek)
-	err = simulation.ProcessWeeklyExpectedWins(leagueID, currentYear, lastCompletedWeek)
-	if err != nil {
-		return fmt.Errorf("failed to process weekly expected wins: %w", err)
-	}
-
-	logging.Infof("Successfully processed expected wins for week %d", lastCompletedWeek)
-
-	// Check if this completes the regular season
-	if simulation.IsRegularSeasonComplete(db, leagueID, currentYear) {
-		logging.Infof("Regular season complete after processing week %d, finalizing season", lastCompletedWeek)
-		err = simulation.FinalizeSeasonExpectedWins(leagueID, currentYear)
-		if err != nil {
-			return fmt.Errorf("failed to finalize season expected wins: %w", err)
-		}
-		logging.Infof("Successfully finalized season expected wins")
-	}
-
-	return nil
-}
-
-// ProcessExpectedWinsOnly runs only the expected wins calculation without ETL
-func ProcessExpectedWinsWithYear(year uint) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("error loading configuration: %w", err)
-	}
-	if err := database.Initialize(cfg); err != nil {
-		return fmt.Errorf("error initializing database: %w", err)
-	}
-
+// ProcessExpectedWinsWithYear runs only the expected wins calculation without ETL.
+// The database must already be initialised (resolveLeagueID in main.go does this).
+func ProcessExpectedWinsWithYear(leagueID uint, year uint) error {
 	if year > 0 {
-		// Process specific year with recalculation
 		logging.Infof("Processing expected wins calculations for year %d", year)
-		return processExpectedWinsForYearWithRecalc(year)
-	} else {
-		// Process all years, starting with most recent with recalculation
-		logging.Infof("Processing expected wins calculations for all years")
-		return processExpectedWinsAllYearsWithRecalc()
+		return processExpectedWinsForYearWithRecalc(leagueID, year)
 	}
+	logging.Infof("Processing expected wins calculations for all years")
+	return processExpectedWinsAllYearsWithRecalc(leagueID)
 }
 
 // processExpectedWinsForYearWithRecalc processes expected wins for a specific year with forced recalculation
-func processExpectedWinsForYearWithRecalc(year uint) error {
+func processExpectedWinsForYearWithRecalc(leagueID, year uint) error {
 	db := database.DB
 
 	// Find the most recent completed week for this league and year
@@ -947,7 +839,7 @@ func processExpectedWinsForYearWithRecalc(year uint) error {
 }
 
 // processExpectedWinsAllYearsWithRecalc processes expected wins for all years with forced recalculation
-func processExpectedWinsAllYearsWithRecalc() error {
+func processExpectedWinsAllYearsWithRecalc(leagueID uint) error {
 	db := database.DB
 
 	// Get all years that have matchup data
@@ -971,7 +863,7 @@ func processExpectedWinsAllYearsWithRecalc() error {
 
 	for _, year := range years {
 		logging.Infof("Processing year %d", year)
-		if err := processExpectedWinsForYearWithRecalc(year); err != nil {
+		if err := processExpectedWinsForYearWithRecalc(leagueID, year); err != nil {
 			logging.Errorf("Failed to process year %d: %v", year, err)
 			continue // Continue with other years
 		}

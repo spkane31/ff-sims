@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  GetMatchupDetailResponse,
-  scheduleService,
-} from "../services/scheduleService";
+import { GetMatchupDetailResponse, scheduleService } from "../services/scheduleService";
 
-/**
- * Hook for fetching details of a specific matchup
- */
-export function useMatchupDetail(matchupId: string) {
+export function useMatchupDetail(leagueId: number, matchupId: string) {
   const [matchup, setMatchup] = useState<GetMatchupDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -16,18 +10,14 @@ export function useMatchupDetail(matchupId: string) {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await scheduleService.getMatchupById(matchupId);
+      const data = await scheduleService.getMatchupById(leagueId, matchupId);
       setMatchup(data);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err
-          : new Error("An error occurred while fetching matchup details")
-      );
+      setError(err instanceof Error ? err : new Error("An error occurred while fetching matchup details"));
     } finally {
       setIsLoading(false);
     }
-  }, [matchupId]);
+  }, [leagueId, matchupId]);
 
   useEffect(() => {
     if (matchupId) {

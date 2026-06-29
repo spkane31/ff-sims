@@ -16,3 +16,18 @@ func GetTeamsIDMap() (map[uint]models.Team, error) {
 	}
 	return teamMap, nil
 }
+
+// GetTeamsIDMapByLeague returns a map of team IDs (ESPN and Database) to Team, scoped to a league.
+func GetTeamsIDMapByLeague(leagueID uint) (map[uint]models.Team, error) {
+	var teams []models.Team
+	if err := DB.Where("league_id = ?", leagueID).Find(&teams).Error; err != nil {
+		return nil, err
+	}
+
+	teamMap := make(map[uint]models.Team, len(teams)*2)
+	for _, team := range teams {
+		teamMap[team.ESPNID] = team
+		teamMap[team.ID] = team
+	}
+	return teamMap, nil
+}

@@ -23,6 +23,61 @@ func isDirectory(path string) bool {
 	return info.IsDir()
 }
 
+// matchRouteSegments recursively walks the Next.js pages output directory,
+// matching URL segments against both static and dynamic ([param]) entries.
+func matchRouteSegments(dir string, segments []string) (string, bool) {
+	if len(segments) == 0 {
+		f := filepath.Join(dir, "index.html")
+		if _, err := os.Stat(f); err == nil {
+			return f, true
+		}
+		return "", false
+	}
+
+	seg := segments[0]
+	rest := segments[1:]
+
+	// Static: exact segment as .html file (only valid for the last segment)
+	if len(rest) == 0 {
+		f := filepath.Join(dir, seg+".html")
+		if _, err := os.Stat(f); err == nil {
+			return f, true
+		}
+	}
+
+	// Static: exact segment as subdirectory
+	subDir := filepath.Join(dir, seg)
+	if info, err := os.Stat(subDir); err == nil && info.IsDir() {
+		if f, ok := matchRouteSegments(subDir, rest); ok {
+			return f, true
+		}
+	}
+
+	// Dynamic: scan for [param] entries in current directory
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "[") {
+			continue
+		}
+		// Dynamic file match for last segment: [param].html
+		if len(rest) == 0 && !e.IsDir() && strings.HasSuffix(name, "].html") {
+			return filepath.Join(dir, name), true
+		}
+		// Dynamic directory match: recurse
+		if e.IsDir() {
+			if f, ok := matchRouteSegments(filepath.Join(dir, name), rest); ok {
+				return f, true
+			}
+		}
+	}
+
+	return "", false
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -93,17 +148,12 @@ func main() {
 			return
 		}
 
-		// For dynamic routes, check if we have a catch-all route
-		// This handles Next.js dynamic routing like /teams/[id] -> /teams/[id].html
+		// For dynamic Next.js routes (e.g. /league/1 -> /league/[leagueId].html)
+		pagesDir := "/app/frontend/.next/server/pages"
 		pathParts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(pathParts) > 1 {
-			// Try dynamic route pattern
-			dynamicPath := "/" + pathParts[0] + "/[id].html"
-			dynamicFile := "/app/frontend/.next/server/pages" + dynamicPath
-			if _, err := os.Stat(dynamicFile); err == nil {
-				c.File(dynamicFile)
-				return
-			}
+		if f, ok := matchRouteSegments(pagesDir, pathParts); ok {
+			c.File(f)
+			return
 		}
 
 		// Final fallback to index.html for client-side routing

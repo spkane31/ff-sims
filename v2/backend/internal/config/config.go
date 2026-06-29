@@ -5,12 +5,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 )
-
-func init() {
-	godotenv.Load()
-}
 
 // Config contains all configuration for the application
 type Config struct {
@@ -27,20 +23,24 @@ type ServerConfig struct {
 // DBConfig contains database-specific configuration
 type DBConfig struct {
 	ConnectionString string
+	// Pool limits prevent exhausting connection slots on managed-DB instances.
+	PoolMaxOpenConns    int
+	PoolMaxIdleConns    int
+	PoolConnMaxLifetime int // seconds
 }
 
 // Load reads the configuration from environment variables
 func Load() (*Config, error) {
-	// Load .env file if it exists
-	godotenv.Load()
-
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnvAsInt("SERVER_PORT", 8080),
 			Env:  getEnv("ENV", "development"),
 		},
 		DB: DBConfig{
-			ConnectionString: getEnv("DATABASE_URL", getEnv("COCKROACHDB_URL", "postgresql://postgres@localhost:5432/ffsims")),
+			ConnectionString:    getEnv("DATABASE_URL", "postgresql://postgres@localhost:5432/ffsims"),
+			PoolMaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 10),
+			PoolMaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 5),
+			PoolConnMaxLifetime: getEnvAsInt("DB_CONN_MAX_LIFETIME_SECS", 300),
 		},
 	}
 
@@ -50,7 +50,7 @@ func Load() (*Config, error) {
 // Helper functions for reading environment variables
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
-		slog.Info("Using environment variable", "key", key, "value", value)
+		slog.Debug("Using environment variable", "key", key, "value", value)
 		return value
 	}
 	slog.Info("Using default value for environment variable", "key", key, "defaultValue", defaultValue)

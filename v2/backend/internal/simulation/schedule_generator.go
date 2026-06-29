@@ -54,27 +54,29 @@ func (sg *ScheduleGenerator) GenerateRegularSeasonSchedule(teams []models.Team, 
 		return nil, errors.New("impossible to create schedule with given constraints")
 	}
 
+	// Retry the full schedule when early-week pairing choices corner us into an
+	// unsolvable state in later weeks (greedy random has no cross-week backtracking).
+	const maxScheduleAttempts = 50
+	for attempt := 0; attempt < maxScheduleAttempts; attempt++ {
+		schedule, err := sg.tryGenerateSchedule(teams, year, leagueID)
+		if err == nil {
+			return schedule, nil
+		}
+	}
+	return nil, errors.New("failed to generate complete schedule - constraints too restrictive")
+}
+
+func (sg *ScheduleGenerator) tryGenerateSchedule(teams []models.Team, year uint, leagueID uint) ([]models.Matchup, error) {
 	var schedule []models.Matchup
-
-	// Track how many times teams have played each other
 	gamesPlayed := make(map[[2]uint]int)
-
-	// Track last opponent for each team to prevent back-to-back games
 	lastOpponent := make(map[uint]uint)
 
 	for week := 1; week <= sg.config.RegularWeeks; week++ {
 		weekMatches, err := sg.generateWeekMatches(teams, uint(week), year, leagueID, gamesPlayed, lastOpponent)
 		if err != nil {
-			// If we can't generate a week, try to backtrack
-			if week > 1 {
-				return nil, errors.New("failed to generate complete schedule - constraints too restrictive")
-			}
 			return nil, err
 		}
-
 		schedule = append(schedule, weekMatches...)
-
-		// Update tracking maps
 		for _, match := range weekMatches {
 			key := sg.makeTeamPairKey(match.HomeTeamID, match.AwayTeamID)
 			gamesPlayed[key]++
@@ -82,7 +84,6 @@ func (sg *ScheduleGenerator) GenerateRegularSeasonSchedule(teams []models.Team, 
 			lastOpponent[match.AwayTeamID] = match.HomeTeamID
 		}
 	}
-
 	return schedule, nil
 }
 
@@ -136,7 +137,6 @@ func (sg *ScheduleGenerator) generateWeekMatches(teams []models.Team, week uint,
 				LeagueID:   leagueID,
 				Week:       week,
 				Year:       year,
-				Season:     int(year),
 				HomeTeamID: homeTeamID,
 				AwayTeamID: awayTeamID,
 				GameDate:   gameDate,
@@ -287,7 +287,6 @@ func (sg *ScheduleGenerator) createPlayoffMatchup(homeTeamID, awayTeamID uint, w
 		LeagueID:   leagueID,
 		Week:       week,
 		Year:       year,
-		Season:     int(year),
 		HomeTeamID: homeTeamID,
 		AwayTeamID: awayTeamID,
 		GameDate:   gameDate,

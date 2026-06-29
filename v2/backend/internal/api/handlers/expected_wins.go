@@ -4,7 +4,6 @@ import (
 	"backend/internal/database"
 	"backend/internal/models"
 	"backend/internal/simulation"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -62,12 +61,10 @@ type GetAllTimeExpectedWinsResponse struct {
 
 // API Handlers
 
-// GetWeeklyExpectedWins returns weekly expected wins data
-// GET /api/v1/leagues/{id}/expected-wins/weekly/{year}?week={week}
+// GetWeeklyExpectedWins returns weekly expected wins data.
 func GetWeeklyExpectedWins(c *gin.Context) {
-	leagueID, err := parseUintParam(c, "id")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league ID"})
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
 		return
 	}
 
@@ -125,12 +122,10 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 	}
 }
 
-// GetSeasonExpectedWins returns season expected wins data
-// GET /api/v1/leagues/{id}/expected-wins/season/{year}
+// GetSeasonExpectedWins returns season expected wins data.
 func GetSeasonExpectedWins(c *gin.Context) {
-	leagueID, err := parseUintParam(c, "id")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league ID"})
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
 		return
 	}
 
@@ -159,12 +154,10 @@ func GetSeasonExpectedWins(c *gin.Context) {
 	c.JSON(http.StatusOK, GetSeasonExpectedWinsResponse{Data: responseData})
 }
 
-// GetSeasonRankings returns teams ranked by various expected wins metrics
-// GET /api/v1/leagues/{id}/expected-wins/rankings/{year}
+// GetSeasonRankings returns teams ranked by various expected wins metrics.
 func GetSeasonRankings(c *gin.Context) {
-	leagueID, err := parseUintParam(c, "id")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league ID"})
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
 		return
 	}
 
@@ -184,12 +177,10 @@ func GetSeasonRankings(c *gin.Context) {
 	c.JSON(http.StatusOK, GetSeasonRankingsResponse{Data: data})
 }
 
-// GetLuckDistribution returns luck distribution analysis for a season
-// GET /api/v1/leagues/{id}/expected-wins/luck/{year}
+// GetLuckDistribution returns luck distribution analysis for a season.
 func GetLuckDistribution(c *gin.Context) {
-	leagueID, err := parseUintParam(c, "id")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid league ID"})
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
 		return
 	}
 
@@ -209,10 +200,14 @@ func GetLuckDistribution(c *gin.Context) {
 	c.JSON(http.StatusOK, GetLuckDistributionResponse{Data: data})
 }
 
-// GetTeamProgression returns weekly progression for a specific team
-// GET /api/v1/teams/{id}/expected-wins/{year}
+// GetTeamProgression returns weekly progression for a specific team.
 func GetTeamProgression(c *gin.Context) {
-	teamID, err := parseUintParam(c, "id")
+	_, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+
+	teamID, err := parseUintParam(c, "teamId")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid team ID"})
 		return
@@ -247,13 +242,14 @@ func GetTeamProgression(c *gin.Context) {
 // Expected wins recalculation is now only available via ETL scripts to prevent server stress
 // Use: backend/cmd/etl/main.go --calculate-expected-wins for recalculation
 
-// GetAllTimeExpectedWins returns all-time expected wins totals for all teams
-// GET /api/teams/all-time-expected-wins
+// GetAllTimeExpectedWins returns all-time expected wins totals for all teams in a league.
 func GetAllTimeExpectedWins(c *gin.Context) {
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
 	db := database.DB
 
-	// Query to aggregate expected wins from season_expected_wins (regular season only)
-	// This table contains final season totals calculated from regular season games only
 	var results []struct {
 		TeamID              uint    `json:"team_id"`
 		TeamName            string  `json:"team_name"`
@@ -279,11 +275,10 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 			COUNT(season_expected_wins.year) as seasons_played
 		FROM season_expected_wins
 		JOIN teams ON teams.id = season_expected_wins.team_id
+		WHERE teams.league_id = ?
 		GROUP BY season_expected_wins.team_id, teams.name, teams.owner
 		ORDER BY total_expected_wins DESC
-	`).Scan(&results).Error
-
-	fmt.Println(results)
+	`, leagueID).Scan(&results).Error
 
 	if err != nil {
 		slog.Error("Failed to fetch all-time expected wins", "error", err)

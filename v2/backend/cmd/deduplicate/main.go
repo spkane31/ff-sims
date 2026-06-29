@@ -81,23 +81,23 @@ func deduplicateBoxScores(year int) error {
 
 	// Count duplicates before
 	var beforeCount int64
-	db.Table("box_scores").Where("year = ?", year).Count(&beforeCount)
+	db.Table("box_scores").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
+		Count(&beforeCount)
 
 	// Execute deduplication query
 	result := db.Exec(`
 		WITH unique_box_scores AS (
-			SELECT DISTINCT ON (player_id, matchup_id, week, year)
-				id, created_at, updated_at, deleted_at, matchup_id, player_id, team_id,
-				week, year, slot_position, actual_points, projected_points, game_stats
+			SELECT DISTINCT ON (bs.player_id, bs.matchup_id)
+				bs.id
 			FROM box_scores bs
-			WHERE year = ?
-			  AND EXISTS (SELECT 1 FROM matchups m WHERE m.id = bs.matchup_id AND m.year = ?)
-			ORDER BY player_id, matchup_id, week, year, updated_at DESC
+			JOIN matchups m ON m.id = bs.matchup_id AND m.year = ?
+			ORDER BY bs.player_id, bs.matchup_id, bs.updated_at DESC
 		)
 		DELETE FROM box_scores
-		WHERE year = ?
+		WHERE matchup_id IN (SELECT id FROM matchups WHERE year = ?)
 		AND id NOT IN (SELECT id FROM unique_box_scores)
-	`, year, year, year)
+	`, year, year)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to deduplicate box scores: %w", result.Error)
@@ -105,7 +105,9 @@ func deduplicateBoxScores(year int) error {
 
 	// Count after
 	var afterCount int64
-	db.Table("box_scores").Where("year = ?", year).Count(&afterCount)
+	db.Table("box_scores").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
+		Count(&afterCount)
 
 	fmt.Printf("Box scores for %d: %d -> %d (removed %d duplicates)\n",
 		year, beforeCount, afterCount, beforeCount-afterCount)

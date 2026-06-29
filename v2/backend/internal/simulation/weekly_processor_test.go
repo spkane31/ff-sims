@@ -57,26 +57,22 @@ func createTestData(db *gorm.DB) {
 	// Create test matchups
 	matchups := []models.Matchup{
 		{
-			ID: 1, LeagueID: 1, Week: 1, Year: 2024, Season: 2024,
-			HomeTeamID: 1, AwayTeamID: 2,
+			ID: 1, LeagueID: 1, Week: 1, Year: 2024,			HomeTeamID: 1, AwayTeamID: 2,
 			HomeTeamFinalScore: 120.5, AwayTeamFinalScore: 95.0,
 			Completed: true, GameType: "NONE", GameDate: time.Now(),
 		},
 		{
-			ID: 2, LeagueID: 1, Week: 1, Year: 2024, Season: 2024,
-			HomeTeamID: 3, AwayTeamID: 4,
+			ID: 2, LeagueID: 1, Week: 1, Year: 2024,			HomeTeamID: 3, AwayTeamID: 4,
 			HomeTeamFinalScore: 110.0, AwayTeamFinalScore: 105.0,
 			Completed: true, GameType: "NONE", GameDate: time.Now(),
 		},
 		{
-			ID: 3, LeagueID: 1, Week: 2, Year: 2024, Season: 2024,
-			HomeTeamID: 1, AwayTeamID: 3,
+			ID: 3, LeagueID: 1, Week: 2, Year: 2024,			HomeTeamID: 1, AwayTeamID: 3,
 			HomeTeamFinalScore: 100.0, AwayTeamFinalScore: 115.0,
 			Completed: true, GameType: "NONE", GameDate: time.Now(),
 		},
 		{
-			ID: 4, LeagueID: 1, Week: 2, Year: 2024, Season: 2024,
-			HomeTeamID: 2, AwayTeamID: 4,
+			ID: 4, LeagueID: 1, Week: 2, Year: 2024,			HomeTeamID: 2, AwayTeamID: 4,
 			HomeTeamFinalScore: 108.0, AwayTeamFinalScore: 102.0,
 			Completed: true, GameType: "NONE", GameDate: time.Now(),
 		},

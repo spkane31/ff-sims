@@ -16,13 +16,14 @@ type Team struct {
 
 	Name     string  `json:"name"`
 	Owner    string  `json:"owner_name"`
-	ESPNID   uint    `json:"espn_id" gorm:"index:idx_teams_espn_id,unique"`
-	LeagueID uint    `json:"league_id"`
+	ESPNID   uint `json:"espn_id" gorm:"uniqueIndex:idx_teams_espn_league,priority:1"`
+	LeagueID uint `json:"league_id" gorm:"uniqueIndex:idx_teams_espn_league,priority:2"`
 	Wins     int     `json:"wins" gorm:"default:0"`
 	Losses   int     `json:"losses" gorm:"default:0"`
 	Ties     int     `json:"ties" gorm:"default:0"`
 	Points   float64 `json:"points" gorm:"default:0"`
 	Year     uint    `json:"year"`
+	Hidden   bool    `json:"hidden" gorm:"default:false"`
 
 	// Relationships
 	Players         []Player          `json:"players,omitempty" gorm:"many2many:team_players;"`
@@ -110,9 +111,10 @@ func (t *Team) GetTeamRoster(db *gorm.DB, year uint) ([]Player, error) {
 // GetTeamBoxScores returns all box scores for a team in a specific season
 func (t *Team) GetTeamBoxScores(db *gorm.DB, year uint) ([]BoxScore, error) {
 	var boxScores []BoxScore
-	err := db.Where("team_id = ? AND year = ?", t.ID, year).
-		Preload("Player").
-		Order("week asc").
+	err := db.Preload("Player").Preload("Matchup").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
+		Where("box_scores.team_id = ?", t.ID).
+		Order("matchups.week ASC").
 		Find(&boxScores).Error
 	return boxScores, err
 }

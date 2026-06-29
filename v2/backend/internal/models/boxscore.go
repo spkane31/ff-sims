@@ -13,14 +13,10 @@ type BoxScore struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	MatchupID   uint      `json:"matchup_id"`
-	PlayerID    uint      `json:"player_id"`
-	TeamID      uint      `json:"team_id"` // The team the player was on for this matchup
-	Week        uint      `json:"week"`
-	Year        uint      `json:"year"`
-	Season      int       `json:"season"`
-	GameDate    time.Time `json:"game_date"`
-	StartedFlag bool      `json:"started_flag" gorm:"default:false"` // Whether player was in starting lineup
+	MatchupID   uint `json:"matchup_id"`
+	PlayerID    uint `json:"player_id"`
+	TeamID      uint `json:"team_id"` // The team the player was on for this matchup
+	StartedFlag bool `json:"started_flag" gorm:"default:false"` // Whether player was in starting lineup
 
 	SlotPosition string `json:"slot_position"` // Position in fantasy lineup (e.g., "QB", "RB", etc.)
 
@@ -40,7 +36,10 @@ type BoxScore struct {
 // GetPlayerBoxScoresByWeek returns all box scores for a player in a specific week and year
 func GetPlayerBoxScoresByWeek(db *gorm.DB, playerID uint, week uint, year uint) ([]BoxScore, error) {
 	var boxScores []BoxScore
-	err := db.Where("player_id = ? AND week = ? AND year = ?", playerID, week, year).Find(&boxScores).Error
+	err := db.Preload("Matchup").
+		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.week = ? AND matchups.year = ?", week, year).
+		Where("box_scores.player_id = ?", playerID).
+		Find(&boxScores).Error
 	return boxScores, err
 }
 

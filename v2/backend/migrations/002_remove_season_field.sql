@@ -1,0 +1,7 @@
+-- +goose Up
+ALTER TABLE matchups DROP COLUMN IF EXISTS season;
+ALTER TABLE box_scores DROP COLUMN IF EXISTS season;
+
+-- +goose Down
+ALTER TABLE matchups ADD COLUMN IF NOT EXISTS season bigint NOT NULL DEFAULT 0;
+ALTER TABLE box_scores ADD COLUMN IF NOT EXISTS season bigint NOT NULL DEFAULT 0;

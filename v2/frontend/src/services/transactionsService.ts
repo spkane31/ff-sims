@@ -11,15 +11,18 @@ export interface DraftPick {
   year: number;
 }
 
-export interface DraftPicksResponse {
+export interface DraftPicksPagedResponse {
   draft_picks: DraftPick[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
 }
 
 export interface Transaction {
   id: number;
   date: string;
   type: 'draft' | 'trade' | 'waiver';
-  description: string;
   teams: string[];
   players: {
     id: string;
@@ -30,33 +33,37 @@ export interface Transaction {
   }[];
 }
 
-export interface TransactionsResponse {
+export interface TransactionsPagedResponse {
   transactions: Transaction[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
 }
 
 /**
  * Transactions API service
  */
 export const transactionsService = {
-  /**
-   * Get all draft picks
-   */
-  getDraftPicks: async (year: number = 2024, leagueId: number = 345674): Promise<DraftPicksResponse> => {
-    return apiClient.get<DraftPicksResponse>(`/transactions/draft-picks?year=${year}&league_id=${leagueId}`);
+  getDraftPicks: async (
+    leagueId: number,
+    year: number = 2024,
+    page = 1,
+    limit = 25
+  ): Promise<DraftPicksPagedResponse> => {
+    return apiClient.get<DraftPicksPagedResponse>(
+      `/leagues/${leagueId}/transactions/draft-picks?year=${year}&page=${page}&limit=${limit}`
+    );
   },
 
-  /**
-   * Get all transactions
-   */
-  getAllTransactions: async (): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>('/transactions');
+  getAllTransactions: async (
+    leagueId: number,
+    page = 1,
+    limit = 25,
+    year?: number
+  ): Promise<TransactionsPagedResponse> => {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (year) params.set('year', String(year));
+    return apiClient.get<TransactionsPagedResponse>(`/leagues/${leagueId}/transactions?${params}`);
   },
-
-  /**
-   * Get a single transaction by ID
-   */
-  getTransactionById: async (transactionId: number): Promise<TransactionsResponse> => {
-    return apiClient.get<TransactionsResponse>(`/transactions/${transactionId}`);
-  },
-
 };
