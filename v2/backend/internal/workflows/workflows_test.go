@@ -110,7 +110,7 @@ func TestDraftSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
 		Return([]string{"lg1", "lg2"}, nil)
 
 	env.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
@@ -129,7 +129,7 @@ func TestDraftSyncDispatcher_EmptyBatch(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
 		Return([]string{}, nil)
 
 	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
@@ -199,7 +199,7 @@ func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.BatchSize}).
+	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
 		Return([]activities.LeagueTransactionState{{LeagueID: "lg1"}}, nil)
 
 	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
