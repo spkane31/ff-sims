@@ -1,44 +1,64 @@
-# Fantasy Football Report
+# Fantasy Football Simulations
 
-A fun side-project where I run some simulations and do analysis for my fantasy football league.
+A fun side-project for running simulations and analysis for my fantasy football league.
 
-This uses the [espn_api](https://github.com/cwendt/espn-api) Python library to gather data from ESPN's fantasy football site.
+## Repository Structure
+
+```
+ff-sims/
+├── backend/    # Go API server (Gin + PostgreSQL/GORM)
+├── frontend/   # Next.js app (TypeScript + Tailwind CSS)
+├── workers/    # Temporal workers + Python ESPN data ingestion
+├── scripts/    # Python scripts for ESPN data fetching
+└── docs/       # Documentation
+```
 
 ## Getting Started
 
-To get started with the project:
-
-1. Clone the repository with `git clone https://github.com/spkane31/ff-sims`
-1. Set up your python environment:
+### Full Application (Docker)
 
 ```sh
-# navigate to the scripts directory (where all python files are kept)
+make docker-build   # Build Docker image
+make docker-run     # Build and run
+make docker-dev     # Run with development logging
+```
+
+### Backend (Go)
+
+```sh
+cd backend
+make build   # Build server and ETL binaries
+make run     # Build and run the API server
+make etl     # Run ETL to import ESPN data
+```
+
+### Frontend (Next.js)
+
+```sh
+cd frontend
+npm run dev    # Start development server
+npm run build  # Build for production
+npm run lint   # Run ESLint
+```
+
+### Scripts (Python)
+
+```sh
 cd scripts
-# Create a python virtual environment
 python3.10 -m venv venv
-# Install libraries
-venv/bin/python -m  pip install -r requirements.txt
-# Run the scripts!
+venv/bin/python -m pip install -r requirements.txt
 venv/bin/python data.py
 ```
 
-This will write data to a `history.json` file. The `history.json`  file acts as a cache, to re-fetch all data from ESPN simply delete the file.
+The scripts fetch data from ESPN using the [espn_api](https://github.com/cwendt/espn-api) library and write it to a `history.json` cache file. Delete the file to re-fetch all data.
 
-## Scripts
+## API
 
-* fetching data from ESPN
-* writing data to file and a database provided by `DATABASE_URL` environment vairable
+REST endpoints follow `/api/v1/`:
 
-Formerly:
-
-* draft analysis
-* season simulations
-* playoff predictions
-
-## Frontend
-
-NextJS app for displaying data and allowing user interaction.
-
-## Database
-
-Go script for managing database. `gorm` does the database management for me, would like to expand this portion to do the data scraping as well. Would require reverse engineering the `espn_api` library. I use a CockroachDB serverless instance for the Postgres instance. Running `go run .` will build out the database.
+- `/health` - Health check
+- `/players` - Player stats
+- `/teams` - Team management and rosters
+- `/schedules` - Matchup data by year/week
+- `/simulations` - Monte Carlo playoff simulation results
+- `/transactions` - Trade/waiver wire history
