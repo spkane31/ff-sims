@@ -208,6 +208,15 @@ func applyLeagueFilters(db *gorm.DB, c *gin.Context, leagueAlias string) *gorm.D
 	return db
 }
 
+// hasLeagueFilters reports whether the request includes any league-level filters.
+// Used to decide whether the COUNT query needs a JOIN to sleeper_leagues.
+func hasLeagueFilters(c *gin.Context) bool {
+	return c.Query("league_size") != "" ||
+		c.Query("scoring_format") != "" ||
+		c.Query("draft_type") != "" ||
+		c.Query("league_type") != ""
+}
+
 // GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
 // with each trade's adds grouped by roster into named sides.
 // Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty).
@@ -235,7 +244,16 @@ func GetSleeperTrades(c *gin.Context) {
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 	db = applyLeagueFilters(db, c, "l")
 
-	db.Count(&total)
+	// When no league-level filters are active, count directly on sleeper_transactions
+	// to avoid a full join across 10M+ rows. The partial index
+	// idx_sleeper_transactions_trade_complete makes this an index-only scan.
+	if hasLeagueFilters(c) {
+		db.Count(&total)
+	} else {
+		database.DB.Model(&models.SleeperTransaction{}).
+			Where("type = ? AND status = ?", "trade", "complete").
+			Count(&total)
+	}
 	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
 
 	// Decode adds and collect all unique player IDs on this page.
@@ -385,17 +403,27 @@ func GetSleeperTransactions(c *gin.Context) {
 	var rows []txRow
 	var total int64
 
+	txType := c.Query("type")
+
 	db := database.DB.Table("sleeper_transactions t").
 		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.type, t.status, t.created_at_sleeper, t.adds").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.status = ?", "complete")
 
-	if txType := c.Query("type"); txType != "" {
+	if txType != "" {
 		db = db.Where("t.type = ?", txType)
 	}
 	db = applyLeagueFilters(db, c, "l")
 
-	db.Count(&total)
+	if hasLeagueFilters(c) {
+		db.Count(&total)
+	} else {
+		countDB := database.DB.Model(&models.SleeperTransaction{}).Where("status = ?", "complete")
+		if txType != "" {
+			countDB = countDB.Where("type = ?", txType)
+		}
+		countDB.Count(&total)
+	}
 	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
 
 	items := make([]SleeperTransactionItem, len(rows))
