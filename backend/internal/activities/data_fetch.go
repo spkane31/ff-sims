@@ -148,7 +148,7 @@ func (a *DataFetchActivities) FetchLeagueTransactions(ctx context.Context, param
 func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, params GetStaleLeaguesParams) ([]string, error) {
 	var leagues []models.SleeperLeague
 	err := a.DB.WithContext(ctx).
-		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL").
+		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'").
 		Order("CASE WHEN last_drafts_fetched_at IS NULL THEN 0 ELSE 1 END, last_drafts_fetched_at ASC").
 		Limit(params.BatchSize).
 		Find(&leagues).Error
@@ -168,7 +168,7 @@ func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, para
 func (a *DataFetchActivities) GetStaleLeaguesForTransactions(ctx context.Context, params GetStaleLeaguesParams) ([]LeagueTransactionState, error) {
 	var leagues []models.SleeperLeague
 	err := a.DB.WithContext(ctx).
-		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)").
+		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025' AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)").
 		Order("CASE WHEN last_transactions_fetched_at IS NULL THEN 0 ELSE 1 END, last_transactions_fetched_at ASC").
 		Limit(params.BatchSize).
 		Find(&leagues).Error
