@@ -1,7 +1,7 @@
 """Postgres access for the valuation pipeline.
 
-Connection/.env discovery follows workers/espn/db.py. No function here
-commits; callers own the transaction so a run is all-or-nothing.
+DATABASE_URL is read from analysis/.env. No function here commits;
+callers own the transaction so a run is all-or-nothing.
 """
 
 import os
@@ -22,15 +22,8 @@ from .models import (
 )
 from .parsing import parse_trade
 
-# Walk up from this file to find backend/.env (repo-root/backend/.env)
-_here = Path(__file__).parent
-for _p in [_here, _here.parent, _here.parent.parent, _here.parent.parent.parent]:
-    _env = _p / "backend" / ".env"
-    if _env.exists():
-        load_dotenv(_env, override=False)
-        break
-else:
-    load_dotenv(override=False)
+# DATABASE_URL comes from analysis/.env
+load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 
 FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
