@@ -37,6 +37,12 @@ export const sleeperService = {
       `/sleeper/transactions${buildQuery({ page, limit, type: txType || undefined, ...filters })}`
     ),
 
-  getDrafts: (page = 1, limit = 25): Promise<SleeperDraftsResponse> =>
-    apiClient.get<SleeperDraftsResponse>(`/sleeper/drafts?page=${page}&limit=${limit}`),
+  getDrafts: (
+    page = 1,
+    limit = 25,
+    filters: SleeperLeagueFilters = {}
+  ): Promise<SleeperDraftsResponse> =>
+    apiClient.get<SleeperDraftsResponse>(
+      `/sleeper/drafts${buildQuery({ page, limit, ...filters })}`
+    ),
 };

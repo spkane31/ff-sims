@@ -7,34 +7,72 @@ interface LeagueFilterBarProps {
   onTxTypeChange?: (type: string) => void;
 }
 
-const LEAGUE_SIZES = ['', '8', '10', '12', '14'];
+const LEAGUE_SIZES = [
+  { value: '', label: 'Any' },
+  { value: '8', label: '8' },
+  { value: '10', label: '10' },
+  { value: '12', label: '12' },
+  { value: '14', label: '14' },
+];
 const SCORING_FORMATS = [
-  { value: '', label: 'Any scoring' },
+  { value: '', label: 'Any' },
   { value: 'standard', label: 'Standard' },
   { value: 'half_ppr', label: 'Half-PPR' },
   { value: 'ppr', label: 'PPR' },
 ];
 const DRAFT_TYPES = [
-  { value: '', label: 'Any draft type' },
+  { value: '', label: 'Any' },
   { value: 'snake', label: 'Snake' },
   { value: 'auction', label: 'Auction' },
   { value: 'linear', label: 'Linear' },
 ];
 const LEAGUE_TYPES = [
-  { value: '', label: 'Any league type' },
+  { value: '', label: 'Any' },
   { value: 'redraft', label: 'Redraft' },
   { value: 'keeper', label: 'Keeper' },
   { value: 'dynasty', label: 'Dynasty' },
 ];
 const TX_TYPES = [
-  { value: '', label: 'All types' },
+  { value: '', label: 'All' },
   { value: 'trade', label: 'Trade' },
   { value: 'waiver', label: 'Waiver' },
   { value: 'free_agent', label: 'Free agent' },
 ];
 
-const selectClass =
-  'px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500';
+function pillClass(active: boolean) {
+  return [
+    'px-2.5 py-1 text-xs rounded-full border transition-colors cursor-pointer select-none',
+    active
+      ? 'bg-blue-600 border-blue-600 text-white font-medium'
+      : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 dark:hover:border-blue-500',
+  ].join(' ');
+}
+
+interface PillGroupProps {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}
+
+function PillGroup({ label, options, value, onChange }: PillGroupProps) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mr-0.5">{label}:</span>
+      {options.map(opt => (
+        <button
+          key={opt.value}
+          type="button"
+          className={pillClass(value === opt.value)}
+          onClick={() => onChange(opt.value)}
+          aria-pressed={value === opt.value}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function LeagueFilterBar({
   filters,
@@ -50,78 +88,60 @@ export default function LeagueFilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3">
-      <span className="text-sm font-medium text-gray-600 dark:text-gray-400 mr-1">Filter:</span>
+    <div className="flex flex-col gap-2.5 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Filters</span>
+        {hasFilters && (
+          <button
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            onClick={() => {
+              onChange({});
+              onTxTypeChange?.('');
+            }}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
 
-      {onTxTypeChange && (
-        <select
-          className={selectClass}
-          value={txType ?? ''}
-          onChange={e => onTxTypeChange(e.target.value)}
-          aria-label="Transaction type"
-        >
-          {TX_TYPES.map(t => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
-      )}
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {onTxTypeChange && (
+          <PillGroup
+            label="Type"
+            options={TX_TYPES}
+            value={txType ?? ''}
+            onChange={onTxTypeChange}
+          />
+        )}
 
-      <select
-        className={selectClass}
-        value={filters.league_size ?? ''}
-        onChange={e => set('league_size', e.target.value)}
-        aria-label="League size"
-      >
-        <option value="">Any size</option>
-        {LEAGUE_SIZES.filter(Boolean).map(s => (
-          <option key={s} value={s}>{s}-team</option>
-        ))}
-      </select>
+        <PillGroup
+          label="Size"
+          options={LEAGUE_SIZES}
+          value={filters.league_size ?? ''}
+          onChange={v => set('league_size', v)}
+        />
 
-      <select
-        className={selectClass}
-        value={filters.scoring_format ?? ''}
-        onChange={e => set('scoring_format', e.target.value)}
-        aria-label="Scoring format"
-      >
-        {SCORING_FORMATS.map(f => (
-          <option key={f.value} value={f.value}>{f.label}</option>
-        ))}
-      </select>
+        <PillGroup
+          label="Scoring"
+          options={SCORING_FORMATS}
+          value={filters.scoring_format ?? ''}
+          onChange={v => set('scoring_format', v)}
+        />
 
-      <select
-        className={selectClass}
-        value={filters.draft_type ?? ''}
-        onChange={e => set('draft_type', e.target.value)}
-        aria-label="Draft type"
-      >
-        {DRAFT_TYPES.map(d => (
-          <option key={d.value} value={d.value}>{d.label}</option>
-        ))}
-      </select>
+        <PillGroup
+          label="Draft"
+          options={DRAFT_TYPES}
+          value={filters.draft_type ?? ''}
+          onChange={v => set('draft_type', v)}
+        />
 
-      <select
-        className={selectClass}
-        value={filters.league_type ?? ''}
-        onChange={e => set('league_type', e.target.value)}
-        aria-label="League type"
-      >
-        {LEAGUE_TYPES.map(l => (
-          <option key={l.value} value={l.value}>{l.label}</option>
-        ))}
-      </select>
-
-      {hasFilters && (
-        <button
-          className="text-sm text-blue-600 dark:text-blue-400 hover:underline ml-auto"
-          onClick={() => {
-            onChange({});
-            onTxTypeChange?.('');
-          }}
-        >
-          Clear filters
-        </button>
-      )}
+        <PillGroup
+          label="League"
+          options={LEAGUE_TYPES}
+          value={filters.league_type ?? ''}
+          onChange={v => set('league_type', v)}
+        />
+      </div>
     </div>
   );
 }
