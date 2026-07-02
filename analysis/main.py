@@ -2,92 +2,37 @@
 Player valuation CLI.
 
 The model lives in src/valuation.py (recursive-belief estimator over ADP,
-trades, and weekly scores). This file loads data (demo or CSVs) and runs it.
+trades, and weekly scores). Data comes from the Sleeper tables in Postgres
+(see src/db.py; DATABASE_URL in analysis/.env).
 
 RUN
 ---
-    python main.py                 # runs on built-in demo data
-    python main.py --data ./mydata # runs on your CSVs (schemas below)
-
-INPUT CSV SCHEMAS (put these in the --data folder)
---------------------------------------------------
-    draft_picks.csv : player_id, player_name, position, pick_no [, draft_id]
-                      ADP is computed as the mean pick_no per player across drafts.
-    trades.csv      : trade_id, timestamp, side, player_id
-                      `side` groups the two baskets (e.g. A/B, or two roster ids).
-                      `timestamp` is ISO ("2025-10-03") or unix seconds.
-    scores.csv      : week, player_id, points
-                      `points` already in THIS segment's scoring (e.g. PPR).
-    players.csv     : player_id, player_name, position   (optional metadata)
+    python main.py --demo                    # synthetic data, no DB
+    python main.py --season 2025 --backtest  # full replay, rewrites snapshots
+    python main.py --season 2025             # incremental run (default mode)
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
-from pathlib import Path
+import sys
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
 
-from src.config import SEASONS, week_ts
+from src import db
+from src.config import PPR_SF_12, SEASONS, week_ts
+from src.models import RunState
+from src.runner import adp_frame, build_events, filter_stale, run_backtest
 from src.valuation import RHO, V_TOP, Valuator, curve
 
 SEASON_2025 = SEASONS["2025"]
 
 
 # ----------------------------------------------------------------------------- #
-# DATA LOADING  (real CSVs) and a self-contained DEMO generator
+# DEMO generator (synthetic league, no DB needed)
 # ----------------------------------------------------------------------------- #
-
-
-def load_real(data_dir: Path) -> tuple[pd.DataFrame, list[dict]]:
-    picks = pd.read_csv(data_dir / "draft_picks.csv")
-    adp = (
-        picks.groupby(["player_id", "player_name", "position"], as_index=False)[
-            "pick_no"
-        ]
-        .mean()
-        .rename(columns={"pick_no": "adp"})
-    )
-
-    pos_map = dict(zip(picks["player_id"], picks["position"]))
-
-    events: list[dict] = []
-
-    trades = pd.read_csv(data_dir / "trades.csv")
-    trades["ts"] = pd.to_datetime(trades["timestamp"], errors="coerce", unit=None)
-    # unix-seconds fallback
-    mask = trades["ts"].isna()
-    if mask.any():
-        trades.loc[mask, "ts"] = pd.to_datetime(trades.loc[mask, "timestamp"], unit="s")
-    for tid, grp in trades.groupby("trade_id"):
-        sides = sorted(grp["side"].astype(str).unique())
-        if len(sides) != 2:
-            continue  # skip anything that isn't a clean two-sided trade
-        a = grp.loc[grp["side"].astype(str) == sides[0], "player_id"].tolist()
-        b = grp.loc[grp["side"].astype(str) == sides[1], "player_id"].tolist()
-        events.append(
-            {
-                "ts": grp["ts"].max().to_pydatetime(),
-                "kind": "trade",
-                "side_a": a,
-                "side_b": b,
-            }
-        )
-
-    scores = pd.read_csv(data_dir / "scores.csv")
-    scores["position"] = scores["player_id"].map(pos_map).fillna("DEFAULT")
-    for week, grp in scores.groupby("week"):
-        events.append(
-            {
-                "ts": week_ts(SEASON_2025, int(week)),
-                "kind": "week",
-                "scores": grp[["player_id", "position", "points"]].copy(),
-            }
-        )
-
-    return adp, events
 
 
 def make_demo(seed: int = 7) -> tuple[pd.DataFrame, list[dict]]:
@@ -151,40 +96,132 @@ def make_demo(seed: int = 7) -> tuple[pd.DataFrame, list[dict]]:
 
 
 # ----------------------------------------------------------------------------- #
-# MAIN
+# RUN MODES
 # ----------------------------------------------------------------------------- #
+
+
+def _print_rankings(v: Valuator, top: int, source: str) -> None:
+    print(f"\nPlayer valuations  ({source})")
+    print(f"ρ (replacement) = {RHO:.0f}   |   top of curve = {V_TOP:.0f}\n")
+    print(v.rankings().head(top).to_string())
+    print(
+        "\nvalue = current belief (additive scale) | vorp = value - ρ"
+        " | sd = uncertainty band\n"
+    )
+
+
+def run_demo(top: int) -> None:
+    adp, events = make_demo()
+    v = Valuator(
+        start_ts=datetime.combine(SEASON_2025.draft_date, datetime.min.time())
+    )
+    v.seed_from_adp(adp)
+    v.advance(events)
+    _print_rankings(v, top, "built-in demo data")
+
+
+def run_db(season: str, backtest: bool, top: int) -> None:
+    segment = PPR_SF_12
+    season_dates = SEASONS[season]
+    conn = db.get_connection()
+    try:
+        run = db.get_run(conn, segment.key, season)
+        state = db.load_state(conn, segment.key)
+        bootstrap = backtest or run is None or not state
+
+        if bootstrap:
+            print(f"[{segment.key}/{season}] full backtest replay")
+            adp = db.get_adp(conn, segment, season)
+            trades = db.get_trades(conn, segment, season, since_created=0)
+            scores = db.get_weekly_scores(conn, season, after_week=0)
+            print(
+                f"  inputs: {len(adp)} ADP players, {len(trades)} trades,"
+                f" {len(scores)} weekly score rows"
+            )
+            if not adp:
+                sys.exit("no ADP data for this segment/season — nothing to seed")
+
+            v = Valuator(
+                start_ts=datetime.combine(season_dates.draft_date, datetime.min.time())
+            )
+            v.seed_from_adp(adp_frame(adp))
+            events = build_events(trades, scores, season_dates)
+
+            # rewrite the season's snapshot range (rerunnable as backlog lands)
+            db.delete_snapshots(
+                conn, segment.key,
+                season_dates.draft_date,
+                season_dates.draft_date + timedelta(days=365),
+            )
+            snap_count = 0
+
+            def on_snapshot(day: date, rankings) -> None:
+                nonlocal snap_count
+                db.write_snapshot(conn, segment.key, day, rankings)
+                snap_count += 1
+
+            run_backtest(v, events, on_snapshot)
+            print(f"  wrote {snap_count} daily snapshots")
+        else:
+            print(f"[{segment.key}/{season}] incremental run")
+            adp = db.get_adp(conn, segment, season)
+            trades = db.get_trades(
+                conn, segment, season, since_created=run.last_transaction_created
+            )
+            scores = db.get_weekly_scores(
+                conn, season, after_week=run.last_week_processed
+            )
+            v = Valuator.from_state(state, last_ts=run.last_event_ts)
+            v.seed_from_adp(adp_frame(adp))  # late-arriving draftees only
+            events = build_events(trades, scores, season_dates)
+            fresh, skipped = filter_stale(events, run.last_event_ts)
+            if skipped:
+                print(
+                    f"  WARNING: skipped {skipped} events at/before model clock"
+                    f" {run.last_event_ts} (out-of-order arrivals)"
+                )
+            print(f"  applying {len(fresh)} new events")
+            v.advance(fresh)
+            db.write_snapshot(conn, segment.key, date.today(), v.rankings())
+
+        max_created = max(
+            [t.created_ms for t in trades],
+            default=(0 if bootstrap else run.last_transaction_created),
+        )
+        max_week = max(
+            [s.week for s in scores],
+            default=(0 if bootstrap else run.last_week_processed),
+        )
+        db.save_state(conn, segment.key, v.to_state())
+        db.save_run(
+            conn,
+            RunState(
+                segment=segment.key, season=season, last_event_ts=v.last_ts,
+                last_transaction_created=max_created, last_week_processed=max_week,
+            ),
+        )
+        conn.commit()
+        _print_rankings(v, top, f"{segment.key} season {season} (database)")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Single-segment player valuation.")
-    ap.add_argument(
-        "--data",
-        type=str,
-        default=None,
-        help="folder with draft_picks.csv, trades.csv, scores.csv",
-    )
+    ap.add_argument("--demo", action="store_true", help="run on synthetic demo data")
+    ap.add_argument("--backtest", action="store_true",
+                    help="full season replay, rewriting all dated snapshots")
+    ap.add_argument("--season", default="2025", choices=sorted(SEASONS))
     ap.add_argument("--top", type=int, default=30, help="how many players to print")
     args = ap.parse_args()
 
-    if args.data:
-        adp, events = load_real(Path(args.data))
-        source = f"real data in {args.data}"
+    if args.demo:
+        run_demo(args.top)
     else:
-        adp, events = make_demo()
-        source = "built-in demo data"
-
-    v = Valuator(
-        start_ts=datetime.combine(SEASON_2025.draft_date, datetime.min.time())
-    )
-    v.seed_from_adp(adp)  # the exp curve, applied once
-    v.advance(events)  # trades + weekly scores, in time order, with aging
-
-    print(f"\nPlayer valuations  ({source})")
-    print(f"ρ (replacement) = {RHO:.0f}   |   top of curve = {V_TOP:.0f}\n")
-    print(v.rankings().head(args.top).to_string())
-    print(
-        "\nvalue = current belief (additive scale) | vorp = value - ρ | sd = uncertainty band\n"
-    )
+        run_db(args.season, args.backtest, args.top)
 
 
 if __name__ == "__main__":
