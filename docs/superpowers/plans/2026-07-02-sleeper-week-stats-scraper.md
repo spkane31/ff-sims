@@ -937,8 +937,10 @@ temporal workflow start \
   --task-queue sleeper-week-stats \
   --type SyncWeekStats \
   --workflow-id sleeper-week-stats-backfill-2025 \
-  --input '"2025"'
+  --input '{"Season":"2025"}'
 ```
+
+(`SyncWeekStats` takes a `SyncWeekStatsParams{Season string}` struct rather than a bare string, so future fields don't require a breaking signature change.)
 
 This requires: `cmd/worker` running against the target Temporal namespace (so `SyncWeekStats`/`WeekStatsSyncDispatcher` are registered on task queue `sleeper-week-stats`), and `sleeper_players` already populated (existing player-sync schedule) so position filtering has data to join against.
 

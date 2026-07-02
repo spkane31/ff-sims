@@ -9,16 +9,18 @@ import (
 // lastFantasyWeek is the last fantasy-relevant regular season week.
 const lastFantasyWeek = 18
 
-// SyncWeekStats fetches weekly Sleeper stats for every week 1-18 of season that
-// isn't already finalized. Directly invocable (e.g. via `temporal workflow start
-// --type SyncWeekStats --input '"2025"'`) for backfills, and delegated to by
-// WeekStatsSyncDispatcher for the in-season schedule.
-func SyncWeekStats(ctx workflow.Context, season string) error {
+// SyncWeekStats fetches weekly Sleeper stats for every week 1-18 of params.Season
+// that isn't already finalized. Directly invocable (e.g. via `temporal workflow
+// start --type SyncWeekStats --input '{"Season":"2025"}'`) for backfills, and
+// delegated to by WeekStatsSyncDispatcher for the in-season schedule. Takes a
+// params struct (rather than a bare string) so future fields — e.g. a week
+// override or a force-refetch flag — don't require a breaking signature change.
+func SyncWeekStats(ctx workflow.Context, params SyncWeekStatsParams) error {
 	wsa := &activities.WeekStatsActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var finalizedWeeks []int
-	if err := workflow.ExecuteActivity(actCtx, wsa.GetFinalizedWeeks, activities.GetFinalizedWeeksParams{Season: season}).Get(ctx, &finalizedWeeks); err != nil {
+	if err := workflow.ExecuteActivity(actCtx, wsa.GetFinalizedWeeks, activities.GetFinalizedWeeksParams{Season: params.Season}).Get(ctx, &finalizedWeeks); err != nil {
 		return err
 	}
 	finalized := make(map[int]bool, len(finalizedWeeks))
@@ -30,7 +32,7 @@ func SyncWeekStats(ctx workflow.Context, season string) error {
 		if finalized[week] {
 			continue
 		}
-		if err := workflow.ExecuteActivity(actCtx, wsa.FetchWeekStats, activities.FetchWeekStatsParams{Season: season, Week: week}).Get(ctx, nil); err != nil {
+		if err := workflow.ExecuteActivity(actCtx, wsa.FetchWeekStats, activities.FetchWeekStatsParams{Season: params.Season, Week: week}).Get(ctx, nil); err != nil {
 			return err
 		}
 	}
@@ -47,5 +49,5 @@ func WeekStatsSyncDispatcher(ctx workflow.Context) error {
 	if err := workflow.ExecuteActivity(actCtx, wsa.GetCurrentSeason).Get(ctx, &season); err != nil {
 		return err
 	}
-	return SyncWeekStats(ctx, season)
+	return SyncWeekStats(ctx, SyncWeekStatsParams{Season: season})
 }

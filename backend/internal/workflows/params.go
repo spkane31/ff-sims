@@ -8,3 +8,7 @@ type LeagueSyncParams struct {
 	LeagueID       string
 	LastLegFetched *int
 }
+
+type SyncWeekStatsParams struct {
+	Season string
+}

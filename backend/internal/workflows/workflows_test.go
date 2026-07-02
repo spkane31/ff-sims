@@ -278,7 +278,7 @@ func TestSyncWeekStats_SkipsFinalizedWeeks(t *testing.T) {
 		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
 	}
 
-	env.ExecuteWorkflow(workflows.SyncWeekStats, "2025")
+	env.ExecuteWorkflow(workflows.SyncWeekStats, workflows.SyncWeekStatsParams{Season: "2025"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -298,7 +298,7 @@ func TestSyncWeekStats_AllWeeksFinalized_NoFetchCalls(t *testing.T) {
 	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
 		Return(allWeeks, nil)
 
-	env.ExecuteWorkflow(workflows.SyncWeekStats, "2025")
+	env.ExecuteWorkflow(workflows.SyncWeekStats, workflows.SyncWeekStatsParams{Season: "2025"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
