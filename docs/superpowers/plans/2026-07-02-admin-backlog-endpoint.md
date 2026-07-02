@@ -337,7 +337,7 @@ git commit -m "feat(api): add admin backlog endpoint for Sleeper transaction syn
 - Produces: `adminService.getBacklog(): Promise<AdminBacklogResponse>`, and
   `useAdminBacklog(): { backlog: AdminBacklogResponse | null, isLoading: boolean, error: Error | null }`.
 
-- [ ] **Step 1: Create the service**
+- [x] **Step 1: Create the service**
 
 Create `frontend/src/services/adminService.ts`:
 
@@ -358,7 +358,7 @@ export const adminService = {
 };
 ```
 
-- [ ] **Step 2: Create the hook**
+- [x] **Step 2: Create the hook**
 
 Create `frontend/src/hooks/useAdminBacklog.ts`:
 
@@ -393,7 +393,7 @@ export function useAdminBacklog() {
 }
 ```
 
-- [ ] **Step 3: Create the page**
+- [x] **Step 3: Create the page**
 
 Create `frontend/src/pages/admin/index.tsx`:
 
@@ -464,7 +464,7 @@ export default function AdminBacklog() {
 }
 ```
 
-- [ ] **Step 4: Manual verification**
+- [x] **Step 4: Manual verification**
 
 Run the backend and frontend dev servers, then confirm the page renders real data:
 
@@ -480,7 +480,7 @@ cd frontend && npm run dev &
 - Confirm no console errors and the loading spinner briefly appears before data loads.
 - Stop both dev servers when done.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/services/adminService.ts frontend/src/hooks/useAdminBacklog.ts frontend/src/pages/admin/index.tsx
