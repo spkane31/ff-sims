@@ -42,6 +42,7 @@ func main() {
 	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
 	dfa := &activities.DataFetchActivities{DB: database.DB, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
+	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
 
 	// Discovery worker: DiscoveryBatchDispatcher + UserDiscoveryWorkflow
 	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{})
@@ -72,7 +73,13 @@ func main() {
 	psw.RegisterWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 	psw.RegisterActivity(psa)
 
-	workers := []worker.Worker{dw, draftsw, transactionsw, psw}
+	// Week stats worker: WeekStatsSyncDispatcher + SyncWeekStats
+	wsw := worker.New(c, workflows.TaskQueueWeekStats, worker.Options{})
+	wsw.RegisterWorkflow(workflows.WeekStatsSyncDispatcher)
+	wsw.RegisterWorkflow(workflows.SyncWeekStats)
+	wsw.RegisterActivity(wsa)
+
+	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw}
 	for _, w := range workers {
 		if err := w.Start(); err != nil {
 			log.Fatalf("worker start: %v", err)

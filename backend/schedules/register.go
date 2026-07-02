@@ -58,7 +58,7 @@ func Register(ctx context.Context, c client.Client) error {
 		return err
 	}
 
-	return upsert(ctx, c, client.ScheduleOptions{
+	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-player-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Calendars: []client.ScheduleCalendarSpec{
@@ -72,6 +72,24 @@ func Register(ctx context.Context, c client.Client) error {
 		Action: &client.ScheduleWorkflowAction{
 			Workflow:  workflows.PlayerDatabaseSyncWorkflow,
 			TaskQueue: workflows.TaskQueuePlayerSync,
+		},
+	}); err != nil {
+		return err
+	}
+
+	return upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-week-stats-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Hour:   []client.ScheduleRange{{Start: 9}}, // 04:00 EST (UTC-5)
+					Minute: []client.ScheduleRange{{Start: 0}},
+				},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:  workflows.WeekStatsSyncDispatcher,
+			TaskQueue: workflows.TaskQueueWeekStats,
 		},
 	})
 }
