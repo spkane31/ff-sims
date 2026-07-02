@@ -44,4 +44,7 @@ func SetupRouter(r *gin.Engine) {
 	sleeper.GET("/trades", handlers.GetSleeperTrades)
 	sleeper.GET("/transactions", handlers.GetSleeperTransactions)
 	sleeper.GET("/drafts", handlers.GetSleeperDrafts)
+
+	admin := v1.Group("/admin")
+	admin.GET("/backlog", handlers.GetAdminBacklog)
 }
