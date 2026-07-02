@@ -47,7 +47,7 @@ func Register(ctx context.Context, c client.Client) error {
 		ID: "sleeper-transaction-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 10 * time.Minute},
+				{Every: 5 * time.Minute},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
