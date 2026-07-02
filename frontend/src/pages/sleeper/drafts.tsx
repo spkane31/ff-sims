@@ -1,30 +1,56 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import LeagueFilterBar from "../../components/LeagueFilterBar";
 import { useSleeperDrafts } from "../../hooks/useSleeperData";
+import { SleeperLeagueFilters } from "../../types/models";
 
 const LIMIT = 25;
+
+function filtersFromQuery(query: Record<string, string | string[] | undefined>): SleeperLeagueFilters {
+  return {
+    league_size: typeof query.league_size === "string" ? query.league_size : undefined,
+    scoring_format: typeof query.scoring_format === "string" ? query.scoring_format : undefined,
+    draft_type: typeof query.draft_type === "string" ? query.draft_type : undefined,
+    league_type: typeof query.league_type === "string" ? query.league_type : undefined,
+  };
+}
 
 export default function SleeperDraftsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<SleeperLeagueFilters>({});
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!router.isReady) return;
+    setFilters(filtersFromQuery(router.query));
     const p = parseInt(router.query.page as string);
     if (p > 0) setPage(p);
     setReady(true);
-  }, [router.isReady, router.query.page]);
+  }, [router.isReady, router.query]);
 
   const { items, total, totalPages, isLoading, error } = useSleeperDrafts(
     ready ? page : 1,
-    LIMIT
+    LIMIT,
+    ready ? filters : {}
   );
+
+  function applyFilters(next: SleeperLeagueFilters) {
+    setFilters(next);
+    setPage(1);
+    const q: Record<string, string> = { page: "1" };
+    if (next.league_size) q.league_size = next.league_size;
+    if (next.scoring_format) q.scoring_format = next.scoring_format;
+    if (next.draft_type) q.draft_type = next.draft_type;
+    if (next.league_type) q.league_type = next.league_type;
+    router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+  }
 
   function goToPage(p: number) {
     setPage(p);
-    router.push({ pathname: router.pathname, query: { page: String(p) } }, undefined, { shallow: true });
+    const q: Record<string, string> = { ...router.query as Record<string, string>, page: String(p) };
+    router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
   }
 
   return (
@@ -36,6 +62,8 @@ export default function SleeperDraftsPage() {
             {isLoading ? "Loading…" : `${total.toLocaleString()} completed drafts`}
           </p>
         </div>
+
+        <LeagueFilterBar filters={filters} onChange={applyFilters} />
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
@@ -66,7 +94,7 @@ export default function SleeperDraftsPage() {
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No drafts found. Data may still be syncing.
+                    No drafts found.
                   </td>
                 </tr>
               ) : (

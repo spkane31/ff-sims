@@ -335,8 +335,17 @@ func GetSleeperDrafts(c *gin.Context) {
 		Joins("LEFT JOIN sleeper_draft_picks p ON p.sleeper_draft_id = d.sleeper_draft_id").
 		Where("d.status = ?", "complete").
 		Group("d.sleeper_draft_id, d.sleeper_league_id, l.name, d.type, d.status, d.season")
+	db = applyLeagueFilters(db, c, "l")
 
-	database.DB.Table("sleeper_drafts").Where("status = ?", "complete").Count(&total)
+	if hasLeagueFilters(c) {
+		countDB := database.DB.Table("sleeper_drafts d").
+			Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
+			Where("d.status = ?", "complete")
+		countDB = applyLeagueFilters(countDB, c, "l")
+		countDB.Count(&total)
+	} else {
+		database.DB.Table("sleeper_drafts").Where("status = ?", "complete").Count(&total)
+	}
 	db.Order("d.season DESC, d.created_at DESC").Limit(limit).Offset(offset).Scan(&rows)
 
 	items := make([]SleeperDraftItem, len(rows))
