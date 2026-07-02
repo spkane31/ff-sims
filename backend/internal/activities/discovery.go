@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -14,8 +15,22 @@ import (
 	"backend/internal/sleeper"
 )
 
-// Seasons is the list of NFL seasons scraped per user discovery run.
-var Seasons = []string{"2020", "2021", "2022", "2023", "2024", "2025"}
+// firstScannedSeason is the earliest NFL season scraped per user discovery run.
+// Older seasons are excluded — their data is complete and not worth re-scanning.
+const firstScannedSeason = 2025
+
+// Seasons returns the NFL seasons to scan during user discovery: firstScannedSeason
+// through the current calendar year. Computed at call time (rather than a fixed
+// list) so next season's leagues are picked up automatically without a yearly
+// code change.
+func Seasons() []string {
+	currentYear := time.Now().Year()
+	seasons := make([]string, 0, currentYear-firstScannedSeason+1)
+	for y := firstScannedSeason; y <= currentYear; y++ {
+		seasons = append(seasons, strconv.Itoa(y))
+	}
+	return seasons
+}
 
 // DiscoveryActivities holds dependencies for user/league graph expansion activities.
 type DiscoveryActivities struct {
@@ -47,7 +62,7 @@ func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, params GetStale
 // Returns a non-retryable NOT_FOUND error if the user no longer exists in Sleeper.
 func (a *DiscoveryActivities) FetchUserLeagues(ctx context.Context, params FetchUserLeaguesParams) ([]string, error) {
 	var leagueIDs []string
-	for _, season := range Seasons {
+	for _, season := range Seasons() {
 		leagues, err := a.Sleeper.GetUserLeagues(ctx, params.UserID, "nfl", season)
 		if err != nil {
 			var nfe *sleeper.NotFoundError
