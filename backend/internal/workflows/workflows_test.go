@@ -263,3 +263,65 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
+
+// ---- SyncWeekStats ----
+
+func TestSyncWeekStats_SkipsFinalizedWeeks(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	wsa := &activities.WeekStatsActivities{}
+	// Weeks 1 and 2 already finalized — only weeks 3-18 should be fetched.
+	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
+		Return([]int{1, 2}, nil)
+	for week := 3; week <= 18; week++ {
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+	}
+
+	env.ExecuteWorkflow(workflows.SyncWeekStats, "2025")
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestSyncWeekStats_AllWeeksFinalized_NoFetchCalls(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	allWeeks := make([]int, 0, 18)
+	for w := 1; w <= 18; w++ {
+		allWeeks = append(allWeeks, w)
+	}
+
+	wsa := &activities.WeekStatsActivities{}
+	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
+		Return(allWeeks, nil)
+
+	env.ExecuteWorkflow(workflows.SyncWeekStats, "2025")
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// ---- WeekStatsSyncDispatcher ----
+
+func TestWeekStatsSyncDispatcher_ResolvesSeasonAndSyncs(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	wsa := &activities.WeekStatsActivities{}
+	env.OnActivity(wsa.GetCurrentSeason, mock.Anything).Return("2025", nil)
+	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
+		Return([]int{}, nil)
+	for week := 1; week <= 18; week++ {
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+	}
+
+	env.ExecuteWorkflow(workflows.WeekStatsSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
