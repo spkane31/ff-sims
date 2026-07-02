@@ -48,11 +48,11 @@ RHO = V_TOP * math.exp(-LAMBDA_ADP * (RHO_RANK - 1))
 
 # Uncertainty knobs, expressed as VARIANCES on the 0..10,000 scale.
 # (A belief's "give or take" is sqrt(var). sd 1000 -> var 1_000_000.)
-ADP_VAR = 1_500_000.0  # prior uncertainty from the ADP seed  (sd ~1225)
-TRADE_VAR = 3_000_000.0  # noise in a single trade              (sd ~1730)
-WEEK_VAR_BASE = 4_000_000.0  # noise in a performance reading, divided by games seen
-MAX_VAR = 9_000_000.0  # cap so long-inactive players don't blow up
-UNSEEN_VAR = ADP_VAR * 3  # a player who appears with no ADP (UDFA, call-up)
+ADP_VAR = 1_500_000.0           # prior uncertainty from the ADP seed  (sd ~1225)
+TRADE_VAR = 3_000_000.0         # noise in a single trade              (sd ~1730)
+WEEK_VAR_BASE = 4_000_000.0     # noise in a performance reading, divided by games seen
+MAX_VAR = 9_000_000.0           # cap so long-inactive players don't blow up
+UNSEEN_VAR = ADP_VAR * 3        # a player who appears with no ADP (UDFA, call-up)
 
 # Performance signal.
 PERF_DECAY = 0.85  # recency weight: last week matters more than week 1
@@ -70,7 +70,14 @@ DRIFT_PER_DAY = {  # variance added per day since a player's last evidence
 # Weekly positional replacement ranks (12-team superflex starting guesses).
 # The Nth-best scorer at a position that week is "replacement"; PAR = points
 # minus that score.
-REPL_RANK_BY_POS = {"QB": 24, "RB": 30, "WR": 36, "TE": 12, "DEF": 12, "K": 12}
+REPL_RANK_BY_POS = {
+    "QB": 24,
+    "RB": 30,
+    "WR": 36,
+    "TE": 12,
+    "DEF": 12,
+    "K": 12,
+}
 
 
 def curve(rank: float) -> float:
