@@ -106,3 +106,26 @@ type SleeperTransaction struct {
 }
 
 func (SleeperTransaction) TableName() string { return "sleeper_transactions" }
+
+type SleeperPlayerWeekStat struct {
+	Season          string          `gorm:"primaryKey;column:season"`
+	Week            int             `gorm:"primaryKey;column:week"`
+	SleeperPlayerID string          `gorm:"primaryKey;column:sleeper_player_id"`
+	PtsPPR          *float64        `gorm:"column:pts_ppr"`
+	PtsHalfPPR      *float64        `gorm:"column:pts_half_ppr"`
+	PtsStd          *float64        `gorm:"column:pts_std"`
+	Stats           json.RawMessage `gorm:"column:stats;type:jsonb"`
+	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (SleeperPlayerWeekStat) TableName() string { return "sleeper_player_week_stats" }
+
+type SleeperWeekStatFetch struct {
+	Season        string     `gorm:"primaryKey;column:season"`
+	Week          int        `gorm:"primaryKey;column:week"`
+	LastFetchedAt *time.Time `gorm:"column:last_fetched_at"`
+	Finalized     bool       `gorm:"column:finalized"`
+}
+
+func (SleeperWeekStatFetch) TableName() string { return "sleeper_week_stat_fetches" }
