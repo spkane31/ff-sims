@@ -45,6 +45,13 @@ validating against a full 2025-season replay.
 
 ### 1. Go: weekly NFL stats scraper
 
+> **Spun out to [#118](https://github.com/spkane31/ff-sims/issues/118)** — built
+> in parallel by a separate agent. The valuation work below treats it as an
+> external dependency: migration `013` and the `sleeper_player_week_stats` /
+> `sleeper_week_stat_fetches` tables land via that issue; this branch reserves
+> migration `014`. The 2025 backtest validation is blocked until the 2025
+> backfill from #118 completes.
+
 **Sleeper client** (`backend/internal/sleeper/`):
 - `GetWeekStats(ctx, season, week)` → `GET https://api.sleeper.app/v1/stats/nfl/regular/{season}/{week}`.
   Returns a map of player_id → stat fields including `pts_ppr`, `pts_half_ppr`, `pts_std`.
