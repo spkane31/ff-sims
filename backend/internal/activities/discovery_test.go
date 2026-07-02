@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,6 +17,34 @@ import (
 	"backend/internal/models"
 	"backend/internal/sleeper"
 )
+
+func TestSeasons_StartsAt2025AndIncludesCurrentYear(t *testing.T) {
+	seasons := activities.Seasons()
+
+	if len(seasons) == 0 {
+		t.Fatal("expected at least one season")
+	}
+	if seasons[0] != "2025" {
+		t.Errorf("expected seasons to start at 2025, got %q", seasons[0])
+	}
+	for _, s := range seasons {
+		if s < "2025" {
+			t.Errorf("seasons %v should not include a pre-2025 year, found %q", seasons, s)
+		}
+	}
+
+	currentYear := strconv.Itoa(time.Now().Year())
+	found := false
+	for _, s := range seasons {
+		if s == currentYear {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected seasons %v to include current year %q", seasons, currentYear)
+	}
+}
 
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -104,7 +133,7 @@ func TestFetchUserLeagues_UpsertsLeagues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchUserLeagues error: %v", err)
 	}
-	// 6 seasons × 1 league each = 6 entries for "lg1" (deduped in DB)
+	// one league returned per scanned season, deduped to a single "lg1" row in DB
 	if len(leagueIDs) == 0 {
 		t.Fatal("expected at least one leagueID")
 	}
