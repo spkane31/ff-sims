@@ -96,6 +96,14 @@ type Player struct {
 	YearsExp int    `json:"years_exp"`
 }
 
+// NFLState is returned by GET /v1/state/nfl and describes the current NFL week/season,
+// used to decide whether a fetched week's stats are final.
+type NFLState struct {
+	Season     string `json:"season"`
+	SeasonType string `json:"season_type"`
+	Week       int    `json:"week"`
+}
+
 // NotFoundError is returned when the Sleeper API responds with 404.
 type NotFoundError struct{ URL string }
 

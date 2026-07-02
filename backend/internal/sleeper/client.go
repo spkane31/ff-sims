@@ -128,3 +128,24 @@ func (c *Client) GetAllPlayers(ctx context.Context, sport string) (map[string]Pl
 	}
 	return players, nil
 }
+
+// GetWeekStats fetches per-player weekly stats for season/week. The map key is the
+// sleeper_player_id; each value is the raw stat object (includes pts_ppr, pts_half_ppr,
+// pts_std among many other fields, decoded further by callers).
+func (c *Client) GetWeekStats(ctx context.Context, season string, week int) (map[string]json.RawMessage, error) {
+	var stats map[string]json.RawMessage
+	path := fmt.Sprintf("/v1/stats/nfl/regular/%s/%d", season, week)
+	if err := c.get(ctx, path, &stats); err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
+
+// GetNFLState fetches the current NFL season/week/season_type.
+func (c *Client) GetNFLState(ctx context.Context) (*NFLState, error) {
+	var s NFLState
+	if err := c.get(ctx, "/v1/state/nfl", &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
