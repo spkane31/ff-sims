@@ -1,7 +1,9 @@
-from .models import AverageDraftPosition, TradeSide
+from .models import AverageDraftPosition, Trade
+
 
 def get_adp() -> list[AverageDraftPosition]:
-    return
+    return []
 
-def get_trades() -> list[TradeSide]:
-    return
+
+def get_trades() -> list[Trade]:
+    return []
