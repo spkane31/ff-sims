@@ -40,7 +40,7 @@ Full design context: `docs/superpowers/specs/2026-07-02-admin-backlog-endpoint-d
   tags), and `handlers.GetAdminBacklog(c *gin.Context)` — a `gin.HandlerFunc`. Task 2 (frontend)
   consumes the JSON shape this produces, not the Go types directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/internal/api/handlers/admin_test.go`:
 
@@ -187,12 +187,12 @@ func TestGetAdminBacklog_EmptyTable(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/api/handlers/... -run TestGetAdminBacklog -v`
 Expected: FAIL — compile error, `AdminBacklogResponse` and `GetAdminBacklog` undefined.
 
-- [ ] **Step 3: Write the handler implementation**
+- [x] **Step 3: Write the handler implementation**
 
 Create `backend/internal/api/handlers/admin.go`:
 
@@ -200,11 +200,12 @@ Create `backend/internal/api/handlers/admin.go`:
 package handlers
 
 import (
-	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"backend/internal/database"
 	"backend/internal/models"
@@ -248,28 +249,37 @@ func GetAdminBacklog(c *gin.Context) {
 		return
 	}
 
-	var oldest sql.NullTime
-	if err := database.DB.Model(&models.SleeperLeague{}).
+	var oldestLeague models.SleeperLeague
+	err := database.DB.
 		Where("season = ? AND skipped_at IS NULL AND last_transactions_fetched_at IS NOT NULL", season).
-		Select("MIN(last_transactions_fetched_at)").
-		Scan(&oldest).Error; err != nil {
+		Order("last_transactions_fetched_at ASC").
+		Limit(1).
+		Take(&oldestLeague).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if oldest.Valid {
-		resp.OldestTransactionsFetchedAt = &oldest.Time
+	if err == nil {
+		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
 	}
 
 	c.JSON(http.StatusOK, resp)
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+(Note: an earlier draft of this used `Select("MIN(...)").Scan(&sql.NullTime{})`, but sqlite's
+driver returns aggregate results as a raw string rather than a recognized time column, so
+`sql.NullTime.Scan` fails with "unsupported Scan, storing driver.Value type string into type
+*time.Time". Using `Order(...).Limit(1).Take(...)` into the actual model goes through GORM's
+normal column scanning instead, which handles the type correctly — this surfaced during Step 2's
+test run and was fixed before commit.)
+
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/api/handlers/... -run TestGetAdminBacklog -v`
 Expected: PASS (all 4 tests).
 
-- [ ] **Step 5: Wire the route**
+- [x] **Step 5: Wire the route**
 
 Modify `backend/internal/api/routes.go` — the file currently ends with:
 
@@ -296,12 +306,12 @@ Change it to:
 }
 ```
 
-- [ ] **Step 6: Run the full backend test suite**
+- [x] **Step 6: Run the full backend test suite**
 
 Run: `cd backend && go test ./...`
 Expected: PASS, all packages, no regressions.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/internal/api/handlers/admin.go backend/internal/api/handlers/admin_test.go backend/internal/api/routes.go
