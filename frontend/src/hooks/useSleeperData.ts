@@ -86,20 +86,23 @@ export function useSleeperTransactions(
   return { ...state, refetch: fetch };
 }
 
-export function useSleeperDrafts(page: number, limit: number) {
+export function useSleeperDrafts(page: number, limit: number, filters: SleeperLeagueFilters = {}) {
   const [state, setState] = useState<PaginatedState<SleeperDraft>>({
     items: [], total: 0, totalPages: 0, isLoading: true, error: null,
   });
 
+  const filtersKey = JSON.stringify(filters);
+
   const fetch = useCallback(async () => {
     setState(s => ({ ...s, isLoading: true, error: null }));
     try {
-      const data = await sleeperService.getDrafts(page, limit);
+      const data = await sleeperService.getDrafts(page, limit, filters);
       setState({ items: data.drafts, total: data.total, totalPages: data.total_pages, isLoading: false, error: null });
     } catch (err) {
       setState(s => ({ ...s, isLoading: false, error: err instanceof Error ? err : new Error('Failed to fetch drafts') }));
     }
-  }, [page, limit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, limit, filtersKey]);
 
   useEffect(() => { fetch(); }, [fetch]);
   return { ...state, refetch: fetch };

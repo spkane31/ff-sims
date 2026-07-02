@@ -109,9 +109,9 @@ func TestGetStaleLeaguesForDrafts_NullFirst(t *testing.T) {
 	now := time.Now()
 	old := now.Add(-1 * time.Hour)
 
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", LastDraftsFetchedAt: &now, LastFetchedAt: &now})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", LastDraftsFetchedAt: &old, LastFetchedAt: &now})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", Season: "2025", LastDraftsFetchedAt: &now, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", Season: "2025", LastDraftsFetchedAt: &old, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", Season: "2025", LastFetchedAt: &now})
 
 	dfa := &activities.DataFetchActivities{DB: db}
 	ids, err := dfa.GetStaleLeaguesForDrafts(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 2})
@@ -131,9 +131,9 @@ func TestGetStaleLeaguesForDrafts_NullFirst(t *testing.T) {
 
 func TestGetStaleLeaguesForDrafts_RequiresDetailsFetched(t *testing.T) {
 	db := newTestDB(t)
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-no-details"})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-no-details", Season: "2025"})
 	now := time.Now()
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-ready", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-ready", Season: "2025", LastFetchedAt: &now})
 
 	dfa := &activities.DataFetchActivities{DB: db}
 	ids, err := dfa.GetStaleLeaguesForDrafts(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 10})
@@ -150,9 +150,9 @@ func TestGetStaleLeaguesForTransactions_NullFirst(t *testing.T) {
 	now := time.Now()
 	old := now.Add(-1 * time.Hour)
 
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", LastTransactionsFetchedAt: &now, LastFetchedAt: &now})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", LastTransactionsFetchedAt: &old, LastFetchedAt: &now})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", Season: "2025", LastTransactionsFetchedAt: &now, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", Season: "2025", LastTransactionsFetchedAt: &old, LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-null", Season: "2025", LastFetchedAt: &now})
 
 	dfa := &activities.DataFetchActivities{DB: db}
 	states, err := dfa.GetStaleLeaguesForTransactions(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 2})
@@ -175,11 +175,11 @@ func TestGetStaleLeaguesForTransactions_ExcludesCompletedSynced(t *testing.T) {
 	now := time.Now()
 
 	// complete + already synced — should be excluded
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-done", Status: "complete", LastFetchedAt: &now, LastTransactionsFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-done", Season: "2025", Status: "complete", LastFetchedAt: &now, LastTransactionsFetchedAt: &now})
 	// complete but never synced — should be included
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-complete-new", Status: "complete", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-complete-new", Season: "2025", Status: "complete", LastFetchedAt: &now})
 	// active + already synced — should be included
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-active", Status: "in_season", LastFetchedAt: &now, LastTransactionsFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-active", Season: "2025", Status: "in_season", LastFetchedAt: &now, LastTransactionsFetchedAt: &now})
 
 	dfa := &activities.DataFetchActivities{DB: db}
 	states, err := dfa.GetStaleLeaguesForTransactions(context.Background(), activities.GetStaleLeaguesParams{BatchSize: 10})
