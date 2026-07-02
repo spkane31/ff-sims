@@ -62,6 +62,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&models.SleeperDraftPick{},
 		&models.SleeperTransaction{},
 		&models.SleeperPlayer{},
+		&models.SleeperPlayerWeekStat{},
+		&models.SleeperWeekStatFetch{},
 	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}

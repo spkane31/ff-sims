@@ -59,3 +59,12 @@ type MarkLeagueTransactionsFetchedParams struct {
 type MarkLeagueSkippedParams struct {
 	LeagueID string
 }
+
+type FetchWeekStatsParams struct {
+	Season string
+	Week   int
+}
+
+type GetFinalizedWeeksParams struct {
+	Season string
+}
