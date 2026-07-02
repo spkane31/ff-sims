@@ -80,8 +80,11 @@ func Register(ctx context.Context, c client.Client) error {
 	return upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-week-stats-schedule",
 		Spec: client.ScheduleSpec{
-			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 30 * time.Minute},
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Hour:   []client.ScheduleRange{{Start: 9}}, // 04:00 EST (UTC-5)
+					Minute: []client.ScheduleRange{{Start: 0}},
+				},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
