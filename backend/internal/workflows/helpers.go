@@ -15,12 +15,12 @@ const (
 	TaskQueuePlayerSync   = "sleeper-player-sync"
 	TaskQueueWeekStats    = "sleeper-week-stats"
 	TaskQueueADP          = "sleeper-adp"
-	BatchSize             = 10
+	BatchSize             = 15
 	SyncBatchSize         = 400
 )
 
 var defaultActivityOptions = workflow.ActivityOptions{
-	StartToCloseTimeout: 5 * time.Minute,
+	StartToCloseTimeout: 15 * time.Minute,
 	RetryPolicy: &temporal.RetryPolicy{
 		InitialInterval:    5 * time.Second,
 		BackoffCoefficient: 2.0,

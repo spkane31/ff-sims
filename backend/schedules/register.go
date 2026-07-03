@@ -106,8 +106,9 @@ func Register(ctx context.Context, c client.Client) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.ADPRollupDispatcher,
-			TaskQueue: workflows.TaskQueueADP,
+			Workflow:                 workflows.ADPRollupDispatcher,
+			TaskQueue:                workflows.TaskQueueADP,
+			WorkflowExecutionTimeout: 30 * time.Minute,
 		},
 	})
 }
