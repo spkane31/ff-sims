@@ -21,7 +21,7 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}); err != nil {
+	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperUser{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -74,6 +74,36 @@ func performGetAdminSegments(t *testing.T) AdminSegmentsResponse {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	return resp
+}
+
+func performGetAdminDiscoveryFrontier(t *testing.T) AdminDiscoveryFrontierResponse {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/admin/discovery-frontier", GetAdminDiscoveryFrontier)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/discovery-frontier", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp AdminDiscoveryFrontierResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	return resp
+}
+
+func findLeagueSeasonRow(rows []AdminDiscoveryLeagueSeasonRow, season string) *AdminDiscoveryLeagueSeasonRow {
+	for i := range rows {
+		if rows[i].Season == season {
+			return &rows[i]
+		}
+	}
+	return nil
 }
 
 func findSegmentRow(rows []AdminSegmentRow, scoring string, superflex bool, size string) *AdminSegmentRow {
@@ -292,5 +322,94 @@ func TestGetAdminDatabaseSize_RequiresPostgres(t *testing.T) {
 	}
 	if body["error"] == "" {
 		t.Error("expected non-empty error message")
+	}
+}
+
+func TestGetAdminDiscoveryFrontier_UserCounts(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+
+	db.Create(&models.SleeperUser{SleeperUserID: "expanded-1", LastFetchedAt: &now})
+	db.Create(&models.SleeperUser{SleeperUserID: "expanded-2", LastFetchedAt: &now})
+	db.Create(&models.SleeperUser{SleeperUserID: "pending-1"})
+	db.Create(&models.SleeperUser{SleeperUserID: "pending-2"})
+	db.Create(&models.SleeperUser{SleeperUserID: "pending-3"})
+	db.Create(&models.SleeperUser{SleeperUserID: "skipped-1", SkippedAt: &now})
+
+	resp := performGetAdminDiscoveryFrontier(t)
+
+	if resp.Users.Total != 6 {
+		t.Errorf("expected 6 total users, got %d", resp.Users.Total)
+	}
+	if resp.Users.Expanded != 2 {
+		t.Errorf("expected 2 expanded users, got %d", resp.Users.Expanded)
+	}
+	if resp.Users.Pending != 3 {
+		t.Errorf("expected 3 pending users, got %d", resp.Users.Pending)
+	}
+	if resp.Users.Skipped != 1 {
+		t.Errorf("expected 1 skipped user, got %d", resp.Users.Skipped)
+	}
+}
+
+func TestGetAdminDiscoveryFrontier_LeaguesBySeason(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2026-a", Season: "2026", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2026-b", Season: "2026"})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2026-c", Season: "2026", SkippedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2025-a", Season: "2025", LastFetchedAt: &now})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2025-b", Season: "2025", LastFetchedAt: &now})
+
+	resp := performGetAdminDiscoveryFrontier(t)
+
+	if len(resp.LeaguesBySeason) != 2 {
+		t.Fatalf("expected 2 seasons, got %d", len(resp.LeaguesBySeason))
+	}
+
+	// ordered season descending
+	if resp.LeaguesBySeason[0].Season != "2026" || resp.LeaguesBySeason[1].Season != "2025" {
+		t.Errorf("expected seasons ordered [2026, 2025], got [%s, %s]",
+			resp.LeaguesBySeason[0].Season, resp.LeaguesBySeason[1].Season)
+	}
+
+	row2026 := findLeagueSeasonRow(resp.LeaguesBySeason, "2026")
+	if row2026 == nil {
+		t.Fatal("missing 2026 row")
+	}
+	if row2026.Total != 3 || row2026.Expanded != 1 || row2026.Pending != 1 || row2026.Skipped != 1 {
+		t.Errorf("2026: expected total=3 expanded=1 pending=1 skipped=1, got total=%d expanded=%d pending=%d skipped=%d",
+			row2026.Total, row2026.Expanded, row2026.Pending, row2026.Skipped)
+	}
+
+	row2025 := findLeagueSeasonRow(resp.LeaguesBySeason, "2025")
+	if row2025 == nil {
+		t.Fatal("missing 2025 row")
+	}
+	if row2025.Total != 2 || row2025.Expanded != 2 || row2025.Pending != 0 || row2025.Skipped != 0 {
+		t.Errorf("2025: expected total=2 expanded=2 pending=0 skipped=0, got total=%d expanded=%d pending=%d skipped=%d",
+			row2025.Total, row2025.Expanded, row2025.Pending, row2025.Skipped)
+	}
+}
+
+func TestGetAdminDiscoveryFrontier_EmptyTables(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	resp := performGetAdminDiscoveryFrontier(t)
+
+	if resp.Users.Total != 0 || resp.Users.Expanded != 0 || resp.Users.Pending != 0 || resp.Users.Skipped != 0 {
+		t.Errorf("expected all-zero user counts, got %+v", resp.Users)
+	}
+	if resp.LeaguesBySeason == nil {
+		t.Error("expected empty (non-nil) leagues_by_season slice")
+	}
+	if len(resp.LeaguesBySeason) != 0 {
+		t.Errorf("expected no league season rows, got %d", len(resp.LeaguesBySeason))
 	}
 }
