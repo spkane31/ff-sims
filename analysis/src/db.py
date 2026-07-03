@@ -224,15 +224,15 @@ def write_snapshot(
     rankings: pd.DataFrame,
 ) -> None:
     """rankings = Valuator.rankings(): index is rank, columns include
-    player_id, pos, value, vorp, sd, games."""
+    player_id, pos, pos_rank, value, vorp, sd, games."""
     sql = """
         INSERT INTO player_valuations
-            (segment, sleeper_player_id, valuation_date, rank, value, vorp,
-             sd, games, position)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (segment, sleeper_player_id, valuation_date, rank, pos_rank,
+             value, vorp, sd, games, position)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (segment, sleeper_player_id, valuation_date) DO UPDATE SET
-            rank = EXCLUDED.rank, value = EXCLUDED.value,
-            vorp = EXCLUDED.vorp, sd = EXCLUDED.sd,
+            rank = EXCLUDED.rank, pos_rank = EXCLUDED.pos_rank,
+            value = EXCLUDED.value, vorp = EXCLUDED.vorp, sd = EXCLUDED.sd,
             games = EXCLUDED.games, position = EXCLUDED.position
     """
     with conn.cursor() as cur:
@@ -240,8 +240,8 @@ def write_snapshot(
             sql,
             [
                 (segment_key, row.player_id, valuation_date, rank,
-                 float(row.value), float(row.vorp), float(row.sd),
-                 float(row.games), row.pos)
+                 int(row.pos_rank), float(row.value), float(row.vorp),
+                 float(row.sd), float(row.games), row.pos)
                 for rank, row in zip(rankings.index, rankings.itertuples(index=False))
             ],
         )

@@ -1,7 +1,9 @@
 """Segment and season configuration for the valuation pipeline."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+
+from .valuation import DEFAULT_REPL_RANK_BY_POS
 
 
 @dataclass(frozen=True)
@@ -14,9 +16,27 @@ class Segment:
     total_rosters: int
     league_type: str = "redraft"
     draft_type: str = "snake"  # ADP only; auction pick_no isn't a draft position
+    # weekly replacement rank per position for THIS league combo: the Nth-best
+    # scorer at a position is "replacement" (feeds PAR in the model)
+    repl_rank_by_pos: dict[str, int] = field(
+        default_factory=lambda: dict(DEFAULT_REPL_RANK_BY_POS)
+    )
 
 
-PPR_SF_12 = Segment(key="ppr-sf-12", ppr=1.0, is_superflex=True, total_rosters=12)
+PPR_SF_12 = Segment(
+    key="ppr-sf-12",
+    ppr=1.0,
+    is_superflex=True,
+    total_rosters=12,
+    repl_rank_by_pos={
+        "QB": 24,  # superflex: ~2 QB starters per team
+        "RB": 30,
+        "WR": 36,
+        "TE": 12,
+        "DEF": 12,
+        "K": 12,
+    },
+)
 
 
 @dataclass(frozen=True)

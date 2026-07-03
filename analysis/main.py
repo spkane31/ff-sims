@@ -142,7 +142,8 @@ def run_db(season: str, backtest: bool, top: int) -> None:
                 sys.exit("no ADP data for this segment/season — nothing to seed")
 
             v = Valuator(
-                start_ts=datetime.combine(season_dates.draft_date, datetime.min.time())
+                start_ts=datetime.combine(season_dates.draft_date, datetime.min.time()),
+                repl_rank_by_pos=segment.repl_rank_by_pos,
             )
             v.seed_from_adp(adp_frame(adp))
             events = build_events(trades, scores, season_dates)
@@ -171,7 +172,11 @@ def run_db(season: str, backtest: bool, top: int) -> None:
             scores = db.get_weekly_scores(
                 conn, season, after_week=run.last_week_processed
             )
-            v = Valuator.from_state(state, last_ts=run.last_event_ts)
+            v = Valuator.from_state(
+                state,
+                last_ts=run.last_event_ts,
+                repl_rank_by_pos=segment.repl_rank_by_pos,
+            )
             v.seed_from_adp(adp_frame(adp))  # late-arriving draftees only
             events = build_events(trades, scores, season_dates)
             fresh, skipped = filter_stale(events, run.last_event_ts)

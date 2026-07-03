@@ -12,6 +12,13 @@ def test_segment_ppr_sf_12():
     assert PPR_SF_12.draft_type == "snake"
 
 
+def test_segment_carries_replacement_ranks():
+    # superflex: QB replacement is deep (2 starters/team)
+    assert PPR_SF_12.repl_rank_by_pos["QB"] == 24
+    assert PPR_SF_12.repl_rank_by_pos["RB"] == 30
+    assert set(PPR_SF_12.repl_rank_by_pos) == {"QB", "RB", "WR", "TE", "DEF", "K"}
+
+
 def test_week_ts_2025():
     s = SEASONS["2025"]
     # 2025 kickoff Thu Sep 4; week 1 scores land 4 days later, Mon Sep 8

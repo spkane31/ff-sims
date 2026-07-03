@@ -47,6 +47,38 @@ def test_start_ts_sets_model_clock():
     assert v.last_ts == START
 
 
+def test_rankings_include_position_rank():
+    v = Valuator(start_ts=START)
+    v.seed_from_adp(
+        pd.DataFrame(
+            [
+                {"player_id": "q1", "player_name": "QB A", "position": "QB", "adp": 1.0},
+                {"player_id": "r1", "player_name": "RB A", "position": "RB", "adp": 2.0},
+                {"player_id": "q2", "player_name": "QB B", "position": "QB", "adp": 3.0},
+                {"player_id": "r2", "player_name": "RB B", "position": "RB", "adp": 4.0},
+            ]
+        )
+    )
+    df = v.rankings()
+    by_pid = df.set_index("player_id")
+    # overall order is q1, r1, q2, r2; position ranks restart per position
+    assert by_pid.loc["q1", "pos_rank"] == 1
+    assert by_pid.loc["q2", "pos_rank"] == 2
+    assert by_pid.loc["r1", "pos_rank"] == 1
+    assert by_pid.loc["r2", "pos_rank"] == 2
+
+
+def test_valuator_accepts_segment_replacement_ranks():
+    # replacement rank 1 means nearly everyone scores below replacement
+    custom = {"QB": 1, "RB": 1, "WR": 1, "TE": 1, "DEF": 1, "K": 1}
+    v = Valuator(start_ts=START, repl_rank_by_pos=custom)
+    assert v.repl_rank_by_pos == custom
+    restored = Valuator.from_state(
+        v.to_state(), last_ts=v.last_ts, repl_rank_by_pos=custom
+    )
+    assert restored.repl_rank_by_pos == custom
+
+
 def test_belief_state_fields():
     s = PlayerBeliefState(
         player_id="p1", guess=100.0, var=5.0, games=2.0, cum_par=3.0,

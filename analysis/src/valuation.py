@@ -67,10 +67,11 @@ DRIFT_PER_DAY = {  # variance added per day since a player's last evidence
     "DEFAULT": 1200,
 }
 
-# Weekly positional replacement ranks (12-team superflex starting guesses).
-# The Nth-best scorer at a position that week is "replacement"; PAR = points
-# minus that score.
-REPL_RANK_BY_POS = {
+# Weekly positional replacement ranks: the Nth-best scorer at a position that
+# week is "replacement"; PAR = points minus that score. This default suits a
+# 12-team superflex league — each Segment in src/config.py carries its own map
+# (passed into Valuator), so other league combos just define theirs there.
+DEFAULT_REPL_RANK_BY_POS = {
     "QB": 24,
     "RB": 30,
     "WR": 36,
@@ -103,9 +104,14 @@ class Belief:
 class Valuator:
     """Holds all player beliefs and advances them through a stream of events."""
 
-    def __init__(self, start_ts: datetime) -> None:
+    def __init__(
+        self,
+        start_ts: datetime,
+        repl_rank_by_pos: dict[str, int] | None = None,
+    ) -> None:
         self.beliefs: dict[str, Belief] = {}
         self.last_ts: datetime = start_ts
+        self.repl_rank_by_pos = dict(repl_rank_by_pos or DEFAULT_REPL_RANK_BY_POS)
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -200,7 +206,7 @@ class Valuator:
         repl: dict[str, float] = {}
         for pos, grp in week_scores.groupby("position"):
             pts = grp["points"].sort_values(ascending=False).to_numpy()
-            n = REPL_RANK_BY_POS.get(pos, 24)
+            n = self.repl_rank_by_pos.get(pos, 24)
             repl[pos] = (
                 float(pts[n - 1])
                 if len(pts) >= n
@@ -251,9 +257,12 @@ class Valuator:
 
     @classmethod
     def from_state(
-        cls, states: list[PlayerBeliefState], last_ts: datetime
+        cls,
+        states: list[PlayerBeliefState],
+        last_ts: datetime,
+        repl_rank_by_pos: dict[str, int] | None = None,
     ) -> "Valuator":
-        v = cls(start_ts=last_ts)
+        v = cls(start_ts=last_ts, repl_rank_by_pos=repl_rank_by_pos)
         for s in states:
             v.beliefs[s.player_id] = Belief(
                 guess=s.guess, var=s.var, position=s.position or "DEFAULT",
@@ -281,6 +290,10 @@ class Valuator:
             .sort_values("value", ascending=False)
             .reset_index(drop=True)
         )
+        df["pos_rank"] = df.groupby("pos").cumcount() + 1
+        df = df[
+            ["player_id", "player", "pos", "pos_rank", "value", "vorp", "sd", "games"]
+        ]
         df.index += 1
         df.index.name = "rank"
         return df
@@ -302,7 +315,8 @@ class Valuator:
 #    weekly aging this tracks form reasonably, but it lightly re-uses information.
 #    A cleaner design tracks a separate performance state with its own precision.
 # 4. Positional replacement ranks and the points->value mapping are approximate.
-#    PAR keeps performance position-aware; tune REPL_RANK_BY_POS to your league.
+#    PAR keeps performance position-aware; tune each Segment's repl_rank_by_pos
+#    (src/config.py) to its league combo.
 # 5. No injury shocks. To handle a season-ending injury, spike that player's var
 #    (e.g. b.var = MAX_VAR) so the next evidence moves them hard and fast.
 # 6. All variance/decay constants are starting guesses. The right way to set them
