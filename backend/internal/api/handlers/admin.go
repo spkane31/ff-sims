@@ -23,43 +23,48 @@ type AdminBacklogResponse struct {
 
 // AdminSegmentRow is one league-format bucket: scoring type x superflex x size.
 type AdminSegmentRow struct {
-	Scoring    string `json:"scoring"`
-	Superflex  bool   `json:"superflex"`
-	LeagueSize string `json:"league_size"`
-	Leagues    int64  `json:"leagues"`
+	Scoring      string `json:"scoring"`
+	Superflex    bool   `json:"superflex"`
+	LeagueSize   string `json:"league_size"`
+	Leagues      int64  `json:"leagues"`
+	Transactions int64  `json:"transactions"`
 }
 
 // AdminSegmentsResponse reports how fetched Sleeper leagues distribute across
 // format segments, used to decide which segments are worth adding to the
 // player-valuation model.
 type AdminSegmentsResponse struct {
-	TotalLeagues int64             `json:"total_leagues"`
-	Segments     []AdminSegmentRow `json:"segments"`
+	TotalLeagues      int64             `json:"total_leagues"`
+	TotalTransactions int64             `json:"total_transactions"`
+	Segments          []AdminSegmentRow `json:"segments"`
 }
 
 // GetAdminSegments buckets all fetched, non-skipped Sleeper leagues by scoring
 // type (PPR / 0.5 PPR / Standard), superflex, and league size (8 / 10 / 12 /
-// 14+), returning per-bucket counts sorted largest first.
+// 14+), returning per-bucket league and transaction counts sorted largest
+// first by league count.
 func GetAdminSegments(c *gin.Context) {
 	const q = `
 		SELECT
 			CASE
-				WHEN ppr = 1 THEN 'PPR'
-				WHEN ppr = 0.5 THEN '0.5 PPR'
-				WHEN ppr = 0 THEN 'Standard'
+				WHEN l.ppr = 1 THEN 'PPR'
+				WHEN l.ppr = 0.5 THEN '0.5 PPR'
+				WHEN l.ppr = 0 THEN 'Standard'
 				ELSE 'Other'
 			END AS scoring,
-			COALESCE(is_superflex, FALSE) AS superflex,
+			COALESCE(l.is_superflex, FALSE) AS superflex,
 			CASE
-				WHEN total_rosters = 8 THEN '8'
-				WHEN total_rosters = 10 THEN '10'
-				WHEN total_rosters = 12 THEN '12'
-				WHEN total_rosters >= 14 THEN '14+'
+				WHEN l.total_rosters = 8 THEN '8'
+				WHEN l.total_rosters = 10 THEN '10'
+				WHEN l.total_rosters = 12 THEN '12'
+				WHEN l.total_rosters >= 14 THEN '14+'
 				ELSE 'Other'
 			END AS league_size,
-			COUNT(*) AS leagues
-		FROM sleeper_leagues
-		WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL
+			COUNT(DISTINCT l.sleeper_league_id) AS leagues,
+			COUNT(t.sleeper_transaction_id) AS transactions
+		FROM sleeper_leagues l
+		LEFT JOIN sleeper_transactions t ON t.sleeper_league_id = l.sleeper_league_id
+		WHERE l.skipped_at IS NULL AND l.last_fetched_at IS NOT NULL
 		GROUP BY scoring, superflex, league_size
 		ORDER BY leagues DESC, scoring, superflex, league_size`
 
@@ -72,6 +77,7 @@ func GetAdminSegments(c *gin.Context) {
 	resp := AdminSegmentsResponse{Segments: rows}
 	for _, r := range rows {
 		resp.TotalLeagues += r.Leagues
+		resp.TotalTransactions += r.Transactions
 	}
 	c.JSON(http.StatusOK, resp)
 }

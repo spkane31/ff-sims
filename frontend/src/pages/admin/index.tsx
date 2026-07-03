@@ -58,6 +58,12 @@ function SegmentDistribution() {
                 <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   % of Total
                 </th>
+                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Transactions
+                </th>
+                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  % of Total
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -76,11 +82,19 @@ function SegmentDistribution() {
                       ? `${((row.leagues / segments.total_leagues) * 100).toFixed(1)}%`
                       : "—"}
                   </td>
+                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                    {row.transactions.toLocaleString()}
+                  </td>
+                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                    {segments.total_transactions > 0
+                      ? `${((row.transactions / segments.total_transactions) * 100).toFixed(1)}%`
+                      : "—"}
+                  </td>
                 </tr>
               ))}
               {segments.segments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
                     No fetched leagues yet.
                   </td>
                 </tr>
@@ -94,6 +108,12 @@ function SegmentDistribution() {
                   </td>
                   <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
                     {segments.total_leagues.toLocaleString()}
+                  </td>
+                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
+                    100%
+                  </td>
+                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
+                    {segments.total_transactions.toLocaleString()}
                   </td>
                   <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
                     100%

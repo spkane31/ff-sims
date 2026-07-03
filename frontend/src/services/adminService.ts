@@ -12,10 +12,12 @@ export interface AdminSegmentRow {
   superflex: boolean;
   league_size: string;
   leagues: number;
+  transactions: number;
 }
 
 export interface AdminSegmentsResponse {
   total_leagues: number;
+  total_transactions: number;
   segments: AdminSegmentRow[];
 }
 
