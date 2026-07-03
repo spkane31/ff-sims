@@ -27,6 +27,20 @@ function sideParts(side: SleeperTrade["sides"][number] | undefined): string[] {
   ];
 }
 
+function formatValue(total: number | null | undefined): string {
+  if (total === null || total === undefined) return "—";
+  return Math.round(total).toLocaleString();
+}
+
+// Index of the side the model thinks won (higher total value), or null when
+// either side has no valuation or the totals tie.
+function winningSide(trade: SleeperTrade): number | null {
+  const a = trade.sides?.[0]?.total_value;
+  const b = trade.sides?.[1]?.total_value;
+  if (a === null || a === undefined || b === null || b === undefined || a === b) return null;
+  return a > b ? 0 : 1;
+}
+
 function filtersFromQuery(query: Record<string, string | string[] | undefined>): SleeperLeagueFilters {
   return {
     league_size: typeof query.league_size === "string" ? query.league_size : undefined,
@@ -83,6 +97,10 @@ export default function SleeperTradesPage() {
           <p className="text-gray-600 dark:text-gray-300 mt-1">
             {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
           </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Values are the model&apos;s player valuations as of the trade date (ppr-sf-12 segment);
+            the highlighted side is the one the model favored. Draft picks are not valued.
+          </p>
         </div>
 
         <LeagueFilterBar filters={filters} onChange={applyFilters} showPicksFilter />
@@ -101,13 +119,15 @@ export default function SleeperTradesPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Season</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value A</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value B</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span>Loading trades…</span>
@@ -116,44 +136,70 @@ export default function SleeperTradesPage() {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     No trades found.
                   </td>
                 </tr>
               ) : (
-                items.map((trade) => (
-                  <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {formatDate(trade.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                      {trade.league_name}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs">
-                      {sideParts(trade.sides?.[0]).length > 0 ? (
-                        <ul className="space-y-0.5">
-                          {sideParts(trade.sides?.[0]).map((part, i) => (
-                            <li key={i}>{part}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs">
-                      {sideParts(trade.sides?.[1]).length > 0 ? (
-                        <ul className="space-y-0.5">
-                          {sideParts(trade.sides?.[1]).map((part, i) => (
-                            <li key={i}>{part}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))
+                items.map((trade) => {
+                  const winner = winningSide(trade);
+                  const winClass = "bg-green-50 dark:bg-green-900/20";
+                  return (
+                    <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        {formatDate(trade.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
+                        {trade.league_name}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
+                      <td
+                        className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
+                      >
+                        {sideParts(trade.sides?.[0]).length > 0 ? (
+                          <ul className="space-y-0.5">
+                            {sideParts(trade.sides?.[0]).map((part, i) => (
+                              <li key={i}>{part}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
+                          winner === 0
+                            ? `${winClass} font-semibold text-green-700 dark:text-green-400`
+                            : "text-gray-600 dark:text-gray-300"
+                        }`}
+                      >
+                        {formatValue(trade.sides?.[0]?.total_value)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 1 ? winClass : ""}`}
+                      >
+                        {sideParts(trade.sides?.[1]).length > 0 ? (
+                          <ul className="space-y-0.5">
+                            {sideParts(trade.sides?.[1]).map((part, i) => (
+                              <li key={i}>{part}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
+                          winner === 1
+                            ? `${winClass} font-semibold text-green-700 dark:text-green-400`
+                            : "text-gray-600 dark:text-gray-300"
+                        }`}
+                      >
+                        {formatValue(trade.sides?.[1]?.total_value)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

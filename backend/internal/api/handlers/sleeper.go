@@ -26,18 +26,24 @@ type SleeperStatsResponse struct {
 	DraftCount  int64 `json:"draft_count"`
 }
 
-// TradeSidePlayer is a single player in one side of a trade.
+// TradeSidePlayer is a single player in one side of a trade. Value is the
+// model's valuation as of the trade date (nil when the model has no snapshot
+// for the player by then).
 type TradeSidePlayer struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Position string `json:"position"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Position string   `json:"position"`
+	Value    *float64 `json:"value,omitempty"`
 }
 
-// TradeSide groups the assets received by one roster in a trade.
+// TradeSide groups the assets received by one roster in a trade. TotalValue
+// sums the valued players on the side (picks are not valued); nil when no
+// player on the side has a valuation.
 type TradeSide struct {
-	RosterID int               `json:"roster_id"`
-	Players  []TradeSidePlayer `json:"players"`
-	Picks    []string          `json:"picks"`
+	RosterID   int               `json:"roster_id"`
+	Players    []TradeSidePlayer `json:"players"`
+	Picks      []string          `json:"picks"`
+	TotalValue *float64          `json:"total_value"`
 }
 
 // SleeperTradeItem is a single row in the trades list.
@@ -85,6 +91,72 @@ type tradePick struct {
 	Season  string `json:"season"`
 	Round   int    `json:"round"`
 	OwnerID int    `json:"owner_id"` // roster receiving the pick
+}
+
+// valuationSegment is the segment whose player_valuations snapshots price the
+// trades list. Matches the default segment in analysis/src/config.py.
+const valuationSegment = "ppr-sf-12"
+
+// valuationSnap is one dated model valuation for a player.
+type valuationSnap struct {
+	SleeperPlayerID string    `gorm:"column:sleeper_player_id"`
+	ValuationDate   time.Time `gorm:"column:valuation_date"`
+	Value           float64   `gorm:"column:value"`
+}
+
+// loadValuationHistory fetches all valuation snapshots up to upTo for the
+// given players, grouped per player and sorted by date ascending.
+func loadValuationHistory(playerIDs []string, upTo time.Time) map[string][]valuationSnap {
+	history := map[string][]valuationSnap{}
+	if len(playerIDs) == 0 {
+		return history
+	}
+	var snaps []valuationSnap
+	database.DB.Table("player_valuations").
+		Select("sleeper_player_id, valuation_date, value").
+		Where("segment = ? AND sleeper_player_id IN ? AND valuation_date <= ?",
+			valuationSegment, playerIDs, upTo).
+		Order("sleeper_player_id, valuation_date ASC").
+		Scan(&snaps)
+	for _, s := range snaps {
+		history[s.SleeperPlayerID] = append(history[s.SleeperPlayerID], s)
+	}
+	return history
+}
+
+// valueAsOf returns the latest snapshot value at or before ts. snaps must be
+// sorted by date ascending.
+func valueAsOf(snaps []valuationSnap, ts time.Time) (float64, bool) {
+	for i := len(snaps) - 1; i >= 0; i-- {
+		if !snaps[i].ValuationDate.After(ts) {
+			return snaps[i].Value, true
+		}
+	}
+	return 0, false
+}
+
+// applySideValues annotates each player with its model value at trade time
+// (from values, keyed by player_id) and sets each side's TotalValue. A side's
+// TotalValue stays nil when none of its players have a valuation.
+func applySideValues(sides []TradeSide, values map[string]float64) {
+	for i := range sides {
+		var total float64
+		var valued bool
+		for j := range sides[i].Players {
+			v, ok := values[sides[i].Players[j].ID]
+			if !ok {
+				continue
+			}
+			val := v
+			sides[i].Players[j].Value = &val
+			total += v
+			valued = true
+		}
+		if valued {
+			t := total
+			sides[i].TotalValue = &t
+		}
+	}
 }
 
 // buildTradeSides groups adds (player_id → roster_id) and draft picks into
@@ -295,15 +367,38 @@ func GetSleeperTrades(c *gin.Context) {
 		}
 	}
 
+	// Batch-load valuation history for this page's players, then resolve each
+	// player's value as of its trade's date.
+	var maxCreated int64
+	for _, r := range rows {
+		if r.CreatedAtSleeper > maxCreated {
+			maxCreated = r.CreatedAtSleeper
+		}
+	}
+	pageIDs := make([]string, 0, len(playerIDSet))
+	for id := range playerIDSet {
+		pageIDs = append(pageIDs, id)
+	}
+	history := loadValuationHistory(pageIDs, time.UnixMilli(maxCreated).UTC())
+
 	items := make([]SleeperTradeItem, len(rows))
 	for i, r := range rows {
+		sides := buildTradeSides(addsPerRow[i], playerLookup, r.DraftPicks)
+		tradeTime := time.UnixMilli(r.CreatedAtSleeper).UTC()
+		values := map[string]float64{}
+		for pid := range addsPerRow[i] {
+			if v, ok := valueAsOf(history[pid], tradeTime); ok {
+				values[pid] = v
+			}
+		}
+		applySideValues(sides, values)
 		items[i] = SleeperTradeItem{
 			ID:         r.SleeperTransactionID,
 			LeagueID:   r.SleeperLeagueID,
 			LeagueName: r.LeagueName,
 			Season:     r.Season,
 			Status:     r.Status,
-			Sides:      buildTradeSides(addsPerRow[i], playerLookup, r.DraftPicks),
+			Sides:      sides,
 			CreatedAt:  r.CreatedAtSleeper,
 		}
 	}
