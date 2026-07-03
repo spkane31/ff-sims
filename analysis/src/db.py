@@ -12,7 +12,7 @@ import pandas as pd
 import psycopg
 from dotenv import load_dotenv
 
-from .config import Segment
+from .config import MIN_ADP_DRAFTS, Segment
 from .models import (
     AverageDraftPosition,
     PlayerBeliefState,
@@ -57,7 +57,10 @@ def rows_to_scores(rows) -> list[WeeklyScore]:
 def get_adp(
     conn: psycopg.Connection, segment: Segment, season: str
 ) -> list[AverageDraftPosition]:
-    """Mean pick_no per player across the segment's completed snake drafts."""
+    """Mean pick_no per player across the segment's completed snake drafts.
+
+    Players drafted in fewer than MIN_ADP_DRAFTS drafts are excluded: a mean
+    over a couple of drafts is a fluke, not a market price."""
     sql = """
         SELECT dp.sleeper_player_id, p.full_name, p.position,
                AVG(dp.pick_no) AS adp
@@ -70,6 +73,7 @@ def get_adp(
           AND d.type = %s AND d.status = 'complete' AND d.season = %s
           AND p.position = ANY(%s)
         GROUP BY dp.sleeper_player_id, p.full_name, p.position
+        HAVING COUNT(*) >= %s
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -82,6 +86,7 @@ def get_adp(
                 segment.draft_type,
                 season,
                 list(FANTASY_POSITIONS),
+                MIN_ADP_DRAFTS,
             ),
         )
         return rows_to_adp(cur.fetchall())

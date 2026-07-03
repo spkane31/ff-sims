@@ -3,6 +3,12 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+# A player must appear in at least this many of a segment's drafts to get an
+# ADP seed. Below this, a mean pick is a fluke (one autodraft accident at pick
+# 17 seeded an Albany TE as the #1 TE); such players enter the model only via
+# real evidence (games/trades), with wide unseen-player uncertainty.
+MIN_ADP_DRAFTS = 5
+
 
 @dataclass(frozen=True)
 class Segment:
