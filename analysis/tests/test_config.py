@@ -1,14 +1,32 @@
 from datetime import datetime
 
-from src.config import DEFAULT_SEGMENT_KEY, PPR_SF_12, SEASONS, SEGMENTS, week_ts
+from src.config import (
+    DEFAULT_SEGMENT_KEY,
+    PPR_SF_10,
+    PPR_SF_12,
+    SEASONS,
+    SEGMENTS,
+    week_ts,
+)
 
 
 def test_segments_registry():
     # master map: every segment is registered under its own key
     assert SEGMENTS["ppr-sf-12"] is PPR_SF_12
+    assert SEGMENTS["ppr-sf-10"] is PPR_SF_10
     assert all(seg.key == key for key, seg in SEGMENTS.items())
     assert DEFAULT_SEGMENT_KEY == "ppr-sf-12"
     assert DEFAULT_SEGMENT_KEY in SEGMENTS
+
+
+def test_ppr_sf_10_segment():
+    assert PPR_SF_10.total_rosters == 10
+    assert PPR_SF_10.is_superflex is True
+    assert PPR_SF_10.ppr == 1.0
+    # replacement ranks scale with league size (2 QB / 2.5 RB / 3 WR per team)
+    assert PPR_SF_10.repl_rank_by_pos == {
+        "QB": 20, "RB": 25, "WR": 30, "TE": 10, "DEF": 10, "K": 10,
+    }
 
 
 def test_segment_ppr_sf_12():

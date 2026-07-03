@@ -1,9 +1,7 @@
 """Segment and season configuration for the valuation pipeline."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-
-from .valuation import DEFAULT_REPL_RANK_BY_POS
 
 
 @dataclass(frozen=True)
@@ -14,13 +12,11 @@ class Segment:
     ppr: float
     is_superflex: bool
     total_rosters: int
-    league_type: str = "redraft"
-    draft_type: str = "snake"  # ADP only; auction pick_no isn't a draft position
     # weekly replacement rank per position for THIS league combo: the Nth-best
     # scorer at a position is "replacement" (feeds PAR in the model)
-    repl_rank_by_pos: dict[str, int] = field(
-        default_factory=lambda: dict(DEFAULT_REPL_RANK_BY_POS)
-    )
+    repl_rank_by_pos: dict[str, int]
+    league_type: str = "redraft"
+    draft_type: str = "snake"  # ADP only; auction pick_no isn't a draft position
 
 
 PPR_SF_12 = Segment(
@@ -38,10 +34,25 @@ PPR_SF_12 = Segment(
     },
 )
 
+PPR_SF_10 = Segment(
+    key="ppr-sf-10",
+    ppr=1.0,
+    is_superflex=True,
+    total_rosters=10,
+    repl_rank_by_pos={  # same per-team ratios as ppr-sf-12, scaled to 10 teams
+        "QB": 20,
+        "RB": 25,
+        "WR": 30,
+        "TE": 10,
+        "DEF": 10,
+        "K": 10,
+    },
+)
+
 # Master registry: every runnable segment, keyed by its segment key. Add new
 # league combos here (e.g. a 1QB or half-PPR Segment) and they become valid
 # --segment values everywhere.
-SEGMENTS: dict[str, Segment] = {s.key: s for s in [PPR_SF_12]}
+SEGMENTS: dict[str, Segment] = {s.key: s for s in [PPR_SF_12, PPR_SF_10]}
 
 DEFAULT_SEGMENT_KEY = PPR_SF_12.key
 

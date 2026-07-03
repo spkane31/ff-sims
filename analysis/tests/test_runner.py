@@ -56,7 +56,10 @@ def test_run_backtest_snapshots_per_event_day():
             {"player_id": "p2", "player_name": "B", "position": "RB", "adp": 10.0},
         ]
     )
-    v = Valuator(start_ts=datetime(2025, 8, 25))
+    v = Valuator(
+        start_ts=datetime(2025, 8, 25),
+        repl_rank_by_pos={"QB": 24, "RB": 30, "WR": 36, "TE": 12},
+    )
     v.seed_from_adp(adp)
     trades = [
         _trade(datetime(2025, 9, 10, 14, 0), "p1", "p2"),

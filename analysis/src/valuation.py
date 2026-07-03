@@ -67,20 +67,6 @@ DRIFT_PER_DAY = {  # variance added per day since a player's last evidence
     "DEFAULT": 1200,
 }
 
-# Weekly positional replacement ranks: the Nth-best scorer at a position that
-# week is "replacement"; PAR = points minus that score. This default suits a
-# 12-team superflex league — each Segment in src/config.py carries its own map
-# (passed into Valuator), so other league combos just define theirs there.
-DEFAULT_REPL_RANK_BY_POS = {
-    "QB": 24,
-    "RB": 30,
-    "WR": 36,
-    "TE": 12,
-    "DEF": 12,
-    "K": 12,
-}
-
-
 def curve(rank: float) -> float:
     """ADP/performance rank -> value on the additive 0..V_TOP scale."""
     return V_TOP * math.exp(-LAMBDA_ADP * (rank - 1.0))
@@ -107,11 +93,14 @@ class Valuator:
     def __init__(
         self,
         start_ts: datetime,
-        repl_rank_by_pos: dict[str, int] | None = None,
+        repl_rank_by_pos: dict[str, int],
     ) -> None:
+        """repl_rank_by_pos: weekly replacement rank per position for the
+        league combo being valued (each Segment in src/config.py defines its
+        own — the Nth-best scorer at a position is "replacement")."""
         self.beliefs: dict[str, Belief] = {}
         self.last_ts: datetime = start_ts
-        self.repl_rank_by_pos = dict(repl_rank_by_pos or DEFAULT_REPL_RANK_BY_POS)
+        self.repl_rank_by_pos = dict(repl_rank_by_pos)
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -260,7 +249,7 @@ class Valuator:
         cls,
         states: list[PlayerBeliefState],
         last_ts: datetime,
-        repl_rank_by_pos: dict[str, int] | None = None,
+        repl_rank_by_pos: dict[str, int],
     ) -> "Valuator":
         v = cls(start_ts=last_ts, repl_rank_by_pos=repl_rank_by_pos)
         for s in states:

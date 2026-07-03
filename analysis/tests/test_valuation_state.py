@@ -2,10 +2,12 @@ from datetime import datetime
 
 import pandas as pd
 
+from src.config import PPR_SF_12
 from src.models import PlayerBeliefState
 from src.valuation import Valuator
 
 START = datetime(2025, 8, 25)
+REPL = PPR_SF_12.repl_rank_by_pos
 
 
 def _adp():
@@ -18,11 +20,11 @@ def _adp():
 
 
 def test_state_round_trip_preserves_rankings():
-    v = Valuator(start_ts=START)
+    v = Valuator(start_ts=START, repl_rank_by_pos=REPL)
     v.seed_from_adp(_adp())
     v.apply_trade(["p1"], ["p2"])
 
-    restored = Valuator.from_state(v.to_state(), last_ts=v.last_ts)
+    restored = Valuator.from_state(v.to_state(), last_ts=v.last_ts, repl_rank_by_pos=REPL)
     assert restored.last_ts == v.last_ts
     orig = v.rankings()
     back = restored.rankings()
@@ -30,7 +32,7 @@ def test_state_round_trip_preserves_rankings():
 
 
 def test_seed_from_adp_skips_existing_players():
-    v = Valuator(start_ts=START)
+    v = Valuator(start_ts=START, repl_rank_by_pos=REPL)
     v.seed_from_adp(_adp())
     before = v.beliefs["p1"].guess
     v.apply_trade(["p1"], ["p2"])  # moves p1 off its seed
@@ -43,12 +45,12 @@ def test_seed_from_adp_skips_existing_players():
 
 
 def test_start_ts_sets_model_clock():
-    v = Valuator(start_ts=START)
+    v = Valuator(start_ts=START, repl_rank_by_pos=REPL)
     assert v.last_ts == START
 
 
 def test_rankings_include_position_rank():
-    v = Valuator(start_ts=START)
+    v = Valuator(start_ts=START, repl_rank_by_pos=REPL)
     v.seed_from_adp(
         pd.DataFrame(
             [

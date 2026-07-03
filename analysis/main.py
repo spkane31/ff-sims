@@ -113,7 +113,8 @@ def _print_rankings(v: Valuator, top: int, source: str) -> None:
 def run_demo(top: int) -> None:
     adp, events = make_demo()
     v = Valuator(
-        start_ts=datetime.combine(SEASON_2025.draft_date, datetime.min.time())
+        start_ts=datetime.combine(SEASON_2025.draft_date, datetime.min.time()),
+        repl_rank_by_pos=SEGMENTS[DEFAULT_SEGMENT_KEY].repl_rank_by_pos,
     )
     v.seed_from_adp(adp)
     v.advance(events)
