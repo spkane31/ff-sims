@@ -19,13 +19,12 @@ function formatDate(unixMs: number): string {
   });
 }
 
-function sideLabel(side: SleeperTrade["sides"][number] | undefined): string {
-  if (!side) return "—";
-  const parts: string[] = [
+function sideParts(side: SleeperTrade["sides"][number] | undefined): string[] {
+  if (!side) return [];
+  return [
     ...(side.players ?? []).map((p) => (p.position ? `${p.name} (${p.position})` : p.name)),
     ...(side.picks ?? []),
   ];
-  return parts.length > 0 ? parts.join(", ") : "—";
 }
 
 function filtersFromQuery(query: Record<string, string | string[] | undefined>): SleeperLeagueFilters {
@@ -129,11 +128,27 @@ export default function SleeperTradesPage() {
                       {trade.league_name}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {sideLabel(trade.sides?.[0])}
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs">
+                      {sideParts(trade.sides?.[0]).length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {sideParts(trade.sides?.[0]).map((part, i) => (
+                            <li key={i}>{part}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        "—"
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                      {sideLabel(trade.sides?.[1])}
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs">
+                      {sideParts(trade.sides?.[1]).length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {sideParts(trade.sides?.[1]).map((part, i) => (
+                            <li key={i}>{part}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 ))
