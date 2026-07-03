@@ -21,6 +21,17 @@ export interface AdminSegmentsResponse {
   segments: AdminSegmentRow[];
 }
 
+export interface AdminTableSizeRow {
+  table_name: string;
+  size_bytes: number;
+  row_estimate: number;
+}
+
+export interface AdminDatabaseSizeResponse {
+  total_bytes: number;
+  tables: AdminTableSizeRow[];
+}
+
 export const adminService = {
   getBacklog: async (): Promise<AdminBacklogResponse> => {
     return apiClient.get<AdminBacklogResponse>('/admin/backlog');
@@ -28,5 +39,9 @@ export const adminService = {
 
   getSegments: async (): Promise<AdminSegmentsResponse> => {
     return apiClient.get<AdminSegmentsResponse>('/admin/segments');
+  },
+
+  getDatabaseSize: async (): Promise<AdminDatabaseSizeResponse> => {
+    return apiClient.get<AdminDatabaseSizeResponse>('/admin/database-size');
   },
 };
