@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from src.config import PPR_SF_12, SEASONS, week_ts
+from src.config import DEFAULT_SEGMENT_KEY, PPR_SF_12, SEASONS, SEGMENTS, week_ts
+
+
+def test_segments_registry():
+    # master map: every segment is registered under its own key
+    assert SEGMENTS["ppr-sf-12"] is PPR_SF_12
+    assert all(seg.key == key for key, seg in SEGMENTS.items())
+    assert DEFAULT_SEGMENT_KEY == "ppr-sf-12"
+    assert DEFAULT_SEGMENT_KEY in SEGMENTS
 
 
 def test_segment_ppr_sf_12():

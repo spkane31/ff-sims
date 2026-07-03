@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from src import db
-from src.config import PPR_SF_12, SEASONS, week_ts
+from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
 from src.runner import adp_frame, build_events, filter_stale, run_backtest
 from src.valuation import RHO, V_TOP, Valuator, curve
@@ -120,8 +120,8 @@ def run_demo(top: int) -> None:
     _print_rankings(v, top, "built-in demo data")
 
 
-def run_db(season: str, backtest: bool, top: int) -> None:
-    segment = PPR_SF_12
+def run_db(segment_key: str, season: str, backtest: bool, top: int) -> None:
+    segment = SEGMENTS[segment_key]
     season_dates = SEASONS[season]
     conn = db.get_connection()
     try:
@@ -220,13 +220,19 @@ def main() -> None:
     ap.add_argument("--backtest", action="store_true",
                     help="full season replay, rewriting all dated snapshots")
     ap.add_argument("--season", default="2025", choices=sorted(SEASONS))
+    ap.add_argument(
+        "--segment",
+        default=DEFAULT_SEGMENT_KEY,
+        choices=sorted(SEGMENTS),
+        help="league segment to value (see SEGMENTS in src/config.py)",
+    )
     ap.add_argument("--top", type=int, default=30, help="how many players to print")
     args = ap.parse_args()
 
     if args.demo:
         run_demo(args.top)
     else:
-        run_db(args.season, args.backtest, args.top)
+        run_db(args.segment, args.season, args.backtest, args.top)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,13 @@ PPR_SF_12 = Segment(
     },
 )
 
+# Master registry: every runnable segment, keyed by its segment key. Add new
+# league combos here (e.g. a 1QB or half-PPR Segment) and they become valid
+# --segment values everywhere.
+SEGMENTS: dict[str, Segment] = {s.key: s for s in [PPR_SF_12]}
+
+DEFAULT_SEGMENT_KEY = PPR_SF_12.key
+
 
 @dataclass(frozen=True)
 class SeasonDates:
