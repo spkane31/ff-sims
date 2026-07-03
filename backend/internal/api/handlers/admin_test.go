@@ -269,3 +269,28 @@ func TestGetAdminBacklog_EmptyTable(t *testing.T) {
 		t.Error("expected nil oldest fetch timestamp for empty table")
 	}
 }
+
+func TestGetAdminDatabaseSize_RequiresPostgres(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/admin/database-size", GetAdminDatabaseSize)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/database-size", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on non-Postgres backend, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if body["error"] == "" {
+		t.Error("expected non-empty error message")
+	}
+}

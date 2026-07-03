@@ -82,6 +82,50 @@ func GetAdminSegments(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// AdminTableSizeRow is one table's on-disk size (including its indexes) and
+// estimated row count.
+type AdminTableSizeRow struct {
+	TableName   string `json:"table_name"`
+	SizeBytes   int64  `json:"size_bytes"`
+	RowEstimate int64  `json:"row_estimate"`
+}
+
+// AdminDatabaseSizeResponse reports the total Postgres database size and a
+// per-table breakdown, used to spot which tables are driving storage growth.
+type AdminDatabaseSizeResponse struct {
+	TotalBytes int64               `json:"total_bytes"`
+	Tables     []AdminTableSizeRow `json:"tables"`
+}
+
+// GetAdminDatabaseSize reports the total on-disk size of the current
+// Postgres database and a per-table breakdown (table + index bytes, sorted
+// largest first) for the public schema.
+func GetAdminDatabaseSize(c *gin.Context) {
+	var totalBytes int64
+	if err := database.DB.Raw(`SELECT pg_database_size(current_database())`).
+		Scan(&totalBytes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	const q = `
+		SELECT
+			relname AS table_name,
+			pg_total_relation_size(relid) AS size_bytes,
+			n_live_tup AS row_estimate
+		FROM pg_catalog.pg_stat_user_tables
+		WHERE schemaname = 'public'
+		ORDER BY size_bytes DESC`
+
+	tables := []AdminTableSizeRow{}
+	if err := database.DB.Raw(q).Scan(&tables).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminDatabaseSizeResponse{TotalBytes: totalBytes, Tables: tables})
+}
+
 // GetAdminBacklog returns how many leagues in the current season (the max
 // value of sleeper_leagues.season) have never had transactions fetched, and
 // the oldest last_transactions_fetched_at among the ones that have.
