@@ -98,8 +98,10 @@ export default function SleeperTradesPage() {
             {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Values are the model&apos;s player valuations as of the trade date (ppr-sf-12 segment);
-            the highlighted side is the one the model favored. Draft picks are not valued.
+            Values are the model&apos;s player valuations as of the trade date, using the valuation
+            segment matching the trade&apos;s league format (full-PPR superflex redraft, 8/10/12-team);
+            trades from other formats show &quot;—&quot;. The highlighted side is the one the model
+            favored. Draft picks are not valued.
           </p>
         </div>
 

@@ -6,6 +6,35 @@ import (
 	"time"
 )
 
+func TestSegmentKeyForLeague(t *testing.T) {
+	ppr, half := 1.0, 0.5
+	sf, oneQB := true, false
+
+	cases := []struct {
+		name       string
+		ppr        *float64
+		superflex  *bool
+		rosters    int
+		leagueType string
+		want       string
+	}{
+		{"ppr superflex 12 redraft", &ppr, &sf, 12, "redraft", "ppr-sf-12"},
+		{"ppr superflex 10 redraft", &ppr, &sf, 10, "redraft", "ppr-sf-10"},
+		{"ppr superflex 8 redraft", &ppr, &sf, 8, "redraft", "ppr-sf-8"},
+		{"unsupported size", &ppr, &sf, 14, "redraft", ""},
+		{"half ppr", &half, &sf, 12, "redraft", ""},
+		{"one qb", &ppr, &oneQB, 12, "redraft", ""},
+		{"dynasty", &ppr, &sf, 12, "dynasty", ""},
+		{"nil ppr", nil, &sf, 12, "redraft", ""},
+		{"nil superflex", &ppr, nil, 12, "redraft", ""},
+	}
+	for _, c := range cases {
+		if got := segmentKeyForLeague(c.ppr, c.superflex, c.rosters, c.leagueType); got != c.want {
+			t.Errorf("%s: expected %q, got %q", c.name, c.want, got)
+		}
+	}
+}
+
 func TestValueAsOf(t *testing.T) {
 	d := func(day int) time.Time { return time.Date(2025, 9, day, 0, 0, 0, 0, time.UTC) }
 	snaps := []valuationSnap{

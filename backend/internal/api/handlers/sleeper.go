@@ -93,9 +93,27 @@ type tradePick struct {
 	OwnerID int    `json:"owner_id"` // roster receiving the pick
 }
 
-// valuationSegment is the segment whose player_valuations snapshots price the
-// trades list. Matches the default segment in analysis/src/config.py.
-const valuationSegment = "ppr-sf-12"
+// knownValuationSegments mirrors SEGMENTS in analysis/src/config.py — the
+// league formats the valuation model runs on. Trades from leagues outside
+// these segments get no values.
+var knownValuationSegments = map[string]struct{}{
+	"ppr-sf-12": {},
+	"ppr-sf-10": {},
+	"ppr-sf-8":  {},
+}
+
+// segmentKeyForLeague maps a league's settings to its valuation segment key,
+// or "" when no segment covers that format.
+func segmentKeyForLeague(ppr *float64, isSuperflex *bool, totalRosters int, leagueType string) string {
+	if ppr == nil || *ppr != 1.0 || isSuperflex == nil || !*isSuperflex || leagueType != "redraft" {
+		return ""
+	}
+	key := fmt.Sprintf("ppr-sf-%d", totalRosters)
+	if _, ok := knownValuationSegments[key]; !ok {
+		return ""
+	}
+	return key
+}
 
 // valuationSnap is one dated model valuation for a player.
 type valuationSnap struct {
@@ -104,18 +122,18 @@ type valuationSnap struct {
 	Value           float64   `gorm:"column:value"`
 }
 
-// loadValuationHistory fetches all valuation snapshots up to upTo for the
-// given players, grouped per player and sorted by date ascending.
-func loadValuationHistory(playerIDs []string, upTo time.Time) map[string][]valuationSnap {
+// loadValuationHistory fetches all of one segment's valuation snapshots up to
+// upTo for the given players, grouped per player and sorted by date ascending.
+func loadValuationHistory(segment string, playerIDs []string, upTo time.Time) map[string][]valuationSnap {
 	history := map[string][]valuationSnap{}
-	if len(playerIDs) == 0 {
+	if segment == "" || len(playerIDs) == 0 {
 		return history
 	}
 	var snaps []valuationSnap
 	database.DB.Table("player_valuations").
 		Select("sleeper_player_id, valuation_date, value").
 		Where("segment = ? AND sleeper_player_id IN ? AND valuation_date <= ?",
-			valuationSegment, playerIDs, upTo).
+			segment, playerIDs, upTo).
 		Order("sleeper_player_id, valuation_date ASC").
 		Scan(&snaps)
 	for _, s := range snaps {
@@ -306,13 +324,17 @@ func GetSleeperTrades(c *gin.Context) {
 		Adds                 json.RawMessage `gorm:"column:adds"`
 		DraftPicks           json.RawMessage `gorm:"column:draft_picks"`
 		CreatedAtSleeper     int64           `gorm:"column:created_at_sleeper"`
+		PPR                  *float64        `gorm:"column:ppr"`
+		IsSuperflex          *bool           `gorm:"column:is_superflex"`
+		TotalRosters         int             `gorm:"column:total_rosters"`
+		LeagueType           string          `gorm:"column:league_type"`
 	}
 
 	var rows []tradeRow
 	var total int64
 
 	db := database.DB.Table("sleeper_transactions t").
-		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.draft_picks, t.created_at_sleeper").
+		Select("t.sleeper_transaction_id, t.sleeper_league_id, l.name as league_name, l.season, t.status, t.adds, t.draft_picks, t.created_at_sleeper, l.ppr, l.is_superflex, l.total_rosters, l.league_type").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 	db = applyLeagueFilters(db, c, "l")
@@ -367,31 +389,51 @@ func GetSleeperTrades(c *gin.Context) {
 		}
 	}
 
-	// Batch-load valuation history for this page's players, then resolve each
-	// player's value as of its trade's date.
+	// Batch-load valuation history for this page's players — one query per
+	// valuation segment present on the page — then resolve each player's value
+	// as of its trade's date. Trades from leagues outside the model's segments
+	// get no values.
 	var maxCreated int64
-	for _, r := range rows {
+	segmentPerRow := make([]string, len(rows))
+	playersBySegment := map[string]map[string]struct{}{}
+	for i, r := range rows {
 		if r.CreatedAtSleeper > maxCreated {
 			maxCreated = r.CreatedAtSleeper
 		}
+		seg := segmentKeyForLeague(r.PPR, r.IsSuperflex, r.TotalRosters, r.LeagueType)
+		segmentPerRow[i] = seg
+		if seg == "" {
+			continue
+		}
+		if playersBySegment[seg] == nil {
+			playersBySegment[seg] = map[string]struct{}{}
+		}
+		for pid := range addsPerRow[i] {
+			playersBySegment[seg][pid] = struct{}{}
+		}
 	}
-	pageIDs := make([]string, 0, len(playerIDSet))
-	for id := range playerIDSet {
-		pageIDs = append(pageIDs, id)
+	historyBySegment := map[string]map[string][]valuationSnap{}
+	for seg, idSet := range playersBySegment {
+		ids := make([]string, 0, len(idSet))
+		for id := range idSet {
+			ids = append(ids, id)
+		}
+		historyBySegment[seg] = loadValuationHistory(seg, ids, time.UnixMilli(maxCreated).UTC())
 	}
-	history := loadValuationHistory(pageIDs, time.UnixMilli(maxCreated).UTC())
 
 	items := make([]SleeperTradeItem, len(rows))
 	for i, r := range rows {
 		sides := buildTradeSides(addsPerRow[i], playerLookup, r.DraftPicks)
-		tradeTime := time.UnixMilli(r.CreatedAtSleeper).UTC()
-		values := map[string]float64{}
-		for pid := range addsPerRow[i] {
-			if v, ok := valueAsOf(history[pid], tradeTime); ok {
-				values[pid] = v
+		if seg := segmentPerRow[i]; seg != "" {
+			tradeTime := time.UnixMilli(r.CreatedAtSleeper).UTC()
+			values := map[string]float64{}
+			for pid := range addsPerRow[i] {
+				if v, ok := valueAsOf(historyBySegment[seg][pid], tradeTime); ok {
+					values[pid] = v
+				}
 			}
+			applySideValues(sides, values)
 		}
-		applySideValues(sides, values)
 		items[i] = SleeperTradeItem{
 			ID:         r.SleeperTransactionID,
 			LeagueID:   r.SleeperLeagueID,
