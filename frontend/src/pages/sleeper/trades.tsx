@@ -9,10 +9,13 @@ const LIMIT = 25;
 
 function formatDate(unixMs: number): string {
   if (!unixMs) return "—";
-  return new Date(unixMs).toLocaleDateString(undefined, {
+  return new Date(unixMs).toLocaleString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -93,7 +96,7 @@ export default function SleeperTradesPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date &amp; Time</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Season</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
