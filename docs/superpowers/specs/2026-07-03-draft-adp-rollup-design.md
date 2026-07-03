@@ -35,12 +35,19 @@ from real Sleeper draft data already being synced.
   (API query), not at rollup time, so the threshold can change later without
   a recompute.
 - **Freshness model**: current-value only. Each daily run upserts one row
-  per (segment, player), overwriting the previous value. No dated history /
-  trend tracking in this iteration.
+  per (segment, season, player), overwriting the previous value. No dated
+  history / trend tracking in this iteration.
 - **Partial filters**: the frontend always sends all three filter values.
   Defaults are `league_size=12`, `scoring_format=ppr`, `superflex=true`
   (segment `12-ppr-sf`) — the same "primary" shape the valuation model
   already treats as default. There is no cross-segment aggregation.
+- **Season**: ADP is computed and stored **per season**, not pooled across
+  seasons — a 2023 draft's picks shouldn't blend with 2025's, since the
+  player pool and situations differ year to year. The rollup keys on
+  `(segment, season, sleeper_player_id)`, mirroring the `(segment, season)`
+  key already used by `valuation_runs`. The frontend gets a season
+  filter/selector alongside league size/scoring/superflex, defaulting to
+  the most recent season that has qualifying draft data.
 
 ## Data model
 
@@ -49,15 +56,17 @@ New migration `backend/migrations/016_draft_adp.sql`, one table:
 ```sql
 CREATE TABLE draft_adp (
     segment           TEXT NOT NULL,
-    sleeper_player_id TEXT NOT NULL,
+    season            TEXT NOT NULL,
+    sleeper_player_id TEXT NOT NULL REFERENCES sleeper_players(sleeper_player_id),
     avg_pick_no       NUMERIC NOT NULL,
     pick_count        INTEGER NOT NULL,
     min_pick_no       INTEGER NOT NULL,
     max_pick_no       INTEGER NOT NULL,
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (segment, sleeper_player_id)
+    PRIMARY KEY (segment, season, sleeper_player_id)
 );
-CREATE INDEX idx_draft_adp_segment_avg_pick ON draft_adp (segment, avg_pick_no);
+CREATE INDEX idx_draft_adp_segment_season_avg_pick
+    ON draft_adp (segment, season, avg_pick_no);
 ```
 
 New GORM model `backend/internal/models/draft_adp.go`:
@@ -65,6 +74,7 @@ New GORM model `backend/internal/models/draft_adp.go`:
 ```go
 type DraftADP struct {
     Segment         string    `gorm:"primaryKey;column:segment"`
+    Season          string    `gorm:"primaryKey;column:season"`
     SleeperPlayerID string    `gorm:"primaryKey;column:sleeper_player_id"`
     AvgPickNo       float64   `gorm:"column:avg_pick_no"`
     PickCount       int       `gorm:"column:pick_count"`
@@ -78,11 +88,13 @@ func (DraftADP) TableName() string { return "draft_adp" }
 Segment key format: `{league_size}-{scoring}-{sf|1qb}`, e.g. `12-ppr-sf`,
 `10-half_ppr-1qb`, `8-standard-sf`. Defined as a fixed list `adpSegments` of
 24 `(leagueSize, scoring, superflex)` tuples — a sibling to, not a reuse of,
-`knownValuationSegments`.
+`knownValuationSegments`. `season` is a separate column/key component
+(matching `sleeper_leagues.season` / `sleeper_drafts.season`, both `TEXT`),
+not folded into the segment string.
 
 ## Rollup computation
 
-Per segment, the rollup query is:
+Per (segment, season) pair, the rollup query is:
 
 ```sql
 SELECT p.sleeper_player_id,
@@ -96,6 +108,7 @@ JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
 WHERE d.status = 'complete'
   AND d.type IN ('snake', 'linear')
   AND l.league_type = 'redraft'
+  AND d.season = <season>
   AND <league_size bucket predicate>
   AND <scoring bucket predicate>
   AND <superflex predicate>
@@ -104,12 +117,22 @@ GROUP BY p.sleeper_player_id
 ```
 
 Results are upserted into `draft_adp` via `clause.OnConflict` on
-`(segment, sleeper_player_id)`, `AssignmentColumns` on the four computed
-fields + `updated_at` — same upsert pattern used elsewhere in
-`internal/activities`. Rows for players who drop out of a segment's
+`(segment, season, sleeper_player_id)`, `AssignmentColumns` on the four
+computed fields + `updated_at` — same upsert pattern used elsewhere in
+`internal/activities`. Rows for players who drop out of a segment/season's
 qualifying draft pool are **not** deleted in this iteration (stale rows just
 age out of relevance since pick_count won't grow) — acceptable for a v1,
 noted as a nit rather than a blocker.
+
+**Which seasons get rolled up:** rather than hardcoding a season list (which
+would need a code change every year), the dispatcher discovers qualifying
+seasons at run time via `SELECT DISTINCT d.season FROM sleeper_drafts d JOIN
+sleeper_leagues l ON ... WHERE d.status='complete' AND d.type IN
+('snake','linear') AND l.league_type='redraft'`. Every (season × segment)
+combination is recomputed daily — with a handful of seasons of Sleeper data
+this is still a small number of children (e.g. 4 seasons × 24 segments =
+96), well within the fire-and-forget child-workflow pattern already used for
+per-league dispatch.
 
 ## Temporal worker
 
@@ -119,17 +142,22 @@ Follows the existing dispatcher → per-unit-child pattern used by
 - `backend/internal/activities/adp_rollup.go`
   - `ADPRollupActivities{DB *gorm.DB}` struct (matches the `*Activities{DB,
     Sleeper}` convention).
-  - `ComputeSegmentADP(ctx, params ComputeSegmentADPParams) error` — runs
-    the query above for one segment and upserts.
+  - `ListADPSeasons(ctx) ([]string, error)` — the `DISTINCT season` query
+    above.
+  - `ComputeSegmentSeasonADP(ctx, params ComputeSegmentSeasonADPParams)
+    error` — runs the rollup query above for one (segment, season) and
+    upserts.
 - `backend/internal/workflows/adp_rollup.go`
-  - `ADPRollupDispatcher(ctx) error` — zero-arg, iterates the 24 segment
-    tuples in-workflow (no activity needed to list them, they're a
-    constant), fires one `SegmentADPRollupWorkflow` child per segment with
+  - `ADPRollupDispatcher(ctx) error` — calls `ListADPSeasons`, then for each
+    returned season crosses it with the 24 constant segment tuples (no
+    activity needed to list segments, they're a constant), firing one
+    `SegmentSeasonADPRollupWorkflow` child per (segment, season) pair with
     `ParentClosePolicy: ABANDON` (matches `DraftSyncDispatcher`).
-  - `SegmentADPRollupWorkflow(ctx, params SegmentADPParams) error` — thin
-    wrapper: one `ComputeSegmentADP` activity call. Logs+continues past a
-    single segment's failure rather than failing the whole dispatch (mirrors
-    `LeagueDraftSyncWorkflow`'s per-pick warn+continue).
+  - `SegmentSeasonADPRollupWorkflow(ctx, params SegmentSeasonADPParams)
+    error` — thin wrapper: one `ComputeSegmentSeasonADP` activity call.
+    Logs+continues past a single (segment, season)'s failure rather than
+    failing the whole dispatch (mirrors `LeagueDraftSyncWorkflow`'s
+    per-pick warn+continue).
 - `backend/internal/workflows/helpers.go`: add `TaskQueueADP =
   "sleeper-adp"`.
 - `backend/cmd/worker/main.go`: register the new task queue's worker
@@ -151,14 +179,19 @@ Query params:
 - `league_size` (one of `8`,`10`,`12`,`14+`; default `12`)
 - `scoring_format` (one of `standard`,`half_ppr`,`ppr`; default `ppr`)
 - `superflex` (`true`/`false`; default `true`)
+- `season` (e.g. `2025`; default: most recent season present in `draft_adp`
+  for the resolved segment — `SELECT MAX(season) FROM draft_adp WHERE
+  segment = ?`)
 - `min_drafts` (int; default `20`)
 - `page`, `limit` (existing pagination convention)
 
-Behavior: build the segment key from the three filters, query `draft_adp`
-where `segment = ? AND pick_count >= ?`, join `sleeper_players` for name /
+Behavior: build the segment key from the three format filters, resolve
+`season` (explicit or defaulted as above), query `draft_adp` where `segment
+= ? AND season = ? AND pick_count >= ?`, join `sleeper_players` for name /
 position / nfl_team, order by `avg_pick_no ASC`, paginate. Response shape
 mirrors the existing paginated list responses (`SleeperADPResponse` with
-`Players`, `Total`, `Page`, `Limit`, `TotalPages`).
+`Players`, `Total`, `Page`, `Limit`, `TotalPages`, plus the resolved
+`Season` so the frontend can reflect it when defaulted).
 
 Route registered in `backend/internal/api/routes.go` next to the other
 `/sleeper/*` routes.
@@ -169,8 +202,8 @@ Repurposes `/sleeper/drafts` in place (same URL/nav entry — this *replaces*
 the old draft-list page per the request, it doesn't add a new route):
 
 - `frontend/src/types/models.ts`: new `SleeperADPFilters` (`league_size`,
-  `scoring_format`, `superflex`) and `SleeperADPResponse`/`SleeperADPItem`
-  types.
+  `scoring_format`, `superflex`, `season`) and
+  `SleeperADPResponse`/`SleeperADPItem` types.
 - `frontend/src/services/sleeperService.ts`: new `getADP(page, limit,
   filters)` following the existing `getDrafts` pattern.
 - `frontend/src/hooks/useSleeperData.ts`: new `useSleeperADP` hook mirroring
@@ -180,11 +213,12 @@ the old draft-list page per the request, it doesn't add a new route):
   API's `avg_pick_no ASC` (best/earliest picks first) — no separate
   client-side sort control needed since the API already orders correctly
   per filter combination.
-- New filter control (three pill groups: league size, scoring, superflex)
-  — a variant of `LeagueFilterBar`'s pill styling, but its own component
-  since `draft_type`/`league_type`/`exclude_picks` don't apply to ADP and
-  `superflex` is boolean rather than one of `LeagueFilterBar`'s
-  string-valued pill groups.
+- New filter control (four pill groups: league size, scoring, superflex,
+  season) — a variant of `LeagueFilterBar`'s pill styling, but its own
+  component since `draft_type`/`league_type`/`exclude_picks` don't apply to
+  ADP, `superflex` is boolean rather than one of `LeagueFilterBar`'s
+  string-valued pill groups, and season options are populated from the
+  API response rather than a fixed list.
 
 ## Testing
 
@@ -192,16 +226,18 @@ the old draft-list page per the request, it doesn't add a new route):
   (`internal/activities/discovery_test.go`'s `newTestDB(t)` helper) — add
   `DraftADP` to its `AutoMigrate` call, seed `sleeper_drafts` /
   `sleeper_leagues` / `sleeper_draft_picks` fixtures covering: qualifying
-  redraft/snake picks, a non-qualifying auction draft, a non-qualifying
-  dynasty league, and a player just under/over the 20-pick threshold (to
-  confirm the threshold is *not* applied at write time — sub-threshold rows
-  should still be upserted).
+  redraft/snake picks across two different seasons (to confirm they don't
+  blend), a non-qualifying auction draft, a non-qualifying dynasty league,
+  and a player just under/over the 20-pick threshold (to confirm the
+  threshold is *not* applied at write time — sub-threshold rows should
+  still be upserted). Also test `ListADPSeasons` returns only seasons with
+  qualifying (redraft/snake/linear) drafts.
 - Workflow: `go.temporal.io/sdk/testsuite`, verifying the dispatcher fires
-  one child per of the 24 segments and that one child's activity failure
-  doesn't abort the others.
+  one child per (season × segment) pair returned by `ListADPSeasons` and
+  that one child's activity failure doesn't abort the others.
 - API handler: table-driven test hitting `GetSleeperADP` with the sqlite
-  test DB, verifying segment defaulting, `min_drafts` filtering, and sort
-  order.
+  test DB, verifying segment defaulting, season defaulting (most recent),
+  explicit season selection, `min_drafts` filtering, and sort order.
 
 ## Out of scope (tracked in #131)
 
