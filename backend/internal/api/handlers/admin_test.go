@@ -21,7 +21,7 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.SleeperLeague{}); err != nil {
+	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -117,24 +117,33 @@ func TestGetAdminSegments_Buckets(t *testing.T) {
 		LastFetchedAt: &now, SkippedAt: &skippedAt,
 	})
 
+	// leagues "a" and "b" (PPR/superflex/12) get 2 and 1 transactions; "c" (0.5 PPR/10) gets none.
+	db.Create(&models.SleeperTransaction{SleeperTransactionID: "tx1", SleeperLeagueID: "a", Type: "trade", Status: "complete"})
+	db.Create(&models.SleeperTransaction{SleeperTransactionID: "tx2", SleeperLeagueID: "a", Type: "waiver", Status: "complete"})
+	db.Create(&models.SleeperTransaction{SleeperTransactionID: "tx3", SleeperLeagueID: "b", Type: "trade", Status: "complete"})
+
 	resp := performGetAdminSegments(t)
 
 	if resp.TotalLeagues != 8 {
 		t.Errorf("expected 8 total leagues, got %d", resp.TotalLeagues)
 	}
+	if resp.TotalTransactions != 3 {
+		t.Errorf("expected 3 total transactions, got %d", resp.TotalTransactions)
+	}
 
 	checks := []struct {
-		scoring   string
-		superflex bool
-		size      string
-		leagues   int64
+		scoring      string
+		superflex    bool
+		size         string
+		leagues      int64
+		transactions int64
 	}{
-		{"PPR", true, "12", 2},
-		{"0.5 PPR", false, "10", 1},
-		{"Standard", false, "8", 1},
-		{"PPR", true, "14+", 2},
-		{"Other", true, "12", 1},
-		{"PPR", false, "Other", 1},
+		{"PPR", true, "12", 2, 3},
+		{"0.5 PPR", false, "10", 1, 0},
+		{"Standard", false, "8", 1, 0},
+		{"PPR", true, "14+", 2, 0},
+		{"Other", true, "12", 1, 0},
+		{"PPR", false, "Other", 1, 0},
 	}
 	for _, c := range checks {
 		row := findSegmentRow(resp.Segments, c.scoring, c.superflex, c.size)
@@ -145,6 +154,10 @@ func TestGetAdminSegments_Buckets(t *testing.T) {
 		if row.Leagues != c.leagues {
 			t.Errorf("row %q/%v/%q: expected %d leagues, got %d",
 				c.scoring, c.superflex, c.size, c.leagues, row.Leagues)
+		}
+		if row.Transactions != c.transactions {
+			t.Errorf("row %q/%v/%q: expected %d transactions, got %d",
+				c.scoring, c.superflex, c.size, c.transactions, row.Transactions)
 		}
 	}
 
