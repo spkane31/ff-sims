@@ -49,4 +49,5 @@ func SetupRouter(r *gin.Engine) {
 	admin.GET("/backlog", handlers.GetAdminBacklog)
 	admin.GET("/segments", handlers.GetAdminSegments)
 	admin.GET("/database-size", handlers.GetAdminDatabaseSize)
+	admin.GET("/discovery-frontier", handlers.GetAdminDiscoveryFrontier)
 }
