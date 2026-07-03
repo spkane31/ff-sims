@@ -3,11 +3,18 @@ import { useAdminBacklog } from "../../hooks/useAdminBacklog";
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
-  const diffHours = diffMs / (1000 * 60 * 60);
-  if (diffHours < 1) return "less than an hour ago";
-  if (diffHours < 24) return `${Math.floor(diffHours)} hour${Math.floor(diffHours) === 1 ? "" : "s"} ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const unit = (n: number, name: string) => `${n} ${name}${n === 1 ? "" : "s"}`;
+
+  if (days > 0) return `${unit(days, "day")} ${unit(hours, "hour")} ago`;
+  if (hours > 0) return `${unit(hours, "hour")} ${unit(minutes, "minute")} ago`;
+  if (minutes > 0) return `${unit(minutes, "minute")} ${unit(seconds, "second")} ago`;
+  return `${unit(seconds, "second")} ago`;
 }
 
 export default function AdminBacklog() {
