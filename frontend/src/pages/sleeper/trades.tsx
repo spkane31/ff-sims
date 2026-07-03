@@ -118,8 +118,9 @@ export default function SleeperTradesPage() {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date &amp; Time</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Season</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">PPR</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">SuperFlex</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League Size</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value A</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
@@ -129,7 +130,7 @@ export default function SleeperTradesPage() {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span>Loading trades…</span>
@@ -138,7 +139,7 @@ export default function SleeperTradesPage() {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     No trades found.
                   </td>
                 </tr>
@@ -151,10 +152,15 @@ export default function SleeperTradesPage() {
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
                         {formatDate(trade.created_at)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                        {trade.league_name}
+                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        {trade.scoring}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{trade.season}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        {trade.superflex ? "Yes" : "No"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        {trade.league_size}
+                      </td>
                       <td
                         className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
                       >

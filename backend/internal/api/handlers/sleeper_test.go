@@ -35,6 +35,45 @@ func TestSegmentKeyForLeague(t *testing.T) {
 	}
 }
 
+func TestFormatScoring(t *testing.T) {
+	ppr, half, std, odd := 1.0, 0.5, 0.0, 0.75
+	cases := []struct {
+		name string
+		ppr  *float64
+		want string
+	}{
+		{"ppr", &ppr, "PPR"},
+		{"half ppr", &half, "0.5 PPR"},
+		{"standard", &std, "Standard"},
+		{"odd value", &odd, "Other"},
+		{"nil", nil, "Other"},
+	}
+	for _, c := range cases {
+		if got := formatScoring(c.ppr); got != c.want {
+			t.Errorf("%s: expected %q, got %q", c.name, c.want, got)
+		}
+	}
+}
+
+func TestFormatLeagueSize(t *testing.T) {
+	cases := []struct {
+		rosters int
+		want    string
+	}{
+		{8, "8"},
+		{10, "10"},
+		{12, "12"},
+		{14, "14+"},
+		{16, "14+"},
+		{9, "Other"},
+	}
+	for _, c := range cases {
+		if got := formatLeagueSize(c.rosters); got != c.want {
+			t.Errorf("rosters=%d: expected %q, got %q", c.rosters, c.want, got)
+		}
+	}
+}
+
 func TestValueAsOf(t *testing.T) {
 	d := func(day int) time.Time { return time.Date(2025, 9, day, 0, 0, 0, 0, time.UTC) }
 	snaps := []valuationSnap{

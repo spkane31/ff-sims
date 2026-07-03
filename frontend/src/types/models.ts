@@ -235,6 +235,9 @@ export interface SleeperTrade {
   league_id: string;
   league_name: string;
   season: string;
+  scoring: string;
+  superflex: boolean;
+  league_size: string;
   status: string;
   sides: TradeSide[];
   created_at: number;

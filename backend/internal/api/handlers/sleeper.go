@@ -52,6 +52,9 @@ type SleeperTradeItem struct {
 	LeagueID   string      `json:"league_id"`
 	LeagueName string      `json:"league_name"`
 	Season     string      `json:"season"`
+	Scoring    string      `json:"scoring"`
+	Superflex  bool        `json:"superflex"`
+	LeagueSize string      `json:"league_size"`
 	Status     string      `json:"status"`
 	Sides      []TradeSide `json:"sides"`
 	CreatedAt  int64       `json:"created_at"`
@@ -100,6 +103,37 @@ var knownValuationSegments = map[string]struct{}{
 	"ppr-sf-12": {},
 	"ppr-sf-10": {},
 	"ppr-sf-8":  {},
+}
+
+// formatScoring maps a league's PPR setting to a display label, matching the
+// buckets used by the admin segment-distribution table.
+func formatScoring(ppr *float64) string {
+	if ppr == nil {
+		return "Other"
+	}
+	switch *ppr {
+	case 1:
+		return "PPR"
+	case 0.5:
+		return "0.5 PPR"
+	case 0:
+		return "Standard"
+	default:
+		return "Other"
+	}
+}
+
+// formatLeagueSize maps a league's roster count to a display label, matching
+// the buckets used by the admin segment-distribution table.
+func formatLeagueSize(totalRosters int) string {
+	switch {
+	case totalRosters == 8, totalRosters == 10, totalRosters == 12:
+		return strconv.Itoa(totalRosters)
+	case totalRosters >= 14:
+		return "14+"
+	default:
+		return "Other"
+	}
 }
 
 // segmentKeyForLeague maps a league's settings to its valuation segment key,
@@ -439,6 +473,9 @@ func GetSleeperTrades(c *gin.Context) {
 			LeagueID:   r.SleeperLeagueID,
 			LeagueName: r.LeagueName,
 			Season:     r.Season,
+			Scoring:    formatScoring(r.PPR),
+			Superflex:  r.IsSuperflex != nil && *r.IsSuperflex,
+			LeagueSize: formatLeagueSize(r.TotalRosters),
 			Status:     r.Status,
 			Sides:      sides,
 			CreatedAt:  r.CreatedAtSleeper,
