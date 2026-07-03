@@ -49,10 +49,25 @@ PPR_SF_10 = Segment(
     },
 )
 
+PPR_SF_8 = Segment(
+    key="ppr-sf-8",
+    ppr=1.0,
+    is_superflex=True,
+    total_rosters=8,
+    repl_rank_by_pos={  # same per-team ratios as ppr-sf-12, scaled to 8 teams
+        "QB": 16,
+        "RB": 20,
+        "WR": 24,
+        "TE": 8,
+        "DEF": 8,
+        "K": 8,
+    },
+)
+
 # Master registry: every runnable segment, keyed by its segment key. Add new
 # league combos here (e.g. a 1QB or half-PPR Segment) and they become valid
 # --segment values everywhere.
-SEGMENTS: dict[str, Segment] = {s.key: s for s in [PPR_SF_12, PPR_SF_10]}
+SEGMENTS: dict[str, Segment] = {s.key: s for s in [PPR_SF_12, PPR_SF_10, PPR_SF_8]}
 
 DEFAULT_SEGMENT_KEY = PPR_SF_12.key
 
