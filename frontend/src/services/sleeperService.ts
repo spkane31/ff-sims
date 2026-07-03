@@ -2,9 +2,10 @@ import { apiClient } from './apiClient';
 import {
   SleeperStats,
   SleeperTradesResponse,
-  SleeperDraftsResponse,
+  SleeperADPResponse,
   SleeperTransactionsResponse,
   SleeperLeagueFilters,
+  SleeperADPFilters,
 } from '../types/models';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -37,12 +38,12 @@ export const sleeperService = {
       `/sleeper/transactions${buildQuery({ page, limit, type: txType || undefined, ...filters })}`
     ),
 
-  getDrafts: (
+  getADP: (
     page = 1,
     limit = 25,
-    filters: SleeperLeagueFilters = {}
-  ): Promise<SleeperDraftsResponse> =>
-    apiClient.get<SleeperDraftsResponse>(
-      `/sleeper/drafts${buildQuery({ page, limit, ...filters })}`
+    filters: SleeperADPFilters = {}
+  ): Promise<SleeperADPResponse> =>
+    apiClient.get<SleeperADPResponse>(
+      `/sleeper/adp${buildQuery({ page, limit, ...filters })}`
     ),
 };
