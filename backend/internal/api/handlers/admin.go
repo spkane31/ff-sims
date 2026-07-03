@@ -21,6 +21,61 @@ type AdminBacklogResponse struct {
 	OldestTransactionsFetchedAt *time.Time `json:"oldest_transactions_fetched_at"`
 }
 
+// AdminSegmentRow is one league-format bucket: scoring type x superflex x size.
+type AdminSegmentRow struct {
+	Scoring    string `json:"scoring"`
+	Superflex  bool   `json:"superflex"`
+	LeagueSize string `json:"league_size"`
+	Leagues    int64  `json:"leagues"`
+}
+
+// AdminSegmentsResponse reports how fetched Sleeper leagues distribute across
+// format segments, used to decide which segments are worth adding to the
+// player-valuation model.
+type AdminSegmentsResponse struct {
+	TotalLeagues int64             `json:"total_leagues"`
+	Segments     []AdminSegmentRow `json:"segments"`
+}
+
+// GetAdminSegments buckets all fetched, non-skipped Sleeper leagues by scoring
+// type (PPR / 0.5 PPR / Standard), superflex, and league size (8 / 10 / 12 /
+// 14+), returning per-bucket counts sorted largest first.
+func GetAdminSegments(c *gin.Context) {
+	const q = `
+		SELECT
+			CASE
+				WHEN ppr = 1 THEN 'PPR'
+				WHEN ppr = 0.5 THEN '0.5 PPR'
+				WHEN ppr = 0 THEN 'Standard'
+				ELSE 'Other'
+			END AS scoring,
+			COALESCE(is_superflex, FALSE) AS superflex,
+			CASE
+				WHEN total_rosters = 8 THEN '8'
+				WHEN total_rosters = 10 THEN '10'
+				WHEN total_rosters = 12 THEN '12'
+				WHEN total_rosters >= 14 THEN '14+'
+				ELSE 'Other'
+			END AS league_size,
+			COUNT(*) AS leagues
+		FROM sleeper_leagues
+		WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL
+		GROUP BY scoring, superflex, league_size
+		ORDER BY leagues DESC, scoring, superflex, league_size`
+
+	rows := []AdminSegmentRow{}
+	if err := database.DB.Raw(q).Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp := AdminSegmentsResponse{Segments: rows}
+	for _, r := range rows {
+		resp.TotalLeagues += r.Leagues
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // GetAdminBacklog returns how many leagues in the current season (the max
 // value of sleeper_leagues.season) have never had transactions fetched, and
 // the oldest last_transactions_fetched_at among the ones that have.

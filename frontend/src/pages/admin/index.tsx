@@ -1,5 +1,6 @@
 import Layout from "../../components/Layout";
 import { useAdminBacklog } from "../../hooks/useAdminBacklog";
+import { useAdminSegments } from "../../hooks/useAdminSegments";
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -15,6 +16,96 @@ function formatRelativeTime(iso: string): string {
   if (hours > 0) return `${unit(hours, "hour")} ${unit(minutes, "minute")} ago`;
   if (minutes > 0) return `${unit(minutes, "minute")} ${unit(seconds, "second")} ago`;
   return `${unit(seconds, "second")} ago`;
+}
+
+function SegmentDistribution() {
+  const { segments, isLoading, error } = useAdminSegments();
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-blue-600 mb-2">Segment Distribution</h2>
+      <p className="text-gray-600 dark:text-gray-300 mb-4">
+        Fetched leagues bucketed by scoring type, superflex, and league size — used to decide
+        which segments are worth adding to the player-valuation model.
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p>Loading segments...</p>
+        </div>
+      )}
+
+      {error && <p className="text-red-600">Failed to load segment distribution.</p>}
+
+      {!isLoading && !error && segments && (
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-800">
+              <tr>
+                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Scoring
+                </th>
+                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Superflex
+                </th>
+                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  League Size
+                </th>
+                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Leagues
+                </th>
+                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  % of Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+              {segments.segments.map((row) => (
+                <tr key={`${row.scoring}-${row.superflex}-${row.league_size}`}>
+                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.scoring}</td>
+                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">
+                    {row.superflex ? "Yes" : "No"}
+                  </td>
+                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.league_size}</td>
+                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                    {row.leagues.toLocaleString()}
+                  </td>
+                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                    {segments.total_leagues > 0
+                      ? `${((row.leagues / segments.total_leagues) * 100).toFixed(1)}%`
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+              {segments.segments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
+                    No fetched leagues yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {segments.segments.length > 0 && (
+              <tfoot className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <td colSpan={3} className="py-2 px-4 font-medium text-gray-800 dark:text-gray-100">
+                    Total
+                  </td>
+                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
+                    {segments.total_leagues.toLocaleString()}
+                  </td>
+                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
+                    100%
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default function AdminBacklog() {
@@ -65,6 +156,8 @@ export default function AdminBacklog() {
             </div>
           </section>
         )}
+
+        <SegmentDistribution />
       </div>
     </Layout>
   );
