@@ -218,12 +218,16 @@ export interface TradeSidePlayer {
   id: string;
   name: string;
   position: string;
+  /** Model valuation as of the trade date; absent when no snapshot exists. */
+  value?: number;
 }
 
 export interface TradeSide {
   roster_id: number;
   players: TradeSidePlayer[];
   picks: string[];
+  /** Sum of valued players on this side (picks unvalued); null when none valued. */
+  total_value: number | null;
 }
 
 export interface SleeperTrade {

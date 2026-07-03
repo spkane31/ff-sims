@@ -3,7 +3,97 @@ package handlers
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
+
+func TestSegmentKeyForLeague(t *testing.T) {
+	ppr, half := 1.0, 0.5
+	sf, oneQB := true, false
+
+	cases := []struct {
+		name       string
+		ppr        *float64
+		superflex  *bool
+		rosters    int
+		leagueType string
+		want       string
+	}{
+		{"ppr superflex 12 redraft", &ppr, &sf, 12, "redraft", "ppr-sf-12"},
+		{"ppr superflex 10 redraft", &ppr, &sf, 10, "redraft", "ppr-sf-10"},
+		{"ppr superflex 8 redraft", &ppr, &sf, 8, "redraft", "ppr-sf-8"},
+		{"unsupported size", &ppr, &sf, 14, "redraft", ""},
+		{"half ppr", &half, &sf, 12, "redraft", ""},
+		{"one qb", &ppr, &oneQB, 12, "redraft", ""},
+		{"dynasty", &ppr, &sf, 12, "dynasty", ""},
+		{"nil ppr", nil, &sf, 12, "redraft", ""},
+		{"nil superflex", &ppr, nil, 12, "redraft", ""},
+	}
+	for _, c := range cases {
+		if got := segmentKeyForLeague(c.ppr, c.superflex, c.rosters, c.leagueType); got != c.want {
+			t.Errorf("%s: expected %q, got %q", c.name, c.want, got)
+		}
+	}
+}
+
+func TestValueAsOf(t *testing.T) {
+	d := func(day int) time.Time { return time.Date(2025, 9, day, 0, 0, 0, 0, time.UTC) }
+	snaps := []valuationSnap{
+		{ValuationDate: d(8), Value: 1000},
+		{ValuationDate: d(15), Value: 1200},
+		{ValuationDate: d(22), Value: 900},
+	}
+
+	if _, ok := valueAsOf(snaps, d(7)); ok {
+		t.Error("expected no value before first snapshot")
+	}
+	if v, ok := valueAsOf(snaps, time.Date(2025, 9, 18, 14, 30, 0, 0, time.UTC)); !ok || v != 1200 {
+		t.Errorf("expected 1200 between snapshots, got %v ok=%v", v, ok)
+	}
+	if v, ok := valueAsOf(snaps, d(8)); !ok || v != 1000 {
+		t.Errorf("expected same-day snapshot 1000, got %v ok=%v", v, ok)
+	}
+	if v, ok := valueAsOf(snaps, d(30)); !ok || v != 900 {
+		t.Errorf("expected latest snapshot 900 after all, got %v ok=%v", v, ok)
+	}
+	if _, ok := valueAsOf(nil, d(30)); ok {
+		t.Error("expected no value for player with no snapshots")
+	}
+}
+
+func TestApplySideValues(t *testing.T) {
+	sides := []TradeSide{
+		{RosterID: 1, Players: []TradeSidePlayer{{ID: "p1"}, {ID: "p2"}}},
+		{RosterID: 2, Players: []TradeSidePlayer{{ID: "p3"}, {ID: "unvalued"}}},
+	}
+	values := map[string]float64{"p1": 5000, "p2": 1500, "p3": 7000}
+
+	applySideValues(sides, values)
+
+	if sides[0].TotalValue == nil || *sides[0].TotalValue != 6500 {
+		t.Errorf("expected side 1 total 6500, got %v", sides[0].TotalValue)
+	}
+	if sides[1].TotalValue == nil || *sides[1].TotalValue != 7000 {
+		t.Errorf("expected side 2 total 7000 (unvalued player skipped), got %v", sides[1].TotalValue)
+	}
+	if sides[0].Players[0].Value == nil || *sides[0].Players[0].Value != 5000 {
+		t.Errorf("expected p1 value 5000, got %v", sides[0].Players[0].Value)
+	}
+	if sides[1].Players[1].Value != nil {
+		t.Errorf("expected nil value for unvalued player, got %v", *sides[1].Players[1].Value)
+	}
+}
+
+func TestApplySideValues_NoValuations(t *testing.T) {
+	sides := []TradeSide{
+		{RosterID: 1, Players: []TradeSidePlayer{{ID: "p1"}}},
+	}
+
+	applySideValues(sides, map[string]float64{})
+
+	if sides[0].TotalValue != nil {
+		t.Errorf("expected nil total when no players valued, got %v", *sides[0].TotalValue)
+	}
+}
 
 func TestBuildTradeSides_TwoRosters(t *testing.T) {
 	adds := map[string]int{

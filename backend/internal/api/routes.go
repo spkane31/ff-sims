@@ -47,4 +47,5 @@ func SetupRouter(r *gin.Engine) {
 
 	admin := v1.Group("/admin")
 	admin.GET("/backlog", handlers.GetAdminBacklog)
+	admin.GET("/segments", handlers.GetAdminSegments)
 }
