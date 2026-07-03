@@ -243,16 +243,6 @@ export interface SleeperTrade {
   created_at: number;
 }
 
-export interface SleeperDraft {
-  id: string;
-  league_id: string;
-  league_name: string;
-  type: string;
-  status: string;
-  season: string;
-  pick_count: number;
-}
-
 export interface SleeperTradesResponse {
   trades: SleeperTrade[];
   total: number;
@@ -261,8 +251,21 @@ export interface SleeperTradesResponse {
   total_pages: number;
 }
 
-export interface SleeperDraftsResponse {
-  drafts: SleeperDraft[];
+export interface SleeperADPItem {
+  sleeper_player_id: string;
+  name: string;
+  position: string;
+  nfl_team: string;
+  avg_pick_no: number;
+  pick_count: number;
+  min_pick_no: number;
+  max_pick_no: number;
+}
+
+export interface SleeperADPResponse {
+  players: SleeperADPItem[];
+  season: string;
+  available_seasons: string[];
   total: number;
   page: number;
   limit: number;
@@ -294,4 +297,11 @@ export interface SleeperLeagueFilters {
   draft_type?: string;
   league_type?: string;
   exclude_picks?: string;
+}
+
+export interface SleeperADPFilters {
+  league_size?: string;
+  scoring_format?: string;
+  superflex?: string;
+  season?: string;
 }
