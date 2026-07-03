@@ -1,6 +1,7 @@
 import Layout from "../../components/Layout";
 import { useAdminBacklog } from "../../hooks/useAdminBacklog";
 import { useAdminSegments } from "../../hooks/useAdminSegments";
+import { useAdminDatabaseSize } from "../../hooks/useAdminDatabaseSize";
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -16,6 +17,14 @@ function formatRelativeTime(iso: string): string {
   if (hours > 0) return `${unit(hours, "hour")} ${unit(minutes, "minute")} ago`;
   if (minutes > 0) return `${unit(minutes, "minute")} ${unit(seconds, "second")} ago`;
   return `${unit(seconds, "second")} ago`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, exponent);
+  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
 function SegmentDistribution() {
@@ -128,6 +137,89 @@ function SegmentDistribution() {
   );
 }
 
+function DatabaseSize() {
+  const { databaseSize, isLoading, error } = useAdminDatabaseSize();
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-blue-600 mb-2">Database Size</h2>
+      <p className="text-gray-600 dark:text-gray-300 mb-4">
+        Total Postgres database size and a per-table breakdown, used to spot which tables are
+        driving storage growth. Per-table sizes include their indexes and won&apos;t sum exactly
+        to the total (which also covers system catalogs and free space).
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p>Loading database size...</p>
+        </div>
+      )}
+
+      {error && <p className="text-red-600">Failed to load database size.</p>}
+
+      {!isLoading && !error && databaseSize && (
+        <>
+          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 mb-4 max-w-xs">
+            <div className="text-3xl font-bold text-blue-600 mb-1">
+              {formatBytes(databaseSize.total_bytes)}
+            </div>
+            <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
+              Total database size
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Table
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Size
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    % of Total
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Rows (est.)
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                {databaseSize.tables.map((row) => (
+                  <tr key={row.table_name}>
+                    <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.table_name}</td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {formatBytes(row.size_bytes)}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {databaseSize.total_bytes > 0
+                        ? `${((row.size_bytes / databaseSize.total_bytes) * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.row_estimate.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+                {databaseSize.tables.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
+                      No tables found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function AdminBacklog() {
   const { backlog, isLoading, error } = useAdminBacklog();
 
@@ -178,6 +270,8 @@ export default function AdminBacklog() {
         )}
 
         <SegmentDistribution />
+
+        <DatabaseSize />
       </div>
     </Layout>
   );
