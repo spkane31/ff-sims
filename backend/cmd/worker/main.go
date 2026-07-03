@@ -43,6 +43,7 @@ func main() {
 	dfa := &activities.DataFetchActivities{DB: database.DB, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
+	aa := &activities.ADPRollupActivities{DB: database.DB}
 
 	// Discovery worker: DiscoveryBatchDispatcher + UserDiscoveryWorkflow
 	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{})
@@ -79,7 +80,16 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw}
+	// ADP worker: ADPRollupDispatcher + SegmentSeasonADPRollupWorkflow
+	adpw := worker.New(c, workflows.TaskQueueADP, worker.Options{
+		MaxConcurrentActivityExecutionSize: 50,
+		MaxConcurrentWorkflowTaskPollers:   10,
+	})
+	adpw.RegisterWorkflow(workflows.ADPRollupDispatcher)
+	adpw.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
+	adpw.RegisterActivity(aa)
+
+	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw, adpw}
 	for _, w := range workers {
 		if err := w.Start(); err != nil {
 			log.Fatalf("worker start: %v", err)

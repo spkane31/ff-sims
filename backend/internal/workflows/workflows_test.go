@@ -9,6 +9,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 
 	"backend/internal/activities"
+	"backend/internal/models"
 	"backend/internal/workflows"
 )
 
@@ -323,5 +324,90 @@ func TestWeekStatsSyncDispatcher_ResolvesSeasonAndSyncs(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// ---- ADPRollupDispatcher ----
+
+func TestADPRollupDispatcher_SpawnsChildPerSeasonSegment(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	ara := &activities.ADPRollupActivities{}
+	env.OnActivity(ara.ListADPSeasons, mock.Anything).Return([]string{"2024"}, nil)
+
+	env.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
+	segments := models.AllADPSegments()
+	if len(segments) != 24 {
+		t.Fatalf("expected 24 segments, got %d", len(segments))
+	}
+	for _, seg := range segments {
+		env.OnWorkflow(workflows.SegmentSeasonADPRollupWorkflow, mock.Anything, workflows.SegmentSeasonADPParams{
+			Segment: seg,
+			Season:  "2024",
+		}).Return(nil)
+	}
+
+	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestADPRollupDispatcher_NoSeasons_NoChildren(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	ara := &activities.ADPRollupActivities{}
+	env.OnActivity(ara.ListADPSeasons, mock.Anything).Return([]string{}, nil)
+
+	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+}
+
+// ---- SegmentSeasonADPRollupWorkflow ----
+
+func TestSegmentSeasonADPRollupWorkflow_CallsComputeActivity(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	seg := models.ADPSegment{LeagueSize: "12", ScoringFormat: "ppr", Superflex: true}
+	ara := &activities.ADPRollupActivities{}
+	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
+		Segment: seg,
+		Season:  "2024",
+	}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
+		Segment: seg,
+		Season:  "2024",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	seg := models.ADPSegment{LeagueSize: "12", ScoringFormat: "ppr", Superflex: true}
+	ara := &activities.ADPRollupActivities{}
+	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
+		Segment: seg,
+		Season:  "2024",
+	}).Return(temporal.NewApplicationError("db error", "DB_ERROR", nil))
+
+	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
+		Segment: seg,
+		Season:  "2024",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError()) // logged and swallowed, not propagated
 	env.AssertExpectations(t)
 }

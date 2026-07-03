@@ -1,5 +1,7 @@
 package activities
 
+import "backend/internal/models"
+
 type GetStaleUsersParams struct {
 	BatchSize int
 }
@@ -67,4 +69,9 @@ type FetchWeekStatsParams struct {
 
 type GetFinalizedWeeksParams struct {
 	Season string
+}
+
+type ComputeSegmentSeasonADPParams struct {
+	Segment models.ADPSegment
+	Season  string
 }

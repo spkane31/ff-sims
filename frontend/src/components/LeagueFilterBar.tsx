@@ -53,14 +53,14 @@ function pillClass(active: boolean) {
   ].join(' ');
 }
 
-interface PillGroupProps {
+export interface PillGroupProps {
   label: string;
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
 }
 
-function PillGroup({ label, options, value, onChange }: PillGroupProps) {
+export function PillGroup({ label, options, value, onChange }: PillGroupProps) {
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mr-0.5">{label}:</span>

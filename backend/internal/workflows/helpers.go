@@ -14,6 +14,7 @@ const (
 	TaskQueueTransactions = "sleeper-transactions"
 	TaskQueuePlayerSync   = "sleeper-player-sync"
 	TaskQueueWeekStats    = "sleeper-week-stats"
+	TaskQueueADP          = "sleeper-adp"
 	BatchSize             = 10
 	SyncBatchSize         = 400
 )

@@ -69,26 +69,6 @@ type SleeperTradesResponse struct {
 	TotalPages int                `json:"total_pages"`
 }
 
-// SleeperDraftItem is a single row in the drafts list.
-type SleeperDraftItem struct {
-	ID         string `json:"id"`
-	LeagueID   string `json:"league_id"`
-	LeagueName string `json:"league_name"`
-	Type       string `json:"type"`
-	Status     string `json:"status"`
-	Season     string `json:"season"`
-	PickCount  int64  `json:"pick_count"`
-}
-
-// SleeperDraftsResponse is the paginated response for GET /api/v1/sleeper/drafts.
-type SleeperDraftsResponse struct {
-	Drafts     []SleeperDraftItem `json:"drafts"`
-	Total      int64              `json:"total"`
-	Page       int                `json:"page"`
-	Limit      int                `json:"limit"`
-	TotalPages int                `json:"total_pages"`
-}
-
 // tradePick is the shape of one entry in the draft_picks JSON array on a Sleeper transaction.
 type tradePick struct {
 	Season  string `json:"season"`
@@ -485,66 +465,6 @@ func GetSleeperTrades(c *gin.Context) {
 	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 	c.JSON(http.StatusOK, SleeperTradesResponse{
 		Trades:     items,
-		Total:      total,
-		Page:       page,
-		Limit:      limit,
-		TotalPages: totalPages,
-	})
-}
-
-// GetSleeperDrafts returns a paginated list of completed Sleeper drafts with pick counts.
-func GetSleeperDrafts(c *gin.Context) {
-	page, limit := parsePagination(c)
-	offset := (page - 1) * limit
-
-	type draftRow struct {
-		SleeperDraftID  string `gorm:"column:sleeper_draft_id"`
-		SleeperLeagueID string `gorm:"column:sleeper_league_id"`
-		LeagueName      string `gorm:"column:league_name"`
-		Type            string `gorm:"column:type"`
-		Status          string `gorm:"column:status"`
-		Season          string `gorm:"column:season"`
-		PickCount       int64  `gorm:"column:pick_count"`
-	}
-
-	var rows []draftRow
-	var total int64
-
-	db := database.DB.Table("sleeper_drafts d").
-		Select("d.sleeper_draft_id, d.sleeper_league_id, l.name as league_name, d.type, d.status, d.season, COUNT(p.pick_no) as pick_count").
-		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
-		Joins("LEFT JOIN sleeper_draft_picks p ON p.sleeper_draft_id = d.sleeper_draft_id").
-		Where("d.status = ?", "complete").
-		Group("d.sleeper_draft_id, d.sleeper_league_id, l.name, d.type, d.status, d.season")
-	db = applyLeagueFilters(db, c, "l")
-
-	if hasLeagueFilters(c) {
-		countDB := database.DB.Table("sleeper_drafts d").
-			Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
-			Where("d.status = ?", "complete")
-		countDB = applyLeagueFilters(countDB, c, "l")
-		countDB.Count(&total)
-	} else {
-		database.DB.Table("sleeper_drafts").Where("status = ?", "complete").Count(&total)
-	}
-	db.Order("d.season DESC, d.created_at DESC").Limit(limit).Offset(offset).Scan(&rows)
-
-	items := make([]SleeperDraftItem, len(rows))
-	for i, r := range rows {
-		items[i] = SleeperDraftItem{
-			ID:         r.SleeperDraftID,
-			LeagueID:   r.SleeperLeagueID,
-			LeagueName: r.LeagueName,
-			Type:       r.Type,
-			Status:     r.Status,
-			Season:     r.Season,
-			PickCount:  r.PickCount,
-		}
-	}
-
-	totalPages := int(math.Ceil(float64(total) / float64(limit)))
-	c.JSON(http.StatusOK, SleeperDraftsResponse{
-		Drafts:     items,
 		Total:      total,
 		Page:       page,
 		Limit:      limit,

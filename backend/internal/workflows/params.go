@@ -1,5 +1,7 @@
 package workflows
 
+import "backend/internal/models"
+
 type UserDiscoveryParams struct {
 	UserID string
 }
@@ -11,4 +13,9 @@ type LeagueSyncParams struct {
 
 type SyncWeekStatsParams struct {
 	Season string
+}
+
+type SegmentSeasonADPParams struct {
+	Segment models.ADPSegment
+	Season  string
 }
