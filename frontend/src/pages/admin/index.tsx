@@ -2,6 +2,7 @@ import Layout from "../../components/Layout";
 import { useAdminBacklog } from "../../hooks/useAdminBacklog";
 import { useAdminSegments } from "../../hooks/useAdminSegments";
 import { useAdminDatabaseSize } from "../../hooks/useAdminDatabaseSize";
+import { useAdminDiscoveryFrontier } from "../../hooks/useAdminDiscoveryFrontier";
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -220,6 +221,127 @@ function DatabaseSize() {
   );
 }
 
+function DiscoveryFrontier() {
+  const { frontier, isLoading, error } = useAdminDiscoveryFrontier();
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-blue-600 mb-2">Discovery Frontier</h2>
+      <p className="text-gray-600 dark:text-gray-300 mb-4">
+        How much of the league/user discovery graph is known but not yet expanded by the
+        recursive discovery workflow — pending counts are the frontier still left to fetch.
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p>Loading discovery frontier...</p>
+        </div>
+      )}
+
+      {error && <p className="text-red-600">Failed to load discovery frontier.</p>}
+
+      {!isLoading && !error && frontier && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-4">
+            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
+              <div className="text-3xl font-bold text-blue-600 mb-1">
+                {frontier.users.total.toLocaleString()}
+              </div>
+              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
+                Users discovered
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
+              <div className="text-3xl font-bold text-blue-600 mb-1">
+                {frontier.users.expanded.toLocaleString()}
+              </div>
+              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
+                Users expanded
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
+              <div className="text-3xl font-bold text-blue-600 mb-1">
+                {frontier.users.pending.toLocaleString()}
+              </div>
+              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
+                Users pending
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
+              <div className="text-3xl font-bold text-blue-600 mb-1">
+                {frontier.users.skipped.toLocaleString()}
+              </div>
+              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
+                Users skipped
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Season
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Total
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Expanded
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Pending
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Skipped
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    % Pending
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                {frontier.leagues_by_season.map((row) => (
+                  <tr key={row.season}>
+                    <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.season}</td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.total.toLocaleString()}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.expanded.toLocaleString()}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.pending.toLocaleString()}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.skipped.toLocaleString()}
+                    </td>
+                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
+                      {row.total > 0 ? `${((row.pending / row.total) * 100).toFixed(1)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {frontier.leagues_by_season.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
+                      No leagues discovered yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function AdminBacklog() {
   const { backlog, isLoading, error } = useAdminBacklog();
 
@@ -272,6 +394,8 @@ export default function AdminBacklog() {
         <SegmentDistribution />
 
         <DatabaseSize />
+
+        <DiscoveryFrontier />
       </div>
     </Layout>
   );

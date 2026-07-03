@@ -126,6 +126,65 @@ func GetAdminDatabaseSize(c *gin.Context) {
 	c.JSON(http.StatusOK, AdminDatabaseSizeResponse{TotalBytes: totalBytes, Tables: tables})
 }
 
+// AdminDiscoveryCounts is a total/expanded/pending/skipped breakdown for one
+// entity type (sleeper_users, or sleeper_leagues within one season).
+type AdminDiscoveryCounts struct {
+	Total    int64 `json:"total"`
+	Expanded int64 `json:"expanded"`
+	Pending  int64 `json:"pending"`
+	Skipped  int64 `json:"skipped"`
+}
+
+// AdminDiscoveryLeagueSeasonRow is the league discovery breakdown for one season.
+type AdminDiscoveryLeagueSeasonRow struct {
+	Season string `json:"season"`
+	AdminDiscoveryCounts
+}
+
+// AdminDiscoveryFrontierResponse reports how much of the league/user discovery
+// graph is known but not yet expanded, used to gauge remaining discovery work.
+type AdminDiscoveryFrontierResponse struct {
+	Users           AdminDiscoveryCounts            `json:"users"`
+	LeaguesBySeason []AdminDiscoveryLeagueSeasonRow `json:"leagues_by_season"`
+}
+
+// GetAdminDiscoveryFrontier reports how many Sleeper users and leagues are
+// known (discovered) but not yet expanded (last_fetched_at IS NULL) by the
+// recursive discovery workflow, i.e. the size of the discovery frontier still
+// left to fetch, plus how many have been expanded or permanently skipped.
+func GetAdminDiscoveryFrontier(c *gin.Context) {
+	var users AdminDiscoveryCounts
+	const userQ = `
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE last_fetched_at IS NOT NULL) AS expanded,
+			COUNT(*) FILTER (WHERE last_fetched_at IS NULL AND skipped_at IS NULL) AS pending,
+			COUNT(*) FILTER (WHERE skipped_at IS NOT NULL) AS skipped
+		FROM sleeper_users`
+	if err := database.DB.Raw(userQ).Scan(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	const leagueQ = `
+		SELECT
+			season,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE last_fetched_at IS NOT NULL) AS expanded,
+			COUNT(*) FILTER (WHERE last_fetched_at IS NULL AND skipped_at IS NULL) AS pending,
+			COUNT(*) FILTER (WHERE skipped_at IS NOT NULL) AS skipped
+		FROM sleeper_leagues
+		GROUP BY season
+		ORDER BY season DESC`
+	rows := []AdminDiscoveryLeagueSeasonRow{}
+	if err := database.DB.Raw(leagueQ).Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminDiscoveryFrontierResponse{Users: users, LeaguesBySeason: rows})
+}
+
 // GetAdminBacklog returns how many leagues in the current season (the max
 // value of sleeper_leagues.season) have never had transactions fetched, and
 // the oldest last_transactions_fetched_at among the ones that have.

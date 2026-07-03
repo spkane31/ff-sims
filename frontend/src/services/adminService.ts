@@ -32,6 +32,22 @@ export interface AdminDatabaseSizeResponse {
   tables: AdminTableSizeRow[];
 }
 
+export interface AdminDiscoveryCounts {
+  total: number;
+  expanded: number;
+  pending: number;
+  skipped: number;
+}
+
+export interface AdminDiscoveryLeagueSeasonRow extends AdminDiscoveryCounts {
+  season: string;
+}
+
+export interface AdminDiscoveryFrontierResponse {
+  users: AdminDiscoveryCounts;
+  leagues_by_season: AdminDiscoveryLeagueSeasonRow[];
+}
+
 export const adminService = {
   getBacklog: async (): Promise<AdminBacklogResponse> => {
     return apiClient.get<AdminBacklogResponse>('/admin/backlog');
@@ -43,5 +59,9 @@ export const adminService = {
 
   getDatabaseSize: async (): Promise<AdminDatabaseSizeResponse> => {
     return apiClient.get<AdminDatabaseSizeResponse>('/admin/database-size');
+  },
+
+  getDiscoveryFrontier: async (): Promise<AdminDiscoveryFrontierResponse> => {
+    return apiClient.get<AdminDiscoveryFrontierResponse>('/admin/discovery-frontier');
   },
 };
