@@ -219,10 +219,11 @@ func hasLeagueFilters(c *gin.Context) bool {
 
 // GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
 // with each trade's adds grouped by roster into named sides.
-// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty).
+// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty), exclude_picks (bool).
 func GetSleeperTrades(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
+	excludePicks := c.Query("exclude_picks") == "true" || c.Query("exclude_picks") == "1"
 
 	type tradeRow struct {
 		SleeperTransactionID string          `gorm:"column:sleeper_transaction_id"`
@@ -243,6 +244,9 @@ func GetSleeperTrades(c *gin.Context) {
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 	db = applyLeagueFilters(db, c, "l")
+	if excludePicks {
+		db = db.Where("t.draft_picks IS NULL OR jsonb_array_length(t.draft_picks) = 0")
+	}
 
 	// When no league-level filters are active, count directly on sleeper_transactions
 	// to avoid a full join across 10M+ rows. The partial index
@@ -250,9 +254,12 @@ func GetSleeperTrades(c *gin.Context) {
 	if hasLeagueFilters(c) {
 		db.Count(&total)
 	} else {
-		database.DB.Model(&models.SleeperTransaction{}).
-			Where("type = ? AND status = ?", "trade", "complete").
-			Count(&total)
+		countDB := database.DB.Model(&models.SleeperTransaction{}).
+			Where("type = ? AND status = ?", "trade", "complete")
+		if excludePicks {
+			countDB = countDB.Where("draft_picks IS NULL OR jsonb_array_length(draft_picks) = 0")
+		}
+		countDB.Count(&total)
 	}
 	db.Order("t.created_at_sleeper DESC").Limit(limit).Offset(offset).Scan(&rows)
 

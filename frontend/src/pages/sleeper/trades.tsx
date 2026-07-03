@@ -33,6 +33,7 @@ function filtersFromQuery(query: Record<string, string | string[] | undefined>):
     scoring_format: typeof query.scoring_format === "string" ? query.scoring_format : undefined,
     draft_type: typeof query.draft_type === "string" ? query.draft_type : undefined,
     league_type: typeof query.league_type === "string" ? query.league_type : undefined,
+    exclude_picks: typeof query.exclude_picks === "string" ? query.exclude_picks : undefined,
   };
 }
 
@@ -64,6 +65,7 @@ export default function SleeperTradesPage() {
     if (next.scoring_format) q.scoring_format = next.scoring_format;
     if (next.draft_type) q.draft_type = next.draft_type;
     if (next.league_type) q.league_type = next.league_type;
+    if (next.exclude_picks) q.exclude_picks = next.exclude_picks;
     router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
   }
 
@@ -83,7 +85,7 @@ export default function SleeperTradesPage() {
           </p>
         </div>
 
-        <LeagueFilterBar filters={filters} onChange={applyFilters} />
+        <LeagueFilterBar filters={filters} onChange={applyFilters} showPicksFilter />
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
