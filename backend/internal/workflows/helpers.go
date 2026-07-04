@@ -15,8 +15,8 @@ const (
 	TaskQueuePlayerSync   = "sleeper-player-sync"
 	TaskQueueWeekStats    = "sleeper-week-stats"
 	TaskQueueADP          = "sleeper-adp"
-	BatchSize             = 100
-	SyncBatchSize         = 100
+	BatchSize             = 150
+	SyncBatchSize         = 150
 )
 
 var defaultActivityOptions = workflow.ActivityOptions{
