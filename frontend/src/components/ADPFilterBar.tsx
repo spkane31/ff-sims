@@ -5,6 +5,8 @@ interface ADPFilterBarProps {
   filters: SleeperADPFilters;
   onChange: (filters: SleeperADPFilters) => void;
   availableSeasons: string[];
+  position: string;
+  onPositionChange: (position: string) => void;
 }
 
 const LEAGUE_SIZES = [
@@ -22,8 +24,17 @@ const SUPERFLEX_OPTIONS = [
   { value: 'true', label: 'Superflex' },
   { value: 'false', label: '1QB' },
 ];
+const POSITIONS = [
+  { value: '', label: 'All' },
+  { value: 'QB', label: 'QB' },
+  { value: 'RB', label: 'RB' },
+  { value: 'WR', label: 'WR' },
+  { value: 'TE', label: 'TE' },
+  { value: 'K', label: 'K' },
+  { value: 'DEF', label: 'DEF' },
+];
 
-export default function ADPFilterBar({ filters, onChange, availableSeasons }: ADPFilterBarProps) {
+export default function ADPFilterBar({ filters, onChange, availableSeasons, position, onPositionChange }: ADPFilterBarProps) {
   function set(key: keyof SleeperADPFilters, value: string) {
     onChange({ ...filters, [key]: value });
   }
@@ -63,6 +74,13 @@ export default function ADPFilterBar({ filters, onChange, availableSeasons }: AD
             onChange={v => set('season', v)}
           />
         )}
+
+        <PillGroup
+          label="Position"
+          options={POSITIONS}
+          value={position}
+          onChange={onPositionChange}
+        />
       </div>
     </div>
   );
