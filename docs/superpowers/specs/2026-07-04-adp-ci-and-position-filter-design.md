@@ -65,12 +65,18 @@ type DraftADP struct {
 
 ### Rollup activity
 
-**Implementation note (added during planning):** the percentile computation was moved from
-SQL (`PERCENTILE_CONT`) to Go, because `adp_rollup_test.go` runs against an in-memory SQLite
-database which has no ordered-set aggregate support. The activity now fetches raw
-`(sleeper_player_id, pick_no)` rows and aggregates avg/min/max/count/percentiles in Go using
-the same linear-interpolation formula `PERCENTILE_CONT` implements, producing identical
-results.
+**Implementation note (added during planning/review):** `PERCENTILE_CONT`/`WITHIN GROUP` is
+Postgres-only syntax with no SQLite equivalent, and `adp_rollup_test.go` runs against an
+in-memory SQLite database. An earlier draft of this change worked around that by fetching raw
+`(sleeper_player_id, pick_no)` rows and aggregating everything (including avg/min/max/count) in
+Go — but that pulls every individual pick into the application on every rollup run, which doesn't
+scale with production draft volume. The final implementation keeps the single grouped SQL
+aggregate query and only appends the two `PERCENTILE_CONT` expressions when
+`a.DB.Dialector.Name() == "postgres"` (see `adpSelectClause` in `adp_rollup.go`); under any other
+dialect (i.e. only ever SQLite, and only in tests) `ci_low_pick_no`/`ci_high_pick_no` stay at
+their zero value, same as the migration's default before the first rollup run. Postgres computes
+the percentiles natively, in the same round trip as avg/min/max/count — no raw pick rows are
+ever transferred to the application.
 
 `backend/internal/activities/adp_rollup.go`, `ComputeSegmentSeasonADP`:
 
