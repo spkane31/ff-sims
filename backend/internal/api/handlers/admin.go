@@ -21,6 +21,36 @@ type AdminBacklogResponse struct {
 	OldestTransactionsFetchedAt *time.Time `json:"oldest_transactions_fetched_at"`
 }
 
+// AdminBacklogBucketRow is one fetch-age bucket for current-season leagues,
+// ordered from "never fetched" through "24h+".
+type AdminBacklogBucketRow struct {
+	Label   string `json:"label"`
+	Leagues int64  `json:"leagues"`
+}
+
+// backlogBucketLabels is the fixed display order for AdminBacklogBucketRow,
+// from "never fetched" through "24h+".
+var backlogBucketLabels = []string{
+	"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
+	"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
+}
+
+// fillBacklogBuckets reorders a sparse (possibly out-of-order) set of bucket
+// rows onto the fixed backlogBucketLabels sequence, zero-filling any label
+// with no matching rows.
+func fillBacklogBuckets(rows []AdminBacklogBucketRow) []AdminBacklogBucketRow {
+	counts := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		counts[r.Label] = r.Leagues
+	}
+
+	filled := make([]AdminBacklogBucketRow, len(backlogBucketLabels))
+	for i, label := range backlogBucketLabels {
+		filled[i] = AdminBacklogBucketRow{Label: label, Leagues: counts[label]}
+	}
+	return filled
+}
+
 // AdminSegmentRow is one league-format bucket: scoring type x superflex x size.
 type AdminSegmentRow struct {
 	Scoring      string `json:"scoring"`

@@ -300,6 +300,50 @@ func TestGetAdminBacklog_EmptyTable(t *testing.T) {
 	}
 }
 
+func TestFillBacklogBuckets_ZeroFillsMissingLabels(t *testing.T) {
+	rows := []AdminBacklogBucketRow{
+		{Label: "24h+", Leagues: 3},
+		{Label: "Never fetched", Leagues: 5},
+	}
+
+	filled := fillBacklogBuckets(rows)
+
+	want := []AdminBacklogBucketRow{
+		{Label: "Never fetched", Leagues: 5},
+		{Label: "0h-3h59m", Leagues: 0},
+		{Label: "4h-7h59m", Leagues: 0},
+		{Label: "8h-11h59m", Leagues: 0},
+		{Label: "12h-15h59m", Leagues: 0},
+		{Label: "16h-19h59m", Leagues: 0},
+		{Label: "20h-23h59m", Leagues: 0},
+		{Label: "24h+", Leagues: 3},
+	}
+	if len(filled) != len(want) {
+		t.Fatalf("expected %d buckets, got %d", len(want), len(filled))
+	}
+	for i, w := range want {
+		if filled[i] != w {
+			t.Errorf("index %d: expected %+v, got %+v", i, w, filled[i])
+		}
+	}
+}
+
+func TestFillBacklogBuckets_EmptyInput(t *testing.T) {
+	filled := fillBacklogBuckets(nil)
+
+	if len(filled) != len(backlogBucketLabels) {
+		t.Fatalf("expected %d buckets, got %d", len(backlogBucketLabels), len(filled))
+	}
+	for i, row := range filled {
+		if row.Leagues != 0 {
+			t.Errorf("index %d: expected 0 leagues, got %d", i, row.Leagues)
+		}
+		if row.Label != backlogBucketLabels[i] {
+			t.Errorf("index %d: expected label %q, got %q", i, backlogBucketLabels[i], row.Label)
+		}
+	}
+}
+
 func TestGetAdminDatabaseSize_RequiresPostgres(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)
