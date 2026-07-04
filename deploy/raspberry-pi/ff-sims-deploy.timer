@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ff-sims-deploy every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=ff-sims-deploy.service
+
+[Install]
+WantedBy=timers.target

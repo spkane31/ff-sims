@@ -1,0 +1,9 @@
+[Unit]
+Description=ff-sims Pi self-update check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{REPO_DIR}}
+ExecStart={{REPO_DIR}}/deploy/raspberry-pi/deploy.sh
