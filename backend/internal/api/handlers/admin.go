@@ -15,10 +15,11 @@ import (
 // AdminBacklogResponse reports the Sleeper transaction-sync backlog for the
 // current season, used to size Temporal worker throughput.
 type AdminBacklogResponse struct {
-	Season                      string     `json:"season"`
-	TotalLeagues                int64      `json:"total_leagues"`
-	NeverFetchedCount           int64      `json:"never_fetched_count"`
-	OldestTransactionsFetchedAt *time.Time `json:"oldest_transactions_fetched_at"`
+	Season                      string                  `json:"season"`
+	TotalLeagues                int64                   `json:"total_leagues"`
+	NeverFetchedCount           int64                   `json:"never_fetched_count"`
+	OldestTransactionsFetchedAt *time.Time              `json:"oldest_transactions_fetched_at"`
+	Buckets                     []AdminBacklogBucketRow `json:"buckets"`
 }
 
 // AdminBacklogBucketRow is one fetch-age bucket for current-season leagues,
@@ -257,6 +258,35 @@ func GetAdminBacklog(c *gin.Context) {
 	if err == nil {
 		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
 	}
+
+	now := time.Now().UTC()
+	const bucketQ = `
+		SELECT
+			CASE
+				WHEN last_transactions_fetched_at IS NULL THEN 'Never fetched'
+				WHEN last_transactions_fetched_at > ? THEN '0h-3h59m'
+				WHEN last_transactions_fetched_at > ? THEN '4h-7h59m'
+				WHEN last_transactions_fetched_at > ? THEN '8h-11h59m'
+				WHEN last_transactions_fetched_at > ? THEN '12h-15h59m'
+				WHEN last_transactions_fetched_at > ? THEN '16h-19h59m'
+				WHEN last_transactions_fetched_at > ? THEN '20h-23h59m'
+				ELSE '24h+'
+			END AS label,
+			COUNT(*) AS leagues
+		FROM sleeper_leagues
+		WHERE season = ? AND skipped_at IS NULL
+		GROUP BY label`
+
+	bucketRows := []AdminBacklogBucketRow{}
+	if err := database.DB.Raw(bucketQ,
+		now.Add(-4*time.Hour), now.Add(-8*time.Hour), now.Add(-12*time.Hour),
+		now.Add(-16*time.Hour), now.Add(-20*time.Hour), now.Add(-24*time.Hour),
+		season,
+	).Scan(&bucketRows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	resp.Buckets = fillBacklogBuckets(bucketRows)
 
 	c.JSON(http.StatusOK, resp)
 }

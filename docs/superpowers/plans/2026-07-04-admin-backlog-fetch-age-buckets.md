@@ -265,7 +265,7 @@ type AdminBacklogResponse struct {
 Then, in `GetAdminBacklog`, replace the final two lines (`c.JSON(http.StatusOK, resp)` and its blank line before, i.e. everything after the `oldestLeague` block) with:
 
 ```go
-	now := time.Now()
+	now := time.Now().UTC()
 	const bucketQ = `
 		SELECT
 			CASE
@@ -315,7 +315,7 @@ So the full end of `GetAdminBacklog` (from the `oldestLeague` check onward) read
 		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 	const bucketQ = `
 		SELECT
 			CASE
