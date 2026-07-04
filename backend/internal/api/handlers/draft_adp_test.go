@@ -85,10 +85,10 @@ func TestGetSleeperADP_DefaultsAndOrdering(t *testing.T) {
 
 	seedADPPlayer(t, db, "p1", "Player One", "RB", "KC")
 	seedADPPlayer(t, db, "p2", "Player Two", "WR", "SF")
-	seedADPRow(t, db, "12-ppr-sf", "2024", "p1", 5.0, 25)
-	seedADPRow(t, db, "12-ppr-sf", "2024", "p2", 2.0, 30)
+	seedADPRow(t, db, "12-ppr-sf", "2025", "p1", 5.0, 25)
+	seedADPRow(t, db, "12-ppr-sf", "2025", "p2", 2.0, 30)
 
-	w, resp := performGetSleeperADP(t, "")
+	w, resp := performGetSleeperADP(t, "?season=2025")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -98,8 +98,8 @@ func TestGetSleeperADP_DefaultsAndOrdering(t *testing.T) {
 	if resp.Players[0].SleeperPlayerID != "p2" {
 		t.Errorf("expected p2 (avg 2.0) ranked first, got %s", resp.Players[0].SleeperPlayerID)
 	}
-	if resp.Season != "2024" {
-		t.Errorf("expected default season 2024, got %q", resp.Season)
+	if resp.Season != "2025" {
+		t.Errorf("expected season 2025, got %q", resp.Season)
 	}
 }
 
@@ -109,10 +109,10 @@ func TestGetSleeperADP_MinDraftsFiltersLowSampleSize(t *testing.T) {
 
 	seedADPPlayer(t, db, "p1", "Under Threshold", "RB", "KC")
 	seedADPPlayer(t, db, "p2", "Over Threshold", "WR", "SF")
-	seedADPRow(t, db, "12-ppr-sf", "2024", "p1", 5.0, 19) // below default min_drafts=20
-	seedADPRow(t, db, "12-ppr-sf", "2024", "p2", 2.0, 20)
+	seedADPRow(t, db, "12-ppr-sf", "2025", "p1", 5.0, 19) // below default min_drafts=20
+	seedADPRow(t, db, "12-ppr-sf", "2025", "p2", 2.0, 20)
 
-	_, resp := performGetSleeperADP(t, "")
+	_, resp := performGetSleeperADP(t, "?season=2025")
 	if len(resp.Players) != 1 || resp.Players[0].SleeperPlayerID != "p2" {
 		t.Errorf("expected only p2 (pick_count >= 20), got %+v", resp.Players)
 	}
@@ -123,32 +123,45 @@ func TestGetSleeperADP_ExplicitFiltersBuildSegmentKey(t *testing.T) {
 	withDraftADPTestDB(t, db)
 
 	seedADPPlayer(t, db, "p1", "Standard 10 Team", "QB", "BUF")
-	seedADPRow(t, db, "10-standard-1qb", "2023", "p1", 3.0, 25)
+	seedADPRow(t, db, "10-standard-1qb", "2025", "p1", 3.0, 25)
 
-	_, resp := performGetSleeperADP(t, "?league_size=10&scoring_format=standard&superflex=false&season=2023")
+	_, resp := performGetSleeperADP(t, "?league_size=10&scoring_format=standard&superflex=false&season=2025")
 	if len(resp.Players) != 1 || resp.Players[0].SleeperPlayerID != "p1" {
-		t.Errorf("expected p1 from 10-standard-1qb/2023, got %+v", resp.Players)
+		t.Errorf("expected p1 from 10-standard-1qb/2025, got %+v", resp.Players)
 	}
 }
 
-func TestGetSleeperADP_SeasonDefaultsToMostRecent(t *testing.T) {
+// TestGetSleeperADP_SeasonListIsHardcoded verifies the available season list
+// and default season come from the hardcoded adpSeasons() list rather than
+// from whichever seasons happen to have draft_adp rows for the resolved
+// segment — a per-segment DB-driven list meant the "available" seasons (and
+// the default picked from them) changed depending on which segment was
+// selected, since thin segments could be missing a season entirely.
+func TestGetSleeperADP_SeasonListIsHardcoded(t *testing.T) {
 	db := newDraftADPTestDB(t)
 	withDraftADPTestDB(t, db)
 
-	seedADPPlayer(t, db, "p-old", "Old Season", "RB", "KC")
-	seedADPPlayer(t, db, "p-new", "New Season", "RB", "KC")
-	seedADPRow(t, db, "12-ppr-sf", "2023", "p-old", 5.0, 25)
-	seedADPRow(t, db, "12-ppr-sf", "2024", "p-new", 5.0, 25)
+	// Seed only a season far outside the hardcoded range; it must not leak
+	// into available_seasons or become reachable as a default.
+	seedADPPlayer(t, db, "p-ancient", "Ancient Season", "RB", "KC")
+	seedADPRow(t, db, "12-ppr-sf", "2019", "p-ancient", 5.0, 25)
 
 	_, resp := performGetSleeperADP(t, "")
-	if resp.Season != "2024" {
-		t.Errorf("expected default season 2024 (most recent), got %q", resp.Season)
+	want := adpSeasons()
+	if len(resp.AvailableSeasons) != len(want) {
+		t.Fatalf("expected available_seasons %v, got %v", want, resp.AvailableSeasons)
 	}
-	if len(resp.Players) != 1 || resp.Players[0].SleeperPlayerID != "p-new" {
-		t.Errorf("expected only 2024's player, got %+v", resp.Players)
+	for i, s := range want {
+		if resp.AvailableSeasons[i] != s {
+			t.Errorf("expected available_seasons %v, got %v", want, resp.AvailableSeasons)
+			break
+		}
 	}
-	if len(resp.AvailableSeasons) != 2 || resp.AvailableSeasons[0] != "2024" || resp.AvailableSeasons[1] != "2023" {
-		t.Errorf("expected available_seasons [2024, 2023], got %v", resp.AvailableSeasons)
+	if resp.Season != want[0] {
+		t.Errorf("expected default season %q (most recent hardcoded), got %q", want[0], resp.Season)
+	}
+	if len(resp.Players) != 0 {
+		t.Errorf("expected no players (2019 data shouldn't be reachable), got %+v", resp.Players)
 	}
 }
 

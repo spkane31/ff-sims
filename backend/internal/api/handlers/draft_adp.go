@@ -4,6 +4,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,6 +39,24 @@ type SleeperADPResponse struct {
 // must appear in for a segment/season before showing up in the ADP list.
 const defaultADPMinDrafts = 20
 
+// firstADPSeason is the earliest season Sleeper draft data is tracked for.
+// The season list is hardcoded rather than queried from draft_adp: which
+// seasons have rows varies by segment (a thin segment may be missing a
+// season entirely), which made the "available" list — and the default
+// season picked from it — flicker depending on which segment was selected.
+const firstADPSeason = 2025
+
+// adpSeasons returns every season from firstADPSeason through the current
+// year, most recent first.
+func adpSeasons() []string {
+	currentYear := time.Now().Year()
+	seasons := make([]string, 0, currentYear-firstADPSeason+1)
+	for y := currentYear; y >= firstADPSeason; y-- {
+		seasons = append(seasons, strconv.Itoa(y))
+	}
+	return seasons
+}
+
 type adpItemRow struct {
 	SleeperPlayerID string  `gorm:"column:sleeper_player_id"`
 	Name            string  `gorm:"column:full_name"`
@@ -54,8 +73,9 @@ type adpItemRow struct {
 // the daily ADP rollup worker.
 // Supports query filters: league_size (8|10|12|14+, default 12),
 // scoring_format (standard|half_ppr|ppr, default ppr), superflex
-// (true|false, default true), season (defaults to the most recent season
-// with data for the resolved segment), min_drafts (default 20).
+// (true|false, default true), season (defaults to the current year;
+// available seasons are hardcoded from firstADPSeason onward, not derived
+// from data), min_drafts (default 20).
 func GetSleeperADP(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
@@ -70,12 +90,7 @@ func GetSleeperADP(c *gin.Context) {
 		minDrafts = v
 	}
 
-	var availableSeasons []string
-	database.DB.Model(&models.DraftADP{}).
-		Where("segment = ?", segment).
-		Distinct("season").
-		Order("season DESC").
-		Pluck("season", &availableSeasons)
+	availableSeasons := adpSeasons()
 
 	season := c.Query("season")
 	if season == "" && len(availableSeasons) > 0 {

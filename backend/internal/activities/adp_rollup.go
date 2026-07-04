@@ -62,10 +62,14 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 	if err := db.Group("p.sleeper_player_id").Scan(&rows).Error; err != nil {
 		return err
 	}
+	if len(rows) == 0 {
+		return nil
+	}
 
 	segmentKey := params.Segment.Key()
-	for _, r := range rows {
-		record := models.DraftADP{
+	records := make([]models.DraftADP, len(rows))
+	for i, r := range rows {
+		records[i] = models.DraftADP{
 			Segment:         segmentKey,
 			Season:          params.Season,
 			SleeperPlayerID: r.SleeperPlayerID,
@@ -74,16 +78,21 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 			MinPickNo:       r.MinPickNo,
 			MaxPickNo:       r.MaxPickNo,
 		}
-		if err := a.DB.WithContext(ctx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "segment"}, {Name: "season"}, {Name: "sleeper_player_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "updated_at",
-			}),
-		}).Create(&record).Error; err != nil {
-			return err
-		}
 	}
-	return nil
+
+	// One batched upsert instead of one round-trip per player: with a large
+	// qualifying draft pool (hundreds of distinct players), a per-row loop
+	// could exceed the activity's StartToCloseTimeout partway through,
+	// leaving only whichever players were reached — in whatever order
+	// Postgres happened to return the GROUP BY in — upserted for that
+	// segment/season, with no rollback. A single batched statement is both
+	// atomic and one round trip instead of hundreds.
+	return a.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "segment"}, {Name: "season"}, {Name: "sleeper_player_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "updated_at",
+		}),
+	}).CreateInBatches(&records, 500).Error
 }
 
 // applySegmentPredicate appends WHERE conditions for one ADP segment's
