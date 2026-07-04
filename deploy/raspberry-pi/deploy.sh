@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORKER_SERVICE="${WORKER_SERVICE:-ff-sims-worker.service}"
+GO_BIN="${GO_BIN:-/usr/local/go/bin/go}"
+[[ -x "$GO_BIN" ]] || GO_BIN="go"
 
 current_and_remote_sha() {
   git -C "$REPO_DIR" fetch origin main --quiet
@@ -13,7 +15,7 @@ current_and_remote_sha() {
 }
 
 build_worker() {
-  (cd "$REPO_DIR/backend" && go build -o worker.new ./cmd/worker)
+  (cd "$REPO_DIR/backend" && "$GO_BIN" build -o worker.new ./cmd/worker)
 }
 
 deploy() {
