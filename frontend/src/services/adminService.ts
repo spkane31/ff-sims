@@ -1,10 +1,16 @@
 import { apiClient } from './apiClient';
 
+export interface AdminBacklogBucketRow {
+  label: string;
+  leagues: number;
+}
+
 export interface AdminBacklogResponse {
   season: string;
   total_leagues: number;
   never_fetched_count: number;
   oldest_transactions_fetched_at: string | null;
+  buckets: AdminBacklogBucketRow[];
 }
 
 export interface AdminSegmentRow {

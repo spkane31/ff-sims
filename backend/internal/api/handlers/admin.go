@@ -15,10 +15,41 @@ import (
 // AdminBacklogResponse reports the Sleeper transaction-sync backlog for the
 // current season, used to size Temporal worker throughput.
 type AdminBacklogResponse struct {
-	Season                      string     `json:"season"`
-	TotalLeagues                int64      `json:"total_leagues"`
-	NeverFetchedCount           int64      `json:"never_fetched_count"`
-	OldestTransactionsFetchedAt *time.Time `json:"oldest_transactions_fetched_at"`
+	Season                      string                  `json:"season"`
+	TotalLeagues                int64                   `json:"total_leagues"`
+	NeverFetchedCount           int64                   `json:"never_fetched_count"`
+	OldestTransactionsFetchedAt *time.Time              `json:"oldest_transactions_fetched_at"`
+	Buckets                     []AdminBacklogBucketRow `json:"buckets"`
+}
+
+// AdminBacklogBucketRow is one fetch-age bucket for current-season leagues,
+// ordered from "never fetched" through "24h+".
+type AdminBacklogBucketRow struct {
+	Label   string `json:"label"`
+	Leagues int64  `json:"leagues"`
+}
+
+// backlogBucketLabels is the fixed display order for AdminBacklogBucketRow,
+// from "never fetched" through "24h+".
+var backlogBucketLabels = []string{
+	"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
+	"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
+}
+
+// fillBacklogBuckets reorders a sparse (possibly out-of-order) set of bucket
+// rows onto the fixed backlogBucketLabels sequence, zero-filling any label
+// with no matching rows.
+func fillBacklogBuckets(rows []AdminBacklogBucketRow) []AdminBacklogBucketRow {
+	counts := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		counts[r.Label] = r.Leagues
+	}
+
+	filled := make([]AdminBacklogBucketRow, len(backlogBucketLabels))
+	for i, label := range backlogBucketLabels {
+		filled[i] = AdminBacklogBucketRow{Label: label, Leagues: counts[label]}
+	}
+	return filled
 }
 
 // AdminSegmentRow is one league-format bucket: scoring type x superflex x size.
@@ -227,6 +258,35 @@ func GetAdminBacklog(c *gin.Context) {
 	if err == nil {
 		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
 	}
+
+	now := time.Now().UTC()
+	const bucketQ = `
+		SELECT
+			CASE
+				WHEN last_transactions_fetched_at IS NULL THEN 'Never fetched'
+				WHEN last_transactions_fetched_at > ? THEN '0h-3h59m'
+				WHEN last_transactions_fetched_at > ? THEN '4h-7h59m'
+				WHEN last_transactions_fetched_at > ? THEN '8h-11h59m'
+				WHEN last_transactions_fetched_at > ? THEN '12h-15h59m'
+				WHEN last_transactions_fetched_at > ? THEN '16h-19h59m'
+				WHEN last_transactions_fetched_at > ? THEN '20h-23h59m'
+				ELSE '24h+'
+			END AS label,
+			COUNT(*) AS leagues
+		FROM sleeper_leagues
+		WHERE season = ? AND skipped_at IS NULL
+		GROUP BY label`
+
+	bucketRows := []AdminBacklogBucketRow{}
+	if err := database.DB.Raw(bucketQ,
+		now.Add(-4*time.Hour), now.Add(-8*time.Hour), now.Add(-12*time.Hour),
+		now.Add(-16*time.Hour), now.Add(-20*time.Hour), now.Add(-24*time.Hour),
+		season,
+	).Scan(&bucketRows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	resp.Buckets = fillBacklogBuckets(bucketRows)
 
 	c.JSON(http.StatusOK, resp)
 }

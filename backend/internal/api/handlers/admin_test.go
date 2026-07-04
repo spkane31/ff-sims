@@ -283,6 +283,72 @@ func TestGetAdminBacklog_ExcludesSkipped(t *testing.T) {
 	}
 }
 
+func TestGetAdminBacklog_Buckets(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+	at := func(d time.Duration) *time.Time {
+		ts := now.Add(d)
+		return &ts
+	}
+
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "never", Season: "2026"})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b0", Season: "2026", LastTransactionsFetchedAt: at(-1 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b4", Season: "2026", LastTransactionsFetchedAt: at(-5 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b8", Season: "2026", LastTransactionsFetchedAt: at(-9 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b12", Season: "2026", LastTransactionsFetchedAt: at(-13 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b16", Season: "2026", LastTransactionsFetchedAt: at(-17 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b20", Season: "2026", LastTransactionsFetchedAt: at(-21 * time.Hour)})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "b24", Season: "2026", LastTransactionsFetchedAt: at(-30 * time.Hour)})
+
+	resp := performGetAdminBacklog(t)
+
+	if len(resp.Buckets) != 8 {
+		t.Fatalf("expected 8 buckets, got %d", len(resp.Buckets))
+	}
+
+	wantOrder := []string{
+		"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
+		"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
+	}
+	for i, label := range wantOrder {
+		if resp.Buckets[i].Label != label {
+			t.Errorf("index %d: expected label %q, got %q", i, label, resp.Buckets[i].Label)
+		}
+		if resp.Buckets[i].Leagues != 1 {
+			t.Errorf("bucket %q: expected 1 league, got %d", label, resp.Buckets[i].Leagues)
+		}
+	}
+}
+
+func TestGetAdminBacklog_BucketsExcludeOtherSeasonsAndSkipped(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+	skippedAt := now
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2026", Season: "2026", LastTransactionsFetchedAt: &now})
+	db.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg-2026-skipped", Season: "2026", LastTransactionsFetchedAt: &now, SkippedAt: &skippedAt,
+	})
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2025", Season: "2025", LastTransactionsFetchedAt: &now})
+
+	resp := performGetAdminBacklog(t)
+
+	if resp.Season != "2026" {
+		t.Fatalf("expected season 2026, got %q", resp.Season)
+	}
+
+	var total int64
+	for _, row := range resp.Buckets {
+		total += row.Leagues
+	}
+	if total != 1 {
+		t.Errorf("expected 1 league counted across buckets (excluding other season + skipped), got %d", total)
+	}
+}
+
 func TestGetAdminBacklog_EmptyTable(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)
@@ -297,6 +363,58 @@ func TestGetAdminBacklog_EmptyTable(t *testing.T) {
 	}
 	if resp.OldestTransactionsFetchedAt != nil {
 		t.Error("expected nil oldest fetch timestamp for empty table")
+	}
+	if len(resp.Buckets) != 8 {
+		t.Fatalf("expected 8 buckets, got %d", len(resp.Buckets))
+	}
+	for _, row := range resp.Buckets {
+		if row.Leagues != 0 {
+			t.Errorf("bucket %q: expected 0 leagues, got %d", row.Label, row.Leagues)
+		}
+	}
+}
+
+func TestFillBacklogBuckets_ZeroFillsMissingLabels(t *testing.T) {
+	rows := []AdminBacklogBucketRow{
+		{Label: "24h+", Leagues: 3},
+		{Label: "Never fetched", Leagues: 5},
+	}
+
+	filled := fillBacklogBuckets(rows)
+
+	want := []AdminBacklogBucketRow{
+		{Label: "Never fetched", Leagues: 5},
+		{Label: "0h-3h59m", Leagues: 0},
+		{Label: "4h-7h59m", Leagues: 0},
+		{Label: "8h-11h59m", Leagues: 0},
+		{Label: "12h-15h59m", Leagues: 0},
+		{Label: "16h-19h59m", Leagues: 0},
+		{Label: "20h-23h59m", Leagues: 0},
+		{Label: "24h+", Leagues: 3},
+	}
+	if len(filled) != len(want) {
+		t.Fatalf("expected %d buckets, got %d", len(want), len(filled))
+	}
+	for i, w := range want {
+		if filled[i] != w {
+			t.Errorf("index %d: expected %+v, got %+v", i, w, filled[i])
+		}
+	}
+}
+
+func TestFillBacklogBuckets_EmptyInput(t *testing.T) {
+	filled := fillBacklogBuckets(nil)
+
+	if len(filled) != len(backlogBucketLabels) {
+		t.Fatalf("expected %d buckets, got %d", len(backlogBucketLabels), len(filled))
+	}
+	for i, row := range filled {
+		if row.Leagues != 0 {
+			t.Errorf("index %d: expected 0 leagues, got %d", i, row.Leagues)
+		}
+		if row.Label != backlogBucketLabels[i] {
+			t.Errorf("index %d: expected label %q, got %q", i, backlogBucketLabels[i], row.Label)
+		}
 	}
 }
 
