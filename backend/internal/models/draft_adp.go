@@ -13,6 +13,8 @@ type DraftADP struct {
 	PickCount       int       `gorm:"column:pick_count"`
 	MinPickNo       int       `gorm:"column:min_pick_no"`
 	MaxPickNo       int       `gorm:"column:max_pick_no"`
+	CILowPickNo     float64   `gorm:"column:ci_low_pick_no"`
+	CIHighPickNo    float64   `gorm:"column:ci_high_pick_no"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 

@@ -2,6 +2,7 @@ package activities_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"gorm.io/gorm"
@@ -102,6 +103,45 @@ func TestComputeSegmentSeasonADP_ComputesAverages(t *testing.T) {
 	}
 	if p2.AvgPickNo != 3 || p2.PickCount != 2 || p2.MinPickNo != 2 || p2.MaxPickNo != 4 {
 		t.Errorf("p2: got avg=%v count=%v min=%v max=%v", p2.AvgPickNo, p2.PickCount, p2.MinPickNo, p2.MaxPickNo)
+	}
+}
+
+// TestComputeSegmentSeasonADP_CIFieldsAreZeroUnderSQLite documents (rather
+// than fully exercises) the 95% CI columns: PERCENTILE_CONT/WITHIN GROUP is
+// Postgres-only syntax with no SQLite equivalent, and this whole test suite
+// runs against an in-memory SQLite DB (newTestDB), so ComputeSegmentSeasonADP
+// only appends the percentile expressions when a.DB.Dialector.Name() ==
+// "postgres" (see adpSelectClause in adp_rollup.go). Under SQLite that means
+// ci_low_pick_no/ci_high_pick_no stay at their zero value here — avg/count/
+// min/max are unaffected and still verified below. The actual Postgres
+// PERCENTILE_CONT query is straightforward SQL verified by review; there is
+// no Postgres instance in this test environment to exercise it against.
+func TestComputeSegmentSeasonADP_CIFieldsAreZeroUnderSQLite(t *testing.T) {
+	db := newTestDB(t)
+	seedADPLeague(t, db, "lg1", 12, 1.0, true, "redraft")
+	for i, pickNo := range []int{1, 2, 3, 4, 5} {
+		draftID := fmt.Sprintf("d%d", i+1)
+		seedADPDraft(t, db, draftID, "lg1", "snake", "complete", "2024")
+		seedADPPick(t, db, draftID, 1, pickNo, "p1")
+	}
+
+	a := &activities.ADPRollupActivities{DB: db}
+	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+		Segment: adpTestSegment,
+		Season:  "2024",
+	}); err != nil {
+		t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+	}
+
+	var row models.DraftADP
+	if err := db.Where("segment = ? AND season = ? AND sleeper_player_id = ?", "12-ppr-sf", "2024", "p1").First(&row).Error; err != nil {
+		t.Fatalf("fetch p1 row: %v", err)
+	}
+	if row.AvgPickNo != 3 || row.PickCount != 5 || row.MinPickNo != 1 || row.MaxPickNo != 5 {
+		t.Errorf("expected avg=3 count=5 min=1 max=5, got avg=%v count=%v min=%v max=%v", row.AvgPickNo, row.PickCount, row.MinPickNo, row.MaxPickNo)
+	}
+	if row.CILowPickNo != 0 || row.CIHighPickNo != 0 {
+		t.Errorf("expected ci_low/ci_high to stay 0 under SQLite (Postgres-only computation), got ci_low=%v ci_high=%v", row.CILowPickNo, row.CIHighPickNo)
 	}
 }
 

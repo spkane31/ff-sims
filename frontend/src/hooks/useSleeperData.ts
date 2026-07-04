@@ -126,3 +126,44 @@ export function useSleeperADP(page: number, limit: number, filters: SleeperADPFi
   useEffect(() => { fetch(); }, [fetch]);
   return { ...state, refetch: fetch };
 }
+
+interface ADPAllState {
+  items: SleeperADPItem[];
+  season: string;
+  availableSeasons: string[];
+  isLoading: boolean;
+  error: Error | null;
+}
+
+export function useSleeperADPAll(filters: SleeperADPFilters = {}) {
+  const [state, setState] = useState<ADPAllState>({
+    items: [], season: '', availableSeasons: [], isLoading: true, error: null,
+  });
+
+  const filtersKey = JSON.stringify(filters);
+
+  const fetch = useCallback(async () => {
+    setState(s => ({ ...s, isLoading: true, error: null }));
+    try {
+      const first = await sleeperService.getADP(1, 100, filters);
+      let items = first.players;
+      for (let page = 2; page <= first.total_pages; page++) {
+        const next = await sleeperService.getADP(page, 100, filters);
+        items = items.concat(next.players);
+      }
+      setState({
+        items,
+        season: first.season,
+        availableSeasons: first.available_seasons,
+        isLoading: false,
+        error: null,
+      });
+    } catch (err) {
+      setState(s => ({ ...s, isLoading: false, error: err instanceof Error ? err : new Error('Failed to fetch ADP') }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { ...state, refetch: fetch };
+}

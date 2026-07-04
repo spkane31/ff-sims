@@ -260,6 +260,8 @@ export interface SleeperADPItem {
   pick_count: number;
   min_pick_no: number;
   max_pick_no: number;
+  ci_low_pick_no: number;
+  ci_high_pick_no: number;
 }
 
 export interface SleeperADPResponse {
