@@ -16,9 +16,10 @@ Docker or a self-hosted CI runner.
 4. Edit `/etc/ff-sims-worker.env` with real values for `DATABASE_URL`,
    `TEMPORAL_NAMESPACE_ENDPOINT`, `TEMPORAL_NAMESPACE`, `TEMPORAL_API_KEY`.
 5. Re-run `make pi-setup` — this time it starts `ff-sims-worker.service` and
-   `ff-sims-deploy.timer`, and prints the Pi's public IP.
+   `ff-sims-deploy.timer`, and prints the Pi's public IPv4 address (e.g. `73.243.246.158`).
 6. Add that IP to the Postgres managed database's trusted sources in the DigitalOcean
-   dashboard — the worker can't reach the database until you do.
+   dashboard — it expects a plain IPv4 address in that format — the worker can't reach the
+   database until you do.
 
 `make pi-setup` is safe to re-run at any point (e.g. after fixing the env file, or after a
 full reinstall) — it picks up wherever it left off.

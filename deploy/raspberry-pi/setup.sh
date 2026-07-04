@@ -88,7 +88,7 @@ install_units() {
 
 print_summary() {
   local ip
-  ip="$(curl -fsSL ifconfig.me || echo "<could not detect>")"
+  ip="$(curl -4 -fsSL ifconfig.me || echo "<could not detect>")"
   cat <<EOF
 
 Setup complete.
