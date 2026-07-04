@@ -1,6 +1,8 @@
 package workflows
 
 import (
+	"fmt"
+
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
@@ -20,6 +22,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 	}
 	for _, uid := range userIDs {
 		cwo := workflow.ChildWorkflowOptions{
+			WorkflowID:        fmt.Sprintf("user-discovery-%s", uid),
 			TaskQueue:         TaskQueueDiscovery,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}

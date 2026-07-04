@@ -1,10 +1,12 @@
 package workflows_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 
@@ -32,6 +34,34 @@ func TestDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+}
+
+func TestDispatcher_ChildWorkflowIDIsUserScoped(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	da := &activities.DiscoveryActivities{}
+	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).
+		Return([]string{"u1", "u2"}, nil)
+
+	env.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
+
+	seenIDs := make(map[string]bool)
+	captureID := func(ctx context.Context) bool {
+		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
+		return true
+	}
+	env.OnActivity(da.FetchUserLeagues, mock.MatchedBy(captureID), activities.FetchUserLeaguesParams{UserID: "u1"}).Return([]string{}, nil)
+	env.OnActivity(da.FetchUserLeagues, mock.MatchedBy(captureID), activities.FetchUserLeaguesParams{UserID: "u2"}).Return([]string{}, nil)
+	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
+	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u2"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, seenIDs["user-discovery-u1"], "expected child workflow ID %q to have been used", "user-discovery-u1")
+	require.True(t, seenIDs["user-discovery-u2"], "expected child workflow ID %q to have been used", "user-discovery-u2")
 }
 
 func TestDispatcher_EmptyBatch(t *testing.T) {
@@ -139,6 +169,34 @@ func TestDraftSyncDispatcher_EmptyBatch(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
+func TestDraftSyncDispatcher_ChildWorkflowIDIsLeagueScoped(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
+		Return([]string{"lg1", "lg2"}, nil)
+
+	env.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
+
+	seenIDs := make(map[string]bool)
+	captureID := func(ctx context.Context) bool {
+		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
+		return true
+	}
+	env.OnActivity(dfa.FetchLeagueDrafts, mock.MatchedBy(captureID), activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).Return([]string{}, nil)
+	env.OnActivity(dfa.FetchLeagueDrafts, mock.MatchedBy(captureID), activities.FetchLeagueDraftsParams{LeagueID: "lg2"}).Return([]string{}, nil)
+	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
+	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg2"}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, seenIDs["draft-sync-lg1"], "expected child workflow ID %q to have been used", "draft-sync-lg1")
+	require.True(t, seenIDs["draft-sync-lg2"], "expected child workflow ID %q to have been used", "draft-sync-lg2")
+}
+
 // ---- LeagueDraftSyncWorkflow ----
 
 func TestLeagueDraftSync_FullPath(t *testing.T) {
@@ -211,6 +269,34 @@ func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+}
+
+func TestTransactionSyncDispatcher_ChildWorkflowIDIsLeagueScoped(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	dfa := &activities.DataFetchActivities{}
+	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
+		Return([]activities.LeagueTransactionState{{LeagueID: "lg1"}, {LeagueID: "lg2"}}, nil)
+
+	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
+
+	seenIDs := make(map[string]bool)
+	captureID := func(ctx context.Context) bool {
+		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
+		return true
+	}
+	env.OnActivity(dfa.FetchLeagueTransactions, mock.MatchedBy(captureID), activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(0, nil)
+	env.OnActivity(dfa.FetchLeagueTransactions, mock.MatchedBy(captureID), activities.FetchLeagueTransactionsParams{LeagueID: "lg2"}).Return(0, nil)
+	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 0}).Return(nil)
+	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg2", MaxLeg: 0}).Return(nil)
+
+	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, seenIDs["transaction-sync-lg1"], "expected child workflow ID %q to have been used", "transaction-sync-lg1")
+	require.True(t, seenIDs["transaction-sync-lg2"], "expected child workflow ID %q to have been used", "transaction-sync-lg2")
 }
 
 // ---- LeagueTransactionSyncWorkflow ----
@@ -353,6 +439,34 @@ func TestADPRollupDispatcher_SpawnsChildPerSeasonSegment(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+}
+
+func TestADPRollupDispatcher_ChildWorkflowIDIsDeterministic(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	ara := &activities.ADPRollupActivities{}
+	env.OnActivity(ara.ListADPSeasons, mock.Anything).Return([]string{"2024"}, nil)
+
+	env.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
+
+	seenIDs := make(map[string]bool)
+	for _, seg := range models.AllADPSegments() {
+		env.OnActivity(ara.ComputeSegmentSeasonADP, mock.MatchedBy(func(ctx context.Context) bool {
+			seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
+			return true
+		}), activities.ComputeSegmentSeasonADPParams{Segment: seg, Season: "2024"}).Return(nil)
+	}
+
+	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	for _, seg := range models.AllADPSegments() {
+		wantID := "2024-" + seg.Key()
+		require.True(t, seenIDs[wantID], "expected child workflow ID %q to have been used", wantID)
+	}
 }
 
 func TestADPRollupDispatcher_NoSeasons_NoChildren(t *testing.T) {

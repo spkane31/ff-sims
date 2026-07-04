@@ -1,6 +1,8 @@
 package workflows
 
 import (
+	"fmt"
+
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
@@ -19,6 +21,7 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 	}
 	for _, s := range states {
 		cwo := workflow.ChildWorkflowOptions{
+			WorkflowID:        fmt.Sprintf("transaction-sync-%s", s.LeagueID),
 			TaskQueue:         TaskQueueTransactions,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}

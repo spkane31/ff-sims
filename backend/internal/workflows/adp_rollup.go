@@ -1,6 +1,8 @@
 package workflows
 
 import (
+	"fmt"
+
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
@@ -24,6 +26,7 @@ func ADPRollupDispatcher(ctx workflow.Context) error {
 	for _, season := range seasons {
 		for _, seg := range models.AllADPSegments() {
 			cwo := workflow.ChildWorkflowOptions{
+				WorkflowID:        fmt.Sprintf("%s-%s", season, seg.Key()),
 				TaskQueue:         TaskQueueADP,
 				ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 			}

@@ -1,6 +1,8 @@
 package workflows
 
 import (
+	"fmt"
+
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
@@ -19,6 +21,7 @@ func DraftSyncDispatcher(ctx workflow.Context) error {
 	}
 	for _, lid := range leagueIDs {
 		cwo := workflow.ChildWorkflowOptions{
+			WorkflowID:        fmt.Sprintf("draft-sync-%s", lid),
 			TaskQueue:         TaskQueueDrafts,
 			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 		}
