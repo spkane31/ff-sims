@@ -55,6 +55,8 @@ func seedADPRow(t *testing.T, db *gorm.DB, segment, season, playerID string, avg
 		PickCount:       pickCount,
 		MinPickNo:       int(avgPick),
 		MaxPickNo:       int(avgPick),
+		CILowPickNo:     avgPick,
+		CIHighPickNo:    avgPick,
 	}).Error; err != nil {
 		t.Fatalf("seed adp row %s/%s/%s: %v", segment, season, playerID, err)
 	}
@@ -162,6 +164,38 @@ func TestGetSleeperADP_SeasonListIsHardcoded(t *testing.T) {
 	}
 	if len(resp.Players) != 0 {
 		t.Errorf("expected no players (2019 data shouldn't be reachable), got %+v", resp.Players)
+	}
+}
+
+func TestGetSleeperADP_IncludesCIFields(t *testing.T) {
+	db := newDraftADPTestDB(t)
+	withDraftADPTestDB(t, db)
+
+	seedADPPlayer(t, db, "p1", "Player One", "RB", "KC")
+	if err := db.Create(&models.DraftADP{
+		Segment:         "12-ppr-sf",
+		Season:          "2025",
+		SleeperPlayerID: "p1",
+		AvgPickNo:       10.0,
+		PickCount:       25,
+		MinPickNo:       2,
+		MaxPickNo:       28,
+		CILowPickNo:     4.5,
+		CIHighPickNo:    20.5,
+	}).Error; err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	_, resp := performGetSleeperADP(t, "?season=2025")
+	if len(resp.Players) != 1 {
+		t.Fatalf("expected 1 player, got %d", len(resp.Players))
+	}
+	got := resp.Players[0]
+	if got.MinPickNo != 2 || got.MaxPickNo != 28 {
+		t.Errorf("expected min=2 max=28, got min=%v max=%v", got.MinPickNo, got.MaxPickNo)
+	}
+	if got.CILowPickNo != 4.5 || got.CIHighPickNo != 20.5 {
+		t.Errorf("expected ci_low=4.5 ci_high=20.5, got ci_low=%v ci_high=%v", got.CILowPickNo, got.CIHighPickNo)
 	}
 }
 

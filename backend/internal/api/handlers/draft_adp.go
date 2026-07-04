@@ -22,6 +22,8 @@ type SleeperADPItem struct {
 	PickCount       int     `json:"pick_count"`
 	MinPickNo       int     `json:"min_pick_no"`
 	MaxPickNo       int     `json:"max_pick_no"`
+	CILowPickNo     float64 `json:"ci_low_pick_no"`
+	CIHighPickNo    float64 `json:"ci_high_pick_no"`
 }
 
 // SleeperADPResponse is the paginated response for GET /api/v1/sleeper/adp.
@@ -66,6 +68,8 @@ type adpItemRow struct {
 	PickCount       int     `gorm:"column:pick_count"`
 	MinPickNo       int     `gorm:"column:min_pick_no"`
 	MaxPickNo       int     `gorm:"column:max_pick_no"`
+	CILowPickNo     float64 `gorm:"column:ci_low_pick_no"`
+	CIHighPickNo    float64 `gorm:"column:ci_high_pick_no"`
 }
 
 // GetSleeperADP returns a paginated, ADP-ranked player list for one
@@ -104,7 +108,7 @@ func GetSleeperADP(c *gin.Context) {
 
 	var rows []adpItemRow
 	database.DB.Table("draft_adp a").
-		Select("a.sleeper_player_id, p.full_name, p.position, p.nfl_team, a.avg_pick_no, a.pick_count, a.min_pick_no, a.max_pick_no").
+		Select("a.sleeper_player_id, p.full_name, p.position, p.nfl_team, a.avg_pick_no, a.pick_count, a.min_pick_no, a.max_pick_no, a.ci_low_pick_no, a.ci_high_pick_no").
 		Joins("JOIN sleeper_players p ON p.sleeper_player_id = a.sleeper_player_id").
 		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts).
 		Order("a.avg_pick_no ASC").
@@ -122,6 +126,8 @@ func GetSleeperADP(c *gin.Context) {
 			PickCount:       r.PickCount,
 			MinPickNo:       r.MinPickNo,
 			MaxPickNo:       r.MaxPickNo,
+			CILowPickNo:     r.CILowPickNo,
+			CIHighPickNo:    r.CIHighPickNo,
 		}
 	}
 

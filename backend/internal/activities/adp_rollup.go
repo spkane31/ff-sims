@@ -40,6 +40,34 @@ type adpRow struct {
 	PickCount       int     `gorm:"column:pick_count"`
 	MinPickNo       int     `gorm:"column:min_pick_no"`
 	MaxPickNo       int     `gorm:"column:max_pick_no"`
+	CILowPickNo     float64 `gorm:"column:ci_low_pick_no"`
+	CIHighPickNo    float64 `gorm:"column:ci_high_pick_no"`
+}
+
+// baseADPSelect computes avg/count/min/max with ordinary aggregate functions,
+// supported identically by every SQL dialect this project runs against.
+const baseADPSelect = "p.sleeper_player_id, AVG(p.pick_no) AS avg_pick_no, COUNT(*) AS pick_count, MIN(p.pick_no) AS min_pick_no, MAX(p.pick_no) AS max_pick_no"
+
+// postgresPercentileSelect adds the 95% CI via Postgres's native ordered-set
+// aggregate. This computes the percentile inside Postgres from the indexed
+// join, in the same single grouped query as the other stats — no per-pick
+// rows are ever pulled into the application, which matters at production
+// scale (thousands of qualifying drafts per segment/season).
+const postgresPercentileSelect = ", PERCENTILE_CONT(0.025) WITHIN GROUP (ORDER BY p.pick_no) AS ci_low_pick_no, PERCENTILE_CONT(0.975) WITHIN GROUP (ORDER BY p.pick_no) AS ci_high_pick_no"
+
+// adpSelectClause returns the Select expression for ComputeSegmentSeasonADP's
+// aggregate query. PERCENTILE_CONT/WITHIN GROUP is Postgres-only syntax with
+// no SQLite equivalent, and this activity's test suite runs against an
+// in-memory SQLite DB (see newTestDB), so the percentile expressions are
+// only appended for the "postgres" dialect. Under any other dialect (i.e.
+// only ever SQLite, and only ever in tests) ci_low_pick_no/ci_high_pick_no
+// are left at their zero value — the same default the 017 migration backfills
+// existing rows with — and are never asserted on by the test suite.
+func adpSelectClause(dialect string) string {
+	if dialect == "postgres" {
+		return baseADPSelect + postgresPercentileSelect
+	}
+	return baseADPSelect
 }
 
 // ComputeSegmentSeasonADP computes ADP for every player picked in qualifying
@@ -50,7 +78,7 @@ type adpRow struct {
 func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, params ComputeSegmentSeasonADPParams) error {
 	db := a.DB.WithContext(ctx).
 		Table("sleeper_draft_picks p").
-		Select("p.sleeper_player_id, AVG(p.pick_no) AS avg_pick_no, COUNT(*) AS pick_count, MIN(p.pick_no) AS min_pick_no, MAX(p.pick_no) AS max_pick_no").
+		Select(adpSelectClause(a.DB.Dialector.Name())).
 		Joins("JOIN sleeper_drafts d ON d.sleeper_draft_id = p.sleeper_draft_id").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
 		Where("d.status = ? AND d.type IN ? AND l.league_type = ? AND d.season = ?",
@@ -77,6 +105,8 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 			PickCount:       r.PickCount,
 			MinPickNo:       r.MinPickNo,
 			MaxPickNo:       r.MaxPickNo,
+			CILowPickNo:     r.CILowPickNo,
+			CIHighPickNo:    r.CIHighPickNo,
 		}
 	}
 
@@ -90,7 +120,7 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 	return a.DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "segment"}, {Name: "season"}, {Name: "sleeper_player_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "updated_at",
+			"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "ci_low_pick_no", "ci_high_pick_no", "updated_at",
 		}),
 	}).CreateInBatches(&records, 500).Error
 }

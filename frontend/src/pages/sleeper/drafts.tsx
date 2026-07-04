@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import ADPFilterBar from "../../components/ADPFilterBar";
-import { useSleeperADP } from "../../hooks/useSleeperData";
+import { useSleeperADPAll } from "../../hooks/useSleeperData";
 import { SleeperADPFilters } from "../../types/models";
 
 const LIMIT = 25;
@@ -20,21 +20,26 @@ export default function SleeperADPPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<SleeperADPFilters>({});
+  const [position, setPosition] = useState("");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!router.isReady) return;
     setFilters(filtersFromQuery(router.query));
+    setPosition(typeof router.query.position === "string" ? router.query.position : "");
     const p = parseInt(router.query.page as string);
     if (p > 0) setPage(p);
     setReady(true);
   }, [router.isReady, router.query]);
 
-  const { items, season, availableSeasons, total, totalPages, isLoading, error } = useSleeperADP(
-    ready ? page : 1,
-    LIMIT,
+  const { items: allItems, season, availableSeasons, isLoading, error } = useSleeperADPAll(
     ready ? filters : {}
   );
+
+  const filtered = position ? allItems.filter(p => p.position === position) : allItems;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+  const items = filtered.slice((page - 1) * LIMIT, page * LIMIT);
 
   function applyFilters(next: SleeperADPFilters) {
     setFilters(next);
@@ -44,6 +49,19 @@ export default function SleeperADPPage() {
     if (next.scoring_format) q.scoring_format = next.scoring_format;
     if (next.superflex) q.superflex = next.superflex;
     if (next.season) q.season = next.season;
+    if (position) q.position = position;
+    router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+  }
+
+  function applyPosition(next: string) {
+    setPosition(next);
+    setPage(1);
+    const q: Record<string, string> = { ...(router.query as Record<string, string>), page: "1" };
+    if (next) {
+      q.position = next;
+    } else {
+      delete q.position;
+    }
     router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
   }
 
@@ -63,7 +81,13 @@ export default function SleeperADPPage() {
           </p>
         </div>
 
-        <ADPFilterBar filters={filters} onChange={applyFilters} availableSeasons={availableSeasons} />
+        <ADPFilterBar
+          filters={filters}
+          onChange={applyFilters}
+          availableSeasons={availableSeasons}
+          position={position}
+          onPositionChange={applyPosition}
+        />
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
@@ -80,13 +104,15 @@ export default function SleeperADPPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Pos</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Team</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Avg Pick</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Range</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">95% CI</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Drafts</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span>Loading ADP…</span>
@@ -95,7 +121,7 @@ export default function SleeperADPPage() {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     No players found for this filter combination.
                   </td>
                 </tr>
@@ -112,6 +138,12 @@ export default function SleeperADPPage() {
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>
                     <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
                       {player.avg_pick_no.toFixed(1)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                      {player.min_pick_no}–{player.max_pick_no}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                      {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
                     </td>
                     <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
                       {player.pick_count}
