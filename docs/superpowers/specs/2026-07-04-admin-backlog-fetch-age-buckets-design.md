@@ -23,9 +23,11 @@ Total/Expanded/Pending/Skipped/% Pending columns aren't self-explanatory.
 - No change to bucket scope: current season only (`season = MAX(season)`), matching the existing
   Sync Backlog stat cards — not all seasons like Discovery Frontier's per-season table.
 - No historical/trend view — point-in-time snapshot, matching every other admin endpoint.
-- No SQL-side `NOW()`/`INTERVAL` bucketing — computed in Go instead, so it stays testable against
-  the in-memory SQLite fake used by `admin_test.go` (same reasoning as the ADP 95% CI computation
-  in PR #134, which was done in Go rather than SQL `PERCENTILE_CONT` for the same reason).
+- No pulling per-league rows/timestamps into the app server to bucket in Go — the aggregation
+  happens in a single `GROUP BY` query. Dialect-specific date math (`NOW()`/`INTERVAL` on
+  Postgres, `julianday()` on SQLite) is avoided by computing the bucket-boundary timestamps in Go
+  and passing them as bind parameters, so the query itself is just portable `CASE WHEN column >
+  ?` comparisons that run unchanged on both Postgres and the SQLite test fake.
 - No auth (matches existing app-wide posture).
 
 ## Design
@@ -53,64 +55,66 @@ Bucket labels, in fixed order: `Never fetched`, `0h-3h59m`, `4h-7h59m`, `8h-11h5
 `12h-15h59m`, `16h-19h59m`, `20h-23h59m`, `24h+`.
 
 `GetAdminBacklog` already scopes to `season = MAX(season) AND skipped_at IS NULL`. After computing
-`TotalLeagues`/`NeverFetchedCount`/`OldestTransactionsFetchedAt`, pull just the timestamp column
-for that same scope and bucket in Go:
+`TotalLeagues`/`NeverFetchedCount`/`OldestTransactionsFetchedAt`, run one more query that buckets
+and counts in a single `GROUP BY`, using Go-computed timestamp thresholds as bind parameters so no
+dialect-specific date function appears in the SQL:
 
 ```go
-var timestamps []*time.Time
-if err := database.DB.Model(&models.SleeperLeague{}).
-	Where("season = ? AND skipped_at IS NULL", season).
-	Pluck("last_transactions_fetched_at", &timestamps).Error; err != nil {
+now := time.Now()
+const bucketQ = `
+	SELECT
+		CASE
+			WHEN last_transactions_fetched_at IS NULL THEN 'Never fetched'
+			WHEN last_transactions_fetched_at > ? THEN '0h-3h59m'
+			WHEN last_transactions_fetched_at > ? THEN '4h-7h59m'
+			WHEN last_transactions_fetched_at > ? THEN '8h-11h59m'
+			WHEN last_transactions_fetched_at > ? THEN '12h-15h59m'
+			WHEN last_transactions_fetched_at > ? THEN '16h-19h59m'
+			WHEN last_transactions_fetched_at > ? THEN '20h-23h59m'
+			ELSE '24h+'
+		END AS label,
+		COUNT(*) AS leagues
+	FROM sleeper_leagues
+	WHERE season = ? AND skipped_at IS NULL
+	GROUP BY label`
+
+bucketRows := []AdminBacklogBucketRow{}
+if err := database.DB.Raw(bucketQ,
+	now.Add(-4*time.Hour), now.Add(-8*time.Hour), now.Add(-12*time.Hour),
+	now.Add(-16*time.Hour), now.Add(-20*time.Hour), now.Add(-24*time.Hour),
+	season,
+).Scan(&bucketRows).Error; err != nil {
 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	return
 }
-resp.Buckets = bucketBacklogAges(timestamps, time.Now())
+resp.Buckets = fillBacklogBuckets(bucketRows)
 ```
 
-`bucketBacklogAges` is a small package-level helper:
+`GROUP BY` only returns labels with at least one matching row, in no guaranteed order, so
+`fillBacklogBuckets` reorders onto the fixed label sequence and zero-fills the rest:
 
 ```go
-func bucketBacklogAges(timestamps []*time.Time, now time.Time) []AdminBacklogBucketRow {
+func fillBacklogBuckets(rows []AdminBacklogBucketRow) []AdminBacklogBucketRow {
 	labels := []string{
 		"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
 		"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
 	}
-	counts := make(map[string]int64, len(labels))
-
-	for _, ts := range timestamps {
-		if ts == nil {
-			counts["Never fetched"]++
-			continue
-		}
-		hours := now.Sub(*ts).Hours()
-		switch {
-		case hours < 4:
-			counts["0h-3h59m"]++
-		case hours < 8:
-			counts["4h-7h59m"]++
-		case hours < 12:
-			counts["8h-11h59m"]++
-		case hours < 16:
-			counts["12h-15h59m"]++
-		case hours < 20:
-			counts["16h-19h59m"]++
-		case hours < 24:
-			counts["20h-23h59m"]++
-		default:
-			counts["24h+"]++
-		}
+	counts := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		counts[r.Label] = r.Leagues
 	}
 
-	rows := make([]AdminBacklogBucketRow, len(labels))
+	filled := make([]AdminBacklogBucketRow, len(labels))
 	for i, label := range labels {
-		rows[i] = AdminBacklogBucketRow{Label: label, Leagues: counts[label]}
+		filled[i] = AdminBacklogBucketRow{Label: label, Leagues: counts[label]}
 	}
-	return rows
+	return filled
 }
 ```
 
 Buckets are always returned in the fixed order above, with zero counts included (not omitted), so
-the frontend table always has all 8 rows.
+the frontend table always has all 8 rows. Only one row per matching league is read from the
+database (aggregated by Postgres/SQLite itself) — no per-league timestamps cross into the app.
 
 **Response shape:**
 
