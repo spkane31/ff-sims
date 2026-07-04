@@ -65,6 +65,13 @@ type DraftADP struct {
 
 ### Rollup activity
 
+**Implementation note (added during planning):** the percentile computation was moved from
+SQL (`PERCENTILE_CONT`) to Go, because `adp_rollup_test.go` runs against an in-memory SQLite
+database which has no ordered-set aggregate support. The activity now fetches raw
+`(sleeper_player_id, pick_no)` rows and aggregates avg/min/max/count/percentiles in Go using
+the same linear-interpolation formula `PERCENTILE_CONT` implements, producing identical
+results.
+
 `backend/internal/activities/adp_rollup.go`, `ComputeSegmentSeasonADP`:
 
 - Extend `adpRow` with `CILowPickNo`, `CIHighPickNo float64` (columns `ci_low_pick_no`,
