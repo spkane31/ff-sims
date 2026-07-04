@@ -110,7 +110,8 @@ main() {
   install_units
 
   if ensure_env_file; then
-    systemctl enable --now ff-sims-worker.service ff-sims-deploy.timer
+    systemctl enable ff-sims-worker.service ff-sims-deploy.timer
+    systemctl start ff-sims-worker.service ff-sims-deploy.timer
   else
     echo "Skipping service start until $ENV_FILE is filled in."
   fi
