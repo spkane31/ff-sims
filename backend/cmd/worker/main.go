@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
@@ -90,6 +91,7 @@ func main() {
 	// Discovery worker: DiscoveryBatchDispatcher + UserDiscoveryWorkflow
 	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{
 		DeploymentOptions: deploymentOpts,
+		SysInfoProvider:   sysinfo.SysInfoProvider(),
 	})
 	dw.RegisterWorkflow(workflows.DiscoveryBatchDispatcher)
 	dw.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
@@ -100,6 +102,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
 		DeploymentOptions:                  deploymentOpts,
+		SysInfoProvider:                    sysinfo.SysInfoProvider(),
 	})
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
@@ -110,6 +113,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
 		DeploymentOptions:                  deploymentOpts,
+		SysInfoProvider:                    sysinfo.SysInfoProvider(),
 	})
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
 	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
@@ -118,6 +122,7 @@ func main() {
 	// Player sync worker: PlayerDatabaseSyncWorkflow
 	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{
 		DeploymentOptions: deploymentOpts,
+		SysInfoProvider:   sysinfo.SysInfoProvider(),
 	})
 	psw.RegisterWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 	psw.RegisterActivity(psa)
@@ -125,6 +130,7 @@ func main() {
 	// Week stats worker: WeekStatsSyncDispatcher + SyncWeekStats
 	wsw := worker.New(c, workflows.TaskQueueWeekStats, worker.Options{
 		DeploymentOptions: deploymentOpts,
+		SysInfoProvider:   sysinfo.SysInfoProvider(),
 	})
 	wsw.RegisterWorkflow(workflows.WeekStatsSyncDispatcher)
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
@@ -135,6 +141,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 50,
 		MaxConcurrentWorkflowTaskPollers:   10,
 		DeploymentOptions:                  deploymentOpts,
+		SysInfoProvider:                    sysinfo.SysInfoProvider(),
 	})
 	adpw.RegisterWorkflow(workflows.ADPRollupDispatcher)
 	adpw.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
