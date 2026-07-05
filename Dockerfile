@@ -12,19 +12,29 @@ RUN NODE_OPTIONS="--max_old_space_size=2048" npm run build
 FROM golang:1.25-alpine AS backend-builder
 WORKDIR /app/backend
 
-# Accept build arguments
-ARG GIT_SHA=unknown
+# Accept an optional GIT_SHA override (e.g. for a CI system that already knows
+# the SHA). When not passed as a build-arg, it's computed below from the .git
+# directory in the build context so the image always carries a real per-commit
+# ID -- previously this silently defaulted to the literal string "unknown"
+# whenever the build invocation omitted --build-arg GIT_SHA=..., which is what
+# DigitalOcean's App Platform build does, breaking Worker Deployment Versioning
+# (every DO worker registered under build ID "unknown").
+ARG GIT_SHA=""
 ARG BUILD_TIME=unknown
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o main \
-    -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
-    ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -o worker \
-    -ldflags="-X 'main.buildID=${GIT_SHA}'" \
-    ./cmd/worker
+COPY .git /tmp/git-meta
+RUN apk add --no-cache git \
+    && GIT_SHA="${GIT_SHA:-$(git --git-dir=/tmp/git-meta rev-parse --short=9 HEAD)}" \
+    && rm -rf /tmp/git-meta \
+    && CGO_ENABLED=0 GOOS=linux go build -o main \
+       -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
+       ./cmd/server \
+    && CGO_ENABLED=0 GOOS=linux go build -o worker \
+       -ldflags="-X 'main.buildID=${GIT_SHA}'" \
+       ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
 # Pin to bookworm so the compiled Python and .venv extensions share glibc 2.36

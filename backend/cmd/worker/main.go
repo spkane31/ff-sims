@@ -135,7 +135,7 @@ func main() {
 	}()
 
 	if getEnvAsBool("TEMPORAL_PROMOTE_ON_START", false) {
-		go promoteDeploymentVersion(c, deploymentVersion)
+		go promoteDeploymentVersion(context.Background(), c, deploymentVersion)
 	}
 
 	log.Println("Temporal workers started — waiting for SIGINT/SIGTERM")
@@ -162,14 +162,16 @@ func getEnvAsBool(key string, def bool) bool {
 
 // promoteDeploymentVersion sets this process's build as the deployment's current
 // version, so new workflow executions route to it. The version isn't registered
-// with the server until a worker has polled at least once, so the first attempt(s)
-// may fail — retry with backoff for up to a minute. Only the DigitalOcean worker
-// calls this (via TEMPORAL_PROMOTE_ON_START); the Pi joins whatever version its
-// build produces and never promotes.
-func promoteDeploymentVersion(c client.Client, version worker.WorkerDeploymentVersion) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
+// with the server until a worker has polled at least once, so early attempts may
+// fail — retry with capped backoff indefinitely rather than giving up. A single
+// missed window here previously meant the deployment never got a Current Version
+// at all, so every new workflow execution across every task queue was created but
+// could never be assigned to a worker (this is exactly what happened the first
+// time versioning shipped: the promotion never landed, and nothing retried after
+// the old one-minute budget expired). Only the DigitalOcean worker calls this (via
+// TEMPORAL_PROMOTE_ON_START); the Pi joins whatever version its build produces and
+// never promotes.
+func promoteDeploymentVersion(ctx context.Context, c client.Client, version worker.WorkerDeploymentVersion) {
 	handle := c.WorkerDeploymentClient().GetHandle(version.DeploymentName)
 	backoff := time.Second
 	for {
@@ -180,12 +182,13 @@ func promoteDeploymentVersion(c client.Client, version worker.WorkerDeploymentVe
 			log.Printf("promoted deployment %s to current version build_id=%s", version.DeploymentName, version.BuildID)
 			return
 		}
+		log.Printf("promoting deployment %s to build_id=%s failed, retrying in %s: %v", version.DeploymentName, version.BuildID, backoff, err)
 		select {
 		case <-ctx.Done():
-			log.Printf("giving up promoting deployment %s to build_id=%s: %v", version.DeploymentName, version.BuildID, err)
+			log.Printf("giving up promoting deployment %s to build_id=%s: %v", version.DeploymentName, version.BuildID, ctx.Err())
 			return
 		case <-time.After(backoff):
-			if backoff < 10*time.Second {
+			if backoff < 30*time.Second {
 				backoff *= 2
 			}
 		}
