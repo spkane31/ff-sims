@@ -104,7 +104,6 @@ export default function SleeperADPPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Pos</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Team</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Avg Pick</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Range</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">95% CI</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Drafts</th>
               </tr>
@@ -112,7 +111,7 @@ export default function SleeperADPPage() {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span>Loading ADP…</span>
@@ -121,7 +120,7 @@ export default function SleeperADPPage() {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                     No players found for this filter combination.
                   </td>
                 </tr>
@@ -138,9 +137,6 @@ export default function SleeperADPPage() {
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>
                     <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
                       {player.avg_pick_no.toFixed(1)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                      {player.min_pick_no}–{player.max_pick_no}
                     </td>
                     <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
                       {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
