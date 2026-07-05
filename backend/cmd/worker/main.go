@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -27,6 +26,25 @@ import (
 // deploy/raspberry-pi/{deploy,setup}.sh). Both fleets built from the same commit
 // must produce the identical string so they share one deployment version.
 var buildID = "dev"
+
+// promoteOnStart marks this build as the deployment's promoting fleet: on startup
+// it calls SetCurrentVersion to make its own build the deployment's Current
+// Version. Set to "true" via -ldflags only in the Dockerfile (DigitalOcean);
+// deploy/raspberry-pi/{deploy,setup}.sh never set it, so Pi builds default to
+// "false" and just join whatever version they produce.
+//
+// This must stay asymmetric and baked in at build time rather than configured
+// via an env var. If both fleets promoted, whichever happened to poll and call
+// SetCurrentVersion last would win — including a Pi mid self-update still
+// running a stale build — silently making stale code current and reintroducing
+// the non-determinism problem Worker Deployment Versioning exists to prevent.
+// It was previously an opt-in env var (TEMPORAL_PROMOTE_ON_START) that only
+// DigitalOcean's App Platform config was supposed to set — a fact about which
+// fleet promotes that lived entirely outside this repo, unreviewed and easy to
+// forget. Baking the flag into the Dockerfile removes that dependency: DO always
+// builds from this file, so promotion eligibility can no longer silently go
+// unconfigured the way GIT_SHA did.
+var promoteOnStart = "false"
 
 // deploymentName identifies the Worker Deployment shared by the DigitalOcean and
 // Raspberry Pi worker fleets.
@@ -134,7 +152,7 @@ func main() {
 		}
 	}()
 
-	if getEnvAsBool("TEMPORAL_PROMOTE_ON_START", false) {
+	if promoteOnStart == "true" {
 		go promoteDeploymentVersion(context.Background(), c, deploymentVersion)
 	}
 
@@ -152,14 +170,6 @@ func getEnv(key, def string) string {
 	return def
 }
 
-func getEnvAsBool(key string, def bool) bool {
-	v, err := strconv.ParseBool(os.Getenv(key))
-	if err != nil {
-		return def
-	}
-	return v
-}
-
 // promoteDeploymentVersion sets this process's build as the deployment's current
 // version, so new workflow executions route to it. The version isn't registered
 // with the server until a worker has polled at least once, so early attempts may
@@ -168,9 +178,9 @@ func getEnvAsBool(key string, def bool) bool {
 // at all, so every new workflow execution across every task queue was created but
 // could never be assigned to a worker (this is exactly what happened the first
 // time versioning shipped: the promotion never landed, and nothing retried after
-// the old one-minute budget expired). Only the DigitalOcean worker calls this (via
-// TEMPORAL_PROMOTE_ON_START); the Pi joins whatever version its build produces and
-// never promotes.
+// the old one-minute budget expired). Only called when promoteOnStart is "true"
+// (DigitalOcean); the Pi never calls this and just joins whatever version its
+// build produces.
 func promoteDeploymentVersion(ctx context.Context, c client.Client, version worker.WorkerDeploymentVersion) {
 	handle := c.WorkerDeploymentClient().GetHandle(version.DeploymentName)
 	backoff := time.Second
