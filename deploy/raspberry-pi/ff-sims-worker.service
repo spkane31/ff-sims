@@ -1,0 +1,16 @@
+[Unit]
+Description=ff-sims Temporal worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{SERVICE_USER}}
+WorkingDirectory={{REPO_DIR}}/backend
+EnvironmentFile=/etc/ff-sims-worker.env
+ExecStart={{REPO_DIR}}/backend/worker
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
