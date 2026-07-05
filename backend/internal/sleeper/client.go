@@ -108,10 +108,10 @@ func (c *Client) waitBeforeRetry(ctx context.Context, d time.Duration, attempt i
 // fullJitterBackoff returns a random duration in [0, backoff) where backoff
 // grows exponentially with attempt, capped at backoffCap.
 func fullJitterBackoff(attempt int) time.Duration {
-	backoff := backoffBase * time.Duration(uint64(1)<<uint(attempt))
-	if backoff <= 0 || backoff > backoffCap {
-		backoff = backoffCap
-	}
+	// Cap the shift so the multiplication can't overflow before the min below
+	// clamps it to backoffCap (attempt is always < maxAttempts in practice).
+	grown := backoffBase * time.Duration(uint64(1)<<uint(min(attempt, 32)))
+	backoff := min(grown, backoffCap)
 	return time.Duration(rand.Float64() * float64(backoff))
 }
 
