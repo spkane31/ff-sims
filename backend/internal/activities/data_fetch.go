@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -225,6 +227,157 @@ func (a *DataFetchActivities) GetStaleLeaguesForTransactions(ctx context.Context
 		}
 	}
 	return states, nil
+}
+
+// maxLegForLeague returns the highest transaction leg worth fetching. Past
+// seasons get the full 1..18 sweep; the current season is capped at the
+// current NFL week (offseason week 0 still fetches leg 1, where offseason
+// moves land). A nil state (state endpoint down) falls back to 18 rather than
+// stalling the batch.
+func maxLegForLeague(season string, state *sleeper.NFLState) int {
+	if state == nil || season < state.Season {
+		return 18
+	}
+	if state.Week < 1 {
+		return 1
+	}
+	return min(state.Week, 18)
+}
+
+// SyncLeagueTransactionsBatch syncs transactions for a claimed batch of
+// leagues with bounded concurrency, stamping each league done as it completes.
+// Per-league failures are counted, not propagated: a failed league keeps its
+// claim and re-enters the queue when the claim expires. The activity heartbeats
+// as leagues complete so a dead worker is detected via HeartbeatTimeout.
+func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, params SyncLeagueTransactionsBatchParams) (SyncBatchResult, error) {
+	logger := activity.GetLogger(ctx)
+	res := SyncBatchResult{}
+
+	// Re-scope to leagues still claimed: on an activity retry, leagues stamped
+	// by the previous attempt have claimed_at cleared and must not re-sync.
+	ids := make([]string, len(params.Leagues))
+	byID := make(map[string]LeagueTransactionState, len(params.Leagues))
+	for i, lg := range params.Leagues {
+		ids[i] = lg.LeagueID
+		byID[lg.LeagueID] = lg
+	}
+	var stillClaimed []string
+	if err := a.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id IN ? AND claimed_at IS NOT NULL", ids).
+		Pluck("sleeper_league_id", &stillClaimed).Error; err != nil {
+		return res, err
+	}
+	if len(stillClaimed) == 0 {
+		return res, nil
+	}
+
+	state, err := a.Sleeper.GetNFLState(ctx)
+	if err != nil {
+		logger.Warn("GetNFLState failed; falling back to full 18-leg sweep", "error", err)
+		state = nil
+	}
+
+	concurrency := params.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	type leagueResult struct {
+		leagueID string
+		err      error
+	}
+	sem := make(chan struct{}, concurrency)
+	results := make(chan leagueResult, len(stillClaimed))
+	var wg sync.WaitGroup
+	for _, id := range stillClaimed {
+		lg := byID[id]
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results <- leagueResult{leagueID: lg.LeagueID, err: a.syncOneLeague(ctx, lg, maxLegForLeague(lg.Season, state))}
+		}()
+	}
+	go func() { wg.Wait(); close(results) }()
+
+	done := 0
+	for r := range results {
+		done++
+		if r.err != nil {
+			res.Failed++
+			logger.Warn("league transaction sync failed", "leagueID", r.leagueID, "error", r.err)
+		} else {
+			res.Processed++
+		}
+		if done%10 == 0 {
+			activity.RecordHeartbeat(ctx, done)
+		}
+	}
+	return res, nil
+}
+
+// syncOneLeague fetches transactions for one league from its leg cursor up to
+// maxLeg, upserts them, and stamps completion (clearing the claim) in a single
+// update. Per-leg 404s mean "no transactions for that leg" and are skipped.
+func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
+	startLeg := 1
+	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
+		startLeg = *lg.LastLegFetched - 1
+	}
+
+	maxSeen := 0
+	for leg := startLeg; leg <= maxLeg; leg++ {
+		txns, err := a.Sleeper.GetTransactions(ctx, lg.LeagueID, leg)
+		if err != nil {
+			var nfe *sleeper.NotFoundError
+			if errors.As(err, &nfe) {
+				continue
+			}
+			return fmt.Errorf("leg %d: %w", leg, err)
+		}
+		if len(txns) == 0 {
+			continue
+		}
+		rows := make([]models.SleeperTransaction, len(txns))
+		for i, t := range txns {
+			addsJSON, _ := json.Marshal(t.Adds)
+			dropsJSON, _ := json.Marshal(t.Drops)
+			picksJSON, _ := json.Marshal(t.DraftPicks)
+			waiverJSON, _ := json.Marshal(t.WaiverBudget)
+			rows[i] = models.SleeperTransaction{
+				SleeperTransactionID: t.TransactionID,
+				SleeperLeagueID:      lg.LeagueID,
+				Type:                 t.Type,
+				Status:               t.Status,
+				CreatedAtSleeper:     t.Created,
+				Leg:                  t.Leg,
+				Adds:                 addsJSON,
+				Drops:                dropsJSON,
+				DraftPicks:           picksJSON,
+				WaiverBudget:         waiverJSON,
+			}
+		}
+		if err := a.DB.WithContext(ctx).
+			Clauses(clause.OnConflict{DoNothing: true}).
+			CreateInBatches(rows, 500).Error; err != nil {
+			return fmt.Errorf("leg %d upsert: %w", leg, err)
+		}
+		if leg > maxSeen {
+			maxSeen = leg
+		}
+	}
+
+	updates := map[string]interface{}{
+		"last_transactions_fetched_at": time.Now().UTC(),
+		"claimed_at":                   nil,
+	}
+	if maxSeen > 0 {
+		updates["last_transaction_leg_fetched"] = maxSeen
+	}
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", lg.LeagueID).
+		Updates(updates).Error
 }
 
 // MarkLeagueDraftsFetched sets last_drafts_fetched_at=now() on the given league.

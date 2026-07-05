@@ -55,6 +55,18 @@ type LeagueTransactionState struct {
 	LastLegFetched *int
 }
 
+type SyncLeagueTransactionsBatchParams struct {
+	Leagues     []LeagueTransactionState
+	Concurrency int
+}
+
+// SyncBatchResult summarizes one batch activity execution. Failed leagues keep
+// their claim and re-enter the queue when it expires.
+type SyncBatchResult struct {
+	Processed int
+	Failed    int
+}
+
 type MarkLeagueFetchedParams struct {
 	LeagueID string
 }
