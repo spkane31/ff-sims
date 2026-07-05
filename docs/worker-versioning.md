@@ -19,13 +19,20 @@ no need for version-transition patching.
   itself from the `.git` directory in the build context when no `GIT_SHA` build-arg is
   passed — DigitalOcean's App Platform build doesn't pass one, and previously that meant
   the DO image silently shipped as build `unknown`.
-- Only the DigitalOcean worker sets `TEMPORAL_PROMOTE_ON_START=true`. On startup it
-  retries `SetCurrentVersion` with capped backoff until it succeeds (the version isn't
-  registered until a worker has polled at least once) to make its build the deployment's
-  current version. It no longer gives up after a fixed window — a single missed attempt
-  used to mean the deployment never got a Current Version at all, so no new workflow
-  execution on any task queue could ever be assigned to a worker. The Pi never sets this
-  flag — it just joins whatever version its own build produces.
+- `promoteOnStart` (`backend/cmd/worker/main.go`) marks the fleet that should promote its
+  build to the deployment's Current Version on startup. It's a build-time flag, not an env
+  var: the Dockerfile sets `-X main.promoteOnStart=true` unconditionally (it only ever
+  builds the DigitalOcean image), while `deploy/raspberry-pi/{deploy,setup}.sh` never set
+  it, so Pi builds keep the source default `"false"`. This used to be the env var
+  `TEMPORAL_PROMOTE_ON_START`, set only via DigitalOcean's App Platform config — a fact
+  about which fleet promotes that lived entirely outside this repo. Baking it into the
+  build removes that dependency, the same way `buildID` no longer depends on an
+  externally-passed `GIT_SHA`.
+- When `promoteOnStart` is `"true"`, the worker retries `SetCurrentVersion` with capped
+  backoff until it succeeds (the version isn't registered until a worker has polled at
+  least once). It no longer gives up after a fixed window — a single missed attempt used
+  to mean the deployment never got a Current Version at all, so no new workflow execution
+  on any task queue could ever be assigned to a worker.
 - Flow: DO deploys SHA X, promotes X as current, and the Pi self-updates to X a few
   minutes later and shares the work. If the Pi's build fails, it keeps draining
   workflows pinned to its old version and receives no new-version work — no NDEs.
@@ -45,8 +52,9 @@ Shows the current version, any ramping version, and every version with active po
 
 ## Manually promoting a version
 
-Normally only the DigitalOcean worker promotes on startup. To promote by hand (e.g. to
-force a rollback to a previous build that's still draining):
+Normally only the DigitalOcean worker (built with `promoteOnStart=true`) promotes on
+startup. To promote by hand (e.g. to force a rollback to a previous build that's still
+draining):
 
 ```
 temporal worker deployment set-current-version \

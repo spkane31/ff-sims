@@ -26,6 +26,10 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 COPY .git /tmp/git-meta
+# promoteOnStart=true is unconditional below: this Dockerfile only ever builds the
+# DigitalOcean image, the fleet that should promote its build to the deployment's
+# Current Version. deploy/raspberry-pi/{deploy,setup}.sh never set this flag, so
+# Pi builds keep main.go's "false" default and never promote.
 RUN apk add --no-cache git \
     && GIT_SHA="${GIT_SHA:-$(git --git-dir=/tmp/git-meta rev-parse --short=9 HEAD)}" \
     && rm -rf /tmp/git-meta \
@@ -33,7 +37,7 @@ RUN apk add --no-cache git \
        -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
        ./cmd/server \
     && CGO_ENABLED=0 GOOS=linux go build -o worker \
-       -ldflags="-X 'main.buildID=${GIT_SHA}'" \
+       -ldflags="-X 'main.buildID=${GIT_SHA}' -X 'main.promoteOnStart=true'" \
        ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
