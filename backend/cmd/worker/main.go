@@ -6,10 +6,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+	"time"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 
 	"backend/internal/activities"
 	"backend/internal/config"
@@ -18,6 +21,16 @@ import (
 	"backend/internal/workflows"
 	"backend/schedules"
 )
+
+// buildID identifies the commit this binary was built from. Set via
+// -ldflags "-X main.buildID=<git short SHA>" in all build paths (Dockerfile,
+// deploy/raspberry-pi/{deploy,setup}.sh). Both fleets built from the same commit
+// must produce the identical string so they share one deployment version.
+var buildID = "dev"
+
+// deploymentName identifies the Worker Deployment shared by the DigitalOcean and
+// Raspberry Pi worker fleets.
+const deploymentName = "ff-sims-worker"
 
 func main() {
 	cfg, err := config.Load()
@@ -38,6 +51,17 @@ func main() {
 		log.Fatalf("register schedules: %v", err)
 	}
 
+	deploymentVersion := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        buildID,
+	}
+	deploymentOpts := worker.DeploymentOptions{
+		UseVersioning:             true,
+		Version:                   deploymentVersion,
+		DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
+	}
+	log.Printf("worker deployment: name=%s build_id=%s", deploymentName, buildID)
+
 	sc := sleeper.New()
 	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
 	dfa := &activities.DataFetchActivities{DB: database.DB, Sleeper: sc}
@@ -46,7 +70,9 @@ func main() {
 	aa := &activities.ADPRollupActivities{DB: database.DB}
 
 	// Discovery worker: DiscoveryBatchDispatcher + UserDiscoveryWorkflow
-	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{})
+	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{
+		DeploymentOptions: deploymentOpts,
+	})
 	dw.RegisterWorkflow(workflows.DiscoveryBatchDispatcher)
 	dw.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
 	dw.RegisterActivity(da)
@@ -55,6 +81,7 @@ func main() {
 	draftsw := worker.New(c, workflows.TaskQueueDrafts, worker.Options{
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
+		DeploymentOptions:                  deploymentOpts,
 	})
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
@@ -64,18 +91,23 @@ func main() {
 	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
+		DeploymentOptions:                  deploymentOpts,
 	})
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
 	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
 	transactionsw.RegisterActivity(dfa)
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow
-	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{})
+	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{
+		DeploymentOptions: deploymentOpts,
+	})
 	psw.RegisterWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 	psw.RegisterActivity(psa)
 
 	// Week stats worker: WeekStatsSyncDispatcher + SyncWeekStats
-	wsw := worker.New(c, workflows.TaskQueueWeekStats, worker.Options{})
+	wsw := worker.New(c, workflows.TaskQueueWeekStats, worker.Options{
+		DeploymentOptions: deploymentOpts,
+	})
 	wsw.RegisterWorkflow(workflows.WeekStatsSyncDispatcher)
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
@@ -84,6 +116,7 @@ func main() {
 	adpw := worker.New(c, workflows.TaskQueueADP, worker.Options{
 		MaxConcurrentActivityExecutionSize: 50,
 		MaxConcurrentWorkflowTaskPollers:   10,
+		DeploymentOptions:                  deploymentOpts,
 	})
 	adpw.RegisterWorkflow(workflows.ADPRollupDispatcher)
 	adpw.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
@@ -101,6 +134,10 @@ func main() {
 		}
 	}()
 
+	if getEnvAsBool("TEMPORAL_PROMOTE_ON_START", false) {
+		go promoteDeploymentVersion(c, deploymentVersion)
+	}
+
 	log.Println("Temporal workers started — waiting for SIGINT/SIGTERM")
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -113,6 +150,46 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func getEnvAsBool(key string, def bool) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// promoteDeploymentVersion sets this process's build as the deployment's current
+// version, so new workflow executions route to it. The version isn't registered
+// with the server until a worker has polled at least once, so the first attempt(s)
+// may fail — retry with backoff for up to a minute. Only the DigitalOcean worker
+// calls this (via TEMPORAL_PROMOTE_ON_START); the Pi joins whatever version its
+// build produces and never promotes.
+func promoteDeploymentVersion(c client.Client, version worker.WorkerDeploymentVersion) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	handle := c.WorkerDeploymentClient().GetHandle(version.DeploymentName)
+	backoff := time.Second
+	for {
+		_, err := handle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+			BuildID: version.BuildID,
+		})
+		if err == nil {
+			log.Printf("promoted deployment %s to current version build_id=%s", version.DeploymentName, version.BuildID)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			log.Printf("giving up promoting deployment %s to build_id=%s: %v", version.DeploymentName, version.BuildID, err)
+			return
+		case <-time.After(backoff):
+			if backoff < 10*time.Second {
+				backoff *= 2
+			}
+		}
+	}
 }
 
 // temporalClientOptions returns client.Options configured for either Temporal Cloud
