@@ -15,7 +15,9 @@ current_and_remote_sha() {
 }
 
 build_worker() {
-  (cd "$REPO_DIR/backend" && "$GO_BIN" build -o worker.new ./cmd/worker)
+  local sha
+  sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  (cd "$REPO_DIR/backend" && "$GO_BIN" build -ldflags "-X 'main.buildID=${sha}'" -o worker.new ./cmd/worker)
 }
 
 deploy() {

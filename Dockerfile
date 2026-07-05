@@ -22,7 +22,9 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o main \
     -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
     ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -o worker ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux go build -o worker \
+    -ldflags="-X 'main.buildID=${GIT_SHA}'" \
+    ./cmd/worker
 
 # Stage 3: Build Python ESPN worker
 # Pin to bookworm so the compiled Python and .venv extensions share glibc 2.36

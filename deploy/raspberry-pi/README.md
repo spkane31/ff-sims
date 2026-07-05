@@ -32,3 +32,7 @@ full reinstall) — it picks up wherever it left off.
 - This runs the *same* `backend/cmd/worker` binary as production, so it polls all six
   Temporal task queues (discovery, drafts, transactions, player-sync, week-stats, ADP), not
   just discovery/transactions — the idle pollers on the other queues cost nothing.
+- The Pi and the DigitalOcean app share a Temporal Worker Deployment (`ff-sims-worker`)
+  so a stale fleet never executes workflows started by newer code — see
+  [`docs/worker-versioning.md`](../../docs/worker-versioning.md) for how versioning works
+  and how to inspect/promote versions.

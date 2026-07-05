@@ -74,7 +74,9 @@ ensure_env_file() {
 
 first_build() {
   echo "Building worker binary"
-  (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -o worker ./cmd/worker)
+  local sha
+  sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}'" -o worker ./cmd/worker)
 }
 
 install_units() {
