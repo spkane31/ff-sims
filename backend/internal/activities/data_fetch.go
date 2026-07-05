@@ -162,6 +162,47 @@ func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, para
 	return ids, nil
 }
 
+// claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
+// leagues for transaction syncing. FOR UPDATE SKIP LOCKED lets concurrent
+// claimers (two fleets, K parallel pipelines) partition the backlog without
+// blocking or double-claiming; the 20-minute expiry window re-queues leagues
+// claimed by a worker that died mid-batch. Ordering matches the partial index
+// idx_sleeper_leagues_txn_stale (never-fetched first, then oldest).
+const claimLeaguesForTransactionsSQL = `
+UPDATE sleeper_leagues SET claimed_at = now()
+WHERE sleeper_league_id IN (
+    SELECT sleeper_league_id FROM sleeper_leagues
+    WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
+      AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)
+      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
+    ORDER BY last_transactions_fetched_at ASC NULLS FIRST
+    LIMIT ?
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING sleeper_league_id, season, last_transaction_leg_fetched`
+
+// ClaimLeaguesForTransactions claims up to BatchSize leagues with stale
+// transaction data and returns their sync state. Postgres-only (SKIP LOCKED).
+func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, params ClaimLeaguesForTransactionsParams) ([]LeagueTransactionState, error) {
+	var rows []struct {
+		SleeperLeagueID           string
+		Season                    string
+		LastTransactionLegFetched *int
+	}
+	if err := a.DB.WithContext(ctx).Raw(claimLeaguesForTransactionsSQL, params.BatchSize).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	states := make([]LeagueTransactionState, len(rows))
+	for i, r := range rows {
+		states[i] = LeagueTransactionState{
+			LeagueID:       r.SleeperLeagueID,
+			Season:         r.Season,
+			LastLegFetched: r.LastTransactionLegFetched,
+		}
+	}
+	return states, nil
+}
+
 // GetStaleLeaguesForTransactions returns up to batchSize leagues that have had their
 // details fetched (last_fetched_at IS NOT NULL) but whose transactions are stale,
 // ordered NULL first then oldest. Completed leagues that have already been synced are excluded.
@@ -179,6 +220,7 @@ func (a *DataFetchActivities) GetStaleLeaguesForTransactions(ctx context.Context
 	for i, l := range leagues {
 		states[i] = LeagueTransactionState{
 			LeagueID:       l.SleeperLeagueID,
+			Season:         l.Season,
 			LastLegFetched: l.LastTransactionLegFetched,
 		}
 	}

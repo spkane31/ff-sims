@@ -43,9 +43,15 @@ type FetchLeagueTransactionsParams struct {
 	LastLegFetched *int
 }
 
-// LeagueTransactionState carries the league ID and leg cursor returned by GetStaleLeaguesForTransactions.
+type ClaimLeaguesForTransactionsParams struct {
+	BatchSize int
+}
+
+// LeagueTransactionState carries the league ID, season, and leg cursor for one
+// claimed league, as returned by ClaimLeaguesForTransactions.
 type LeagueTransactionState struct {
 	LeagueID       string
+	Season         string
 	LastLegFetched *int
 }
 
