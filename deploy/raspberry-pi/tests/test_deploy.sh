@@ -87,4 +87,33 @@ new_hash="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 [[ "$old_hash" == "$new_hash" ]] || fail "worker binary should be unchanged after a failed build"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called after a failed build"
 
+# --- scenario 4: a commit that changes build_worker itself must take effect on
+# THIS deploy cycle, not the next ---
+#
+# Regression test for the incident that motivated the re-exec in deploy(): this
+# process has already parsed build_worker's OLD body by the time `git reset
+# --hard` rewrites deploy.sh on disk, so calling build_worker in-process would
+# silently keep using the stale, pre-pull logic. That's exactly what happened
+# when a commit added -ldflags to build_worker: the deploy that shipped it built
+# the worker with the OLD (ldflags-less) build_worker, so the binary reported
+# the Go source's default build ID instead of a real git SHA.
+cat > "$CLONE/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+var marker = "unset"
+
+func main() { println(marker) }
+EOF
+sed "s/-X 'main.buildID=\${sha}'/-X 'main.buildID=\${sha}' -X 'main.marker=updated'/" \
+  "$CLONE/deploy/raspberry-pi/deploy.sh" > "$CLONE/deploy/raspberry-pi/deploy.sh.new"
+grep -q "main.marker=updated" "$CLONE/deploy/raspberry-pi/deploy.sh.new" || fail "test setup: sed did not patch build_worker's ldflags"
+mv "$CLONE/deploy/raspberry-pi/deploy.sh.new" "$CLONE/deploy/raspberry-pi/deploy.sh"
+chmod +x "$CLONE/deploy/raspberry-pi/deploy.sh"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "build_worker now sets marker"
+git -C "$CLONE" push -q origin main
+
+bash "$REPO/deploy/raspberry-pi/deploy.sh"
+built_output="$("$REPO/backend/worker" 2>&1)"
+[[ "$built_output" == "updated" ]] || fail "expected the deploy that changed build_worker to use the NEW build_worker on the same cycle, got: $built_output"
+
 echo "PASS: deploy.sh integration tests"

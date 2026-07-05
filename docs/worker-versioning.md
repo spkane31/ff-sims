@@ -15,14 +15,25 @@ no need for version-transition patching.
 - `buildID` (`backend/cmd/worker/main.go`) is set via `-ldflags -X main.buildID=<git short
   SHA>` in all three build paths (Dockerfile, `deploy/raspberry-pi/deploy.sh`, and
   `deploy/raspberry-pi/setup.sh`). Both fleets built from the same commit produce the
-  identical build ID and share one deployment version.
+  identical build ID and share one deployment version. The Dockerfile computes the SHA
+  itself from the `.git` directory in the build context when no `GIT_SHA` build-arg is
+  passed — DigitalOcean's App Platform build doesn't pass one, and previously that meant
+  the DO image silently shipped as build `unknown`.
 - Only the DigitalOcean worker sets `TEMPORAL_PROMOTE_ON_START=true`. On startup it
-  retries `SetCurrentVersion` for up to a minute (the version isn't registered until a
-  worker has polled at least once) to make its build the deployment's current version.
-  The Pi never sets this flag — it just joins whatever version its own build produces.
+  retries `SetCurrentVersion` with capped backoff until it succeeds (the version isn't
+  registered until a worker has polled at least once) to make its build the deployment's
+  current version. It no longer gives up after a fixed window — a single missed attempt
+  used to mean the deployment never got a Current Version at all, so no new workflow
+  execution on any task queue could ever be assigned to a worker. The Pi never sets this
+  flag — it just joins whatever version its own build produces.
 - Flow: DO deploys SHA X, promotes X as current, and the Pi self-updates to X a few
   minutes later and shares the work. If the Pi's build fails, it keeps draining
   workflows pinned to its old version and receives no new-version work — no NDEs.
+- `deploy/raspberry-pi/deploy.sh` re-execs itself after `git reset --hard` instead of
+  continuing in the same process. Bash had already parsed `build_worker`'s old body
+  before the reset rewrote the file on disk, so a commit that changes `build_worker`
+  itself (like the one that added `-ldflags` here) would otherwise be applied with the
+  stale, pre-pull logic on the very cycle that introduced it.
 
 ## Checking version status
 
