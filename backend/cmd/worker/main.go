@@ -98,24 +98,34 @@ func main() {
 	dw.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
 	dw.RegisterActivity(da)
 
-	// Drafts worker: DraftSyncDispatcher + LeagueDraftSyncWorkflow
-	draftsw := worker.New(c, workflows.TaskQueueDrafts, worker.Options{
-		MaxConcurrentActivityExecutionSize: 100,
+	// The sync queues (drafts, transactions) are I/O-bound, and Temporal task
+	// distribution is pull-based: the fleet with more free activity slots and
+	// pollers takes a larger share of the queue. These are env-tunable so an
+	// underutilized fleet (the Raspberry Pi runs <10% CPU) can be scaled up
+	// independently of the DigitalOcean container.
+	//
+	//	WORKER_ACTIVITY_SLOTS    max concurrent activities per sync queue (default 100)
+	//	WORKER_ACTIVITY_POLLERS  activity task pollers per sync queue (0 = SDK default)
+	syncWorkerOptions := worker.Options{
+		MaxConcurrentActivityExecutionSize: max(helpers.GetEnv("WORKER_ACTIVITY_SLOTS", 100), 1),
 		MaxConcurrentWorkflowTaskPollers:   10,
 		DeploymentOptions:                  deploymentOpts,
 		SysInfoProvider:                    sysinfo.SysInfoProvider(),
-	})
+	}
+	if pollers := helpers.GetEnv("WORKER_ACTIVITY_POLLERS", 0); pollers > 0 {
+		syncWorkerOptions.MaxConcurrentActivityTaskPollers = pollers
+	}
+	log.Printf("sync worker tuning: activity_slots=%d activity_pollers=%d (0 = SDK default)",
+		syncWorkerOptions.MaxConcurrentActivityExecutionSize, syncWorkerOptions.MaxConcurrentActivityTaskPollers)
+
+	// Drafts worker: DraftSyncDispatcher + LeagueDraftSyncWorkflow
+	draftsw := worker.New(c, workflows.TaskQueueDrafts, syncWorkerOptions)
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
 	draftsw.RegisterActivity(dfa)
 
 	// Transactions worker: TransactionSyncDispatcher (claim-drain batch model)
-	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{
-		MaxConcurrentActivityExecutionSize: 100,
-		MaxConcurrentWorkflowTaskPollers:   10,
-		DeploymentOptions:                  deploymentOpts,
-		SysInfoProvider:                    sysinfo.SysInfoProvider(),
-	})
+	transactionsw := worker.New(c, workflows.TaskQueueTransactions, syncWorkerOptions)
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
 	transactionsw.RegisterActivity(dfa)
 
