@@ -54,6 +54,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// Each pooled connection to sqlite ":memory:" gets its own empty database;
+	// pin the pool to one connection so concurrent test code (e.g. the batch
+	// sync activity's goroutines) sees the migrated schema.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("unwrap sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(
 		&models.SleeperUser{},
 		&models.SleeperLeague{},

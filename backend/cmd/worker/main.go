@@ -17,6 +17,7 @@ import (
 	"backend/internal/activities"
 	"backend/internal/config"
 	"backend/internal/database"
+	"backend/internal/helpers"
 	"backend/internal/sleeper"
 	"backend/internal/workflows"
 	"backend/schedules"
@@ -108,7 +109,7 @@ func main() {
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
 	draftsw.RegisterActivity(dfa)
 
-	// Transactions worker: TransactionSyncDispatcher + LeagueTransactionSyncWorkflow
+	// Transactions worker: TransactionSyncDispatcher (claim-drain batch model)
 	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
@@ -116,7 +117,6 @@ func main() {
 		SysInfoProvider:                    sysinfo.SysInfoProvider(),
 	})
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
-	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
 	transactionsw.RegisterActivity(dfa)
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow
@@ -168,13 +168,6 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	log.Println("shutting down")
-}
-
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 // promoteDeploymentVersion sets this process's build as the deployment's current
@@ -240,7 +233,7 @@ func temporalClientOptions() client.Options {
 		return opts
 	}
 	return client.Options{
-		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
-		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
+		HostPort:  helpers.GetEnv("TEMPORAL_HOST", "localhost:7233"),
+		Namespace: helpers.GetEnv("TEMPORAL_NAMESPACE", "default"),
 	}
 }

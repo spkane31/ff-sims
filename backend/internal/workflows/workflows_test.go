@@ -253,16 +253,26 @@ func TestLeagueDraftSync_PicksFailureContinues(t *testing.T) {
 
 // ---- TransactionSyncDispatcher ----
 
-func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
+func TestTransactionSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
-		Return([]activities.LeagueTransactionState{{LeagueID: "lg1"}}, nil)
+	cfg := activities.TransactionSyncConfig{ParallelBatches: 2, BatchSize: 2, Concurrency: 4}
+	env.OnActivity(dfa.GetTransactionSyncConfig, mock.Anything).Return(cfg, nil)
 
-	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
-	env.OnWorkflow(workflows.LeagueTransactionSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
+	full := []activities.LeagueTransactionState{{LeagueID: "a", Season: "2026"}, {LeagueID: "b", Season: "2026"}}
+	short := []activities.LeagueTransactionState{{LeagueID: "c", Season: "2026"}}
+	// First claim full, second claim short -> dispatcher must stop claiming after the short one.
+	env.OnActivity(dfa.ClaimLeaguesForTransactions, mock.Anything, activities.ClaimLeaguesForTransactionsParams{BatchSize: 2}).
+		Return(full, nil).Once()
+	env.OnActivity(dfa.ClaimLeaguesForTransactions, mock.Anything, activities.ClaimLeaguesForTransactionsParams{BatchSize: 2}).
+		Return(short, nil).Once()
+
+	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: full, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
+	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: short, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
 
@@ -271,66 +281,41 @@ func TestTransactionSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
-func TestTransactionSyncDispatcher_ChildWorkflowIDIsLeagueScoped(t *testing.T) {
+func TestTransactionSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForTransactions, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
-		Return([]activities.LeagueTransactionState{{LeagueID: "lg1"}, {LeagueID: "lg2"}}, nil)
-
-	env.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
-
-	seenIDs := make(map[string]bool)
-	captureID := func(ctx context.Context) bool {
-		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
-		return true
-	}
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.MatchedBy(captureID), activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(0, nil)
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.MatchedBy(captureID), activities.FetchLeagueTransactionsParams{LeagueID: "lg2"}).Return(0, nil)
-	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 0}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg2", MaxLeg: 0}).Return(nil)
+	env.OnActivity(dfa.GetTransactionSyncConfig, mock.Anything).
+		Return(activities.TransactionSyncConfig{ParallelBatches: 4, BatchSize: 250, Concurrency: 12}, nil)
+	env.OnActivity(dfa.ClaimLeaguesForTransactions, mock.Anything, activities.ClaimLeaguesForTransactionsParams{BatchSize: 250}).
+		Return([]activities.LeagueTransactionState{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	require.True(t, seenIDs["transaction-sync-lg1"], "expected child workflow ID %q to have been used", "transaction-sync-lg1")
-	require.True(t, seenIDs["transaction-sync-lg2"], "expected child workflow ID %q to have been used", "transaction-sync-lg2")
-}
-
-// ---- LeagueTransactionSyncWorkflow ----
-
-func TestLeagueTransactionSync_FullPath(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{LeagueID: "lg1"}).Return(5, nil)
-	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 5}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueTransactionSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
 
-func TestLeagueTransactionSync_WithLegCursor(t *testing.T) {
+func TestTransactionSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
-	lastLeg := 8
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueTransactions, mock.Anything, activities.FetchLeagueTransactionsParams{
-		LeagueID:       "lg1",
-		LastLegFetched: &lastLeg,
-	}).Return(10, nil)
-	env.OnActivity(dfa.MarkLeagueTransactionsFetched, mock.Anything, activities.MarkLeagueTransactionsFetchedParams{LeagueID: "lg1", MaxLeg: 10}).Return(nil)
+	env.OnActivity(dfa.GetTransactionSyncConfig, mock.Anything).
+		Return(activities.TransactionSyncConfig{ParallelBatches: 1, BatchSize: 2, Concurrency: 4}, nil)
+	short := []activities.LeagueTransactionState{{LeagueID: "a", Season: "2026"}}
+	env.OnActivity(dfa.ClaimLeaguesForTransactions, mock.Anything, mock.Anything).Return(short, nil).Once()
+	// Non-retryable so the mock's .Once() isn't consumed by activity retries
+	// (batchActivityOptions allows 3 attempts).
+	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, mock.Anything).
+		Return(activities.SyncBatchResult{}, temporal.NewNonRetryableApplicationError("boom", "test", nil)).Once()
 
-	env.ExecuteWorkflow(workflows.LeagueTransactionSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1", LastLegFetched: &lastLeg})
+	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
+	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }

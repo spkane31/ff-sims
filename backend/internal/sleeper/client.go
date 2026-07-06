@@ -9,12 +9,21 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"golang.org/x/time/rate"
+
+	"backend/internal/helpers"
 )
 
 const (
 	maxAttempts = 6
 	backoffBase = 500 * time.Millisecond
 	backoffCap  = 30 * time.Second
+
+	// defaultRPM is the SLEEPER_RPM fallback: requests/minute budget per
+	// process. Each fleet (DigitalOcean, Raspberry Pi) has its own IP, so
+	// per-process is per-IP. Start high, tune down.
+	defaultRPM = 2000
 )
 
 const defaultBaseURL = "https://api.sleeper.app"
@@ -22,6 +31,7 @@ const defaultBaseURL = "https://api.sleeper.app"
 type Client struct {
 	http    *http.Client
 	baseURL string
+	limiter *rate.Limiter
 }
 
 func New() *Client {
@@ -32,7 +42,24 @@ func NewWithBaseURL(baseURL string) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: 30 * time.Second},
 		baseURL: baseURL,
+		limiter: newLimiter(),
 	}
+}
+
+// newLimiter builds the client-wide request limiter from SLEEPER_RPM
+// (requests/minute, default 2000). Burst of one second's worth of tokens keeps
+// short spikes smooth without letting the minute budget be spent all at once.
+func newLimiter() *rate.Limiter {
+	rpm := helpers.GetEnv("SLEEPER_RPM", defaultRPM)
+	if rpm <= 0 {
+		rpm = defaultRPM
+	}
+	perSecond := float64(rpm) / 60.0
+	burst := int(perSecond)
+	if burst < 1 {
+		burst = 1
+	}
+	return rate.NewLimiter(rate.Limit(perSecond), burst)
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
@@ -42,6 +69,11 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// Every attempt (including retries) consumes a rate-limit token so the
+		// SLEEPER_RPM budget bounds actual requests on the wire.
+		if err := c.limiter.Wait(ctx); err != nil {
+			return err
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
