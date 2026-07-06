@@ -8,9 +8,40 @@
 | `TXN_SYNC_PARALLEL_BATCHES` | 4 | Claim→batch pipelines per dispatcher iteration. |
 | `TXN_SYNC_BATCH_SIZE` | 250 | Leagues claimed per batch activity. |
 | `TXN_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one batch activity. |
+| `WORKER_ACTIVITY_SLOTS` | 100 | Max concurrent activities on each sync queue (drafts, transactions) for this process. |
+| `WORKER_ACTIVITY_POLLERS` | SDK default | Activity task pollers on each sync queue for this process; raise to win a larger share of queue tasks. |
 
 Changing dispatcher knobs needs only a worker restart (they're read by the
 `GetTransactionSyncConfig` activity each run, not baked into workflow code).
+
+### Per-fleet vs global knobs
+
+Task distribution is pull-based: the fleet with more free activity slots and
+pollers takes more of the queue. **Per-fleet** (each process reads its own
+env): `SLEEPER_RPM`, `WORKER_ACTIVITY_SLOTS`, `WORKER_ACTIVITY_POLLERS`,
+`DB_MAX_OPEN_CONNS`. **Global** (read once per dispatcher run by whichever
+worker executes the config activity): all `TXN_SYNC_*` knobs — do not use
+them to differentiate fleets.
+
+### Scaling up the Raspberry Pi
+
+The sync work is I/O-bound (the Pi idles under 10% CPU), so scale it by
+raising its budgets in `/etc/ff-sims-worker.env` and restarting
+`ff-sims-worker.service`:
+
+```
+WORKER_ACTIVITY_SLOTS=300
+WORKER_ACTIVITY_POLLERS=10
+SLEEPER_RPM=3000
+DB_MAX_OPEN_CONNS=20
+```
+
+Also raise the global `TXN_SYNC_PARALLEL_BATCHES` (e.g. 8–12) so enough batch
+activities are in flight for the Pi's extra slots to matter. Postgres
+connections are the budget that bites first — route workers through the
+DigitalOcean pgbouncer connection pool (port 25061, add
+`default_query_exec_mode=simple_protocol` to the URL) before opening these
+throttles.
 
 ## How it works
 
