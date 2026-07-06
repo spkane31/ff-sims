@@ -11,7 +11,7 @@ import (
 // batches of leagues (atomically, via FOR UPDATE SKIP LOCKED in Postgres) and
 // runs a SyncLeagueTransactionsBatch activity per claim in parallel. A short
 // or empty claim means the backlog is drained for now, so the run exits and
-// the 5-minute schedule takes over. Failed batch activities are logged, not
+// the 10-minute schedule takes over. Failed batch activities are logged, not
 // propagated: their leagues' claims expire after 20 minutes and re-queue.
 func TransactionSyncDispatcher(ctx workflow.Context) error {
 	dfa := &activities.DataFetchActivities{}

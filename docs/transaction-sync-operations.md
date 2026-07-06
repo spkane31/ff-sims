@@ -14,7 +14,7 @@ Changing dispatcher knobs needs only a worker restart (they're read by the
 
 ## How it works
 
-Every 5 minutes `TransactionSyncDispatcher` claims batches of stale leagues
+Every 10 minutes `TransactionSyncDispatcher` claims batches of stale leagues
 (`claimed_at` + `FOR UPDATE SKIP LOCKED`, 20-minute claim TTL) and runs
 `SyncLeagueTransactionsBatch` activities that stamp each league done as they
 go. Both fleets (DigitalOcean + Raspberry Pi) poll the same queue and

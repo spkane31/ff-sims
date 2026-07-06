@@ -215,10 +215,8 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 		state = nil
 	}
 
-	concurrency := params.Concurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
+	concurrency := max(1, params.Concurrency)
+
 	type leagueResult struct {
 		leagueID string
 		err      error
