@@ -1,57 +1,66 @@
 package workflows
 
 import (
-	"fmt"
-
-	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
 	"backend/internal/activities"
 )
 
-// TransactionSyncDispatcher is a scheduled workflow that queries for leagues with stale
-// transaction data and spawns LeagueTransactionSyncWorkflow children for each (fire-and-forget).
+// TransactionSyncDispatcher drains the stale-transactions backlog by fanning
+// out claim→batch pipelines. Each iteration claims up to ParallelBatches
+// batches of leagues (atomically, via FOR UPDATE SKIP LOCKED in Postgres) and
+// runs a SyncLeagueTransactionsBatch activity per claim in parallel. A short
+// or empty claim means the backlog is drained for now, so the run exits and
+// the 5-minute schedule takes over. Failed batch activities are logged, not
+// propagated: their leagues' claims expire after 20 minutes and re-queue.
 func TransactionSyncDispatcher(ctx workflow.Context) error {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
+	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
+	logger := workflow.GetLogger(ctx)
 
-	var states []activities.LeagueTransactionState
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForTransactions, activities.GetStaleLeaguesParams{BatchSize: SyncBatchSize}).Get(ctx, &states); err != nil {
+	var cfg activities.TransactionSyncConfig
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetTransactionSyncConfig).Get(ctx, &cfg); err != nil {
 		return err
 	}
-	for _, s := range states {
-		cwo := workflow.ChildWorkflowOptions{
-			WorkflowID:        fmt.Sprintf("transaction-sync-%s", s.LeagueID),
-			TaskQueue:         TaskQueueTransactions,
-			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
+
+	for iter := 0; iter < TxnMaxDispatchIterations; iter++ {
+		var futures []workflow.Future
+		drained := false
+		for k := 0; k < cfg.ParallelBatches; k++ {
+			var leagues []activities.LeagueTransactionState
+			err := workflow.ExecuteActivity(actCtx, dfa.ClaimLeaguesForTransactions, activities.ClaimLeaguesForTransactionsParams{
+				BatchSize: cfg.BatchSize,
+			}).Get(ctx, &leagues)
+			if err != nil {
+				logger.Error("claim failed; stopping dispatch for this run", "error", err)
+				drained = true
+				break
+			}
+			if len(leagues) == 0 {
+				drained = true
+				break
+			}
+			futures = append(futures, workflow.ExecuteActivity(batchCtx, dfa.SyncLeagueTransactionsBatch, activities.SyncLeagueTransactionsBatchParams{
+				Leagues:     leagues,
+				Concurrency: cfg.Concurrency,
+			}))
+			if len(leagues) < cfg.BatchSize {
+				drained = true
+				break
+			}
 		}
-		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueTransactionSyncWorkflow, LeagueSyncParams{
-			LeagueID:       s.LeagueID,
-			LastLegFetched: s.LastLegFetched,
-		})
-		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
-			workflow.GetLogger(ctx).Warn("failed to start LeagueTransactionSyncWorkflow", "leagueID", s.LeagueID, "error", err)
+		for _, f := range futures {
+			var res activities.SyncBatchResult
+			if err := f.Get(ctx, &res); err != nil {
+				logger.Error("transaction batch failed; claims will expire and re-queue", "error", err)
+				continue
+			}
+			logger.Info("transaction batch done", "processed", res.Processed, "failed", res.Failed)
+		}
+		if drained {
+			break
 		}
 	}
 	return nil
-}
-
-// LeagueTransactionSyncWorkflow fetches transactions for a single league starting from the
-// leg cursor, then stamps last_transactions_fetched_at and advances the leg cursor.
-func LeagueTransactionSyncWorkflow(ctx workflow.Context, params LeagueSyncParams) error {
-	dfa := &activities.DataFetchActivities{}
-	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
-
-	var maxLeg int
-	if err := workflow.ExecuteActivity(actCtx, dfa.FetchLeagueTransactions, activities.FetchLeagueTransactionsParams{
-		LeagueID:       params.LeagueID,
-		LastLegFetched: params.LastLegFetched,
-	}).Get(ctx, &maxLeg); err != nil {
-		return err
-	}
-
-	return workflow.ExecuteActivity(actCtx, dfa.MarkLeagueTransactionsFetched, activities.MarkLeagueTransactionsFetchedParams{
-		LeagueID: params.LeagueID,
-		MaxLeg:   maxLeg,
-	}).Get(ctx, nil)
 }

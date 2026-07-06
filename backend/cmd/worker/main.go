@@ -108,7 +108,7 @@ func main() {
 	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
 	draftsw.RegisterActivity(dfa)
 
-	// Transactions worker: TransactionSyncDispatcher + LeagueTransactionSyncWorkflow
+	// Transactions worker: TransactionSyncDispatcher (claim-drain batch model)
 	transactionsw := worker.New(c, workflows.TaskQueueTransactions, worker.Options{
 		MaxConcurrentActivityExecutionSize: 100,
 		MaxConcurrentWorkflowTaskPollers:   10,
@@ -116,7 +116,6 @@ func main() {
 		SysInfoProvider:                    sysinfo.SysInfoProvider(),
 	})
 	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
-	transactionsw.RegisterWorkflow(workflows.LeagueTransactionSyncWorkflow)
 	transactionsw.RegisterActivity(dfa)
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow

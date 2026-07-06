@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -94,56 +96,6 @@ func (a *DataFetchActivities) FetchDraftPicks(ctx context.Context, params FetchD
 		Update("last_fetched_at", now).Error
 }
 
-// FetchLeagueTransactions fetches transactions for leagueID starting from the leg cursor.
-// When LastLegFetched is set it starts from max(LastLegFetched-1, 1) to catch late-processed
-// transactions on the previous leg. 404 responses for a leg are treated as empty and skipped.
-// Returns the highest leg number for which any transactions were received (0 if none).
-func (a *DataFetchActivities) FetchLeagueTransactions(ctx context.Context, params FetchLeagueTransactionsParams) (int, error) {
-	startLeg := 1
-	if params.LastLegFetched != nil && *params.LastLegFetched > 1 {
-		startLeg = *params.LastLegFetched - 1
-	}
-
-	maxLeg := 0
-	for leg := startLeg; leg <= 18; leg++ {
-		txns, err := a.Sleeper.GetTransactions(ctx, params.LeagueID, leg)
-		if err != nil {
-			var nfe *sleeper.NotFoundError
-			if errors.As(err, &nfe) {
-				continue // no transactions for this leg is normal
-			}
-			return 0, fmt.Errorf("leg %d: %w", leg, err)
-		}
-		for _, t := range txns {
-			addsJSON, _ := json.Marshal(t.Adds)
-			dropsJSON, _ := json.Marshal(t.Drops)
-			picksJSON, _ := json.Marshal(t.DraftPicks)
-			waiverJSON, _ := json.Marshal(t.WaiverBudget)
-			row := models.SleeperTransaction{
-				SleeperTransactionID: t.TransactionID,
-				SleeperLeagueID:      params.LeagueID,
-				Type:                 t.Type,
-				Status:               t.Status,
-				CreatedAtSleeper:     t.Created,
-				Leg:                  t.Leg,
-				Adds:                 addsJSON,
-				Drops:                dropsJSON,
-				DraftPicks:           picksJSON,
-				WaiverBudget:         waiverJSON,
-			}
-			if err := a.DB.WithContext(ctx).
-				Clauses(clause.OnConflict{DoNothing: true}).
-				Create(&row).Error; err != nil {
-				return 0, err
-			}
-		}
-		if len(txns) > 0 && leg > maxLeg {
-			maxLeg = leg
-		}
-	}
-	return maxLeg, nil
-}
-
 // GetStaleLeaguesForDrafts returns up to batchSize league IDs that have had their
 // details fetched (last_fetched_at IS NOT NULL) but whose drafts are stale,
 // ordered NULL first then oldest.
@@ -162,6 +114,24 @@ func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, para
 		ids[i] = l.SleeperLeagueID
 	}
 	return ids, nil
+}
+
+// GetTransactionSyncConfig returns the dispatcher tuning knobs from env.
+func (a *DataFetchActivities) GetTransactionSyncConfig(ctx context.Context) (TransactionSyncConfig, error) {
+	return TransactionSyncConfig{
+		ParallelBatches: envInt("TXN_SYNC_PARALLEL_BATCHES", 4),
+		BatchSize:       envInt("TXN_SYNC_BATCH_SIZE", 250),
+		Concurrency:     envInt("TXN_SYNC_LEAGUE_CONCURRENCY", 12),
+	}, nil
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
 }
 
 // claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
@@ -200,30 +170,6 @@ func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, p
 			LeagueID:       r.SleeperLeagueID,
 			Season:         r.Season,
 			LastLegFetched: r.LastTransactionLegFetched,
-		}
-	}
-	return states, nil
-}
-
-// GetStaleLeaguesForTransactions returns up to batchSize leagues that have had their
-// details fetched (last_fetched_at IS NOT NULL) but whose transactions are stale,
-// ordered NULL first then oldest. Completed leagues that have already been synced are excluded.
-func (a *DataFetchActivities) GetStaleLeaguesForTransactions(ctx context.Context, params GetStaleLeaguesParams) ([]LeagueTransactionState, error) {
-	var leagues []models.SleeperLeague
-	err := a.DB.WithContext(ctx).
-		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025' AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)").
-		Order("CASE WHEN last_transactions_fetched_at IS NULL THEN 0 ELSE 1 END, last_transactions_fetched_at ASC").
-		Limit(params.BatchSize).
-		Find(&leagues).Error
-	if err != nil {
-		return nil, err
-	}
-	states := make([]LeagueTransactionState, len(leagues))
-	for i, l := range leagues {
-		states[i] = LeagueTransactionState{
-			LeagueID:       l.SleeperLeagueID,
-			Season:         l.Season,
-			LastLegFetched: l.LastTransactionLegFetched,
 		}
 	}
 	return states, nil
@@ -387,22 +333,6 @@ func (a *DataFetchActivities) MarkLeagueDraftsFetched(ctx context.Context, param
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", params.LeagueID).
 		Update("last_drafts_fetched_at", now).Error
-}
-
-// MarkLeagueTransactionsFetched sets last_transactions_fetched_at=now() on the given league.
-// If MaxLeg > 0 it also advances last_transaction_leg_fetched to the highest leg seen.
-func (a *DataFetchActivities) MarkLeagueTransactionsFetched(ctx context.Context, params MarkLeagueTransactionsFetchedParams) error {
-	now := time.Now().UTC()
-	updates := map[string]interface{}{
-		"last_transactions_fetched_at": now,
-	}
-	if params.MaxLeg > 0 {
-		updates["last_transaction_leg_fetched"] = params.MaxLeg
-	}
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id = ?", params.LeagueID).
-		Updates(updates).Error
 }
 
 // MarkLeagueSkipped sets skipped_at=now() so the league is excluded from future batches.
