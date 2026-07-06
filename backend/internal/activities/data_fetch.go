@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"backend/internal/helpers"
 	"backend/internal/models"
 	"backend/internal/sleeper"
 )
@@ -116,22 +115,15 @@ func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, para
 	return ids, nil
 }
 
-// GetTransactionSyncConfig returns the dispatcher tuning knobs from env.
+// GetTransactionSyncConfig returns the dispatcher tuning knobs from env,
+// clamped to at least 1 so a bad value can't stall dispatch or break the
+// claim query's LIMIT.
 func (a *DataFetchActivities) GetTransactionSyncConfig(ctx context.Context) (TransactionSyncConfig, error) {
 	return TransactionSyncConfig{
-		ParallelBatches: envInt("TXN_SYNC_PARALLEL_BATCHES", 4),
-		BatchSize:       envInt("TXN_SYNC_BATCH_SIZE", 250),
-		Concurrency:     envInt("TXN_SYNC_LEAGUE_CONCURRENCY", 12),
+		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 4), 1),
+		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 250), 1),
+		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 12), 1),
 	}, nil
-}
-
-func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return def
 }
 
 // claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
@@ -236,13 +228,11 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 	var wg sync.WaitGroup
 	for _, id := range stillClaimed {
 		lg := byID[id]
-		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			results <- leagueResult{leagueID: lg.LeagueID, err: a.syncOneLeague(ctx, lg, maxLegForLeague(lg.Season, state))}
-		}()
+		})
 	}
 	go func() { wg.Wait(); close(results) }()
 

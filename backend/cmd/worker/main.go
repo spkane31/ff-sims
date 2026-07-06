@@ -17,6 +17,7 @@ import (
 	"backend/internal/activities"
 	"backend/internal/config"
 	"backend/internal/database"
+	"backend/internal/helpers"
 	"backend/internal/sleeper"
 	"backend/internal/workflows"
 	"backend/schedules"
@@ -169,13 +170,6 @@ func main() {
 	log.Println("shutting down")
 }
 
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
 // promoteDeploymentVersion sets this process's build as the deployment's current
 // version, so new workflow executions route to it. The version isn't registered
 // with the server until a worker has polled at least once, so early attempts may
@@ -239,7 +233,7 @@ func temporalClientOptions() client.Options {
 		return opts
 	}
 	return client.Options{
-		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
-		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
+		HostPort:  helpers.GetEnv("TEMPORAL_HOST", "localhost:7233"),
+		Namespace: helpers.GetEnv("TEMPORAL_NAMESPACE", "default"),
 	}
 }

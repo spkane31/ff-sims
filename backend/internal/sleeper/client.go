@@ -7,11 +7,12 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"backend/internal/helpers"
 )
 
 const (
@@ -49,11 +50,9 @@ func NewWithBaseURL(baseURL string) *Client {
 // (requests/minute, default 2000). Burst of one second's worth of tokens keeps
 // short spikes smooth without letting the minute budget be spent all at once.
 func newLimiter() *rate.Limiter {
-	rpm := defaultRPM
-	if v := os.Getenv("SLEEPER_RPM"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			rpm = n
-		}
+	rpm := helpers.GetEnv("SLEEPER_RPM", defaultRPM)
+	if rpm <= 0 {
+		rpm = defaultRPM
 	}
 	perSecond := float64(rpm) / 60.0
 	burst := int(perSecond)
