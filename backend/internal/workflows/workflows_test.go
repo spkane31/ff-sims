@@ -17,17 +17,26 @@ import (
 
 // ---- DiscoveryBatchDispatcher ----
 
-func TestDispatcher_SpawnsChildWorkflows(t *testing.T) {
+func TestDiscoveryDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).
-		Return([]string{"u1", "u2"}, nil)
+	cfg := activities.DiscoveryConfig{ParallelBatches: 2, BatchSize: 2, Concurrency: 4}
+	env.OnActivity(da.GetDiscoveryConfig, mock.Anything).Return(cfg, nil)
 
-	env.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
-	env.OnWorkflow(workflows.UserDiscoveryWorkflow, mock.Anything, workflows.UserDiscoveryParams{UserID: "u1"}).Return(nil)
-	env.OnWorkflow(workflows.UserDiscoveryWorkflow, mock.Anything, workflows.UserDiscoveryParams{UserID: "u2"}).Return(nil)
+	full := []string{"u1", "u2"}
+	short := []string{"u3"}
+	// First claim full, second claim short -> dispatcher must stop claiming after the short one.
+	env.OnActivity(da.ClaimStaleUsers, mock.Anything, activities.ClaimStaleUsersParams{BatchSize: 2}).
+		Return(full, nil).Once()
+	env.OnActivity(da.ClaimStaleUsers, mock.Anything, activities.ClaimStaleUsersParams{BatchSize: 2}).
+		Return(short, nil).Once()
+
+	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: full, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
+	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: short, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
@@ -36,100 +45,40 @@ func TestDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
-func TestDispatcher_ChildWorkflowIDIsUserScoped(t *testing.T) {
+func TestDiscoveryDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).
-		Return([]string{"u1", "u2"}, nil)
-
-	env.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
-
-	seenIDs := make(map[string]bool)
-	captureID := func(ctx context.Context) bool {
-		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
-		return true
-	}
-	env.OnActivity(da.FetchUserLeagues, mock.MatchedBy(captureID), activities.FetchUserLeaguesParams{UserID: "u1"}).Return([]string{}, nil)
-	env.OnActivity(da.FetchUserLeagues, mock.MatchedBy(captureID), activities.FetchUserLeaguesParams{UserID: "u2"}).Return([]string{}, nil)
-	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
-	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u2"}).Return(nil)
+	env.OnActivity(da.GetDiscoveryConfig, mock.Anything).
+		Return(activities.DiscoveryConfig{ParallelBatches: 2, BatchSize: 50, Concurrency: 8}, nil)
+	env.OnActivity(da.ClaimStaleUsers, mock.Anything, activities.ClaimStaleUsersParams{BatchSize: 50}).
+		Return([]string{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	require.True(t, seenIDs["user-discovery-u1"], "expected child workflow ID %q to have been used", "user-discovery-u1")
-	require.True(t, seenIDs["user-discovery-u2"], "expected child workflow ID %q to have been used", "user-discovery-u2")
-}
-
-func TestDispatcher_EmptyBatch(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.GetStaleUsers, mock.Anything, activities.GetStaleUsersParams{BatchSize: workflows.BatchSize}).Return([]string{}, nil)
-
-	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-}
-
-// ---- UserDiscoveryWorkflow ----
-
-func TestUserDiscovery_CallsMarkFetchedOnSuccess(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.FetchUserLeagues, mock.Anything, activities.FetchUserLeaguesParams{UserID: "u1"}).Return([]string{"lg1"}, nil)
-	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "u1"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
 
-func TestUserDiscovery_NotFoundCallsSkip(t *testing.T) {
+func TestDiscoveryDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.FetchUserLeagues, mock.Anything, activities.FetchUserLeaguesParams{UserID: "ghost"}).
-		Return(nil, temporal.NewNonRetryableApplicationError("user not found", "NOT_FOUND", nil))
-	env.OnActivity(da.MarkUserSkipped, mock.Anything, activities.MarkUserSkippedParams{UserID: "ghost"}).Return(nil)
+	env.OnActivity(da.GetDiscoveryConfig, mock.Anything).
+		Return(activities.DiscoveryConfig{ParallelBatches: 1, BatchSize: 2, Concurrency: 4}, nil)
+	env.OnActivity(da.ClaimStaleUsers, mock.Anything, mock.Anything).Return([]string{"u1"}, nil).Once()
+	// Non-retryable so the mock's .Once() isn't consumed by activity retries
+	// (batchActivityOptions allows 3 attempts).
+	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, mock.Anything).
+		Return(activities.SyncBatchResult{}, temporal.NewNonRetryableApplicationError("boom", "test", nil)).Once()
 
-	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "ghost"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-func TestUserDiscovery_MemberFetchFailureContinues(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	da := &activities.DiscoveryActivities{}
-	env.OnActivity(da.FetchUserLeagues, mock.Anything, activities.FetchUserLeaguesParams{UserID: "u1"}).
-		Return([]string{"lg1", "lg2"}, nil)
-	// lg1 member fetch fails, but FetchLeagueDetails still runs for both
-	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg1"}).
-		Return(temporal.NewApplicationError("network error", "NETWORK", nil))
-	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(da.FetchLeagueMembers, mock.Anything, activities.FetchLeagueMembersParams{LeagueID: "lg2"}).Return(nil)
-	env.OnActivity(da.FetchLeagueDetails, mock.Anything, activities.FetchLeagueDetailsParams{LeagueID: "lg2"}).Return(nil)
-	env.OnActivity(da.MarkUserFetched, mock.Anything, activities.MarkUserFetchedParams{UserID: "u1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: "u1"})
+	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
+	// Failed batches are logged; the users' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }

@@ -56,7 +56,7 @@ func newPGTestDB(t *testing.T) *gorm.DB {
 		sqlDB, _ := db.DB()
 		sqlDB.Close()
 	})
-	if err := db.AutoMigrate(&models.SleeperLeague{}); err != nil {
+	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperUser{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -280,6 +280,97 @@ func TestClaimLeaguesForDrafts_ConcurrentClaimsAreDisjoint(t *testing.T) {
 	for id, n := range seen {
 		if n > 1 {
 			t.Errorf("league %s claimed %d times", id, n)
+		}
+	}
+}
+
+func seedUser(t *testing.T, db *gorm.DB, u models.SleeperUser) {
+	t.Helper()
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("seed user %s: %v", u.SleeperUserID, err)
+	}
+}
+
+func TestClaimStaleUsers_OrderingAndEligibility(t *testing.T) {
+	db := newPGTestDB(t)
+	now := time.Now().UTC()
+	old := now.Add(-48 * time.Hour)
+	recent := now.Add(-1 * time.Hour)
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "never"})
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "oldest", LastFetchedAt: &old})
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "recent", LastFetchedAt: &recent})
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "skipped", SkippedAt: &now})
+
+	a := &activities.DiscoveryActivities{DB: db}
+	got, err := a.ClaimStaleUsers(context.Background(), activities.ClaimStaleUsersParams{BatchSize: 2})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	claimed := map[string]bool{}
+	for _, id := range got {
+		claimed[id] = true
+	}
+	if len(got) != 2 || !claimed["never"] || !claimed["oldest"] {
+		t.Fatalf("expected {never, oldest}, got %v", got)
+	}
+	var stamped int64
+	db.Model(&models.SleeperUser{}).Where("claimed_at IS NOT NULL").Count(&stamped)
+	if stamped != 2 {
+		t.Errorf("expected 2 users stamped claimed_at, got %d", stamped)
+	}
+}
+
+func TestClaimStaleUsers_RespectsAndExpiresClaims(t *testing.T) {
+	db := newPGTestDB(t)
+	now := time.Now().UTC()
+	fresh := now.Add(-1 * time.Minute)
+	stale := now.Add(-30 * time.Minute)
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "fresh-claim", ClaimedAt: &fresh})
+	seedUser(t, db, models.SleeperUser{SleeperUserID: "expired-claim", ClaimedAt: &stale})
+
+	a := &activities.DiscoveryActivities{DB: db}
+	got, err := a.ClaimStaleUsers(context.Background(), activities.ClaimStaleUsersParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if len(got) != 1 || got[0] != "expired-claim" {
+		t.Fatalf("expected only expired-claim to be re-claimable, got %v", got)
+	}
+}
+
+func TestClaimStaleUsers_ConcurrentClaimsAreDisjoint(t *testing.T) {
+	db := newPGTestDB(t)
+	for i := 0; i < 20; i++ {
+		seedUser(t, db, models.SleeperUser{SleeperUserID: fmt.Sprintf("u%02d", i)})
+	}
+
+	a := &activities.DiscoveryActivities{DB: db}
+	var mu sync.Mutex
+	seen := map[string]int{}
+	var wg sync.WaitGroup
+	for w := 0; w < 2; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := a.ClaimStaleUsers(context.Background(), activities.ClaimStaleUsersParams{BatchSize: 10})
+			if err != nil {
+				t.Errorf("claim: %v", err)
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, id := range got {
+				seen[id]++
+			}
+		}()
+	}
+	wg.Wait()
+	if len(seen) != 20 {
+		t.Errorf("expected 20 distinct users claimed, got %d", len(seen))
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Errorf("user %s claimed %d times", id, n)
 		}
 	}
 }
