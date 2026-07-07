@@ -2,10 +2,6 @@ package workflows
 
 import "backend/internal/models"
 
-type UserDiscoveryParams struct {
-	UserID string
-}
-
 type SyncWeekStatsParams struct {
 	Season string
 }

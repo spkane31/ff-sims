@@ -1,4 +1,4 @@
-# Sleeper Sync Operations (transactions + drafts)
+# Sleeper Sync Operations (discovery + transactions + drafts)
 
 ## Tuning knobs (env, per worker process)
 
@@ -11,12 +11,15 @@
 | `DRAFT_SYNC_PARALLEL_BATCHES` | 4 | Draft claim→batch pipelines per dispatcher iteration. |
 | `DRAFT_SYNC_BATCH_SIZE` | 250 | Leagues claimed per draft batch activity. |
 | `DRAFT_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one draft batch activity. |
+| `DISCOVERY_PARALLEL_BATCHES` | 2 | Discovery claim→batch pipelines per dispatcher iteration. |
+| `DISCOVERY_BATCH_SIZE` | 50 | Users claimed per discovery batch activity (smaller — each user fans out into per-league fetches). |
+| `DISCOVERY_USER_CONCURRENCY` | 8 | Goroutines discovering users inside one discovery batch activity. |
 | `WORKER_ACTIVITY_SLOTS` | 100 | Max concurrent activities on each sync queue (drafts, transactions) for this process. |
 | `WORKER_ACTIVITY_POLLERS` | SDK default | Activity task pollers on each sync queue for this process; raise to win a larger share of queue tasks. |
 
 Changing dispatcher knobs needs only a worker restart (they're read by the
-`GetTransactionSyncConfig` / `GetDraftSyncConfig` activities each run, not
-baked into workflow code).
+`GetTransactionSyncConfig` / `GetDraftSyncConfig` / `GetDiscoveryConfig`
+activities each run, not baked into workflow code).
 
 Draft sync mirrors the transaction design on a separate claim column
 (`drafts_claimed_at`), so the two paths never contend. Draft-specific
@@ -24,6 +27,11 @@ behavior: picks are fetch-once (completed drafts are immutable), and leagues
 whose drafting is finished (`in_season`/`complete` with drafts fetched) leave
 the claim pool entirely; `pre_draft`/`drafting` leagues recheck on cadence
 until their drafts complete.
+
+User discovery uses the same claim model on `sleeper_users.claimed_at`.
+Because dispatcher ticks *claim* users instead of re-selecting the stalest
+ones and deduping on child-workflow IDs, a slow or stuck cohort can never
+head-of-line-block discovery of the users behind it.
 
 ### Per-fleet vs global knobs
 

@@ -2,8 +2,23 @@ package activities
 
 import "backend/internal/models"
 
-type GetStaleUsersParams struct {
+type ClaimStaleUsersParams struct {
 	BatchSize int
+}
+
+// DiscoveryConfig is read from env by GetDiscoveryConfig so the dispatcher
+// workflow (which cannot read env deterministically) can be tuned without a
+// redeploy of workflow code. Discovery batches are smaller than the sync
+// paths because each user fans out into per-league member/detail fetches.
+type DiscoveryConfig struct {
+	ParallelBatches int // DISCOVERY_PARALLEL_BATCHES, default 2
+	BatchSize       int // DISCOVERY_BATCH_SIZE, default 50
+	Concurrency     int // DISCOVERY_USER_CONCURRENCY, default 8
+}
+
+type DiscoverUsersBatchParams struct {
+	UserIDs     []string
+	Concurrency int
 }
 
 type FetchUserLeaguesParams struct {
@@ -12,14 +27,6 @@ type FetchUserLeaguesParams struct {
 
 type FetchLeagueMembersParams struct {
 	LeagueID string
-}
-
-type MarkUserFetchedParams struct {
-	UserID string
-}
-
-type MarkUserSkippedParams struct {
-	UserID string
 }
 
 type FetchLeagueDetailsParams struct {

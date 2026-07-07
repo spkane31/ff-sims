@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"go.temporal.io/sdk/testsuite"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -79,49 +81,160 @@ func newTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestGetStaleUsers_NullFirst(t *testing.T) {
-	db := newTestDB(t)
-	now := time.Now()
-	old := now.Add(-1 * time.Hour)
+// discoveryTestServer fakes the three discovery endpoints:
+// /v1/user/{id}/leagues/nfl/{season}, /v1/league/{id}/users, /v1/league/{id}.
+// userLeagues maps userID -> leagues (returned for every scanned season);
+// missing user keys 404. members maps leagueID -> league users.
+func discoveryTestServer(t *testing.T, userLeagues map[string][]sleeper.League, members map[string][]sleeper.LeagueUser) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		switch {
+		case parts[1] == "user":
+			leagues, ok := userLeagues[parts[2]]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			json.NewEncoder(w).Encode(leagues)
+		case parts[1] == "league" && strings.HasSuffix(r.URL.Path, "/users"):
+			json.NewEncoder(w).Encode(members[parts[2]])
+		case parts[1] == "league":
+			// league details: echo a minimal league for the requested ID
+			json.NewEncoder(w).Encode(sleeper.League{LeagueID: parts[2], Name: "L", Status: "in_season", TotalRosters: 12})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
 
-	db.Create(&models.SleeperUser{SleeperUserID: "a", LastFetchedAt: &now})
-	db.Create(&models.SleeperUser{SleeperUserID: "b", LastFetchedAt: &old})
-	db.Create(&models.SleeperUser{SleeperUserID: "c"}) // NULL last_fetched_at
-
-	da := &activities.DiscoveryActivities{DB: db}
-	ids, err := da.GetStaleUsers(context.Background(), activities.GetStaleUsersParams{BatchSize: 2})
+func runDiscoveryBatch(t *testing.T, da *activities.DiscoveryActivities, params activities.DiscoverUsersBatchParams) activities.SyncBatchResult {
+	t.Helper()
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestActivityEnvironment()
+	env.RegisterActivity(da.DiscoverUsersBatch)
+	val, err := env.ExecuteActivity(da.DiscoverUsersBatch, params)
 	if err != nil {
-		t.Fatalf("GetStaleUsers error: %v", err)
+		t.Fatalf("discovery batch activity: %v", err)
 	}
-	if len(ids) != 2 {
-		t.Fatalf("expected 2 ids, got %d: %v", len(ids), ids)
+	var res activities.SyncBatchResult
+	if err := val.Get(&res); err != nil {
+		t.Fatalf("decode result: %v", err)
 	}
-	if ids[0] != "c" {
-		t.Errorf("expected NULL-first user 'c', got %q", ids[0])
-	}
-	if ids[1] != "b" {
-		t.Errorf("expected oldest user 'b' second, got %q", ids[1])
+	return res
+}
+
+func claimedUser(t *testing.T, db *gorm.DB, id string) {
+	t.Helper()
+	now := time.Now().UTC()
+	u := models.SleeperUser{SleeperUserID: id, ClaimedAt: &now}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
 	}
 }
 
-func TestGetStaleUsers_ExcludesSkipped(t *testing.T) {
+func TestDiscoverUsersBatch_DiscoversAndStamps(t *testing.T) {
 	db := newTestDB(t)
-	skippedAt := time.Now()
-	db.Create(&models.SleeperUser{SleeperUserID: "skipped", SkippedAt: &skippedAt})
-	db.Create(&models.SleeperUser{SleeperUserID: "normal"})
+	claimedUser(t, db, "user1")
 
-	da := &activities.DiscoveryActivities{DB: db}
-	ids, err := da.GetStaleUsers(context.Background(), activities.GetStaleUsersParams{BatchSize: 10})
-	if err != nil {
-		t.Fatalf("GetStaleUsers error: %v", err)
+	srv := discoveryTestServer(t,
+		map[string][]sleeper.League{
+			"user1": {{LeagueID: "lg1", Name: "Test League", Season: "2026", Sport: "nfl", Status: "in_season"}},
+		},
+		map[string][]sleeper.LeagueUser{
+			"lg1": {{UserID: "user1", Username: "me"}, {UserID: "u-new", Username: "newbie"}},
+		})
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{UserIDs: []string{"user1"}, Concurrency: 2})
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected 1 processed / 0 failed, got %+v", res)
 	}
-	for _, id := range ids {
-		if id == "skipped" {
-			t.Error("skipped user should not appear in results")
+
+	var u models.SleeperUser
+	db.First(&u, "sleeper_user_id = ?", "user1")
+	if u.LastFetchedAt == nil || u.ClaimedAt != nil {
+		t.Errorf("user not stamped/unclaimed: %+v", u)
+	}
+	// Discovered member enters the queue with NULL last_fetched_at.
+	var newbie models.SleeperUser
+	db.First(&newbie, "sleeper_user_id = ?", "u-new")
+	if newbie.LastFetchedAt != nil {
+		t.Error("new member should have NULL last_fetched_at")
+	}
+	// League upserted with details populated.
+	var lg models.SleeperLeague
+	db.First(&lg, "sleeper_league_id = ?", "lg1")
+	if lg.LastFetchedAt == nil {
+		t.Errorf("league details not stamped: %+v", lg)
+	}
+}
+
+func TestDiscoverUsersBatch_User404MarksSkipped(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "gone")
+
+	srv := discoveryTestServer(t, map[string][]sleeper.League{}, nil) // every user 404s
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{UserIDs: []string{"gone"}, Concurrency: 1})
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected skip to count as processed, got %+v", res)
+	}
+	var u models.SleeperUser
+	db.First(&u, "sleeper_user_id = ?", "gone")
+	if u.SkippedAt == nil || u.ClaimedAt != nil {
+		t.Errorf("user should be skipped and unclaimed: %+v", u)
+	}
+	if u.LastFetchedAt != nil {
+		t.Errorf("skipped user must not be stamped fetched: %+v", u)
+	}
+}
+
+func TestDiscoverUsersBatch_LeagueFailuresContinue(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "user1")
+
+	// User's leagues resolve, but every league-level endpoint fails with a
+	// non-retryable 400: discovery must warn, continue, and still stamp the user.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if parts[1] == "user" {
+			json.NewEncoder(w).Encode([]sleeper.League{{LeagueID: "lg1", Season: "2026", Sport: "nfl"}})
+			return
 		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{UserIDs: []string{"user1"}, Concurrency: 1})
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected league failures to be tolerated, got %+v", res)
 	}
-	if len(ids) != 1 || ids[0] != "normal" {
-		t.Errorf("expected [normal], got %v", ids)
+	var u models.SleeperUser
+	db.First(&u, "sleeper_user_id = ?", "user1")
+	if u.LastFetchedAt == nil || u.ClaimedAt != nil {
+		t.Errorf("user must be stamped despite league failures: %+v", u)
+	}
+}
+
+func TestDiscoverUsersBatch_RetrySkipsAlreadyStampedUsers(t *testing.T) {
+	db := newTestDB(t)
+	// u1 was stamped by a previous attempt (claim cleared); u2 still claimed.
+	now := time.Now().UTC()
+	db.Create(&models.SleeperUser{SleeperUserID: "u1", LastFetchedAt: &now})
+	claimedUser(t, db, "u2")
+
+	srv := discoveryTestServer(t, map[string][]sleeper.League{"u1": {}, "u2": {}}, nil)
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{UserIDs: []string{"u1", "u2"}, Concurrency: 1})
+	if res.Processed != 1 {
+		t.Fatalf("expected only still-claimed u2 processed, got %+v", res)
 	}
 }
 
@@ -196,38 +309,6 @@ func TestFetchLeagueMembers_InsertsUsers(t *testing.T) {
 	db.First(&u, "sleeper_user_id = ?", "u1")
 	if u.LastFetchedAt != nil {
 		t.Error("new user should have NULL last_fetched_at")
-	}
-}
-
-func TestMarkUserFetched_SetsTimestamp(t *testing.T) {
-	db := newTestDB(t)
-	db.Create(&models.SleeperUser{SleeperUserID: "u1"})
-
-	da := &activities.DiscoveryActivities{DB: db}
-	if err := da.MarkUserFetched(context.Background(), activities.MarkUserFetchedParams{UserID: "u1"}); err != nil {
-		t.Fatalf("MarkUserFetched error: %v", err)
-	}
-
-	var u models.SleeperUser
-	db.First(&u, "sleeper_user_id = ?", "u1")
-	if u.LastFetchedAt == nil {
-		t.Error("expected last_fetched_at to be set")
-	}
-}
-
-func TestMarkUserSkipped_SetsTimestamp(t *testing.T) {
-	db := newTestDB(t)
-	db.Create(&models.SleeperUser{SleeperUserID: "u1"})
-
-	da := &activities.DiscoveryActivities{DB: db}
-	if err := da.MarkUserSkipped(context.Background(), activities.MarkUserSkippedParams{UserID: "u1"}); err != nil {
-		t.Fatalf("MarkUserSkipped error: %v", err)
-	}
-
-	var u models.SleeperUser
-	db.First(&u, "sleeper_user_id = ?", "u1")
-	if u.SkippedAt == nil {
-		t.Error("expected skipped_at to be set")
 	}
 }
 

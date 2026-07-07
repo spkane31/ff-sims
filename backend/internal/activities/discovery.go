@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"backend/internal/helpers"
 	"backend/internal/models"
 	"backend/internal/sleeper"
 )
@@ -38,23 +42,144 @@ type DiscoveryActivities struct {
 	Sleeper *sleeper.Client
 }
 
-// GetStaleUsers returns up to batchSize user IDs ordered by last_fetched_at ASC NULLS FIRST,
-// excluding users that have been permanently skipped (404).
-func (a *DiscoveryActivities) GetStaleUsers(ctx context.Context, params GetStaleUsersParams) ([]string, error) {
-	var users []models.SleeperUser
-	err := a.DB.WithContext(ctx).
-		Where("skipped_at IS NULL").
-		Order("CASE WHEN last_fetched_at IS NULL THEN 0 ELSE 1 END, last_fetched_at ASC").
-		Limit(params.BatchSize).
-		Find(&users).Error
-	if err != nil {
+// GetDiscoveryConfig returns the discovery dispatcher tuning knobs from env,
+// clamped to at least 1 so a bad value can't stall dispatch or break the
+// claim query's LIMIT.
+func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (DiscoveryConfig, error) {
+	return DiscoveryConfig{
+		ParallelBatches: max(helpers.GetEnv("DISCOVERY_PARALLEL_BATCHES", 2), 1),
+		BatchSize:       max(helpers.GetEnv("DISCOVERY_BATCH_SIZE", 50), 1),
+		Concurrency:     max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 8), 1),
+	}, nil
+}
+
+// claimStaleUsersSQL atomically claims up to batchSize stale users for
+// discovery (same pattern as the league sync paths). FOR UPDATE SKIP LOCKED
+// lets concurrent claimers partition the queue without double-claiming, and
+// the 20-minute expiry re-queues users claimed by a worker that died
+// mid-batch. Because ticks claim rather than re-select, a stuck cohort can
+// never head-of-line-block the queue the way the old workflow-ID-collision
+// dedupe did.
+const claimStaleUsersSQL = `
+UPDATE sleeper_users SET claimed_at = now()
+WHERE sleeper_user_id IN (
+    SELECT sleeper_user_id FROM sleeper_users
+    WHERE skipped_at IS NULL
+      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
+    ORDER BY last_fetched_at ASC NULLS FIRST
+    LIMIT ?
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING sleeper_user_id`
+
+// ClaimStaleUsers claims up to BatchSize users for discovery, never-fetched
+// first then oldest. Postgres-only (SKIP LOCKED).
+func (a *DiscoveryActivities) ClaimStaleUsers(ctx context.Context, params ClaimStaleUsersParams) ([]string, error) {
+	var ids []string
+	if err := a.DB.WithContext(ctx).Raw(claimStaleUsersSQL, params.BatchSize).Scan(&ids).Error; err != nil {
 		return nil, err
 	}
-	ids := make([]string, len(users))
-	for i, u := range users {
-		ids[i] = u.SleeperUserID
-	}
 	return ids, nil
+}
+
+// DiscoverUsersBatch runs discovery for a claimed batch of users with bounded
+// concurrency, stamping each user done as it completes. Per-user failures are
+// counted, not propagated: a failed user keeps its claim and re-enters the
+// queue when the claim expires. The activity heartbeats as users complete so
+// a dead worker is detected via HeartbeatTimeout.
+func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params DiscoverUsersBatchParams) (SyncBatchResult, error) {
+	logger := activity.GetLogger(ctx)
+	res := SyncBatchResult{}
+
+	// Re-scope to users still claimed: on an activity retry, users stamped by
+	// the previous attempt have claimed_at cleared and must not re-run.
+	var stillClaimed []string
+	if err := a.DB.WithContext(ctx).Model(&models.SleeperUser{}).
+		Where("sleeper_user_id IN ? AND claimed_at IS NOT NULL", params.UserIDs).
+		Pluck("sleeper_user_id", &stillClaimed).Error; err != nil {
+		return res, err
+	}
+	if len(stillClaimed) == 0 {
+		return res, nil
+	}
+
+	concurrency := max(1, params.Concurrency)
+	type userResult struct {
+		userID string
+		err    error
+	}
+	sem := make(chan struct{}, concurrency)
+	results := make(chan userResult, len(stillClaimed))
+	var wg sync.WaitGroup
+	for _, id := range stillClaimed {
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			results <- userResult{userID: id, err: a.discoverOneUser(ctx, logger, id)}
+		})
+	}
+	go func() { wg.Wait(); close(results) }()
+
+	done := 0
+	for r := range results {
+		done++
+		if r.err != nil {
+			res.Failed++
+			logger.Warn("user discovery failed", "userID", r.userID, "error", r.err)
+		} else {
+			res.Processed++
+		}
+		if done%5 == 0 {
+			activity.RecordHeartbeat(ctx, done)
+		}
+	}
+	return res, nil
+}
+
+// discoverOneUser fetches a user's leagues across configured seasons, then for
+// each league upserts its members (with NULL last_fetched_at so they enter the
+// discovery queue) and its details, and finally stamps the user done (clearing
+// the claim). Per-league failures are logged and skipped, matching the old
+// UserDiscoveryWorkflow's warn-and-continue behavior. A 404 on the user marks
+// them permanently skipped.
+func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string) error {
+	leagueIDs, err := a.FetchUserLeagues(ctx, FetchUserLeaguesParams{UserID: userID})
+	if err != nil {
+		if isNotFoundAppError(err) {
+			return a.DB.WithContext(ctx).
+				Model(&models.SleeperUser{}).
+				Where("sleeper_user_id = ?", userID).
+				Updates(map[string]interface{}{
+					"skipped_at": time.Now().UTC(),
+					"claimed_at": nil,
+				}).Error
+		}
+		return err
+	}
+
+	for _, lid := range leagueIDs {
+		if err := a.FetchLeagueMembers(ctx, FetchLeagueMembersParams{LeagueID: lid}); err != nil {
+			logger.Warn("FetchLeagueMembers failed, continuing", "leagueID", lid, "error", err)
+		}
+		if err := a.FetchLeagueDetails(ctx, FetchLeagueDetailsParams{LeagueID: lid}); err != nil {
+			logger.Warn("FetchLeagueDetails failed, continuing", "leagueID", lid, "error", err)
+		}
+	}
+
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperUser{}).
+		Where("sleeper_user_id = ?", userID).
+		Updates(map[string]interface{}{
+			"last_fetched_at": time.Now().UTC(),
+			"claimed_at":      nil,
+		}).Error
+}
+
+// isNotFoundAppError reports whether err is the NOT_FOUND application error
+// produced by the fetch helpers when a Sleeper entity no longer exists.
+func isNotFoundAppError(err error) bool {
+	var appErr *temporal.ApplicationError
+	return errors.As(err, &appErr) && appErr.Type() == "NOT_FOUND"
 }
 
 // FetchUserLeagues fetches all leagues for userID across all configured seasons,
@@ -131,15 +256,6 @@ func (a *DiscoveryActivities) FetchLeagueMembers(ctx context.Context, params Fet
 	return nil
 }
 
-// MarkUserFetched sets last_fetched_at=now() on the given user.
-func (a *DiscoveryActivities) MarkUserFetched(ctx context.Context, params MarkUserFetchedParams) error {
-	now := time.Now().UTC()
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperUser{}).
-		Where("sleeper_user_id = ?", params.UserID).
-		Update("last_fetched_at", now).Error
-}
-
 // sleeperLeagueType converts the integer type from Sleeper's league settings to a string.
 // Sleeper encodes: 0=redraft, 1=keeper, 2=dynasty.
 func sleeperLeagueType(t int) string {
@@ -151,15 +267,6 @@ func sleeperLeagueType(t int) string {
 	default:
 		return "redraft"
 	}
-}
-
-// MarkUserSkipped sets skipped_at=now() so the user is excluded from future batches.
-func (a *DiscoveryActivities) MarkUserSkipped(ctx context.Context, params MarkUserSkippedParams) error {
-	now := time.Now().UTC()
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperUser{}).
-		Where("sleeper_user_id = ?", params.UserID).
-		Update("skipped_at", now).Error
 }
 
 // FetchLeagueDetails fetches league metadata from Sleeper and stamps last_fetched_at.

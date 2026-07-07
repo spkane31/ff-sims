@@ -69,10 +69,13 @@ func run(ctx context.Context, username string) error {
 	}
 	defer c.Close()
 
+	// The seeded user has last_fetched_at NULL, so the claim query picks it up
+	// first; running the dispatcher immediately discovers it (and drains any
+	// other stale users) without waiting for the schedule.
 	wfRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "seed-" + user.UserID,
 		TaskQueue: workflows.TaskQueueDiscovery,
-	}, workflows.UserDiscoveryWorkflow, workflows.UserDiscoveryParams{UserID: user.UserID})
+	}, workflows.DiscoveryBatchDispatcher)
 	if err != nil {
 		return fmt.Errorf("start workflow: %w", err)
 	}

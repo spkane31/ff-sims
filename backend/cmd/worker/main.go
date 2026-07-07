@@ -89,13 +89,12 @@ func main() {
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
 	aa := &activities.ADPRollupActivities{DB: database.DB}
 
-	// Discovery worker: DiscoveryBatchDispatcher + UserDiscoveryWorkflow
+	// Discovery worker: DiscoveryBatchDispatcher (claim-drain batch model)
 	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{
 		DeploymentOptions: deploymentOpts,
 		SysInfoProvider:   sysinfo.SysInfoProvider(),
 	})
 	dw.RegisterWorkflow(workflows.DiscoveryBatchDispatcher)
-	dw.RegisterWorkflow(workflows.UserDiscoveryWorkflow)
 	dw.RegisterActivity(da)
 
 	// The sync queues (drafts, transactions) are I/O-bound, and Temporal task
