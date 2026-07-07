@@ -37,6 +37,7 @@ type SleeperLeague struct {
 	LastTransactionsFetchedAt *time.Time `gorm:"column:last_transactions_fetched_at"`
 	LastTransactionLegFetched *int       `gorm:"column:last_transaction_leg_fetched"`
 	ClaimedAt                 *time.Time `gorm:"column:claimed_at"`
+	DraftsClaimedAt           *time.Time `gorm:"column:drafts_claimed_at"`
 	SkippedAt                 *time.Time `gorm:"column:skipped_at"`
 	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime"`

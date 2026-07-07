@@ -1,58 +1,67 @@
 package workflows
 
 import (
-	"fmt"
-
-	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 
 	"backend/internal/activities"
 )
 
-// DraftSyncDispatcher is a scheduled workflow that queries for leagues with stale draft data
-// and spawns LeagueDraftSyncWorkflow children for each (fire-and-forget).
+// DraftSyncDispatcher drains the stale-drafts backlog by fanning out
+// claim→batch pipelines, mirroring TransactionSyncDispatcher. Each iteration
+// claims up to ParallelBatches batches of leagues (atomically, via FOR UPDATE
+// SKIP LOCKED on drafts_claimed_at) and runs a SyncLeagueDraftsBatch activity
+// per claim in parallel. A short or empty claim means the backlog is drained
+// for now, so the run exits and the schedule takes over. Failed batch
+// activities are logged, not propagated: their leagues' claims expire after
+// 20 minutes and re-queue.
 func DraftSyncDispatcher(ctx workflow.Context) error {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
+	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
+	logger := workflow.GetLogger(ctx)
 
-	var leagueIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.GetStaleLeaguesForDrafts, activities.GetStaleLeaguesParams{BatchSize: SyncBatchSize}).Get(ctx, &leagueIDs); err != nil {
+	var cfg activities.DraftSyncConfig
+	if err := workflow.ExecuteActivity(actCtx, dfa.GetDraftSyncConfig).Get(ctx, &cfg); err != nil {
 		return err
 	}
-	for _, lid := range leagueIDs {
-		cwo := workflow.ChildWorkflowOptions{
-			WorkflowID:        fmt.Sprintf("draft-sync-%s", lid),
-			TaskQueue:         TaskQueueDrafts,
-			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
+
+	for iter := 0; iter < MaxDispatchIterations; iter++ {
+		var futures []workflow.Future
+		drained := false
+		for k := 0; k < cfg.ParallelBatches; k++ {
+			var leagueIDs []string
+			err := workflow.ExecuteActivity(actCtx, dfa.ClaimLeaguesForDrafts, activities.ClaimLeaguesForDraftsParams{
+				BatchSize: cfg.BatchSize,
+			}).Get(ctx, &leagueIDs)
+			if err != nil {
+				logger.Error("draft claim failed; stopping dispatch for this run", "error", err)
+				drained = true
+				break
+			}
+			if len(leagueIDs) == 0 {
+				drained = true
+				break
+			}
+			futures = append(futures, workflow.ExecuteActivity(batchCtx, dfa.SyncLeagueDraftsBatch, activities.SyncLeagueDraftsBatchParams{
+				LeagueIDs:   leagueIDs,
+				Concurrency: cfg.Concurrency,
+			}))
+			if len(leagueIDs) < cfg.BatchSize {
+				drained = true
+				break
+			}
 		}
-		f := workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), LeagueDraftSyncWorkflow, LeagueSyncParams{LeagueID: lid})
-		if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
-			workflow.GetLogger(ctx).Warn("failed to start LeagueDraftSyncWorkflow", "leagueID", lid, "error", err)
+		for _, f := range futures {
+			var res activities.SyncBatchResult
+			if err := f.Get(ctx, &res); err != nil {
+				logger.Error("draft batch failed; claims will expire and re-queue", "error", err)
+				continue
+			}
+			logger.Info("draft batch done", "processed", res.Processed, "failed", res.Failed)
+		}
+		if drained {
+			break
 		}
 	}
 	return nil
-}
-
-// LeagueDraftSyncWorkflow fetches all completed drafts and their picks for a single league,
-// then stamps last_drafts_fetched_at. Pick failures are logged and skipped (warn+continue).
-func LeagueDraftSyncWorkflow(ctx workflow.Context, params LeagueSyncParams) error {
-	dfa := &activities.DataFetchActivities{}
-	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
-
-	var completedDraftIDs []string
-	if err := workflow.ExecuteActivity(actCtx, dfa.FetchLeagueDrafts, activities.FetchLeagueDraftsParams{LeagueID: params.LeagueID}).Get(ctx, &completedDraftIDs); err != nil {
-		if isNotFound(err) {
-			return workflow.ExecuteActivity(actCtx, dfa.MarkLeagueSkipped, activities.MarkLeagueSkippedParams{LeagueID: params.LeagueID}).Get(ctx, nil)
-		}
-		return err
-	}
-
-	for _, draftID := range completedDraftIDs {
-		if err := workflow.ExecuteActivity(actCtx, dfa.FetchDraftPicks, activities.FetchDraftPicksParams{DraftID: draftID}).Get(ctx, nil); err != nil {
-			workflow.GetLogger(ctx).Warn("FetchDraftPicks failed, continuing",
-				"draftID", draftID, "error", err)
-		}
-	}
-
-	return workflow.ExecuteActivity(actCtx, dfa.MarkLeagueDraftsFetched, activities.MarkLeagueFetchedParams{LeagueID: params.LeagueID}).Get(ctx, nil)
 }

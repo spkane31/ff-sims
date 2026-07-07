@@ -1,18 +1,29 @@
-# Transaction Sync Operations
+# Sleeper Sync Operations (transactions + drafts)
 
 ## Tuning knobs (env, per worker process)
 
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `SLEEPER_RPM` | 2000 | Sleeper API requests/minute budget for this process (per fleet IP). Start high, tune down if 429s appear in logs. |
-| `TXN_SYNC_PARALLEL_BATCHES` | 4 | Claim→batch pipelines per dispatcher iteration. |
-| `TXN_SYNC_BATCH_SIZE` | 250 | Leagues claimed per batch activity. |
-| `TXN_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one batch activity. |
+| `TXN_SYNC_PARALLEL_BATCHES` | 4 | Transaction claim→batch pipelines per dispatcher iteration. |
+| `TXN_SYNC_BATCH_SIZE` | 250 | Leagues claimed per transaction batch activity. |
+| `TXN_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one transaction batch activity. |
+| `DRAFT_SYNC_PARALLEL_BATCHES` | 4 | Draft claim→batch pipelines per dispatcher iteration. |
+| `DRAFT_SYNC_BATCH_SIZE` | 250 | Leagues claimed per draft batch activity. |
+| `DRAFT_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one draft batch activity. |
 | `WORKER_ACTIVITY_SLOTS` | 100 | Max concurrent activities on each sync queue (drafts, transactions) for this process. |
 | `WORKER_ACTIVITY_POLLERS` | SDK default | Activity task pollers on each sync queue for this process; raise to win a larger share of queue tasks. |
 
 Changing dispatcher knobs needs only a worker restart (they're read by the
-`GetTransactionSyncConfig` activity each run, not baked into workflow code).
+`GetTransactionSyncConfig` / `GetDraftSyncConfig` activities each run, not
+baked into workflow code).
+
+Draft sync mirrors the transaction design on a separate claim column
+(`drafts_claimed_at`), so the two paths never contend. Draft-specific
+behavior: picks are fetch-once (completed drafts are immutable), and leagues
+whose drafting is finished (`in_season`/`complete` with drafts fetched) leave
+the claim pool entirely; `pre_draft`/`drafting` leagues recheck on cadence
+until their drafts complete.
 
 ### Per-fleet vs global knobs
 

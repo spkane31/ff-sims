@@ -136,17 +136,26 @@ func TestUserDiscovery_MemberFetchFailureContinues(t *testing.T) {
 
 // ---- DraftSyncDispatcher ----
 
-func TestDraftSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
+func TestDraftSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
-		Return([]string{"lg1", "lg2"}, nil)
+	cfg := activities.DraftSyncConfig{ParallelBatches: 2, BatchSize: 2, Concurrency: 4}
+	env.OnActivity(dfa.GetDraftSyncConfig, mock.Anything).Return(cfg, nil)
 
-	env.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
-	env.OnWorkflow(workflows.LeagueDraftSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg1"}).Return(nil)
-	env.OnWorkflow(workflows.LeagueDraftSyncWorkflow, mock.Anything, workflows.LeagueSyncParams{LeagueID: "lg2"}).Return(nil)
+	full := []string{"a", "b"}
+	short := []string{"c"}
+	// First claim full, second claim short -> dispatcher must stop claiming after the short one.
+	env.OnActivity(dfa.ClaimLeaguesForDrafts, mock.Anything, activities.ClaimLeaguesForDraftsParams{BatchSize: 2}).
+		Return(full, nil).Once()
+	env.OnActivity(dfa.ClaimLeaguesForDrafts, mock.Anything, activities.ClaimLeaguesForDraftsParams{BatchSize: 2}).
+		Return(short, nil).Once()
+
+	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: full, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
+	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: short, Concurrency: 4}).
+		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
 
@@ -155,98 +164,40 @@ func TestDraftSyncDispatcher_SpawnsChildWorkflows(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
-func TestDraftSyncDispatcher_EmptyBatch(t *testing.T) {
+func TestDraftSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
-		Return([]string{}, nil)
+	env.OnActivity(dfa.GetDraftSyncConfig, mock.Anything).
+		Return(activities.DraftSyncConfig{ParallelBatches: 4, BatchSize: 250, Concurrency: 12}, nil)
+	env.OnActivity(dfa.ClaimLeaguesForDrafts, mock.Anything, activities.ClaimLeaguesForDraftsParams{BatchSize: 250}).
+		Return([]string{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-}
-
-func TestDraftSyncDispatcher_ChildWorkflowIDIsLeagueScoped(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.GetStaleLeaguesForDrafts, mock.Anything, activities.GetStaleLeaguesParams{BatchSize: workflows.SyncBatchSize}).
-		Return([]string{"lg1", "lg2"}, nil)
-
-	env.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
-
-	seenIDs := make(map[string]bool)
-	captureID := func(ctx context.Context) bool {
-		seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
-		return true
-	}
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.MatchedBy(captureID), activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).Return([]string{}, nil)
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.MatchedBy(captureID), activities.FetchLeagueDraftsParams{LeagueID: "lg2"}).Return([]string{}, nil)
-	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg2"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	require.True(t, seenIDs["draft-sync-lg1"], "expected child workflow ID %q to have been used", "draft-sync-lg1")
-	require.True(t, seenIDs["draft-sync-lg2"], "expected child workflow ID %q to have been used", "draft-sync-lg2")
-}
-
-// ---- LeagueDraftSyncWorkflow ----
-
-func TestLeagueDraftSync_FullPath(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).
-		Return([]string{"d1", "d2"}, nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).Return(nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d2"}).Return(nil)
-	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
 
-func TestLeagueDraftSync_NotFoundCallsSkip(t *testing.T) {
+func TestDraftSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "gone"}).
-		Return(nil, temporal.NewNonRetryableApplicationError("league not found", "NOT_FOUND", nil))
-	env.OnActivity(dfa.MarkLeagueSkipped, mock.Anything, activities.MarkLeagueSkippedParams{LeagueID: "gone"}).Return(nil)
+	env.OnActivity(dfa.GetDraftSyncConfig, mock.Anything).
+		Return(activities.DraftSyncConfig{ParallelBatches: 1, BatchSize: 2, Concurrency: 4}, nil)
+	env.OnActivity(dfa.ClaimLeaguesForDrafts, mock.Anything, mock.Anything).Return([]string{"a"}, nil).Once()
+	// Non-retryable so the mock's .Once() isn't consumed by activity retries
+	// (batchActivityOptions allows 3 attempts).
+	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, mock.Anything).
+		Return(activities.SyncBatchResult{}, temporal.NewNonRetryableApplicationError("boom", "test", nil)).Once()
 
-	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "gone"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-func TestLeagueDraftSync_PicksFailureContinues(t *testing.T) {
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
-
-	dfa := &activities.DataFetchActivities{}
-	env.OnActivity(dfa.FetchLeagueDrafts, mock.Anything, activities.FetchLeagueDraftsParams{LeagueID: "lg1"}).
-		Return([]string{"d1"}, nil)
-	env.OnActivity(dfa.FetchDraftPicks, mock.Anything, activities.FetchDraftPicksParams{DraftID: "d1"}).
-		Return(temporal.NewApplicationError("timeout", "TIMEOUT", nil))
-	env.OnActivity(dfa.MarkLeagueDraftsFetched, mock.Anything, activities.MarkLeagueFetchedParams{LeagueID: "lg1"}).Return(nil)
-
-	env.ExecuteWorkflow(workflows.LeagueDraftSyncWorkflow, workflows.LeagueSyncParams{LeagueID: "lg1"})
+	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
+	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
