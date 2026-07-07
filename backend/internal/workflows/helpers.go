@@ -18,10 +18,10 @@ const (
 	BatchSize             = 150
 	SyncBatchSize         = 150
 
-	// TxnMaxDispatchIterations bounds the dispatcher's claim loop so one run's
-	// event history stays small; the 5-minute schedule picks up any remainder.
+	// MaxDispatchIterations bounds a sync dispatcher's claim loop so one run's
+	// event history stays small; the schedule picks up any remainder.
 	// 25 iterations × 4 batches × 250 leagues = 25k leagues per run.
-	TxnMaxDispatchIterations = 25
+	MaxDispatchIterations = 25
 )
 
 var defaultActivityOptions = workflow.ActivityOptions{

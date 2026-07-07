@@ -22,20 +22,26 @@ type MarkUserSkippedParams struct {
 	UserID string
 }
 
-type GetStaleLeaguesParams struct {
-	BatchSize int
-}
-
 type FetchLeagueDetailsParams struct {
 	LeagueID string
 }
 
-type FetchLeagueDraftsParams struct {
-	LeagueID string
+type ClaimLeaguesForDraftsParams struct {
+	BatchSize int
 }
 
-type FetchDraftPicksParams struct {
-	DraftID string
+// DraftSyncConfig is read from env by GetDraftSyncConfig so the dispatcher
+// workflow (which cannot read env deterministically) can be tuned without a
+// redeploy of workflow code.
+type DraftSyncConfig struct {
+	ParallelBatches int // DRAFT_SYNC_PARALLEL_BATCHES, default 4
+	BatchSize       int // DRAFT_SYNC_BATCH_SIZE, default 250
+	Concurrency     int // DRAFT_SYNC_LEAGUE_CONCURRENCY, default 12
+}
+
+type SyncLeagueDraftsBatchParams struct {
+	LeagueIDs   []string
+	Concurrency int
 }
 
 type ClaimLeaguesForTransactionsParams struct {
@@ -69,14 +75,6 @@ type SyncLeagueTransactionsBatchParams struct {
 type SyncBatchResult struct {
 	Processed int
 	Failed    int
-}
-
-type MarkLeagueFetchedParams struct {
-	LeagueID string
-}
-
-type MarkLeagueSkippedParams struct {
-	LeagueID string
 }
 
 type FetchWeekStatsParams struct {

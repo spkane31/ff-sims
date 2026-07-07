@@ -24,7 +24,7 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 		return err
 	}
 
-	for iter := 0; iter < TxnMaxDispatchIterations; iter++ {
+	for iter := 0; iter < MaxDispatchIterations; iter++ {
 		var futures []workflow.Future
 		drained := false
 		for k := 0; k < cfg.ParallelBatches; k++ {

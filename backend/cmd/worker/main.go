@@ -118,10 +118,9 @@ func main() {
 	log.Printf("sync worker tuning: activity_slots=%d activity_pollers=%d (0 = SDK default)",
 		syncWorkerOptions.MaxConcurrentActivityExecutionSize, syncWorkerOptions.MaxConcurrentActivityTaskPollers)
 
-	// Drafts worker: DraftSyncDispatcher + LeagueDraftSyncWorkflow
+	// Drafts worker: DraftSyncDispatcher (claim-drain batch model)
 	draftsw := worker.New(c, workflows.TaskQueueDrafts, syncWorkerOptions)
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
-	draftsw.RegisterWorkflow(workflows.LeagueDraftSyncWorkflow)
 	draftsw.RegisterActivity(dfa)
 
 	// Transactions worker: TransactionSyncDispatcher (claim-drain batch model)

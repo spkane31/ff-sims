@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/temporal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -24,24 +23,127 @@ type DataFetchActivities struct {
 	Sleeper *sleeper.Client
 }
 
-// FetchLeagueDrafts fetches all drafts for leagueID, upserts them, and returns the IDs
-// of completed drafts (status="complete") that are ready for pick fetching.
-func (a *DataFetchActivities) FetchLeagueDrafts(ctx context.Context, params FetchLeagueDraftsParams) ([]string, error) {
-	drafts, err := a.Sleeper.GetLeagueDrafts(ctx, params.LeagueID)
+// GetDraftSyncConfig returns the draft dispatcher tuning knobs from env,
+// clamped to at least 1 so a bad value can't stall dispatch or break the
+// claim query's LIMIT.
+func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSyncConfig, error) {
+	return DraftSyncConfig{
+		ParallelBatches: max(helpers.GetEnv("DRAFT_SYNC_PARALLEL_BATCHES", 4), 1),
+		BatchSize:       max(helpers.GetEnv("DRAFT_SYNC_BATCH_SIZE", 250), 1),
+		Concurrency:     max(helpers.GetEnv("DRAFT_SYNC_LEAGUE_CONCURRENCY", 12), 1),
+	}, nil
+}
+
+// claimLeaguesForDraftsSQL atomically claims up to batchSize stale leagues for
+// draft syncing (same pattern as transactions, on a separate claim column so
+// the two sync paths never contend). Leagues whose drafting is finished
+// (in_season/complete) and already fetched are excluded — completed drafts are
+// immutable, so refetching them buys nothing; pre_draft and drafting leagues
+// keep rechecking until their drafts complete.
+const claimLeaguesForDraftsSQL = `
+UPDATE sleeper_leagues SET drafts_claimed_at = now()
+WHERE sleeper_league_id IN (
+    SELECT sleeper_league_id FROM sleeper_leagues
+    WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
+      AND NOT (status IN ('in_season', 'complete') AND last_drafts_fetched_at IS NOT NULL)
+      AND (drafts_claimed_at IS NULL OR drafts_claimed_at < now() - interval '20 minutes')
+    ORDER BY last_drafts_fetched_at ASC NULLS FIRST
+    LIMIT ?
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING sleeper_league_id`
+
+// ClaimLeaguesForDrafts claims up to BatchSize leagues with stale draft data.
+// Postgres-only (SKIP LOCKED).
+func (a *DataFetchActivities) ClaimLeaguesForDrafts(ctx context.Context, params ClaimLeaguesForDraftsParams) ([]string, error) {
+	var ids []string
+	if err := a.DB.WithContext(ctx).Raw(claimLeaguesForDraftsSQL, params.BatchSize).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// SyncLeagueDraftsBatch syncs drafts and picks for a claimed batch of leagues
+// with bounded concurrency, stamping each league done as it completes.
+// Per-league failures are counted, not propagated: a failed league keeps its
+// claim and re-enters the queue when the claim expires. The activity
+// heartbeats as leagues complete so a dead worker is detected via
+// HeartbeatTimeout.
+func (a *DataFetchActivities) SyncLeagueDraftsBatch(ctx context.Context, params SyncLeagueDraftsBatchParams) (SyncBatchResult, error) {
+	logger := activity.GetLogger(ctx)
+	res := SyncBatchResult{}
+
+	// Re-scope to leagues still claimed: on an activity retry, leagues stamped
+	// by the previous attempt have drafts_claimed_at cleared and must not re-sync.
+	var stillClaimed []string
+	if err := a.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id IN ? AND drafts_claimed_at IS NOT NULL", params.LeagueIDs).
+		Pluck("sleeper_league_id", &stillClaimed).Error; err != nil {
+		return res, err
+	}
+	if len(stillClaimed) == 0 {
+		return res, nil
+	}
+
+	concurrency := max(1, params.Concurrency)
+	type leagueResult struct {
+		leagueID string
+		err      error
+	}
+	sem := make(chan struct{}, concurrency)
+	results := make(chan leagueResult, len(stillClaimed))
+	var wg sync.WaitGroup
+	for _, id := range stillClaimed {
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			results <- leagueResult{leagueID: id, err: a.syncOneLeagueDrafts(ctx, id)}
+		})
+	}
+	go func() { wg.Wait(); close(results) }()
+
+	done := 0
+	for r := range results {
+		done++
+		if r.err != nil {
+			res.Failed++
+			logger.Warn("league draft sync failed", "leagueID", r.leagueID, "error", r.err)
+		} else {
+			res.Processed++
+		}
+		if done%10 == 0 {
+			activity.RecordHeartbeat(ctx, done)
+		}
+	}
+	return res, nil
+}
+
+// syncOneLeagueDrafts upserts a league's drafts, fetches picks for completed
+// drafts that haven't been picked up yet (completed drafts are immutable, so
+// picks are fetch-once), and stamps completion (clearing the claim) in one
+// update. A 404 on the league marks it skipped; a 404 on a draft's picks
+// skips that draft.
+func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID string) error {
+	drafts, err := a.Sleeper.GetLeagueDrafts(ctx, leagueID)
 	if err != nil {
 		var nfe *sleeper.NotFoundError
 		if errors.As(err, &nfe) {
-			return nil, temporal.NewNonRetryableApplicationError(
-				"league not found: "+params.LeagueID, "NOT_FOUND", err,
-			)
+			return a.DB.WithContext(ctx).
+				Model(&models.SleeperLeague{}).
+				Where("sleeper_league_id = ?", leagueID).
+				Updates(map[string]interface{}{
+					"skipped_at":        time.Now().UTC(),
+					"drafts_claimed_at": nil,
+				}).Error
 		}
-		return nil, err
+		return err
 	}
+
 	var completedIDs []string
 	for _, d := range drafts {
 		row := models.SleeperDraft{
 			SleeperDraftID:  d.DraftID,
-			SleeperLeagueID: params.LeagueID,
+			SleeperLeagueID: leagueID,
 			Type:            d.Type,
 			Status:          d.Status,
 			Season:          d.Season,
@@ -50,69 +152,71 @@ func (a *DataFetchActivities) FetchLeagueDrafts(ctx context.Context, params Fetc
 			Columns:   []clause.Column{{Name: "sleeper_draft_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"status", "type", "season"}),
 		}).Create(&row).Error; err != nil {
-			return nil, err
+			return err
 		}
 		if d.Status == "complete" {
 			completedIDs = append(completedIDs, d.DraftID)
 		}
 	}
-	return completedIDs, nil
+
+	if len(completedIDs) > 0 {
+		var pending []string
+		if err := a.DB.WithContext(ctx).Model(&models.SleeperDraft{}).
+			Where("sleeper_draft_id IN ? AND last_fetched_at IS NULL", completedIDs).
+			Pluck("sleeper_draft_id", &pending).Error; err != nil {
+			return err
+		}
+		for _, draftID := range pending {
+			if err := a.fetchDraftPicks(ctx, draftID); err != nil {
+				var nfe *sleeper.NotFoundError
+				if errors.As(err, &nfe) {
+					continue // draft gone on Sleeper's side; nothing to fetch
+				}
+				return fmt.Errorf("draft %s: %w", draftID, err)
+			}
+		}
+	}
+
+	return a.DB.WithContext(ctx).
+		Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", leagueID).
+		Updates(map[string]interface{}{
+			"last_drafts_fetched_at": time.Now().UTC(),
+			"drafts_claimed_at":      nil,
+		}).Error
 }
 
-// FetchDraftPicks fetches all picks for draftID and upserts them (immutable once complete).
-func (a *DataFetchActivities) FetchDraftPicks(ctx context.Context, params FetchDraftPicksParams) error {
-	picks, err := a.Sleeper.GetDraftPicks(ctx, params.DraftID)
+// fetchDraftPicks fetches and upserts all picks for draftID, then stamps the
+// draft's last_fetched_at so it is never refetched.
+func (a *DataFetchActivities) fetchDraftPicks(ctx context.Context, draftID string) error {
+	picks, err := a.Sleeper.GetDraftPicks(ctx, draftID)
 	if err != nil {
-		var nfe *sleeper.NotFoundError
-		if errors.As(err, &nfe) {
-			return temporal.NewNonRetryableApplicationError(
-				"draft not found: "+params.DraftID, "NOT_FOUND", err,
-			)
-		}
 		return err
 	}
-	for _, p := range picks {
-		metadata, _ := json.Marshal(p.Metadata)
-		row := models.SleeperDraftPick{
-			SleeperDraftID:  params.DraftID,
-			Round:           p.Round,
-			PickNo:          p.PickNo,
-			RosterID:        p.RosterID,
-			PickedByUserID:  p.PickedBy,
-			SleeperPlayerID: p.PlayerID,
-			Metadata:        metadata,
+	if len(picks) > 0 {
+		rows := make([]models.SleeperDraftPick, len(picks))
+		for i, p := range picks {
+			metadata, _ := json.Marshal(p.Metadata)
+			rows[i] = models.SleeperDraftPick{
+				SleeperDraftID:  draftID,
+				Round:           p.Round,
+				PickNo:          p.PickNo,
+				RosterID:        p.RosterID,
+				PickedByUserID:  p.PickedBy,
+				SleeperPlayerID: p.PlayerID,
+				Metadata:        metadata,
+			}
 		}
 		if err := a.DB.WithContext(ctx).
 			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(&row).Error; err != nil {
+			CreateInBatches(rows, 500).Error; err != nil {
 			return err
 		}
 	}
-	now := time.Now().UTC()
 	return a.DB.WithContext(ctx).
 		Model(&models.SleeperDraft{}).
-		Where("sleeper_draft_id = ?", params.DraftID).
-		Update("last_fetched_at", now).Error
-}
-
-// GetStaleLeaguesForDrafts returns up to batchSize league IDs that have had their
-// details fetched (last_fetched_at IS NOT NULL) but whose drafts are stale,
-// ordered NULL first then oldest.
-func (a *DataFetchActivities) GetStaleLeaguesForDrafts(ctx context.Context, params GetStaleLeaguesParams) ([]string, error) {
-	var leagues []models.SleeperLeague
-	err := a.DB.WithContext(ctx).
-		Where("skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'").
-		Order("CASE WHEN last_drafts_fetched_at IS NULL THEN 0 ELSE 1 END, last_drafts_fetched_at ASC").
-		Limit(params.BatchSize).
-		Find(&leagues).Error
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, len(leagues))
-	for i, l := range leagues {
-		ids[i] = l.SleeperLeagueID
-	}
-	return ids, nil
+		Where("sleeper_draft_id = ?", draftID).
+		Update("last_fetched_at", time.Now().UTC()).Error
 }
 
 // GetTransactionSyncConfig returns the dispatcher tuning knobs from env,
@@ -312,22 +416,4 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", lg.LeagueID).
 		Updates(updates).Error
-}
-
-// MarkLeagueDraftsFetched sets last_drafts_fetched_at=now() on the given league.
-func (a *DataFetchActivities) MarkLeagueDraftsFetched(ctx context.Context, params MarkLeagueFetchedParams) error {
-	now := time.Now().UTC()
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id = ?", params.LeagueID).
-		Update("last_drafts_fetched_at", now).Error
-}
-
-// MarkLeagueSkipped sets skipped_at=now() so the league is excluded from future batches.
-func (a *DataFetchActivities) MarkLeagueSkipped(ctx context.Context, params MarkLeagueSkippedParams) error {
-	now := time.Now().UTC()
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id = ?", params.LeagueID).
-		Update("skipped_at", now).Error
 }
