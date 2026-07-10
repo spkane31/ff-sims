@@ -40,7 +40,7 @@
 
 This is a refactor: `ScavengerDispatcher`'s observable behavior must not change. The existing tests (`TestScavengerDispatcher_DrainsAllStreamsUntilShortBatch`, `TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams`) are the safety net — no new tests are written in this task.
 
-- [ ] **Step 1: Add the helper**
+- [x] **Step 1: Add the helper**
 
 In `backend/internal/workflows/scavenger.go`, add above `ScavengerDispatcher`:
 
@@ -68,7 +68,7 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 }
 ```
 
-- [ ] **Step 2: Rewrite `ScavengerDispatcher` to use it**
+- [x] **Step 2: Rewrite `ScavengerDispatcher` to use it**
 
 Replace the entire body of `ScavengerDispatcher` (the four duplicated `for i := 0; i < cfg.MaxBatchesPerRun; i++ { ... }` loops) with:
 
@@ -117,12 +117,12 @@ func ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, erro
 
 The doc comment above `ScavengerDispatcher` (the one describing the claim-drain shape) stays as-is — it's still accurate.
 
-- [ ] **Step 3: Run the existing tests to verify the refactor didn't change behavior**
+- [x] **Step 3: Run the existing tests to verify the refactor didn't change behavior**
 
 Run: `cd backend && go build ./... && go test ./internal/workflows/... -run TestScavengerDispatcher -v`
 Expected: both `TestScavengerDispatcher_DrainsAllStreamsUntilShortBatch` and `TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams` PASS, unchanged.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add internal/workflows/scavenger.go
@@ -141,7 +141,7 @@ git commit -m "refactor: extract drainStream helper from ScavengerDispatcher"
 - Consumes: `drainStream` (Task 1), `activities.ScavengerActivities`, `activities.ScavengerConfig`, `activities.ReplicateBatchParams`/`ReplicateBatchResult` (all from T5, unchanged).
 - Produces: `workflows.ArchiveBackfillWorkflow(ctx workflow.Context) error`. Consumed by Task 3 (`cmd/worker` registration).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `workflows_test.go`:
 
@@ -218,12 +218,12 @@ func TestArchiveBackfillWorkflow_StreamFailureFailsTheExecution(t *testing.T) {
 
 Add `"go.temporal.io/sdk/workflow"` to the import block if not already present (it isn't — `workflows_test.go` currently imports `"go.temporal.io/sdk/activity"`, `"go.temporal.io/sdk/temporal"`, and `"go.temporal.io/sdk/testsuite"`, but not `workflow`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/workflows/...`
 Expected: FAIL — `workflows.ArchiveBackfillWorkflow` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 // backend/internal/workflows/backfill.go
@@ -303,17 +303,17 @@ func ArchiveBackfillWorkflow(ctx workflow.Context) error {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go vet ./internal/workflows/... && go test ./internal/workflows/... -run TestArchiveBackfillWorkflow -v`
 Expected: all 3 PASS.
 
-- [ ] **Step 5: Run the full workflows package to confirm no regressions**
+- [x] **Step 5: Run the full workflows package to confirm no regressions**
 
 Run: `cd backend && go test ./internal/workflows/... -v 2>&1 | grep -E "^(--- |FAIL|PASS|ok)"`
 Expected: every test PASSes, including the Task 1 refactor's `TestScavengerDispatcher_*` tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/workflows/backfill.go internal/workflows/workflows_test.go
@@ -332,7 +332,7 @@ git commit -m "feat: add ArchiveBackfillWorkflow"
 
 No new automated test — `cmd/worker` is a `main` package (`[no test files]`, confirmed baseline), same as every prior change to this file. Verification is manual (Step 3).
 
-- [ ] **Step 1: Register the workflow**
+- [x] **Step 1: Register the workflow**
 
 In `backend/cmd/worker/main.go`, find the archive worker block (added in T5):
 
@@ -367,12 +367,12 @@ Add one line:
 
 `ArchiveBackfillWorkflow` is **not** added to `schedules/register.go` — no schedule for it, per the Global Constraints.
 
-- [ ] **Step 2: Build**
+- [x] **Step 2: Build**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds.
 
-- [ ] **Step 3: Manual verification**
+- [x] **Step 3: Manual verification**
 
 Reuse the two-throwaway-database pattern from the T3/T5 plans (disposable Postgres on :5499, two databases `ffsims_cloud`/`ffsims_archive`, `ARCHIVE_DATABASE_URL` set) to boot the worker and confirm both workflow types register without error:
 
@@ -394,7 +394,7 @@ temporal workflow list
 ```
 and confirm the workflow starts and executes (it will fail fast against empty throwaway DBs since `GetScavengerConfig` and the replicate activities need real `Cloud`/`Archive` handles wired via the worker process — the point of this check is confirming Temporal accepts and routes the workflow type to the archive-maintenance queue, not exercising real data).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add cmd/worker/main.go
@@ -410,7 +410,7 @@ git commit -m "feat: register ArchiveBackfillWorkflow on the archive-maintenance
 
 **Interfaces:** none — documentation only.
 
-- [ ] **Step 1: Write the runbook**
+- [x] **Step 1: Write the runbook**
 
 ```markdown
 # Archive Backfill Runbook
@@ -545,7 +545,7 @@ Then run the parity checks above to confirm the CSV seed landed correctly
 before considering the backfill done.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add ../docs/archive-backfill.md
@@ -558,11 +558,11 @@ git commit -m "docs: add archive backfill runbook"
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` and `go vet ./...` clean.
-- [ ] `cd backend && go test ./internal/workflows/... -v` — every test PASSes, including the Task 1 refactor's unchanged `ScavengerDispatcher` tests and Task 2's three new `ArchiveBackfillWorkflow` tests.
-- [ ] `cd backend && go test ./...` — full suite passes with no regressions (PG-gated tests SKIP without `TEST_DATABASE_URL`, PASS with it).
-- [ ] Task 3 Step 3's manual worker-boot check: both workflow types register on the `archive-maintenance` queue without error.
-- [ ] Runbook exists at `docs/archive-backfill.md` and its SQL/`\copy` column lists match `backend/migrations/archive/002-005` exactly (self-check: diff the column names in the runbook's `\copy` commands against the migration files' `CREATE TABLE` column lists).
+- [x] `cd backend && go build ./...` and `go vet ./...` clean.
+- [x] `cd backend && go test ./internal/workflows/... -v` — every test PASSes, including the Task 1 refactor's unchanged `ScavengerDispatcher` tests and Task 2's three new `ArchiveBackfillWorkflow` tests.
+- [x] `cd backend && go test ./...` — full suite passes with no regressions (PG-gated tests SKIP without `TEST_DATABASE_URL`, PASS with it).
+- [x] Task 3 Step 3's manual worker-boot check: both workflow types register on the `archive-maintenance` queue without error.
+- [x] Runbook exists at `docs/archive-backfill.md` and its SQL/`\copy` column lists match `backend/migrations/archive/002-005` exactly (self-check: diff the column names in the runbook's `\copy` commands against the migration files' `CREATE TABLE` column lists).
 
 ## Self-Review
 
