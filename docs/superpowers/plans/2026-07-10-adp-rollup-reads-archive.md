@@ -38,7 +38,7 @@
 **Interfaces:**
 - Produces: `ADPRollupActivities{Read, Write *gorm.DB}`. Consumed by Task 2 (`cmd/worker`).
 
-- [ ] **Step 1: Update the struct and both methods**
+- [x] **Step 1: Update the struct and both methods**
 
 In `backend/internal/activities/adp_rollup.go`, change:
 
@@ -125,16 +125,16 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 
 The rest of the file (`qualifyingDraftTypes`, `adpRow`, `baseADPSelect`, `postgresPercentileSelect`, `adpSelectClause`, `applySegmentPredicate`) is unchanged.
 
-- [ ] **Step 2: Update the existing tests' construction**
+- [x] **Step 2: Update the existing tests' construction**
 
 In `backend/internal/activities/adp_rollup_test.go`, every `&activities.ADPRollupActivities{DB: db}` (6 occurrences, one per test function) becomes `&activities.ADPRollupActivities{Read: db, Write: db}`.
 
-- [ ] **Step 3: Run the existing tests to verify they still pass**
+- [x] **Step 3: Run the existing tests to verify they still pass**
 
 Run: `cd backend && go build ./... && go test ./internal/activities/... -run TestListADPSeasons -v && go test ./internal/activities/... -run TestComputeSegmentSeasonADP -v`
 Expected: all 7 tests (`TestListADPSeasons_ReturnsOnlyQualifyingSeasons` + the 6 `TestComputeSegmentSeasonADP_*`) PASS, unchanged behavior.
 
-- [ ] **Step 4: Write the failing cross-DB tests**
+- [x] **Step 4: Write the failing cross-DB tests**
 
 Append to `adp_rollup_test.go`:
 
@@ -211,19 +211,19 @@ func TestComputeSegmentSeasonADP_ReadsFromArchiveWritesToCloud(t *testing.T) {
 
 Add `"os"` to the import block, and `"backend/internal/dbmigrate"`... actually no — this test doesn't need `dbmigrate` (it AutoMigrates directly, not via goose), so only add `"os"` and `"backend/internal/testutil"` to the existing `import` block in `adp_rollup_test.go`.
 
-- [ ] **Step 5: Run the new tests**
+- [x] **Step 5: Run the new tests**
 
 `Read`/`Write` already exist on `ADPRollupActivities` as of Step 1, so this compiles immediately — there's no red step here the way there is for a from-scratch activity; run directly (with a disposable Postgres — `initdb`/`pg_ctl` on port 5499, `TEST_DATABASE_URL` set):
 
 `cd backend && go test ./internal/activities/... -run "TestListADPSeasons_ReadsFromArchiveOnly|TestComputeSegmentSeasonADP_ReadsFromArchiveWritesToCloud" -v`
 Expected: both PASS.
 
-- [ ] **Step 6: Run the full activities package for regressions**
+- [x] **Step 6: Run the full activities package for regressions**
 
 Run: `cd backend && go test ./internal/activities/... -v 2>&1 | grep -E "^(--- |FAIL|PASS|ok)"`
 Expected: everything PASSes.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/activities/adp_rollup.go internal/activities/adp_rollup_test.go
@@ -243,7 +243,7 @@ git commit -m "feat: split ADPRollupActivities into {Read, Write} — read archi
 
 No new automated tests — both files are already untested (`cmd/worker` is `main`, `schedules` has `[no test files]`), same as every prior change to them across T3/T5/T8. Verification is manual (Step 3).
 
-- [ ] **Step 1: Move the ADP worker into the archive-enabled block in `cmd/worker/main.go`**
+- [x] **Step 1: Move the ADP worker into the archive-enabled block in `cmd/worker/main.go`**
 
 Remove line 100 (`aa := &activities.ADPRollupActivities{DB: database.DB}`) from its current spot in the unconditional activity-construction block (alongside `da`, `dfa`, `psa`, `wsa`).
 
@@ -299,7 +299,7 @@ Then add the ADP worker construction into the existing `if cfg.ArchiveDB.Enabled
 	}
 ```
 
-- [ ] **Step 2: Gate the ADP schedule the same way in `schedules/register.go`**
+- [x] **Step 2: Gate the ADP schedule the same way in `schedules/register.go`**
 
 Move the `"sleeper-adp-rollup-schedule"` `upsert(...)` block (currently unconditional, immediately before the `if !archiveEnabled { return nil }` check) to *after* that check, alongside the scavenger schedule:
 
@@ -353,7 +353,7 @@ Update the doc comment on `Register` (currently says `archiveEnabled` gates only
 func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 ```
 
-- [ ] **Step 3: Build, then manually verify both archive-enabled and archive-disabled paths**
+- [x] **Step 3: Build, then manually verify both archive-enabled and archive-disabled paths**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds.
@@ -376,12 +376,12 @@ Expected: `Connected to archive database (...)` and `Started Worker Namespace de
 
 If a local Temporal dev server is available (per T8's verification), go further: start it, promote the deployment version, and confirm `temporal task-queue describe --task-queue sleeper-adp` shows a poller once the worker is running with archive enabled.
 
-- [ ] **Step 4: Run the full backend test suite**
+- [x] **Step 4: Run the full backend test suite**
 
 Run: `cd backend && go test ./... -v 2>&1 | tail -60` (with `TEST_DATABASE_URL` set for the full PG-gated suite)
 Expected: everything PASSes, no regressions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/worker/main.go schedules/register.go
@@ -392,10 +392,10 @@ git commit -m "feat: gate ADP rollup worker + schedule on archive DB being enabl
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` and `go vet ./...` clean.
-- [ ] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
-- [ ] Full pass with a disposable Postgres: every test PASSes, including the two new cross-DB ADP tests and the 7 pre-existing (now `{Read, Write}`-constructed) SQLite tests.
-- [ ] Task 2 Step 3's manual checks: archive-disabled boot has no `sleeper-adp` worker and doesn't panic; archive-enabled boot starts it and (if a local Temporal server is available) actually receives polled tasks.
+- [x] `cd backend && go build ./...` and `go vet ./...` clean.
+- [x] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
+- [x] Full pass with a disposable Postgres: every test PASSes, including the two new cross-DB ADP tests and the 7 pre-existing (now `{Read, Write}`-constructed) SQLite tests.
+- [x] Task 2 Step 3's manual checks: archive-disabled boot has no `sleeper-adp` worker and doesn't panic; archive-enabled boot starts it and (if a local Temporal server is available) actually receives polled tasks.
 
 ## Self-Review
 
