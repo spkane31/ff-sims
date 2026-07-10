@@ -3,12 +3,14 @@ package activities_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"gorm.io/gorm"
 
 	"backend/internal/activities"
 	"backend/internal/models"
+	"backend/internal/testutil"
 )
 
 func floatPtr(v float64) *float64 { return &v }
@@ -62,7 +64,7 @@ func TestListADPSeasons_ReturnsOnlyQualifyingSeasons(t *testing.T) {
 	seedADPLeague(t, db, "lg2", 12, 1.0, true, "dynasty")
 	seedADPDraft(t, db, "d3", "lg2", "snake", "complete", "2026") // wrong league type
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	seasons, err := a.ListADPSeasons(context.Background())
 	if err != nil {
 		t.Fatalf("ListADPSeasons error: %v", err)
@@ -82,7 +84,7 @@ func TestComputeSegmentSeasonADP_ComputesAverages(t *testing.T) {
 	seedADPPick(t, db, "d2", 1, 3, "p1")
 	seedADPPick(t, db, "d2", 1, 4, "p2")
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
@@ -125,7 +127,7 @@ func TestComputeSegmentSeasonADP_CIFieldsAreZeroUnderSQLite(t *testing.T) {
 		seedADPPick(t, db, draftID, 1, pickNo, "p1")
 	}
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
@@ -155,7 +157,7 @@ func TestComputeSegmentSeasonADP_ExcludesAuctionAndNonRedraft(t *testing.T) {
 	seedADPDraft(t, db, "d-dynasty", "lg2", "snake", "complete", "2024")
 	seedADPPick(t, db, "d-dynasty", 1, 1, "p-dynasty")
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
@@ -176,7 +178,7 @@ func TestComputeSegmentSeasonADP_NoMinDraftsThresholdAtWriteTime(t *testing.T) {
 	seedADPDraft(t, db, "d1", "lg1", "snake", "complete", "2024")
 	seedADPPick(t, db, "d1", 1, 1, "p1") // only 1 qualifying draft, well under the API's 20-draft threshold
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
@@ -199,7 +201,7 @@ func TestComputeSegmentSeasonADP_UpsertOverwritesPreviousRun(t *testing.T) {
 	seedADPDraft(t, db, "d1", "lg1", "snake", "complete", "2024")
 	seedADPPick(t, db, "d1", 1, 1, "p1")
 
-	a := &activities.ADPRollupActivities{DB: db}
+	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	run := func() {
 		if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 			Segment: adpTestSegment,
@@ -221,5 +223,77 @@ func TestComputeSegmentSeasonADP_UpsertOverwritesPreviousRun(t *testing.T) {
 	}
 	if rows[0].AvgPickNo != 3 || rows[0].PickCount != 2 {
 		t.Errorf("expected updated avg=3 count=2, got avg=%v count=%v", rows[0].AvgPickNo, rows[0].PickCount)
+	}
+}
+
+// newADPCrossDBTest opens two throwaway PG schemas — read simulates the
+// archive (leagues/drafts/picks), write simulates cloud (draft_adp only) —
+// proving Read and Write are actually two different databases, not just two
+// field names pointing at the same one.
+func newADPCrossDBTest(t *testing.T) (read, write *gorm.DB) {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	readDSN := testutil.NewPGSchema(t, dsn, "adp_read")
+	read = testutil.OpenGORM(t, readDSN)
+	if err := read.AutoMigrate(&models.SleeperLeague{}, &models.SleeperDraft{}, &models.SleeperDraftPick{}); err != nil {
+		t.Fatalf("automigrate read: %v", err)
+	}
+
+	writeDSN := testutil.NewPGSchema(t, dsn, "adp_write")
+	write = testutil.OpenGORM(t, writeDSN)
+	if err := write.AutoMigrate(&models.DraftADP{}); err != nil {
+		t.Fatalf("automigrate write: %v", err)
+	}
+
+	return read, write
+}
+
+func TestListADPSeasons_ReadsFromArchiveOnly(t *testing.T) {
+	read, write := newADPCrossDBTest(t)
+	seedADPLeague(t, read, "lg1", 12, 1.0, true, "redraft")
+	seedADPDraft(t, read, "d1", "lg1", "snake", "complete", "2024")
+
+	a := &activities.ADPRollupActivities{Read: read, Write: write}
+	seasons, err := a.ListADPSeasons(context.Background())
+	if err != nil {
+		t.Fatalf("ListADPSeasons: %v", err)
+	}
+	if len(seasons) != 1 || seasons[0] != "2024" {
+		t.Errorf("expected [2024], got %v", seasons)
+	}
+}
+
+func TestComputeSegmentSeasonADP_ReadsFromArchiveWritesToCloud(t *testing.T) {
+	read, write := newADPCrossDBTest(t)
+	seedADPLeague(t, read, "lg1", 12, 1.0, true, "redraft")
+	seedADPDraft(t, read, "d1", "lg1", "snake", "complete", "2024")
+	seedADPPick(t, read, "d1", 1, 1, "p1")
+	seedADPPick(t, read, "d1", 1, 2, "p2")
+
+	a := &activities.ADPRollupActivities{Read: read, Write: write}
+	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+		Segment: adpTestSegment,
+		Season:  "2024",
+	}); err != nil {
+		t.Fatalf("ComputeSegmentSeasonADP: %v", err)
+	}
+
+	var writeCount int64
+	write.Model(&models.DraftADP{}).Count(&writeCount)
+	if writeCount != 2 {
+		t.Errorf("expected 2 draft_adp rows in write DB, got %d", writeCount)
+	}
+
+	// Read DB never gets a draft_adp table touched — draft_adp is cloud-only.
+	// Scoped to current_schema(): both throwaway schemas share one physical
+	// Postgres database, so an unscoped information_schema.tables check
+	// would see the write schema's draft_adp table too.
+	var readTableExists bool
+	read.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'draft_adp' AND table_schema = current_schema())").Scan(&readTableExists)
+	if readTableExists {
+		t.Error("expected no draft_adp table in the read (archive) DB")
 	}
 }
