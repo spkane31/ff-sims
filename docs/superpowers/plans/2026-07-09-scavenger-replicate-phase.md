@@ -53,7 +53,7 @@
 **Interfaces:**
 - Produces: `models.ArchiveSleeperLeague`, `models.ArchiveSleeperTransaction`, `models.ArchiveSleeperDraft`, `models.ArchiveSleeperDraftPick` (each with `TableName()` returning the same table name as its cloud counterpart). Task 3–6 consume these as the write-side type for each replicate activity.
 
-- [ ] **Step 1: Write the archive-side models**
+- [x] **Step 1: Write the archive-side models**
 
 ```go
 // backend/internal/models/archive.go
@@ -136,7 +136,7 @@ type ArchiveSleeperDraftPick struct {
 func (ArchiveSleeperDraftPick) TableName() string { return "sleeper_draft_picks" }
 ```
 
-- [ ] **Step 2: Write the four migrations**
+- [x] **Step 2: Write the four migrations**
 
 ```sql
 -- backend/migrations/archive/002_sleeper_leagues.sql
@@ -244,7 +244,7 @@ DROP TABLE sleeper_draft_picks;
 
 All four are brand-new empty tables, so plain (transactional) `CREATE TABLE`/`CREATE INDEX` is fine — no `CONCURRENTLY`/`NO TRANSACTION` needed (that's only for indexing already-populated tables, like cloud migration 021).
 
-- [ ] **Step 3: Extend the dbmigrate test to verify the new tables**
+- [x] **Step 3: Extend the dbmigrate test to verify the new tables**
 
 Add to `backend/internal/dbmigrate/dbmigrate_test.go` (after the existing `TestRun_ArchiveMigrations_CreatesSyncStateTable`):
 
@@ -269,13 +269,13 @@ func TestRun_ArchiveMigrations_CreatesReplicaTables(t *testing.T) {
 
 (`tableExists` already exists in this file from the T3/T4 work — no new helper needed.)
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run (with a disposable Postgres — `initdb`/`pg_ctl` on port 5499, `TEST_DATABASE_URL="postgres://$(whoami)@localhost:5499/postgres?sslmode=disable"`):
 `cd backend && go build ./... && go test ./internal/dbmigrate/... -v`
 Expected: all PASS, including the new `TestRun_ArchiveMigrations_CreatesReplicaTables`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/models/archive.go migrations/archive/002_sleeper_leagues.sql migrations/archive/003_sleeper_transactions.sql migrations/archive/004_sleeper_drafts.sql migrations/archive/005_sleeper_draft_picks.sql internal/dbmigrate/dbmigrate_test.go
@@ -295,7 +295,7 @@ git commit -m "feat: add archive replica tables (leagues, transactions, drafts, 
 - Produces: `ScavengerActivities{Cloud, Archive *gorm.DB}`, `ScavengerConfig{LeagueBatchSize, TxnBatchSize, DraftBatchSize, MaxBatchesPerRun int}`, `(a *ScavengerActivities) GetScavengerConfig(ctx) (ScavengerConfig, error)`, unexported `cursor{Time time.Time, ID string}` + `readCursor`/`writeCursor` + stream name constants + `scavengerSafetyLag`. Produces `newScavengerTestDBs(t) (cloud, archive *gorm.DB)` test helper, consumed by Tasks 3–6.
 - Consumes: `models.Archive*` (Task 1), `internal/dbmigrate.Run` + `archivemigrations.FS` (existing, from T3/T4), `internal/testutil` (existing).
 
-- [ ] **Step 1: Add config/param types to params.go**
+- [x] **Step 1: Add config/param types to params.go**
 
 Add to `backend/internal/activities/params.go`:
 
@@ -332,7 +332,7 @@ type ScavengerReport struct {
 }
 ```
 
-- [ ] **Step 2: Write the failing test for GetScavengerConfig**
+- [x] **Step 2: Write the failing test for GetScavengerConfig**
 
 ```go
 // backend/internal/activities/scavenger_test.go
@@ -408,12 +408,12 @@ func newScavengerTestDBs(t *testing.T) (cloud, archive *gorm.DB) {
 }
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `cd backend && go vet ./internal/activities/...`
 Expected: FAIL — `activities.ScavengerActivities`/`ScavengerConfig`/`GetScavengerConfig` undefined (compile error).
 
-- [ ] **Step 4: Implement the skeleton**
+- [x] **Step 4: Implement the skeleton**
 
 ```go
 // backend/internal/activities/scavenger.go
@@ -517,12 +517,12 @@ func writeCursor(tx *gorm.DB, stream string, c cursor) error {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd backend && go build ./... && go test ./internal/activities/... -run TestGetScavengerConfig -v`
 Expected: both PASS (no DB needed for these two).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go internal/activities/params.go
@@ -540,7 +540,7 @@ git commit -m "feat: add ScavengerActivities skeleton (config, cursor helpers, t
 **Interfaces:**
 - Produces: `(a *ScavengerActivities) ReplicateLeaguesBatch(ctx, ReplicateBatchParams) (ReplicateBatchResult, error)`. Consumed by Task 7's workflow.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `scavenger_test.go`:
 
@@ -640,12 +640,12 @@ func TestReplicateLeaguesBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 
 Add `"time"` to the import block if not already present (it will be after Task 2's `newScavengerTestDBs`, which doesn't use `time` yet — add it now).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/activities/...`
 Expected: FAIL — `ReplicateLeaguesBatch` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `scavenger.go`:
 
@@ -715,12 +715,12 @@ func (a *ScavengerActivities) ReplicateLeaguesBatch(ctx context.Context, params 
 
 Add `"gorm.io/gorm/clause"` and `"backend/internal/models"` to the import block.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run (with `TEST_DATABASE_URL` set): `cd backend && go test ./internal/activities/... -run TestReplicateLeaguesBatch -v`
 Expected: all 4 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -738,7 +738,7 @@ git commit -m "feat: add ReplicateLeaguesBatch scavenger activity"
 **Interfaces:**
 - Produces: `(a *ScavengerActivities) ReplicateTransactionsBatch(ctx, ReplicateBatchParams) (ReplicateBatchResult, error)`. Consumed by Task 7.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `scavenger_test.go`:
 
@@ -810,12 +810,12 @@ func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/activities/...`
 Expected: FAIL — `ReplicateTransactionsBatch` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `scavenger.go`:
 
@@ -875,12 +875,12 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run TestReplicateTransactionsBatch -v`
 Expected: all 3 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -898,7 +898,7 @@ git commit -m "feat: add ReplicateTransactionsBatch scavenger activity"
 **Interfaces:**
 - Produces: `(a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx, ReplicateBatchParams) (ReplicateBatchResult, error)`. Consumed by Task 7.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `scavenger_test.go`:
 
@@ -953,12 +953,12 @@ func TestReplicateDraftHeadersBatch_SecondRunIsNoOp(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/activities/...`
 Expected: FAIL — `ReplicateDraftHeadersBatch` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `scavenger.go`:
 
@@ -1022,12 +1022,12 @@ func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, pa
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run TestReplicateDraftHeadersBatch -v`
 Expected: both PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -1045,7 +1045,7 @@ git commit -m "feat: add ReplicateDraftHeadersBatch scavenger activity"
 **Interfaces:**
 - Produces: `(a *ScavengerActivities) ReplicateDraftPicksBatch(ctx, ReplicateBatchParams) (ReplicateBatchResult, error)`. Consumed by Task 7.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `scavenger_test.go`:
 
@@ -1136,12 +1136,12 @@ func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
 
 Add `"fmt"` to the import block if not already present.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/activities/...`
 Expected: FAIL — `ReplicateDraftPicksBatch` undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `scavenger.go`:
 
@@ -1227,12 +1227,12 @@ func (a *ScavengerActivities) ReplicateDraftPicksBatch(ctx context.Context, para
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -v`
 Expected: the full `internal/activities` package PASSes (all scavenger tests plus everything pre-existing).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -1252,7 +1252,7 @@ git commit -m "feat: add ReplicateDraftPicksBatch scavenger activity"
 - Consumes: `activities.ScavengerActivities`, `GetScavengerConfig`, the four `Replicate*Batch` activities (Tasks 2–6).
 - Produces: `workflows.ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, error)`, `workflows.TaskQueueArchive`. Consumed by Task 8.
 
-- [ ] **Step 1: Add the task queue constant**
+- [x] **Step 1: Add the task queue constant**
 
 In `backend/internal/workflows/helpers.go`, add to the `const` block:
 
@@ -1262,7 +1262,7 @@ In `backend/internal/workflows/helpers.go`, add to the `const` block:
 
 (alongside the existing `TaskQueueDiscovery`, `TaskQueueDrafts`, etc.)
 
-- [ ] **Step 2: Write the failing workflow tests**
+- [x] **Step 2: Write the failing workflow tests**
 
 Append to `workflows_test.go`:
 
@@ -1328,12 +1328,12 @@ func TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams(t *testing.T)
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `cd backend && go vet ./internal/workflows/...`
 Expected: FAIL — `workflows.ScavengerDispatcher` undefined.
 
-- [ ] **Step 4: Implement the workflow**
+- [x] **Step 4: Implement the workflow**
 
 ```go
 // backend/internal/workflows/scavenger.go
@@ -1420,12 +1420,12 @@ func ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, erro
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/workflows/... -run TestScavengerDispatcher -v`
 Expected: both PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/workflows/scavenger.go internal/workflows/helpers.go internal/workflows/workflows_test.go
@@ -1445,7 +1445,7 @@ git commit -m "feat: add ScavengerDispatcher workflow"
 
 No new automated test — `cmd/worker` and `schedules` are untested today (confirmed baseline: `schedules` has `[no test files]`, `cmd/worker` is a `main` package). Verification is manual (Step 4), consistent with how the T3/T4 plan handled this same pair of files.
 
-- [ ] **Step 1: Change `schedules.Register`'s signature**
+- [x] **Step 1: Change `schedules.Register`'s signature**
 
 In `backend/schedules/register.go`, change:
 
@@ -1504,7 +1504,7 @@ Then, replace the final `return upsert(ctx, c, client.ScheduleOptions{ ... "slee
 }
 ```
 
-- [ ] **Step 2: Update the call site and register the archive worker in `cmd/worker/main.go`**
+- [x] **Step 2: Update the call site and register the archive worker in `cmd/worker/main.go`**
 
 Change the `schedules.Register` call:
 
@@ -1540,12 +1540,12 @@ Immediately after the existing `workers := []worker.Worker{dw, draftsw, transact
 
 The following `for _, w := range workers { if err := w.Start(); ... }` loop and its deferred `Stop()` loop are unchanged — they already iterate whatever `workers` ends up holding.
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds with no errors.
 
-- [ ] **Step 4: Manual verification against a disposable two-database Postgres**
+- [x] **Step 4: Manual verification against a disposable two-database Postgres**
 
 ```bash
 # Reuse the same disposable cluster from earlier work (or start one per the
@@ -1577,12 +1577,12 @@ rm -f bin/migrate bin/backend-worker
 psql "postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" -c "DROP DATABASE IF EXISTS ffsims_cloud" -c "DROP DATABASE IF EXISTS ffsims_archive"
 ```
 
-- [ ] **Step 5: Run the full backend test suite**
+- [x] **Step 5: Run the full backend test suite**
 
 Run: `cd backend && go test ./... -v 2>&1 | tail -100`
 Expected: everything PASSes (Postgres-gated tests PASS with `TEST_DATABASE_URL` set, SKIP otherwise — no FAILs either way).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add schedules/register.go cmd/worker/main.go
@@ -1593,11 +1593,11 @@ git commit -m "feat: register archive-maintenance worker + 6h scavenger schedule
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` and `go vet ./...` clean.
-- [ ] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
-- [ ] Full pass with a disposable Postgres: `TEST_DATABASE_URL="postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" go test ./... -v` — every test PASSes, including all new `internal/activities/scavenger_test.go` and `internal/workflows` scavenger tests.
-- [ ] Task 8 Step 4's manual two-database boot check: archive migrations 001–005 auto-apply, archive connects, archive-disabled path is unaffected.
-- [ ] Spot-check idempotence end-to-end: with real data (or the manual test DBs), run `ScavengerDispatcher` twice via `temporal workflow start --type ScavengerDispatcher --task-queue archive-maintenance` (or wait for the 6h schedule) — the second run's `ScavengerReport` should show all-zero counts.
+- [x] `cd backend && go build ./...` and `go vet ./...` clean.
+- [x] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
+- [x] Full pass with a disposable Postgres: `TEST_DATABASE_URL="postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" go test ./... -v` — every test PASSes, including all new `internal/activities/scavenger_test.go` and `internal/workflows` scavenger tests.
+- [x] Task 8 Step 4's manual two-database boot check: archive migrations 001–005 auto-apply, archive connects, archive-disabled path is unaffected.
+- [x] Spot-check idempotence end-to-end: with real data (or the manual test DBs), run `ScavengerDispatcher` twice via `temporal workflow start --type ScavengerDispatcher --task-queue archive-maintenance` (or wait for the 6h schedule) — the second run's `ScavengerReport` should show all-zero counts.
 
 ## Self-Review
 
