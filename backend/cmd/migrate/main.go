@@ -1,43 +1,49 @@
 package main
 
 import (
-	"database/sql"
+	"flag"
+	"io/fs"
 	"log"
 	"os"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/pressly/goose/v3"
 
+	"backend/internal/dbmigrate"
 	"backend/migrations"
+	archivemigrations "backend/migrations/archive"
 )
 
 func main() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL is not set")
-	}
+	dbFlag := flag.String("db", "cloud", "which database to migrate: cloud or archive")
+	flag.Parse()
 
-	db, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	goose.SetBaseFS(migrations.FS)
-
-	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("goose set dialect: %v", err)
+	var dsn string
+	var fsys fs.FS
+	switch *dbFlag {
+	case "cloud":
+		dsn = os.Getenv("DATABASE_URL")
+		if dsn == "" {
+			log.Fatal("DATABASE_URL is not set")
+		}
+		fsys = migrations.FS
+	case "archive":
+		dsn = os.Getenv("ARCHIVE_DATABASE_URL")
+		if dsn == "" {
+			log.Fatal("ARCHIVE_DATABASE_URL is not set")
+		}
+		fsys = archivemigrations.FS
+	default:
+		log.Fatalf("unknown -db value %q (want cloud or archive)", *dbFlag)
 	}
 
 	command := "up"
 	args := []string{}
-	if len(os.Args) > 1 {
-		command = os.Args[1]
-		args = os.Args[2:]
+	if flag.NArg() > 0 {
+		command = flag.Arg(0)
+		args = flag.Args()[1:]
 	}
 
-	if err := goose.Run(command, db, ".", args...); err != nil {
-		log.Fatalf("goose %s: %v", command, err)
+	if err := dbmigrate.Run(dsn, fsys, command, args); err != nil {
+		log.Fatal(err)
 	}
 }

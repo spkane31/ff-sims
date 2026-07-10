@@ -10,8 +10,9 @@ import (
 
 // Config contains all configuration for the application
 type Config struct {
-	Server ServerConfig
-	DB     DBConfig
+	Server    ServerConfig
+	DB        DBConfig
+	ArchiveDB ArchiveDBConfig
 }
 
 // ServerConfig contains server-specific configuration
@@ -29,6 +30,22 @@ type DBConfig struct {
 	PoolConnMaxLifetime int // seconds
 }
 
+// ArchiveDBConfig contains archive-database-specific configuration. An empty
+// ConnectionString means the archive DB is disabled — local dev and any
+// fleet without ARCHIVE_DATABASE_URL set keep working unchanged.
+type ArchiveDBConfig struct {
+	ConnectionString string
+	// Pool limits prevent exhausting connection slots on managed-DB instances.
+	PoolMaxOpenConns    int
+	PoolMaxIdleConns    int
+	PoolConnMaxLifetime int // seconds
+}
+
+// Enabled reports whether an archive database is configured.
+func (c ArchiveDBConfig) Enabled() bool {
+	return c.ConnectionString != ""
+}
+
 // Load reads the configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
@@ -41,6 +58,12 @@ func Load() (*Config, error) {
 			PoolMaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 10),
 			PoolMaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 5),
 			PoolConnMaxLifetime: getEnvAsInt("DB_CONN_MAX_LIFETIME_SECS", 300),
+		},
+		ArchiveDB: ArchiveDBConfig{
+			ConnectionString:    getEnv("ARCHIVE_DATABASE_URL", ""),
+			PoolMaxOpenConns:    getEnvAsInt("ARCHIVE_DB_MAX_OPEN_CONNS", 10),
+			PoolMaxIdleConns:    getEnvAsInt("ARCHIVE_DB_MAX_IDLE_CONNS", 5),
+			PoolConnMaxLifetime: getEnvAsInt("ARCHIVE_DB_CONN_MAX_LIFETIME_SECS", 300),
 		},
 	}
 

@@ -17,9 +17,11 @@ import (
 	"backend/internal/activities"
 	"backend/internal/config"
 	"backend/internal/database"
+	"backend/internal/dbmigrate"
 	"backend/internal/helpers"
 	"backend/internal/sleeper"
 	"backend/internal/workflows"
+	archivemigrations "backend/migrations/archive"
 	"backend/schedules"
 )
 
@@ -59,6 +61,17 @@ func main() {
 	}
 	if err := database.Initialize(cfg); err != nil {
 		log.Fatalf("db connect: %v", err)
+	}
+
+	if cfg.ArchiveDB.Enabled() {
+		if err := dbmigrate.Run(cfg.ArchiveDB.ConnectionString, archivemigrations.FS, "up", nil); err != nil {
+			log.Fatalf("archive db migrate: %v", err)
+		}
+		if err := database.InitializeArchive(cfg); err != nil {
+			log.Fatalf("archive db connect: %v", err)
+		}
+	} else {
+		log.Println("ARCHIVE_DATABASE_URL not set — archive database disabled")
 	}
 
 	c, err := client.Dial(temporalClientOptions())
