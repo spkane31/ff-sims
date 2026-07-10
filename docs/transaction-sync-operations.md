@@ -36,16 +36,17 @@ head-of-line-block discovery of the users behind it.
 ### Per-fleet vs global knobs
 
 Task distribution is pull-based: the fleet with more free activity slots and
-pollers takes more of the queue. **Per-fleet** (each process reads its own
-env): `SLEEPER_RPM`, `WORKER_ACTIVITY_SLOTS`, `WORKER_ACTIVITY_POLLERS`,
+pollers takes more of the queue — relevant if this ever runs across more than
+one worker process again. **Per-fleet** (each process reads its own env):
+`SLEEPER_RPM`, `WORKER_ACTIVITY_SLOTS`, `WORKER_ACTIVITY_POLLERS`,
 `DB_MAX_OPEN_CONNS`. **Global** (read once per dispatcher run by whichever
 worker executes the config activity): all `TXN_SYNC_*` knobs — do not use
 them to differentiate fleets.
 
-### Scaling up the Raspberry Pi
+### Scaling up the worker host
 
-The sync work is I/O-bound (the Pi idles under 10% CPU), so scale it by
-raising its budgets in `/etc/ff-sims-worker.env` and restarting
+The sync work is I/O-bound (the worker host idles under 10% CPU), so scale it
+by raising its budgets in `/etc/ff-sims-worker.env` and restarting
 `ff-sims-worker.service`:
 
 ```
@@ -56,7 +57,7 @@ DB_MAX_OPEN_CONNS=20
 ```
 
 Also raise the global `TXN_SYNC_PARALLEL_BATCHES` (e.g. 8–12) so enough batch
-activities are in flight for the Pi's extra slots to matter. Postgres
+activities are in flight for the worker host's extra slots to matter. Postgres
 connections are the budget that bites first — route workers through the
 DigitalOcean pgbouncer connection pool (port 25061, add
 `default_query_exec_mode=simple_protocol` to the URL) before opening these
@@ -67,16 +68,17 @@ throttles.
 Every 10 minutes `TransactionSyncDispatcher` claims batches of stale leagues
 (`claimed_at` + `FOR UPDATE SKIP LOCKED`, 20-minute claim TTL) and runs
 `SyncLeagueTransactionsBatch` activities that stamp each league done as they
-go. Both fleets (DigitalOcean + Raspberry Pi) poll the same queue and
-partition work naturally via the claims. The per-league leg loop is capped at
-the current NFL week (past seasons still sweep legs 1–18).
+go. Only the worker host runs `cmd/worker` and polls this queue (DigitalOcean
+serves the API and the Python ESPN worker only). The per-league leg loop is
+capped at the current NFL week (past seasons still sweep legs 1–18).
 
 ## Rollout / verification
 
 1. Apply migration 018: `cd backend && go run ./cmd/migrate up` (adds
    `claimed_at` + partial index; `CREATE INDEX CONCURRENTLY`, safe live).
-2. Deploy workers (DO promotes the new deployment version on start; Pi
-   self-updates within minutes — see the worker versioning docs).
+2. Deploy the worker host (self-updates within minutes via its deploy timer
+   and promotes the new deployment version on start — see the worker
+   versioning docs).
 3. Watch `/admin` fetch-age buckets: "Never fetched" and "24h+" should shrink
    visibly within hours at default settings (~4 × 250 leagues per claim wave).
 4. Watch worker logs for `rate limited (429)` — if present, lower `SLEEPER_RPM`.

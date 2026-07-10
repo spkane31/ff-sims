@@ -21,8 +21,7 @@ const (
 	backoffCap  = 30 * time.Second
 
 	// defaultRPM is the SLEEPER_RPM fallback: requests/minute budget per
-	// process. Each fleet (DigitalOcean, Raspberry Pi) has its own IP, so
-	// per-process is per-IP. Start high, tune down.
+	// process, i.e. per-IP for the worker host. Start high, tune down.
 	defaultRPM = 2000
 )
 
