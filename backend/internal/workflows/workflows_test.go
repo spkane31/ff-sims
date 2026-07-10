@@ -410,3 +410,63 @@ func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t 
 	require.NoError(t, env.GetWorkflowError()) // logged and swallowed, not propagated
 	env.AssertExpectations(t)
 }
+
+// ---- ScavengerDispatcher ----
+
+func TestScavengerDispatcher_DrainsAllStreamsUntilShortBatch(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 500}).
+		Return(activities.ReplicateBatchResult{Replicated: 3, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 5000}).
+		Return(activities.ReplicateBatchResult{Replicated: 10, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
+		Return(activities.ReplicateBatchResult{Replicated: 2, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
+		Return(activities.ReplicateBatchResult{Replicated: 1, Drained: true}, nil).Once()
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var report activities.ScavengerReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, activities.ScavengerReport{
+		LeaguesReplicated: 3, TransactionsReplicated: 10, DraftHeadersReplicated: 2, DraftPicksReplicated: 1,
+	}, report)
+	env.AssertExpectations(t)
+}
+
+func TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+
+	// Leagues fails outright; the other three streams must still run.
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 500}).
+		Return(activities.ReplicateBatchResult{}, temporal.NewNonRetryableApplicationError("boom", "test", nil)).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 5000}).
+		Return(activities.ReplicateBatchResult{Replicated: 5, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
+		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
+		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError()) // stream failures are logged and swallowed
+	var report activities.ScavengerReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, 0, report.LeaguesReplicated)
+	require.Equal(t, 5, report.TransactionsReplicated)
+	env.AssertExpectations(t)
+}

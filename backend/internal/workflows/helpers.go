@@ -14,6 +14,7 @@ const (
 	TaskQueuePlayerSync   = "sleeper-player-sync"
 	TaskQueueWeekStats    = "sleeper-week-stats"
 	TaskQueueADP          = "sleeper-adp"
+	TaskQueueArchive      = "archive-maintenance"
 
 	// MaxDispatchIterations bounds a sync dispatcher's claim loop so one run's
 	// event history stays small; the schedule picks up any remainder.
