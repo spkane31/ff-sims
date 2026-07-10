@@ -97,7 +97,6 @@ func main() {
 	dfa := &activities.DataFetchActivities{DB: database.DB, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
-	aa := &activities.ADPRollupActivities{DB: database.DB}
 
 	// Discovery worker: DiscoveryBatchDispatcher (claim-drain batch model)
 	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{
@@ -154,18 +153,7 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	// ADP worker: ADPRollupDispatcher + SegmentSeasonADPRollupWorkflow
-	adpw := worker.New(c, workflows.TaskQueueADP, worker.Options{
-		MaxConcurrentActivityExecutionSize: 50,
-		MaxConcurrentWorkflowTaskPollers:   10,
-		DeploymentOptions:                  deploymentOpts,
-		SysInfoProvider:                    sysinfo.SysInfoProvider(),
-	})
-	adpw.RegisterWorkflow(workflows.ADPRollupDispatcher)
-	adpw.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
-	adpw.RegisterActivity(aa)
-
-	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw, adpw}
+	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw}
 	if cfg.ArchiveDB.Enabled() {
 		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
 		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
@@ -176,6 +164,20 @@ func main() {
 		aw.RegisterWorkflow(workflows.ArchiveBackfillWorkflow)
 		aw.RegisterActivity(sa)
 		workers = append(workers, aw)
+
+		// ADP worker: ADPRollupDispatcher + SegmentSeasonADPRollupWorkflow.
+		// Requires the archive DB (Read) — see ADPRollupActivities.
+		aa := &activities.ADPRollupActivities{Read: database.Archive, Write: database.DB}
+		adpw := worker.New(c, workflows.TaskQueueADP, worker.Options{
+			MaxConcurrentActivityExecutionSize: 50,
+			MaxConcurrentWorkflowTaskPollers:   10,
+			DeploymentOptions:                  deploymentOpts,
+			SysInfoProvider:                    sysinfo.SysInfoProvider(),
+		})
+		adpw.RegisterWorkflow(workflows.ADPRollupDispatcher)
+		adpw.RegisterWorkflow(workflows.SegmentSeasonADPRollupWorkflow)
+		adpw.RegisterActivity(aa)
+		workers = append(workers, adpw)
 	}
 	for _, w := range workers {
 		if err := w.Start(); err != nil {
