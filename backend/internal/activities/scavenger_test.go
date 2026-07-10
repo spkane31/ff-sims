@@ -25,6 +25,12 @@ func TestGetScavengerConfig_ReadsEnvWithDefaults(t *testing.T) {
 	if cfg.LeagueBatchSize != 500 || cfg.TxnBatchSize != 5000 || cfg.DraftBatchSize != 200 || cfg.MaxBatchesPerRun != 50 {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
+	if cfg.RetentionDays != 30 {
+		t.Errorf("RetentionDays = %d, want 30", cfg.RetentionDays)
+	}
+	if cfg.PurgeEnabled {
+		t.Errorf("PurgeEnabled = true, want false (kill-switch defaults off)")
+	}
 }
 
 func TestGetScavengerConfig_ReadsOverrides(t *testing.T) {
@@ -32,13 +38,18 @@ func TestGetScavengerConfig_ReadsOverrides(t *testing.T) {
 	t.Setenv("SCAVENGER_TXN_BATCH_SIZE", "20")
 	t.Setenv("SCAVENGER_DRAFT_BATCH_SIZE", "30")
 	t.Setenv("SCAVENGER_MAX_BATCHES_PER_RUN", "5")
+	t.Setenv("SCAVENGER_RETENTION_DAYS", "45")
+	t.Setenv("SCAVENGER_PURGE_ENABLED", "true")
 
 	a := &activities.ScavengerActivities{}
 	cfg, err := a.GetScavengerConfig(context.Background())
 	if err != nil {
 		t.Fatalf("GetScavengerConfig: %v", err)
 	}
-	want := activities.ScavengerConfig{LeagueBatchSize: 10, TxnBatchSize: 20, DraftBatchSize: 30, MaxBatchesPerRun: 5}
+	want := activities.ScavengerConfig{
+		LeagueBatchSize: 10, TxnBatchSize: 20, DraftBatchSize: 30, MaxBatchesPerRun: 5,
+		RetentionDays: 45, PurgeEnabled: true,
+	}
 	if cfg != want {
 		t.Errorf("cfg = %+v, want %+v", cfg, want)
 	}

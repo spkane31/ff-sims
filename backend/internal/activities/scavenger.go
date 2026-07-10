@@ -39,13 +39,15 @@ const (
 
 // GetScavengerConfig returns the scavenger's tuning knobs from env, clamped
 // to at least 1 so a bad value can't stall replication or break a query's
-// LIMIT.
+// LIMIT. PurgeEnabled has no clamp — it's a bool kill-switch, not a size.
 func (a *ScavengerActivities) GetScavengerConfig(ctx context.Context) (ScavengerConfig, error) {
 	return ScavengerConfig{
 		LeagueBatchSize:  max(helpers.GetEnv("SCAVENGER_LEAGUE_BATCH_SIZE", 500), 1),
 		TxnBatchSize:     max(helpers.GetEnv("SCAVENGER_TXN_BATCH_SIZE", 5000), 1),
 		DraftBatchSize:   max(helpers.GetEnv("SCAVENGER_DRAFT_BATCH_SIZE", 200), 1),
 		MaxBatchesPerRun: max(helpers.GetEnv("SCAVENGER_MAX_BATCHES_PER_RUN", 50), 1),
+		RetentionDays:    max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1),
+		PurgeEnabled:     helpers.GetEnv("SCAVENGER_PURGE_ENABLED", false),
 	}, nil
 }
 
