@@ -48,6 +48,8 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 
 *Alternative considered — dual-write at ingest.* With workers local, sync activities could write the archive (localhost) alongside cloud, removing the replicate phase. Deferred: touches every hot write path in `data_fetch.go`, couples sync success to archive health, and verify-before-purge + backfill still need the scavenger. Viable later optimization — replicate then degrades to a cheap reconciler.
 
+**Age-based write routing (T13) — adopted, narrower than dual-write.** Not "write everything twice" — route each row to exactly *one* database at ingest time, based on whether the event itself (transaction `created_at_sleeper`; draft/picks `season`) already falls outside the retention window. A league's first-ever sync (or catch-up after downtime) pulls multiple seasons of transactions and drafts in one pass; today all of it lands in cloud, then the scavenger copies the old parts to archive, then purge deletes them from cloud — three writes for data that was never going to be "hot." Routing old rows straight to archive-only at insert time collapses that to one write, at the cost of `DataFetchActivities` needing a second DB handle and an age check on the hot sync path (the same "touches every hot write path" cost the dual-write alternative was deferred for — but this is a narrower slice: only the *old-data* code path gains a dependency on archive health, not every write). Current-window data keeps writing to cloud only, unchanged; the scavenger still replicates it forward normally once it ages out. Leagues are unaffected (always cloud-authoritative, archive copy stays scavenger-replicated — see the ADP join dependency above). Threshold is configurable, conceptually the same "how old is too old" knob as `SCAVENGER_RETENTION_DAYS` (T6) — worth confirming during T13's design whether to literally share that env var or give it its own, and worth sequencing after T6 lands to avoid both touching `data_fetch.go`/`scavenger.go` at once.
+
 **Backup.** systemd (mirrors `ff-sims-deploy.timer`): dump to a local backups dir, `rclone copy` to `${BACKUP_RCLONE_REMOTE}`, prune local keep-3 / remote >60d. Documented restore drill.
 
 ## Tasks (each ≈ one PR)
@@ -59,13 +61,14 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T3 | Second DB handle + archive migrations plumbing (tracer bullet) | S/M | T1* | Done — PR #151 |
 | T4 | Cloud migration 021: CONCURRENTLY indexes on txn `created_at`, draft `last_fetched_at` | S | — | Done — PR #151 |
 | T5 | Scavenger replicate phase + 6h schedule + archive worker | L | T3, T4 | In review — PR #152 |
-| T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Not started |
+| T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | In review — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Not started |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Not started |
 | T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8, **T10** | Not started |
 | T10 | Daily backup (pg_dump + rclone, systemd timer) — **one verified dump before T9** | M | T1 | Not started |
 | T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
+| T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | Not started |
 
 \* T3 is env-gated and mergeable before T1; it just can't connect until the archive DB exists.
 

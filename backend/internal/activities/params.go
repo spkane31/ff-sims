@@ -102,10 +102,12 @@ type ComputeSegmentSeasonADPParams struct {
 // workflow (which cannot read env deterministically) can be tuned without a
 // redeploy of workflow code.
 type ScavengerConfig struct {
-	LeagueBatchSize  int // SCAVENGER_LEAGUE_BATCH_SIZE, default 500
-	TxnBatchSize     int // SCAVENGER_TXN_BATCH_SIZE, default 5000
-	DraftBatchSize   int // SCAVENGER_DRAFT_BATCH_SIZE, default 200 (drafts per batch; each draft's picks are copied alongside it)
-	MaxBatchesPerRun int // SCAVENGER_MAX_BATCHES_PER_RUN, default 50
+	LeagueBatchSize  int  // SCAVENGER_LEAGUE_BATCH_SIZE, default 500
+	TxnBatchSize     int  // SCAVENGER_TXN_BATCH_SIZE, default 5000
+	DraftBatchSize   int  // SCAVENGER_DRAFT_BATCH_SIZE, default 200 (drafts per batch; each draft's picks are copied alongside it)
+	MaxBatchesPerRun int  // SCAVENGER_MAX_BATCHES_PER_RUN, default 50
+	RetentionDays    int  // SCAVENGER_RETENTION_DAYS, default 30 — cloud rows older than this are purge candidates
+	PurgeEnabled     bool // SCAVENGER_PURGE_ENABLED, default false — kill-switch; purge activities only run when true
 }
 
 // ReplicateBatchParams is shared by all four Replicate*Batch activities —
@@ -127,4 +129,27 @@ type ScavengerReport struct {
 	TransactionsReplicated int
 	DraftHeadersReplicated int
 	DraftPicksReplicated   int
+	TransactionsPurged     int
+	TransactionsUnverified int
+	DraftsPurged           int
+	DraftsUnverified       int
+}
+
+// PurgeBatchParams is shared by PurgeTransactionsBatch and PurgeDraftsBatch —
+// they differ only in which table(s) and verification rule they use.
+type PurgeBatchParams struct {
+	BatchSize     int
+	RetentionDays int
+}
+
+// PurgeBatchResult reports one purge batch's outcome. Purged counts rows
+// actually deleted from cloud. Unverified counts candidates left in place
+// because they couldn't be confirmed present (and, for drafts, pick-count
+// matched) in the archive yet — they are retried by the next batch/run.
+// Drained means fewer than BatchSize purge candidates were found past the
+// retention cutoff — this data type is caught up for this run.
+type PurgeBatchResult struct {
+	Purged     int
+	Unverified int
+	Drained    bool
 }

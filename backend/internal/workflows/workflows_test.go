@@ -540,3 +540,112 @@ func TestArchiveBackfillWorkflow_StreamFailureFailsTheExecution(t *testing.T) {
 	require.Error(t, env.GetWorkflowError())
 	require.False(t, workflow.IsContinueAsNewError(env.GetWorkflowError()))
 }
+
+// ---- ScavengerDispatcher purge phase ----
+
+func TestScavengerDispatcher_PurgeDisabledByDefault_NeverCallsPurgeActivities(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{
+		LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50,
+		RetentionDays: 30, PurgeEnabled: false,
+	}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	// No PurgeTransactionsBatch / PurgeDraftsBatch mocks registered: if the
+	// dispatcher calls them anyway, the test environment fails on the
+	// unmocked activity call.
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestScavengerDispatcher_PurgeEnabledAndCaughtUp_RunsPurgeAndAccumulatesReport(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{
+		LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50,
+		RetentionDays: 30, PurgeEnabled: true,
+	}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.PurgeTransactionsBatch, mock.Anything, activities.PurgeBatchParams{BatchSize: 5000, RetentionDays: 30}).
+		Return(activities.PurgeBatchResult{Purged: 100, Unverified: 2, Drained: true}, nil).Once()
+	env.OnActivity(sa.PurgeDraftsBatch, mock.Anything, activities.PurgeBatchParams{BatchSize: 200, RetentionDays: 30}).
+		Return(activities.PurgeBatchResult{Purged: 4, Unverified: 1, Drained: true}, nil).Once()
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var report activities.ScavengerReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, 100, report.TransactionsPurged)
+	require.Equal(t, 2, report.TransactionsUnverified)
+	require.Equal(t, 4, report.DraftsPurged)
+	require.Equal(t, 1, report.DraftsUnverified)
+	env.AssertExpectations(t)
+}
+
+func TestScavengerDispatcher_PurgeSkippedWhenReplicateNotCaughtUp(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	// MaxBatchesPerRun: 1 with Drained: false means every stream hits the
+	// iteration cap without catching up this run.
+	cfg := activities.ScavengerConfig{
+		LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 1,
+		RetentionDays: 30, PurgeEnabled: true,
+	}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Replicated: 500, Drained: false}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Replicated: 5000, Drained: false}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Replicated: 200, Drained: false}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Replicated: 200, Drained: false}, nil).Once()
+	// No purge mocks: neither stream drained, so purge must not run even
+	// though PurgeEnabled is true.
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestScavengerDispatcher_PurgeActivityErrorFailsTheWorkflowRun(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{
+		LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50,
+		RetentionDays: 30, PurgeEnabled: true,
+	}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.PurgeTransactionsBatch, mock.Anything, mock.Anything).
+		Return(activities.PurgeBatchResult{}, temporal.NewNonRetryableApplicationError("replication stalled", "test", nil)).Once()
+
+	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError()) // unlike replicate stream failures, purge errors must NOT be swallowed
+	env.AssertExpectations(t)
+}
