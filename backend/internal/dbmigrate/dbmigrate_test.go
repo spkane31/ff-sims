@@ -56,6 +56,23 @@ func TestRun_ArchiveMigrations_CreatesSyncStateTable(t *testing.T) {
 	}
 }
 
+func TestRun_ArchiveMigrations_CreatesReplicaTables(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	scopedDSN := testutil.NewPGSchema(t, dsn, "archive_replica_migrate_test")
+
+	if err := dbmigrate.Run(scopedDSN, archivemigrations.FS, "up", nil); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	for _, table := range []string{"sleeper_leagues", "sleeper_transactions", "sleeper_drafts", "sleeper_draft_picks"} {
+		if !tableExists(t, scopedDSN, table) {
+			t.Errorf("expected archive table %s to exist after migrate up", table)
+		}
+	}
+}
+
 func TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
