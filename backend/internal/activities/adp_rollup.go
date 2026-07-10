@@ -16,8 +16,11 @@ import (
 var qualifyingDraftTypes = []string{"snake", "linear"}
 
 // ADPRollupActivities holds dependencies for the daily ADP rollup worker.
+// Read is the archive DB (full draft/pick history — see the T5 scavenger);
+// Write is cloud, where the small derived draft_adp rollup lives.
 type ADPRollupActivities struct {
-	DB *gorm.DB
+	Read  *gorm.DB
+	Write *gorm.DB
 }
 
 // ListADPSeasons returns the distinct seasons with at least one qualifying
@@ -25,7 +28,7 @@ type ADPRollupActivities struct {
 // hardcoded season list.
 func (a *ADPRollupActivities) ListADPSeasons(ctx context.Context) ([]string, error) {
 	var seasons []string
-	err := a.DB.WithContext(ctx).
+	err := a.Read.WithContext(ctx).
 		Table("sleeper_drafts d").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
 		Where("d.status = ? AND d.type IN ? AND l.league_type = ?", "complete", qualifyingDraftTypes, "redraft").
@@ -76,9 +79,9 @@ func adpSelectClause(dialect string) string {
 // API read time, not here — every player who appears at least once is
 // upserted.
 func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, params ComputeSegmentSeasonADPParams) error {
-	db := a.DB.WithContext(ctx).
+	db := a.Read.WithContext(ctx).
 		Table("sleeper_draft_picks p").
-		Select(adpSelectClause(a.DB.Dialector.Name())).
+		Select(adpSelectClause(a.Read.Dialector.Name())).
 		Joins("JOIN sleeper_drafts d ON d.sleeper_draft_id = p.sleeper_draft_id").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id").
 		Where("d.status = ? AND d.type IN ? AND l.league_type = ? AND d.season = ?",
@@ -117,7 +120,7 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 	// Postgres happened to return the GROUP BY in — upserted for that
 	// segment/season, with no rollback. A single batched statement is both
 	// atomic and one round trip instead of hundreds.
-	return a.DB.WithContext(ctx).Clauses(clause.OnConflict{
+	return a.Write.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "segment"}, {Name: "season"}, {Name: "sleeper_player_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "ci_low_pick_no", "ci_high_pick_no", "updated_at",
