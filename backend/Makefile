@@ -1,4 +1,4 @@
-.PHONY: build clean run etl migrate migrate-status migrate-down deduplicate help
+.PHONY: build clean run etl migrate migrate-status migrate-down migrate-archive migrate-archive-status migrate-archive-down deduplicate help
 
 help: ## Show this help message
 	@echo 'Makefile for backend'
@@ -38,6 +38,15 @@ migrate-status: build ## Show goose migration status (requires DATABASE_URL)
 
 migrate-down: build ## Roll back the last migration (requires DATABASE_URL)
 	@./bin/migrate down
+
+migrate-archive: build ## Apply all pending goose migrations to the archive DB (requires ARCHIVE_DATABASE_URL)
+	@./bin/migrate -db=archive up
+
+migrate-archive-status: build ## Show goose migration status for the archive DB (requires ARCHIVE_DATABASE_URL)
+	@./bin/migrate -db=archive status
+
+migrate-archive-down: build ## Roll back the last archive migration (requires ARCHIVE_DATABASE_URL)
+	@./bin/migrate -db=archive down
 
 deduplicate: ## Remove duplicate records from database
 	@echo "Running deduplication process..."
