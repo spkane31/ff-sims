@@ -53,7 +53,7 @@
 
 This is a refactor: existing tests in `claim_pg_test.go` are the safety net. No new test is written in this task; Step 2 below re-runs the existing suite to prove behavior didn't change.
 
-- [ ] **Step 1: Create the testutil package**
+- [x] **Step 1: Create the testutil package**
 
 ```go
 // backend/internal/testutil/pgschema.go
@@ -114,7 +114,7 @@ func OpenGORM(t *testing.T, scopedDSN string) *gorm.DB {
 }
 ```
 
-- [ ] **Step 2: Rewrite `newPGTestDB` in claim_pg_test.go to use testutil**
+- [x] **Step 2: Rewrite `newPGTestDB` in claim_pg_test.go to use testutil**
 
 Replace lines 1–63 of `backend/internal/activities/claim_pg_test.go` (package declaration through the end of `newPGTestDB`) with:
 
@@ -156,12 +156,12 @@ func newPGTestDB(t *testing.T) *gorm.DB {
 
 The rest of the file (from `func seedLeague` onward, line 65 to the end) is unchanged — leave it exactly as is. Note the trimmed import list: `math/rand`, `strings`, `gorm.io/driver/postgres`, and `gorm.io/gorm/logger` are no longer used directly in this file and must be dropped, or `go build` will fail on unused imports.
 
-- [ ] **Step 3: Verify build and existing tests still pass**
+- [x] **Step 3: Verify build and existing tests still pass**
 
 Run: `cd backend && go build ./... && go test ./internal/activities/... ./internal/testutil/... -v`
 Expected: build succeeds; `claim_pg_test.go` tests report `SKIP` (no `TEST_DATABASE_URL` set yet) rather than compile errors or failures. `internal/testutil` has no test files yet, so it reports `[no test files]` — that's expected, it's exercised indirectly.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/internal/testutil/pgschema.go backend/internal/activities/claim_pg_test.go
@@ -180,7 +180,7 @@ git commit -m "test: extract shared PG throwaway-schema helper into internal/tes
 - Consumes: nothing new.
 - Produces: `config.ArchiveDBConfig{ConnectionString, PoolMaxOpenConns, PoolMaxIdleConns, PoolConnMaxLifetime}` with method `Enabled() bool`; `Config.ArchiveDB ArchiveDBConfig` field, populated by `Load()` from `ARCHIVE_DATABASE_URL` (default `""`), `ARCHIVE_DB_MAX_OPEN_CONNS` (default 10), `ARCHIVE_DB_MAX_IDLE_CONNS` (default 5), `ARCHIVE_DB_CONN_MAX_LIFETIME_SECS` (default 300). Task 3 (`database.InitializeArchive`) consumes this.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // backend/internal/config/config_test.go
@@ -236,12 +236,12 @@ func TestLoad_ArchiveDBReadsEnv(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && go test ./internal/config/... -v`
 Expected: FAIL — `ArchiveDBConfig` and `Config.ArchiveDB` undefined (compile error).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `backend/internal/config/config.go`, change the `Config` struct (lines 11–15) to:
 
@@ -301,12 +301,12 @@ func Load() (*Config, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && go test ./internal/config/... -v`
 Expected: PASS — `TestArchiveDBConfig_Enabled`, `TestLoad_ArchiveDBDefaultsToDisabled`, `TestLoad_ArchiveDBReadsEnv` all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/config/config.go backend/internal/config/config_test.go
@@ -325,7 +325,7 @@ git commit -m "feat: add ArchiveDBConfig (ARCHIVE_DATABASE_URL, empty = disabled
 - Consumes: `config.ArchiveDBConfig` (Task 2).
 - Produces: `database.Archive *gorm.DB` (package global, nil until initialized), `database.InitializeArchive(cfg *config.Config) error`. Task 6 (`cmd/worker`) consumes this.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // backend/internal/database/postgres_test.go
@@ -377,12 +377,12 @@ func TestInitializeArchive_ConnectsWhenConfigured(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/database/... -v`
 Expected: FAIL — `database.InitializeArchive` undefined (compile error).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `backend/internal/database/postgres.go`, add after the existing `Initialize` function (after line 44):
 
@@ -426,7 +426,7 @@ func InitializeArchive(cfg *config.Config) error {
 
 No new imports are needed — `fmt`, `log`, `log/slog`, `time`, `config`, `postgres`, `gorm`, `logger` are all already imported by this file.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/database/... -v`
 Expected: `TestInitializeArchive_ErrorsWhenDisabled` PASSes unconditionally. `TestInitializeArchive_ConnectsWhenConfigured` PASSes if `TEST_DATABASE_URL` is set, else SKIPs.
@@ -440,7 +440,7 @@ pg_ctl -D /tmp/ff-sims-pgtest stop
 ```
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/database/postgres.go backend/internal/database/postgres_test.go
@@ -459,7 +459,7 @@ git commit -m "feat: add database.Archive / InitializeArchive second DB handle"
 - Produces: `archivemigrations.FS embed.FS` (package `archivemigrations`) — Task 5 (`dbmigrate`) and Task 6 (`cmd/migrate`, `cmd/worker`) consume this.
 - No Go code to unit test here — Task 5's `dbmigrate_test.go` proves this migration applies cleanly and creates the table.
 
-- [ ] **Step 1: Create the embed file**
+- [x] **Step 1: Create the embed file**
 
 ```go
 // backend/migrations/archive/fs.go
@@ -471,7 +471,7 @@ import "embed"
 var FS embed.FS
 ```
 
-- [ ] **Step 2: Create the first archive migration**
+- [x] **Step 2: Create the first archive migration**
 
 Archive replica tables have no FKs (per the design doc, arrival order must not matter), so this table needs no foreign keys either. `cursor_state` is a flexible jsonb blob rather than fixed watermark columns — the exact cursor shape per stream (transactions: `created_at`+id; drafts: two independent watermarks; leagues: `updated_at`) is the scavenger's concern (T5), not this plumbing task's. This is a brand-new, empty table — no existing rows to worry about, so a plain (transactional) `CREATE TABLE`/`CREATE INDEX` is fine; `CONCURRENTLY` is only needed for indexing large, already-populated tables like migration 021's targets (Task 8).
 
@@ -490,12 +490,12 @@ CREATE TABLE archive_sync_state (
 DROP TABLE archive_sync_state;
 ```
 
-- [ ] **Step 3: Verify it compiles into the build**
+- [x] **Step 3: Verify it compiles into the build**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds (the `//go:embed *.sql` directive requires at least one matching file at compile time — confirms the migration file is picked up).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/migrations/archive/
@@ -514,7 +514,7 @@ git commit -m "feat: add archive migrations dir with archive_sync_state table"
 - Consumes: `archivemigrations.FS` (Task 4), `migrations.FS` (existing cloud migrations).
 - Produces: `dbmigrate.Run(dsn string, fsys fs.FS, command string, args []string) error`. Task 6 (`cmd/migrate`, `cmd/worker`) consumes this.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // backend/internal/dbmigrate/dbmigrate_test.go
@@ -594,12 +594,12 @@ func TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes(t *testing.T)
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/dbmigrate/... -v`
 Expected: FAIL — `backend/internal/dbmigrate` package doesn't exist yet (compile error). (These tests also depend on migration `021_scavenger_cursor_indexes.sql` from Task 8, which doesn't exist yet either — that's fine, `TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes` will keep failing the index-existence assertions until Task 8 lands; note this now so it isn't mistaken for a regression later.)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 // backend/internal/dbmigrate/dbmigrate.go
@@ -641,12 +641,12 @@ func Run(dsn string, fsys fs.FS, command string, args []string) error {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/dbmigrate/... -v`
 Expected: with `TEST_DATABASE_URL` unset, both SKIP. With it set (see Task 3 Step 4 for how to start a disposable Postgres), `TestRun_ArchiveMigrations_CreatesSyncStateTable` PASSes; `TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes` still FAILs until Task 8 adds migration 021 — that's expected at this point in the plan, re-run it after Task 8.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/dbmigrate/
@@ -667,7 +667,7 @@ git commit -m "feat: add internal/dbmigrate shared goose runner"
 
 This task has no new automated test — `cmd/migrate` and `cmd/worker` are `main` packages with `[no test files]` today (confirmed baseline), and the behavior they wire together is already covered by Tasks 2, 3, and 5's tests. Verification here is manual (Step 4).
 
-- [ ] **Step 1: Rewrite `cmd/migrate/main.go`**
+- [x] **Step 1: Rewrite `cmd/migrate/main.go`**
 
 ```go
 // backend/cmd/migrate/main.go
@@ -724,7 +724,7 @@ func main() {
 
 Note this preserves backward compatibility: `flag.Parse()` stops parsing at the first non-flag argument, so the existing invocation `./bin/migrate up` still works unchanged (no `-db` present → defaults to `"cloud"`; `flag.Arg(0)` is `"up"`). New: `./bin/migrate -db=archive up`.
 
-- [ ] **Step 2: Wire archive auto-migrate + handle init into `cmd/worker/main.go`**
+- [x] **Step 2: Wire archive auto-migrate + handle init into `cmd/worker/main.go`**
 
 Add to the import block (after `"backend/internal/database"` on line 19):
 
@@ -757,12 +757,12 @@ Replace lines 60–62 (the `database.Initialize` block) with:
 	}
 ```
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds with no unused-import or type errors.
 
-- [ ] **Step 4: Manual verification against a disposable Postgres**
+- [x] **Step 4: Manual verification against a disposable Postgres**
 
 ```bash
 # Start a disposable cluster (see Task 3 Step 4 for initdb/pg_ctl commands),
@@ -803,7 +803,7 @@ kill $WORKER_PID
 # with no archive-migrate or archive-connect fatal error.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/cmd/migrate/main.go backend/cmd/worker/main.go
@@ -821,7 +821,7 @@ git commit -m "feat: -db cloud|archive flag for cmd/migrate; auto-migrate + conn
 - Consumes: the `-db=archive` flag from Task 6.
 - Produces: nothing consumed by later tasks — this is a convenience wrapper for ops.
 
-- [ ] **Step 1: Add the targets**
+- [x] **Step 1: Add the targets**
 
 In `backend/Makefile`, update the `.PHONY` line (line 1) to include the new targets:
 
@@ -842,12 +842,12 @@ migrate-archive-down: build ## Roll back the last archive migration (requires AR
 	@./bin/migrate -db=archive down
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Run: `cd backend && make help`
 Expected: output lists `migrate-archive`, `migrate-archive-status`, `migrate-archive-down` alongside the existing `migrate*` targets.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/Makefile
@@ -866,7 +866,7 @@ git commit -m "chore: add migrate-archive Makefile targets"
 
 `sleeper_transactions.created_at` (GORM `autoCreateTime`, insert time) has no index today — the existing `012_sleeper_indexes.sql` only indexes `created_at_sleeper` (Sleeper's own epoch timestamp, a different column), `type`, `status`, and `sleeper_league_id`. `sleeper_drafts.last_fetched_at` also has no index today. Both are needed by the future scavenger's cursor-based replication queries (`ORDER BY created_at` / `ORDER BY last_fetched_at`).
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 ```sql
 -- backend/migrations/021_scavenger_cursor_indexes.sql
@@ -886,18 +886,18 @@ DROP INDEX CONCURRENTLY IF EXISTS idx_sleeper_drafts_last_fetched_at;
 DROP INDEX CONCURRENTLY IF EXISTS idx_sleeper_transactions_created_at;
 ```
 
-- [ ] **Step 2: Run the dbmigrate tests from Task 5 to verify this closes the gap**
+- [x] **Step 2: Run the dbmigrate tests from Task 5 to verify this closes the gap**
 
 Run (with `TEST_DATABASE_URL` set — see Task 3 Step 4):
 `cd backend && go test ./internal/dbmigrate/... -v -run TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes`
 Expected: PASS — both indexes now exist after `migrate up`. (This test was written in Task 5 and was failing on the index-existence assertions until now — that failure is now resolved, not a new test.)
 
-- [ ] **Step 3: Run the full backend test suite**
+- [x] **Step 3: Run the full backend test suite**
 
 Run: `cd backend && go test ./... -v 2>&1 | tail -80`
 Expected: everything PASSes (Postgres-gated tests PASS if `TEST_DATABASE_URL` is set, otherwise SKIP — no FAILs either way).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/migrations/021_scavenger_cursor_indexes.sql
@@ -908,12 +908,12 @@ git commit -m "feat: add indexes on sleeper_transactions.created_at and sleeper_
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` succeeds.
-- [ ] `cd backend && go vet ./...` reports nothing new.
-- [ ] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
-- [ ] Full pass with a disposable Postgres per Task 3 Step 4: `TEST_DATABASE_URL="postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" go test ./... -v` — every test PASSes, including the new ones in `internal/config`, `internal/database`, `internal/dbmigrate`, and the refactored `internal/activities/claim_pg_test.go`.
-- [ ] Manual worker-boot check from Task 6 Step 4: both the archive-disabled and archive-enabled paths log the expected line with no fatal error in the archive branch.
-- [ ] `go run ./cmd/worker` with `ARCHIVE_DATABASE_URL` unset behaves identically to `main` before this PR (no archive-related code runs).
+- [x] `cd backend && go build ./...` succeeds.
+- [x] `cd backend && go vet ./...` reports nothing new.
+- [x] `cd backend && go test ./...` passes with `TEST_DATABASE_URL` unset (PG-gated tests SKIP, nothing FAILs).
+- [x] Full pass with a disposable Postgres per Task 3 Step 4: `TEST_DATABASE_URL="postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" go test ./... -v` — every test PASSes, including the new ones in `internal/config`, `internal/database`, `internal/dbmigrate`, and the refactored `internal/activities/claim_pg_test.go`.
+- [x] Manual worker-boot check from Task 6 Step 4: both the archive-disabled and archive-enabled paths log the expected line with no fatal error in the archive branch.
+- [x] `go run ./cmd/worker` with `ARCHIVE_DATABASE_URL` unset behaves identically to `main` before this PR (no archive-related code runs).
 
 ## Self-Review
 
