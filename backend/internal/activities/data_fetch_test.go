@@ -499,3 +499,117 @@ func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 		t.Errorf("expected the old txn to fall back to cloud when Archive is nil, got %d rows", count)
 	}
 }
+
+func TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	draftClaimedLeague(t, cloud, "lg1")
+
+	srv := draftsTestServer(t,
+		map[string][]sleeper.Draft{
+			"lg1": {{DraftID: "d-old", Status: "complete", Type: "snake", Season: "2024"}},
+		},
+		map[string][]sleeper.DraftPick{
+			"d-old": {{Round: 1, PickNo: 1, RosterID: 1, PlayerID: "p1"}},
+		}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDraftsBatch(t, dfa, activities.SyncLeagueDraftsBatchParams{LeagueIDs: []string{"lg1"}, Concurrency: 1})
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected 1 processed / 0 failed, got %+v", res)
+	}
+
+	var cloudCount int64
+	cloud.Model(&models.SleeperDraft{}).Count(&cloudCount)
+	if cloudCount != 0 {
+		t.Errorf("expected no draft rows in cloud, got %d", cloudCount)
+	}
+	var archiveDraft models.ArchiveSleeperDraft
+	if err := archive.Where("sleeper_draft_id = ?", "d-old").First(&archiveDraft).Error; err != nil {
+		t.Fatalf("expected d-old in archive: %v", err)
+	}
+	if archiveDraft.LastFetchedAt == nil {
+		t.Error("expected archive draft's picks to be fetched (last_fetched_at set)")
+	}
+	var pickCount int64
+	archive.Model(&models.ArchiveSleeperDraftPick{}).Where("sleeper_draft_id = ?", "d-old").Count(&pickCount)
+	if pickCount != 1 {
+		t.Errorf("expected 1 archived pick, got %d", pickCount)
+	}
+}
+
+func TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	draftClaimedLeague(t, cloud, "lg1")
+
+	srv := draftsTestServer(t,
+		map[string][]sleeper.Draft{"lg1": {{DraftID: "d-current", Status: "complete", Type: "snake", Season: "2026"}}},
+		map[string][]sleeper.DraftPick{"d-current": {{Round: 1, PickNo: 1, RosterID: 1, PlayerID: "p1"}}}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	runDraftsBatch(t, dfa, activities.SyncLeagueDraftsBatchParams{LeagueIDs: []string{"lg1"}, Concurrency: 1})
+
+	var cloudCount, archiveCount int64
+	cloud.Model(&models.SleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&cloudCount)
+	archive.Model(&models.ArchiveSleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&archiveCount)
+	if cloudCount != 1 {
+		t.Errorf("expected current-season draft in cloud, got %d", cloudCount)
+	}
+	if archiveCount != 0 {
+		t.Errorf("expected current-season draft NOT in archive, got %d", archiveCount)
+	}
+}
+
+func TestSyncDraftsBatch_AllDraftsToCloudWhenArchiveNil(t *testing.T) {
+	cloud := newTestDB(t)
+	draftClaimedLeague(t, cloud, "lg1")
+
+	srv := draftsTestServer(t,
+		map[string][]sleeper.Draft{"lg1": {{DraftID: "d-old", Status: "complete", Type: "snake", Season: "2024"}}},
+		map[string][]sleeper.DraftPick{"d-old": {{Round: 1, PickNo: 1, RosterID: 1, PlayerID: "p1"}}}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
+	runDraftsBatch(t, dfa, activities.SyncLeagueDraftsBatchParams{LeagueIDs: []string{"lg1"}, Concurrency: 1})
+
+	var count int64
+	cloud.Model(&models.SleeperDraft{}).Where("sleeper_draft_id = ?", "d-old").Count(&count)
+	if count != 1 {
+		t.Errorf("expected old draft to fall back to cloud when Archive is nil, got %d", count)
+	}
+}
+
+func TestSyncDraftsBatch_OldDraftPicksFetchOnce(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	draftClaimedLeague(t, cloud, "lg1")
+	// Old draft already fetched by an earlier sweep — into archive, not cloud.
+	fetched := time.Now().UTC()
+	archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d-old", SleeperLeagueID: "lg1", Status: "complete", Season: "2024", LastFetchedAt: &fetched,
+	})
+
+	var calls atomic.Int64
+	srv := draftsTestServer(t,
+		map[string][]sleeper.Draft{"lg1": {{DraftID: "d-old", Status: "complete", Type: "snake", Season: "2024"}}},
+		map[string][]sleeper.DraftPick{"d-old": {{Round: 1, PickNo: 1, RosterID: 1, PlayerID: "p1"}}}, &calls)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDraftsBatch(t, dfa, activities.SyncLeagueDraftsBatchParams{LeagueIDs: []string{"lg1"}, Concurrency: 1})
+	if res.Processed != 1 {
+		t.Fatalf("expected 1 processed, got %+v", res)
+	}
+	// Only the /drafts call — no /picks call for the already-fetched archived draft.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected 1 HTTP call (drafts only), got %d", got)
+	}
+	var pickCount int64
+	archive.Model(&models.ArchiveSleeperDraftPick{}).Count(&pickCount)
+	if pickCount != 0 {
+		t.Errorf("expected no picks refetched, got %d", pickCount)
+	}
+}

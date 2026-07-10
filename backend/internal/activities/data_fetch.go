@@ -145,7 +145,9 @@ func (a *DataFetchActivities) SyncLeagueDraftsBatch(ctx context.Context, params 
 // drafts that haven't been picked up yet (completed drafts are immutable, so
 // picks are fetch-once), and stamps completion (clearing the claim) in one
 // update. A 404 on the league marks it skipped; a 404 on a draft's picks
-// skips that draft.
+// skips that draft. Each draft routes as a whole unit (header + picks) to
+// either cloud (current season, or no archive configured — the unchanged
+// pre-T13 path) or straight to archive (past seasons, when Archive is set).
 func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID string) error {
 	drafts, err := a.Sleeper.GetLeagueDrafts(ctx, leagueID)
 	if err != nil {
@@ -162,8 +164,18 @@ func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID 
 		return err
 	}
 
-	var completedIDs []string
+	currentSeason := currentSleeperSeason()
+	var cloudCompletedIDs, archiveCompletedIDs []string
 	for _, d := range drafts {
+		if a.Archive != nil && d.Season < currentSeason {
+			if err := a.upsertArchiveDraftHeader(ctx, d, leagueID); err != nil {
+				return err
+			}
+			if d.Status == "complete" {
+				archiveCompletedIDs = append(archiveCompletedIDs, d.DraftID)
+			}
+			continue
+		}
 		row := models.SleeperDraft{
 			SleeperDraftID:  d.DraftID,
 			SleeperLeagueID: leagueID,
@@ -178,14 +190,14 @@ func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID 
 			return err
 		}
 		if d.Status == "complete" {
-			completedIDs = append(completedIDs, d.DraftID)
+			cloudCompletedIDs = append(cloudCompletedIDs, d.DraftID)
 		}
 	}
 
-	if len(completedIDs) > 0 {
+	if len(cloudCompletedIDs) > 0 {
 		var pending []string
 		if err := a.DB.WithContext(ctx).Model(&models.SleeperDraft{}).
-			Where("sleeper_draft_id IN ? AND last_fetched_at IS NULL", completedIDs).
+			Where("sleeper_draft_id IN ? AND last_fetched_at IS NULL", cloudCompletedIDs).
 			Pluck("sleeper_draft_id", &pending).Error; err != nil {
 			return err
 		}
@@ -196,6 +208,24 @@ func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID 
 					continue // draft gone on Sleeper's side; nothing to fetch
 				}
 				return fmt.Errorf("draft %s: %w", draftID, err)
+			}
+		}
+	}
+
+	if len(archiveCompletedIDs) > 0 {
+		var pending []string
+		if err := a.Archive.WithContext(ctx).Model(&models.ArchiveSleeperDraft{}).
+			Where("sleeper_draft_id IN ? AND last_fetched_at IS NULL", archiveCompletedIDs).
+			Pluck("sleeper_draft_id", &pending).Error; err != nil {
+			return err
+		}
+		for _, draftID := range pending {
+			if err := a.fetchArchiveDraftPicks(ctx, draftID); err != nil {
+				var nfe *sleeper.NotFoundError
+				if errors.As(err, &nfe) {
+					continue
+				}
+				return fmt.Errorf("draft %s (archive): %w", draftID, err)
 			}
 		}
 	}
@@ -238,6 +268,58 @@ func (a *DataFetchActivities) fetchDraftPicks(ctx context.Context, draftID strin
 	}
 	return a.DB.WithContext(ctx).
 		Model(&models.SleeperDraft{}).
+		Where("sleeper_draft_id = ?", draftID).
+		Update("last_fetched_at", time.Now().UTC()).Error
+}
+
+// upsertArchiveDraftHeader upserts d directly into the archive DB, skipping
+// cloud — see syncOneLeagueDrafts's age-based routing.
+func (a *DataFetchActivities) upsertArchiveDraftHeader(ctx context.Context, d sleeper.Draft, leagueID string) error {
+	now := time.Now().UTC()
+	row := models.ArchiveSleeperDraft{
+		SleeperDraftID:  d.DraftID,
+		SleeperLeagueID: leagueID,
+		Type:            d.Type,
+		Status:          d.Status,
+		Season:          d.Season,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	return a.Archive.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "sleeper_draft_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "type", "season", "updated_at"}),
+	}).Create(&row).Error
+}
+
+// fetchArchiveDraftPicks mirrors fetchDraftPicks but writes directly to the
+// archive DB for an old (archive-routed) draft — see syncOneLeagueDrafts.
+func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftID string) error {
+	picks, err := a.Sleeper.GetDraftPicks(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	if len(picks) > 0 {
+		rows := make([]models.ArchiveSleeperDraftPick, len(picks))
+		for i, p := range picks {
+			metadata, _ := json.Marshal(p.Metadata)
+			rows[i] = models.ArchiveSleeperDraftPick{
+				SleeperDraftID:  draftID,
+				Round:           p.Round,
+				PickNo:          p.PickNo,
+				RosterID:        p.RosterID,
+				PickedByUserID:  p.PickedBy,
+				SleeperPlayerID: p.PlayerID,
+				Metadata:        metadata,
+			}
+		}
+		if err := a.Archive.WithContext(ctx).
+			Clauses(clause.OnConflict{DoNothing: true}).
+			CreateInBatches(rows, 500).Error; err != nil {
+			return err
+		}
+	}
+	return a.Archive.WithContext(ctx).
+		Model(&models.ArchiveSleeperDraft{}).
 		Where("sleeper_draft_id = ?", draftID).
 		Update("last_fetched_at", time.Now().UTC()).Error
 }
