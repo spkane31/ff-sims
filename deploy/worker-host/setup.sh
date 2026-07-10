@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GO_VERSION="1.25.7"
 ENV_FILE="/etc/ff-sims-worker.env"
-PLACEHOLDER_MARKER="# PI-SETUP-PLACEHOLDER"
+PLACEHOLDER_MARKER="# WORKER-HOST-SETUP-PLACEHOLDER"
 SERVICE_USER="ffsims"
 SYSTEMD_DIR="/etc/systemd/system"
 
@@ -39,11 +39,18 @@ ensure_service_user() {
   fi
 }
 
+# Masking these targets prevents the host from suspending/hibernating out from
+# under the worker and deploy timer. Idempotent and harmless to re-run.
+disable_sleep() {
+  echo "Disabling sleep/suspend/hibernate targets"
+  systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+}
+
 write_env_template() {
   local target="$1"
   cat > "$target" <<EOF
 ${PLACEHOLDER_MARKER}
-# Fill in real values below, then re-run \`make pi-setup\`.
+# Fill in real values below, then re-run \`make worker-host-setup\`.
 DATABASE_URL=postgres://REPLACE_ME
 TEMPORAL_NAMESPACE_ENDPOINT=REPLACE_ME.tmprl.cloud:7233
 TEMPORAL_NAMESPACE=REPLACE_ME
@@ -61,12 +68,12 @@ ensure_env_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
     write_env_template "$ENV_FILE"
     echo ""
-    echo "Wrote placeholder env file to $ENV_FILE — edit it with real values, then re-run 'make pi-setup'."
+    echo "Wrote placeholder env file to $ENV_FILE — edit it with real values, then re-run 'make worker-host-setup'."
     return 1
   fi
   if env_file_is_placeholder "$ENV_FILE"; then
     echo ""
-    echo "$ENV_FILE still has placeholder values — edit it with real values, then re-run 'make pi-setup'."
+    echo "$ENV_FILE still has placeholder values — edit it with real values, then re-run 'make worker-host-setup'."
     return 1
   fi
   return 0
@@ -76,7 +83,7 @@ first_build() {
   echo "Building worker binary"
   local sha
   sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
-  (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}'" -o worker ./cmd/worker)
+  (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}' -X 'main.promoteOnStart=true'" -o worker ./cmd/worker)
 }
 
 install_units() {
@@ -95,7 +102,7 @@ print_summary() {
 
 Setup complete.
 
-Pi public IP: ${ip}
+Worker host public IP: ${ip}
   -> Add this IP to the Postgres managed database's trusted sources
      in the DigitalOcean dashboard if you haven't already.
 
@@ -108,6 +115,7 @@ EOF
 main() {
   ensure_go
   ensure_service_user
+  disable_sleep
   first_build
   install_units
 

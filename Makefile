@@ -1,4 +1,4 @@
-.PHONY: help docker-run pi-setup
+.PHONY: help docker-run worker-host-setup worker-host-setup-archive-db
 
 help: ## Show this help message
 	@echo 'Usage:'
@@ -23,5 +23,8 @@ docker-stop: ## Stop and remove running ff-sims containers
 	docker ps -q --filter "ancestor=ff-sims" | xargs -r docker stop
 	docker ps -aq --filter "ancestor=ff-sims" | xargs -r docker rm
 
-pi-setup: ## Set up this Pi as a Temporal worker host (run on the Pi itself, with sudo)
-	sudo ./deploy/raspberry-pi/setup.sh
+worker-host-setup: ## Set up this machine as a Temporal worker host (run on the host itself, with sudo)
+	sudo ./deploy/worker-host/setup.sh
+
+worker-host-setup-archive-db: ## Provision the local archive Postgres DB (run on the host itself, with sudo)
+	sudo ./deploy/worker-host/setup-archive-db.sh

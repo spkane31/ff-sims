@@ -26,32 +26,29 @@ import (
 )
 
 // buildID identifies the commit this binary was built from. Set via
-// -ldflags "-X main.buildID=<git short SHA>" in all build paths (Dockerfile,
-// deploy/raspberry-pi/{deploy,setup}.sh). Both fleets built from the same commit
-// must produce the identical string so they share one deployment version.
+// -ldflags "-X main.buildID=<git short SHA>" in the worker host's build paths
+// (deploy/worker-host/{deploy,setup}.sh) — the only place cmd/worker is built.
 var buildID = "dev"
 
 // promoteOnStart marks this build as the deployment's promoting fleet: on startup
 // it calls SetCurrentVersion to make its own build the deployment's Current
-// Version. Set to "true" via -ldflags only in the Dockerfile (DigitalOcean);
-// deploy/raspberry-pi/{deploy,setup}.sh never set it, so Pi builds default to
-// "false" and just join whatever version they produce.
+// Version. Set to "true" via -ldflags in deploy/worker-host/{deploy,setup}.sh — the
+// worker host is the only fleet that runs cmd/worker (DigitalOcean's Dockerfile
+// only builds cmd/server and the Python ESPN worker), so it's always the sole
+// promoter.
 //
-// This must stay asymmetric and baked in at build time rather than configured
-// via an env var. If both fleets promoted, whichever happened to poll and call
-// SetCurrentVersion last would win — including a Pi mid self-update still
-// running a stale build — silently making stale code current and reintroducing
-// the non-determinism problem Worker Deployment Versioning exists to prevent.
-// It was previously an opt-in env var (TEMPORAL_PROMOTE_ON_START) that only
-// DigitalOcean's App Platform config was supposed to set — a fact about which
-// fleet promotes that lived entirely outside this repo, unreviewed and easy to
-// forget. Baking the flag into the Dockerfile removes that dependency: DO always
-// builds from this file, so promotion eligibility can no longer silently go
-// unconfigured the way GIT_SHA did.
+// This used to be asymmetric across two fleets (DigitalOcean promoting, the
+// Raspberry Pi joining) and had to stay baked in at build time rather than
+// configured via an env var, since a second promoting fleet racing
+// SetCurrentVersion could make stale code current and reintroduce the
+// non-determinism problem Worker Deployment Versioning exists to prevent. Now
+// that only one fleet ever runs this binary, that risk no longer applies, but
+// the flag stays build-time-baked rather than defaulted to "true" in source: an
+// accidental second worker-host build (e.g. a dev running cmd/worker locally
+// without ldflags) should join the deployment, not fight to promote a dev build.
 var promoteOnStart = "false"
 
-// deploymentName identifies the Worker Deployment shared by the DigitalOcean and
-// Raspberry Pi worker fleets.
+// deploymentName identifies the Worker Deployment used by the worker host fleet.
 const deploymentName = "ff-sims-worker"
 
 func main() {
@@ -112,9 +109,9 @@ func main() {
 
 	// The sync queues (drafts, transactions) are I/O-bound, and Temporal task
 	// distribution is pull-based: the fleet with more free activity slots and
-	// pollers takes a larger share of the queue. These are env-tunable so an
-	// underutilized fleet (the Raspberry Pi runs <10% CPU) can be scaled up
-	// independently of the DigitalOcean container.
+	// pollers takes a larger share of the queue. These are env-tunable so the
+	// worker host (idles well under 10% CPU on this workload) can be scaled up
+	// as needed.
 	//
 	//	WORKER_ACTIVITY_SLOTS    max concurrent activities per sync queue (default 100)
 	//	WORKER_ACTIVITY_POLLERS  activity task pollers per sync queue (0 = SDK default)
@@ -210,8 +207,8 @@ func main() {
 // could never be assigned to a worker (this is exactly what happened the first
 // time versioning shipped: the promotion never landed, and nothing retried after
 // the old one-minute budget expired). Only called when promoteOnStart is "true"
-// (DigitalOcean); the Pi never calls this and just joins whatever version its
-// build produces.
+// (the worker host's build); a build without the flag never calls this and just
+// joins whatever version its build produces.
 func promoteDeploymentVersion(ctx context.Context, c client.Client, version worker.WorkerDeploymentVersion) {
 	handle := c.WorkerDeploymentClient().GetHandle(version.DeploymentName)
 	backoff := time.Second
