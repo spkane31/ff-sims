@@ -161,3 +161,69 @@ func TestReplicateLeaguesBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 		t.Errorf("expected a full, non-drained batch of 2, got %+v", res)
 	}
 }
+
+func TestReplicateTransactionsBatch_CopiesRowsAndAdvancesCursor(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	for i, id := range []string{"t1", "t2"} {
+		if err := cloud.Create(&models.SleeperTransaction{
+			SleeperTransactionID: id, SleeperLeagueID: "lg1", Type: "trade", Status: "complete",
+			CreatedAtSleeper: 1000, CreatedAt: now.Add(time.Duration(i) * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("seed txn %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateTransactionsBatch: %v", err)
+	}
+	if res.Replicated != 2 || !res.Drained {
+		t.Errorf("res = %+v, want {Replicated: 2, Drained: true}", res)
+	}
+	var got models.ArchiveSleeperTransaction
+	if err := archive.Where("sleeper_transaction_id = ?", "t1").First(&got).Error; err != nil {
+		t.Fatalf("fetch archived txn: %v", err)
+	}
+	if got.Type != "trade" || got.SleeperLeagueID != "lg1" {
+		t.Errorf("archived row mismatch: %+v", got)
+	}
+}
+
+func TestReplicateTransactionsBatch_SecondRunIsNoOp(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: now}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	if _, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10}); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	res, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res.Replicated != 0 || !res.Drained {
+		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res)
+	}
+}
+
+func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	tooRecent := time.Now().UTC().Add(-1 * time.Minute)
+	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: tooRecent}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateTransactionsBatch: %v", err)
+	}
+	if res.Replicated != 0 {
+		t.Errorf("expected the too-recent txn to be excluded by the safety lag, got %+v", res)
+	}
+}
