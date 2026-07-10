@@ -371,3 +371,111 @@ func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
 		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res)
 	}
 }
+
+func TestPurgeTransactionsBatch_DeletesVerifiedOldRows(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	for i, id := range []string{"t1", "t2"} {
+		if err := cloud.Create(&models.SleeperTransaction{
+			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("seed cloud txn %s: %v", id, err)
+		}
+		if err := archive.Create(&models.ArchiveSleeperTransaction{
+			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("seed archive txn %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 2 || res.Unverified != 0 || !res.Drained {
+		t.Errorf("res = %+v, want {Purged: 2, Unverified: 0, Drained: true}", res)
+	}
+	var count int64
+	cloud.Model(&models.SleeperTransaction{}).Count(&count)
+	if count != 0 {
+		t.Errorf("expected cloud transactions purged, got %d remaining", count)
+	}
+}
+
+func TestPurgeTransactionsBatch_SkipsUnverifiedRows(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: old}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Not replicated to archive.
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 0 || res.Unverified != 1 {
+		t.Errorf("res = %+v, want {Purged: 0, Unverified: 1}", res)
+	}
+	var count int64
+	cloud.Model(&models.SleeperTransaction{}).Count(&count)
+	if count != 1 {
+		t.Errorf("expected the unverified row to remain in cloud, got %d rows", count)
+	}
+}
+
+func TestPurgeTransactionsBatch_IgnoresRowsWithinRetention(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	recent := time.Now().UTC().AddDate(0, 0, -5) // within the 30-day retention window
+	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: recent}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 0 || res.Unverified != 0 || !res.Drained {
+		t.Errorf("res = %+v, want no candidates found (row is within retention)", res)
+	}
+}
+
+func TestPurgeTransactionsBatch_ErrorsWhenOldestUnverifiedPastAlarmThreshold(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	waaayOld := time.Now().UTC().AddDate(0, 0, -46) // 30d retention + 15d alarm + 1
+	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: waaayOld}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Not replicated to archive — stalled.
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	_, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err == nil {
+		t.Fatal("expected an error once the oldest unverified row exceeds retention+15d, got nil")
+	}
+}
+
+func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	for i, id := range []string{"t1", "t2", "t3"} {
+		if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+		if err := archive.Create(&models.ArchiveSleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+			t.Fatalf("seed archive %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 2, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 2 || res.Drained {
+		t.Errorf("expected a full, non-drained batch of 2, got %+v", res)
+	}
+}

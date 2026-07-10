@@ -354,3 +354,133 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 	}
 	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
 }
+
+// purgeDeleteChunkSize caps each purge delete transaction so a single
+// batch's worth of deletes (up to a few thousand rows) doesn't hold row
+// locks on the hot cloud tables for one long transaction while the API is
+// serving reads.
+const purgeDeleteChunkSize = 500
+
+// purgeCandidate is one row eligible for purge consideration: its ID and the
+// timestamp used both to order the scan and to report the alarm age when the
+// row can't be verified.
+type purgeCandidate struct {
+	ID        string    `gorm:"column:id"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+// splitVerifiedCandidates partitions candidates (ordered oldest-first) into
+// IDs safe to delete (present in verified) and a count/oldest-timestamp of
+// the rest. Because candidates are ordered ascending by CreatedAt, the first
+// unverified row encountered is the oldest unverified row in the whole
+// candidate set, not just this batch.
+func splitVerifiedCandidates(candidates []purgeCandidate, verified map[string]bool) (toDelete []string, unverifiedCount int, oldestUnverified *time.Time) {
+	for _, c := range candidates {
+		if verified[c.ID] {
+			toDelete = append(toDelete, c.ID)
+			continue
+		}
+		unverifiedCount++
+		if oldestUnverified == nil {
+			t := c.CreatedAt
+			oldestUnverified = &t
+		}
+	}
+	return toDelete, unverifiedCount, oldestUnverified
+}
+
+// deleteInChunks runs deleteFn against ids in chunks of purgeDeleteChunkSize,
+// each in its own short transaction, so a purge batch never holds one long
+// transaction's worth of row locks on a hot cloud table.
+func deleteInChunks(ctx context.Context, db *gorm.DB, ids []string, deleteFn func(tx *gorm.DB, chunk []string) error) error {
+	for i := 0; i < len(ids); i += purgeDeleteChunkSize {
+		chunk := ids[i:min(i+purgeDeleteChunkSize, len(ids))]
+		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return deleteFn(tx, chunk)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkUnverifiedAlarm returns an error when oldest — the oldest unverified
+// candidate's timestamp seen in a purge batch — is older than
+// retentionDays+15d. That means a row has sat unpurgeable for two full
+// scavenger cycles past retention: replication has stalled, not just
+// lagged. Unlike a replicate stream's swallowed failure, this error is
+// meant to fail the activity (and the workflow run) so Temporal shows a red
+// run — the intended stalled-replication alarm.
+func checkUnverifiedAlarm(stream string, oldest *time.Time, retentionDays int) error {
+	if oldest == nil {
+		return nil
+	}
+	alarmAge := time.Duration(retentionDays+15) * 24 * time.Hour
+	if age := time.Since(*oldest); age > alarmAge {
+		return fmt.Errorf("scavenger purge: oldest unverified %s row is %s old (retention %dd + 15d alarm threshold) — replication appears stalled",
+			stream, age.Round(time.Hour), retentionDays)
+	}
+	return nil
+}
+
+const selectPurgeTransactionCandidatesSQL = `
+SELECT sleeper_transaction_id AS id, created_at
+FROM sleeper_transactions
+WHERE created_at < ?
+ORDER BY created_at, sleeper_transaction_id
+LIMIT ?`
+
+// PurgeTransactionsBatch deletes up to BatchSize of the oldest cloud
+// transactions older than RetentionDays that are verified present in the
+// archive. Unverified rows (not yet replicated) are left in place — the next
+// batch/run naturally retries them since only verified rows are ever
+// deleted. Returns an error (see checkUnverifiedAlarm) if the oldest
+// unverified row has sat past retention+15d.
+func (a *ScavengerActivities) PurgeTransactionsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+
+	var candidates []purgeCandidate
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeTransactionCandidatesSQL, cutoff, params.BatchSize).
+		Scan(&candidates).Error; err != nil {
+		return PurgeBatchResult{}, err
+	}
+	if len(candidates) == 0 {
+		return PurgeBatchResult{Drained: true}, nil
+	}
+
+	ids := make([]string, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.ID
+	}
+
+	var archiveIDs []string
+	if err := a.Archive.WithContext(ctx).Table("sleeper_transactions").
+		Where("sleeper_transaction_id IN ?", ids).
+		Pluck("sleeper_transaction_id", &archiveIDs).Error; err != nil {
+		return PurgeBatchResult{}, err
+	}
+	verified := make(map[string]bool, len(archiveIDs))
+	for _, id := range archiveIDs {
+		verified[id] = true
+	}
+
+	toDelete, unverifiedCount, oldestUnverified := splitVerifiedCandidates(candidates, verified)
+
+	if len(toDelete) > 0 {
+		if err := deleteInChunks(ctx, a.Cloud, toDelete, func(tx *gorm.DB, chunk []string) error {
+			return tx.Where("sleeper_transaction_id IN ?", chunk).Delete(&models.SleeperTransaction{}).Error
+		}); err != nil {
+			return PurgeBatchResult{}, err
+		}
+	}
+
+	if err := checkUnverifiedAlarm(streamTransactions, oldestUnverified, params.RetentionDays); err != nil {
+		return PurgeBatchResult{}, err
+	}
+
+	return PurgeBatchResult{
+		Purged:     len(toDelete),
+		Unverified: unverifiedCount,
+		Drained:    len(candidates) < params.BatchSize,
+	}, nil
+}
