@@ -97,3 +97,34 @@ type ComputeSegmentSeasonADPParams struct {
 	Segment models.ADPSegment
 	Season  string
 }
+
+// ScavengerConfig is read from env by GetScavengerConfig so the dispatcher
+// workflow (which cannot read env deterministically) can be tuned without a
+// redeploy of workflow code.
+type ScavengerConfig struct {
+	LeagueBatchSize  int // SCAVENGER_LEAGUE_BATCH_SIZE, default 500
+	TxnBatchSize     int // SCAVENGER_TXN_BATCH_SIZE, default 5000
+	DraftBatchSize   int // SCAVENGER_DRAFT_BATCH_SIZE, default 200 (drafts per batch; each draft's picks are copied alongside it)
+	MaxBatchesPerRun int // SCAVENGER_MAX_BATCHES_PER_RUN, default 50
+}
+
+// ReplicateBatchParams is shared by all four Replicate*Batch activities —
+// they differ only in which stream/table they read and write.
+type ReplicateBatchParams struct {
+	BatchSize int
+}
+
+// ReplicateBatchResult reports one batch's outcome. Drained means fewer than
+// BatchSize rows were found — the stream is caught up for this run.
+type ReplicateBatchResult struct {
+	Replicated int
+	Drained    bool
+}
+
+// ScavengerReport summarizes one ScavengerDispatcher run.
+type ScavengerReport struct {
+	LeaguesReplicated      int
+	TransactionsReplicated int
+	DraftHeadersReplicated int
+	DraftPicksReplicated   int
+}
