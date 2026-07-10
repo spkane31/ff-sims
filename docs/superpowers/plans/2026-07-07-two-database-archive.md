@@ -64,7 +64,7 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Done — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Done — PR #157 |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Done — PR #154 |
-| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | Not started |
+| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | Runbook ready — `docs/archive-purge.md`; execution is ops-only against real infra, pending |
 | T10 | Daily backup (pg_dump + rclone, systemd timer) | M | T1 | Deferred — issue #160 (durability risk accepted for now; not required before T9) |
 | T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
