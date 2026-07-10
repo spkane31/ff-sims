@@ -161,6 +161,64 @@ func (a *ScavengerActivities) ReplicateLeaguesBatch(ctx context.Context, params 
 	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
 }
 
+const selectDraftHeadersBatchSQL = `
+SELECT sleeper_draft_id, sleeper_league_id, type, status, season, last_fetched_at, created_at, updated_at
+FROM sleeper_drafts
+WHERE (created_at, sleeper_draft_id) > (?, ?)
+  AND created_at <= ?
+ORDER BY created_at, sleeper_draft_id
+LIMIT ?`
+
+// ReplicateDraftHeadersBatch copies up to BatchSize draft rows from cloud to
+// archive, ordered by (created_at, sleeper_draft_id) — this catches new
+// drafts as they're first created. It does not catch later status changes on
+// an existing draft (sleeper_drafts.updated_at is dead — never assigned by
+// the upsert in data_fetch.go); those are caught separately, once picks
+// land, by ReplicateDraftPicksBatch's last_fetched_at watermark.
+func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
+	cur, err := readCursor(ctx, a.Archive, streamDraftHeaders)
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+
+	var rows []models.SleeperDraft
+	if err := a.Cloud.WithContext(ctx).Raw(selectDraftHeadersBatchSQL,
+		cur.Time, cur.ID, time.Now().UTC().Add(-scavengerSafetyLag), params.BatchSize,
+	).Scan(&rows).Error; err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	if len(rows) == 0 {
+		return ReplicateBatchResult{Drained: true}, nil
+	}
+
+	archiveRows := make([]models.ArchiveSleeperDraft, len(rows))
+	for i, r := range rows {
+		archiveRows[i] = models.ArchiveSleeperDraft{
+			SleeperDraftID: r.SleeperDraftID, SleeperLeagueID: r.SleeperLeagueID, Type: r.Type,
+			Status: r.Status, Season: r.Season, LastFetchedAt: r.LastFetchedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	}
+	last := rows[len(rows)-1]
+	newCursor := cursor{Time: last.CreatedAt, ID: last.SleeperDraftID}
+
+	err = a.Archive.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "sleeper_draft_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"sleeper_league_id", "type", "status", "season", "last_fetched_at", "updated_at",
+			}),
+		}).CreateInBatches(archiveRows, 500).Error; err != nil {
+			return err
+		}
+		return writeCursor(tx, streamDraftHeaders, newCursor)
+	})
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
+}
+
 const selectTransactionsBatchSQL = `
 SELECT sleeper_transaction_id, sleeper_league_id, type, status, created_at_sleeper, leg,
        adds, drops, draft_picks, waiver_budget, created_at

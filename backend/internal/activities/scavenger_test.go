@@ -227,3 +227,52 @@ func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
 		t.Errorf("expected the too-recent txn to be excluded by the safety lag, got %+v", res)
 	}
 }
+
+func TestReplicateDraftHeadersBatch_CopiesRowsAndAdvancesCursor(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	for i, id := range []string{"d1", "d2"} {
+		if err := cloud.Create(&models.SleeperDraft{
+			SleeperDraftID: id, SleeperLeagueID: "lg1", Type: "snake", Status: "pre_draft",
+			Season: "2026", CreatedAt: now.Add(time.Duration(i) * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("seed draft %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateDraftHeadersBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateDraftHeadersBatch: %v", err)
+	}
+	if res.Replicated != 2 || !res.Drained {
+		t.Errorf("res = %+v, want {Replicated: 2, Drained: true}", res)
+	}
+	var got models.ArchiveSleeperDraft
+	if err := archive.Where("sleeper_draft_id = ?", "d1").First(&got).Error; err != nil {
+		t.Fatalf("fetch archived draft: %v", err)
+	}
+	if got.Type != "snake" || got.Status != "pre_draft" {
+		t.Errorf("archived row mismatch: %+v", got)
+	}
+}
+
+func TestReplicateDraftHeadersBatch_SecondRunIsNoOp(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	if err := cloud.Create(&models.SleeperDraft{SleeperDraftID: "d1", Season: "2026", CreatedAt: now}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	if _, err := a.ReplicateDraftHeadersBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10}); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	res, err := a.ReplicateDraftHeadersBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res.Replicated != 0 || !res.Drained {
+		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res)
+	}
+}
