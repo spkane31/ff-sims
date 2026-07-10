@@ -80,7 +80,7 @@ func main() {
 	}
 	defer c.Close()
 
-	if err := schedules.Register(context.Background(), c); err != nil {
+	if err := schedules.Register(context.Background(), c, cfg.ArchiveDB.Enabled()); err != nil {
 		log.Fatalf("register schedules: %v", err)
 	}
 
@@ -169,6 +169,16 @@ func main() {
 	adpw.RegisterActivity(aa)
 
 	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw, adpw}
+	if cfg.ArchiveDB.Enabled() {
+		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
+		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
+			DeploymentOptions: deploymentOpts,
+			SysInfoProvider:   sysinfo.SysInfoProvider(),
+		})
+		aw.RegisterWorkflow(workflows.ScavengerDispatcher)
+		aw.RegisterActivity(sa)
+		workers = append(workers, aw)
+	}
 	for _, w := range workers {
 		if err := w.Start(); err != nil {
 			log.Fatalf("worker start: %v", err)

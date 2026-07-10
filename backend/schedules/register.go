@@ -10,9 +10,12 @@ import (
 	"backend/internal/workflows"
 )
 
-// Register creates the Temporal schedules for the Sleeper workers.
-// If a schedule already exists it is left unchanged (idempotent).
-func Register(ctx context.Context, c client.Client) error {
+// Register creates the Temporal schedules for the Sleeper workers. If a
+// schedule already exists it is left unchanged (idempotent). archiveEnabled
+// gates the scavenger schedule — registering it when no worker polls
+// archive-maintenance would just be a schedule that fires and returns a
+// "no worker available" fail, forever, on a queue nobody's listening to.
+func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-discovery-schedule",
 		Spec: client.ScheduleSpec{
@@ -95,7 +98,7 @@ func Register(ctx context.Context, c client.Client) error {
 		return err
 	}
 
-	return upsert(ctx, c, client.ScheduleOptions{
+	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-adp-rollup-schedule",
 		Spec: client.ScheduleSpec{
 			Calendars: []client.ScheduleCalendarSpec{
@@ -109,6 +112,24 @@ func Register(ctx context.Context, c client.Client) error {
 			Workflow:                 workflows.ADPRollupDispatcher,
 			TaskQueue:                workflows.TaskQueueADP,
 			WorkflowExecutionTimeout: 30 * time.Minute,
+		},
+	}); err != nil {
+		return err
+	}
+
+	if !archiveEnabled {
+		return nil
+	}
+	return upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-scavenger-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{Every: 6 * time.Hour},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:  workflows.ScavengerDispatcher,
+			TaskQueue: workflows.TaskQueueArchive,
 		},
 	})
 }
