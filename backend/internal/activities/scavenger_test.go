@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -67,4 +68,96 @@ func newScavengerTestDBs(t *testing.T) (cloud, archive *gorm.DB) {
 	archive = testutil.OpenGORM(t, archiveDSN)
 
 	return cloud, archive
+}
+
+func TestReplicateLeaguesBatch_CopiesRowsAndAdvancesCursor(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute) // outside the 5-min safety lag
+	ppr := 1.0
+	for i, id := range []string{"lg1", "lg2"} {
+		if err := cloud.Create(&models.SleeperLeague{
+			SleeperLeagueID: id, Name: "League " + id, Season: "2026", LeagueType: "redraft",
+			PPR: &ppr, UpdatedAt: now.Add(time.Duration(i) * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("seed league %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateLeaguesBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateLeaguesBatch: %v", err)
+	}
+	if res.Replicated != 2 || !res.Drained {
+		t.Errorf("res = %+v, want {Replicated: 2, Drained: true}", res)
+	}
+
+	var count int64
+	archive.Table("sleeper_leagues").Count(&count)
+	if count != 2 {
+		t.Errorf("expected 2 archived leagues, got %d", count)
+	}
+	var got models.ArchiveSleeperLeague
+	if err := archive.Where("sleeper_league_id = ?", "lg1").First(&got).Error; err != nil {
+		t.Fatalf("fetch archived league: %v", err)
+	}
+	if got.Name != "League lg1" || got.LeagueType != "redraft" || got.PPR == nil || *got.PPR != 1.0 {
+		t.Errorf("archived row mismatch: %+v", got)
+	}
+}
+
+func TestReplicateLeaguesBatch_SecondRunIsNoOp(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	if err := cloud.Create(&models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2026", UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	if _, err := a.ReplicateLeaguesBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10}); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	res, err := a.ReplicateLeaguesBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res.Replicated != 0 || !res.Drained {
+		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res)
+	}
+}
+
+func TestReplicateLeaguesBatch_RespectsSafetyLag(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	tooRecent := time.Now().UTC().Add(-1 * time.Minute) // inside the 5-min lag
+	if err := cloud.Create(&models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2026", UpdatedAt: tooRecent}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateLeaguesBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateLeaguesBatch: %v", err)
+	}
+	if res.Replicated != 0 {
+		t.Errorf("expected the too-recent league to be excluded by the safety lag, got %+v", res)
+	}
+}
+
+func TestReplicateLeaguesBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	for i, id := range []string{"lg1", "lg2", "lg3"} {
+		if err := cloud.Create(&models.SleeperLeague{SleeperLeagueID: id, Season: "2026", UpdatedAt: now.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateLeaguesBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 2})
+	if err != nil {
+		t.Fatalf("ReplicateLeaguesBatch: %v", err)
+	}
+	if res.Replicated != 2 || res.Drained {
+		t.Errorf("expected a full, non-drained batch of 2, got %+v", res)
+	}
 }

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"backend/internal/helpers"
+	"backend/internal/models"
 )
 
 // ScavengerActivities holds dependencies for the archive scavenger's
@@ -95,4 +97,66 @@ func writeCursor(tx *gorm.DB, stream string, c cursor) error {
 		 ON CONFLICT (stream) DO UPDATE SET cursor_state = excluded.cursor_state, updated_at = excluded.updated_at`,
 		stream, data,
 	).Error
+}
+
+const selectLeaguesBatchSQL = `
+SELECT sleeper_league_id, name, season, sport, status, total_rosters, ppr, te_premium, is_superflex,
+       draft_type, league_type, scoring_settings, roster_positions, created_at, updated_at
+FROM sleeper_leagues
+WHERE (updated_at, sleeper_league_id) > (?, ?)
+  AND updated_at <= ?
+ORDER BY updated_at, sleeper_league_id
+LIMIT ?`
+
+// ReplicateLeaguesBatch copies up to BatchSize leagues from cloud to archive,
+// ordered by (updated_at, sleeper_league_id), and advances the leagues
+// cursor. Leagues are replicated because the ADP rollup (T7) joins drafts to
+// leagues for league_type/ppr/total_rosters/is_superflex — nothing else in
+// the archive currently needs sleeper_leagues, but it's small and this join
+// dependency is enough to justify replicating it in full.
+func (a *ScavengerActivities) ReplicateLeaguesBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
+	cur, err := readCursor(ctx, a.Archive, streamLeagues)
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+
+	var rows []models.SleeperLeague
+	if err := a.Cloud.WithContext(ctx).Raw(selectLeaguesBatchSQL,
+		cur.Time, cur.ID, time.Now().UTC().Add(-scavengerSafetyLag), params.BatchSize,
+	).Scan(&rows).Error; err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	if len(rows) == 0 {
+		return ReplicateBatchResult{Drained: true}, nil
+	}
+
+	archiveRows := make([]models.ArchiveSleeperLeague, len(rows))
+	for i, r := range rows {
+		archiveRows[i] = models.ArchiveSleeperLeague{
+			SleeperLeagueID: r.SleeperLeagueID, Name: r.Name, Season: r.Season, Sport: r.Sport,
+			Status: r.Status, TotalRosters: r.TotalRosters, PPR: r.PPR, TEPremium: r.TEPremium,
+			IsSuperflex: r.IsSuperflex, DraftType: r.DraftType, LeagueType: r.LeagueType,
+			ScoringSettings: r.ScoringSettings, RosterPositions: r.RosterPositions,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	}
+	last := rows[len(rows)-1]
+	newCursor := cursor{Time: last.UpdatedAt, ID: last.SleeperLeagueID}
+
+	err = a.Archive.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "sleeper_league_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"name", "season", "sport", "status", "total_rosters", "ppr", "te_premium",
+				"is_superflex", "draft_type", "league_type", "scoring_settings", "roster_positions", "updated_at",
+			}),
+		}).CreateInBatches(archiveRows, 500).Error; err != nil {
+			return err
+		}
+		return writeCursor(tx, streamLeagues, newCursor)
+	})
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
 }
