@@ -484,3 +484,116 @@ func (a *ScavengerActivities) PurgeTransactionsBatch(ctx context.Context, params
 		Drained:    len(candidates) < params.BatchSize,
 	}, nil
 }
+
+const selectPurgeDraftCandidatesSQL = `
+SELECT d.sleeper_draft_id AS id, d.created_at
+FROM sleeper_drafts d
+JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
+WHERE d.created_at < ?
+  AND l.status IN ('in_season', 'complete')
+  AND l.last_drafts_fetched_at IS NOT NULL
+ORDER BY d.created_at, d.sleeper_draft_id
+LIMIT ?`
+
+// pickCountsByDraft returns sleeper_draft_id -> pick count for draftIDs,
+// used by PurgeDraftsBatch to verify pick-count parity between cloud and
+// archive before deleting. A draft absent from the result has zero picks.
+func pickCountsByDraft(ctx context.Context, db *gorm.DB, draftIDs []string) (map[string]int, error) {
+	var rows []struct {
+		SleeperDraftID string `gorm:"column:sleeper_draft_id"`
+		Count          int    `gorm:"column:count"`
+	}
+	if err := db.WithContext(ctx).Table("sleeper_draft_picks").
+		Select("sleeper_draft_id, count(*) as count").
+		Where("sleeper_draft_id IN ?", draftIDs).
+		Group("sleeper_draft_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(rows))
+	for _, r := range rows {
+		counts[r.SleeperDraftID] = r.Count
+	}
+	return counts, nil
+}
+
+// PurgeDraftsBatch deletes up to BatchSize of the oldest cloud drafts (and
+// their picks) older than RetentionDays whose owning league satisfies the
+// claim-pool-exclusion predicate — status IN ('in_season','complete') AND
+// last_drafts_fetched_at IS NOT NULL, the same condition that permanently
+// excludes a league from ClaimLeaguesForDrafts (data_fetch.go:43-54).
+// Purging a draft whose league could still be re-claimed would let
+// syncOneLeagueDrafts recreate the header with last_fetched_at = NULL and
+// trigger a full pick-refetch loop.
+//
+// A draft is verified only when its header is present in the archive AND
+// its cloud and archive pick counts match exactly. Unverified drafts are
+// left in place — the next batch/run retries them. Picks are deleted before
+// the draft header (FK, no ON DELETE CASCADE in the cloud schema).
+func (a *ScavengerActivities) PurgeDraftsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+
+	var candidates []purgeCandidate
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeDraftCandidatesSQL, cutoff, params.BatchSize).
+		Scan(&candidates).Error; err != nil {
+		return PurgeBatchResult{}, err
+	}
+	if len(candidates) == 0 {
+		return PurgeBatchResult{Drained: true}, nil
+	}
+
+	ids := make([]string, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.ID
+	}
+
+	var archiveDraftIDs []string
+	if err := a.Archive.WithContext(ctx).Table("sleeper_drafts").
+		Where("sleeper_draft_id IN ?", ids).
+		Pluck("sleeper_draft_id", &archiveDraftIDs).Error; err != nil {
+		return PurgeBatchResult{}, err
+	}
+	headerPresent := make(map[string]bool, len(archiveDraftIDs))
+	for _, id := range archiveDraftIDs {
+		headerPresent[id] = true
+	}
+
+	cloudPickCounts, err := pickCountsByDraft(ctx, a.Cloud, ids)
+	if err != nil {
+		return PurgeBatchResult{}, err
+	}
+	archivePickCounts, err := pickCountsByDraft(ctx, a.Archive, ids)
+	if err != nil {
+		return PurgeBatchResult{}, err
+	}
+
+	verified := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if headerPresent[id] && cloudPickCounts[id] == archivePickCounts[id] {
+			verified[id] = true
+		}
+	}
+
+	toDelete, unverifiedCount, oldestUnverified := splitVerifiedCandidates(candidates, verified)
+
+	if len(toDelete) > 0 {
+		if err := deleteInChunks(ctx, a.Cloud, toDelete, func(tx *gorm.DB, chunk []string) error {
+			if err := tx.Where("sleeper_draft_id IN ?", chunk).Delete(&models.SleeperDraftPick{}).Error; err != nil {
+				return err
+			}
+			return tx.Where("sleeper_draft_id IN ?", chunk).Delete(&models.SleeperDraft{}).Error
+		}); err != nil {
+			return PurgeBatchResult{}, err
+		}
+	}
+
+	if err := checkUnverifiedAlarm("sleeper_drafts", oldestUnverified, params.RetentionDays); err != nil {
+		return PurgeBatchResult{}, err
+	}
+
+	return PurgeBatchResult{
+		Purged:     len(toDelete),
+		Unverified: unverifiedCount,
+		Drained:    len(candidates) < params.BatchSize,
+	}, nil
+}

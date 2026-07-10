@@ -479,3 +479,156 @@ func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 		t.Errorf("expected a full, non-drained batch of 2, got %+v", res)
 	}
 }
+
+func TestPurgeDraftsBatch_DeletesVerifiedDraftAndPicks(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	fetchedAt := time.Now().UTC()
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraftPick{SleeperDraftID: "d1", Round: 1, PickNo: 1, SleeperPlayerID: "p1"}).Error; err != nil {
+		t.Fatalf("seed pick: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed archive draft: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraftPick{SleeperDraftID: "d1", Round: 1, PickNo: 1, SleeperPlayerID: "p1"}).Error; err != nil {
+		t.Fatalf("seed archive pick: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeDraftsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeDraftsBatch: %v", err)
+	}
+	if res.Purged != 1 || res.Unverified != 0 || !res.Drained {
+		t.Errorf("res = %+v, want {Purged: 1, Unverified: 0, Drained: true}", res)
+	}
+	var draftCount, pickCount int64
+	cloud.Model(&models.SleeperDraft{}).Count(&draftCount)
+	cloud.Model(&models.SleeperDraftPick{}).Count(&pickCount)
+	if draftCount != 0 || pickCount != 0 {
+		t.Errorf("expected draft and picks purged from cloud, got draftCount=%d pickCount=%d", draftCount, pickCount)
+	}
+}
+
+func TestPurgeDraftsBatch_SkipsLeagueStillInSyncPool(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", Status: "pre_draft", // not yet excluded from the claim pool
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	fetchedAt := time.Now().UTC()
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed archive draft: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeDraftsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeDraftsBatch: %v", err)
+	}
+	if res.Purged != 0 || !res.Drained {
+		t.Errorf("expected the draft to be excluded from purge candidates entirely (league still claimable), got %+v", res)
+	}
+	var draftCount int64
+	cloud.Model(&models.SleeperDraft{}).Count(&draftCount)
+	if draftCount != 1 {
+		t.Errorf("expected the draft to remain in cloud, got %d", draftCount)
+	}
+}
+
+func TestPurgeDraftsBatch_SkipsPickCountMismatch(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	fetchedAt := time.Now().UTC()
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+	for _, pickNo := range []int{1, 2} {
+		if err := cloud.Create(&models.SleeperDraftPick{SleeperDraftID: "d1", Round: 1, PickNo: pickNo}).Error; err != nil {
+			t.Fatalf("seed pick %d: %v", pickNo, err)
+		}
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: old,
+	}).Error; err != nil {
+		t.Fatalf("seed archive draft: %v", err)
+	}
+	// Only 1 of 2 picks made it to archive — parity mismatch.
+	if err := archive.Create(&models.ArchiveSleeperDraftPick{SleeperDraftID: "d1", Round: 1, PickNo: 1}).Error; err != nil {
+		t.Fatalf("seed archive pick: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeDraftsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeDraftsBatch: %v", err)
+	}
+	if res.Purged != 0 || res.Unverified != 1 {
+		t.Errorf("res = %+v, want {Purged: 0, Unverified: 1} (pick count mismatch)", res)
+	}
+	var draftCount int64
+	cloud.Model(&models.SleeperDraft{}).Count(&draftCount)
+	if draftCount != 1 {
+		t.Errorf("expected the draft to remain in cloud, got %d", draftCount)
+	}
+}
+
+func TestPurgeDraftsBatch_IgnoresRecentDrafts(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	fetchedAt := time.Now().UTC()
+	recent := time.Now().UTC().AddDate(0, 0, -5)
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
+		LastFetchedAt: &fetchedAt, CreatedAt: recent,
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeDraftsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeDraftsBatch: %v", err)
+	}
+	if res.Purged != 0 || !res.Drained {
+		t.Errorf("expected no candidates (draft is within retention), got %+v", res)
+	}
+}
