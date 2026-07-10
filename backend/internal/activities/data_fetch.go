@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,9 +19,31 @@ import (
 )
 
 // DataFetchActivities holds dependencies for per-league data fetching activities.
+// Archive is nil unless ARCHIVE_DATABASE_URL is configured — every use of it
+// is nil-checked, falling back to cloud-only (the pre-T13 behavior) when
+// unset. Unlike ScavengerActivities/ADPRollupActivities, this struct's
+// worker is never gated on archive availability: sync must keep working
+// with or without one.
 type DataFetchActivities struct {
 	DB      *gorm.DB
+	Archive *gorm.DB
 	Sleeper *sleeper.Client
+}
+
+// archiveRoutingCutoff returns the age boundary for routing already-old data
+// straight to archive at ingest time instead of cloud — see syncOneLeague
+// and syncOneLeagueDrafts. Reuses SCAVENGER_RETENTION_DAYS (T6): "too old
+// for cloud to keep" and "too old to bother writing to cloud in the first
+// place" are the same threshold.
+func archiveRoutingCutoff() time.Time {
+	days := max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1)
+	return time.Now().UTC().AddDate(0, 0, -days)
+}
+
+// currentSleeperSeason anchors "current" the same way Seasons() does
+// (discovery.go) — the calendar year, not NFL-state week boundaries.
+func currentSleeperSeason() string {
+	return strconv.Itoa(time.Now().Year())
 }
 
 // GetDraftSyncConfig returns the draft dispatcher tuning knobs from env,

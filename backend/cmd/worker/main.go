@@ -94,7 +94,7 @@ func main() {
 
 	sc := sleeper.New()
 	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
-	dfa := &activities.DataFetchActivities{DB: database.DB, Sleeper: sc}
+	dfa := &activities.DataFetchActivities{DB: database.DB, Archive: database.Archive, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
 	aa := &activities.ADPRollupActivities{DB: database.DB}
