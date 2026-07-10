@@ -40,7 +40,7 @@
 
 No test for this task alone — it's pure plumbing with no observable behavior until Tasks 2/3 use it. `go build` is the verification.
 
-- [ ] **Step 1: Add the field and helpers**
+- [x] **Step 1: Add the field and helpers**
 
 In `backend/internal/activities/data_fetch.go`, change:
 
@@ -86,7 +86,7 @@ func currentSleeperSeason() string {
 
 Add `"strconv"` to the import block.
 
-- [ ] **Step 2: Wire it into `cmd/worker/main.go`**
+- [x] **Step 2: Wire it into `cmd/worker/main.go`**
 
 Change:
 
@@ -102,12 +102,12 @@ to:
 
 `database.Archive` is nil when `ARCHIVE_DATABASE_URL` isn't set — no gating needed here, this assignment is safe unconditionally (see Global Constraints).
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `cd backend && go build ./...`
 Expected: succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add internal/activities/data_fetch.go cmd/worker/main.go
@@ -125,7 +125,7 @@ git commit -m "feat: add DataFetchActivities.Archive + age-based routing helpers
 **Interfaces:**
 - Produces: `(a *DataFetchActivities) upsertArchiveTransactions(ctx, rows []models.SleeperTransaction) error`.
 
-- [ ] **Step 1: Add the SQLite archive test-DB helper**
+- [x] **Step 1: Add the SQLite archive test-DB helper**
 
 Add to `backend/internal/activities/data_fetch_test.go` (near the top, after imports):
 
@@ -160,7 +160,7 @@ func newArchiveTestDB(t *testing.T) *gorm.DB {
 
 Add `"gorm.io/driver/sqlite"` and `"gorm.io/gorm/logger"` to the import block.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Append to `data_fetch_test.go`:
 
@@ -226,14 +226,14 @@ func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 This compiles immediately (`Archive` and `models.ArchiveSleeperTransaction` already exist from Task 1 and T5) — there's no compile-error red step here; the test fails on its assertion instead, since the routing logic itself doesn't exist yet:
 
 Run: `cd backend && go test ./internal/activities/... -run TestSyncBatch_RoutesOldTransactionsToArchiveOnly -v`
 Expected: FAIL — both transactions land in cloud (routing not implemented yet), so `cloudIDs` has 2 entries and `archiveIDs` has 0.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 In `syncOneLeague` (`data_fetch.go`), replace:
 
@@ -302,17 +302,17 @@ func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, row
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run "TestSyncBatch_RoutesOldTransactionsToArchiveOnly|TestSyncBatch_AllTransactionsToCloudWhenArchiveNil" -v`
 Expected: both PASS.
 
-- [ ] **Step 6: Run the full existing transaction-sync test suite for regressions**
+- [x] **Step 6: Run the full existing transaction-sync test suite for regressions**
 
 Run: `cd backend && go test ./internal/activities/... -run TestSyncBatch -v`
 Expected: every `TestSyncBatch_*` test PASSes unchanged — none of them set `Archive`, so they all exercise the nil-fallback path and behave exactly as before.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/activities/data_fetch.go internal/activities/data_fetch_test.go
@@ -330,7 +330,7 @@ git commit -m "feat: route already-old transactions straight to archive at inges
 **Interfaces:**
 - Produces: `(a *DataFetchActivities) upsertArchiveDraftHeader(ctx, d sleeper.Draft, leagueID string) error`, `(a *DataFetchActivities) fetchArchiveDraftPicks(ctx, draftID string) error`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `data_fetch_test.go`:
 
@@ -450,12 +450,12 @@ func TestSyncDraftsBatch_OldDraftPicksFetchOnce(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/activities/... -run TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly -v`
 Expected: FAIL — old draft currently still lands in cloud (routing not implemented yet).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace `syncOneLeagueDrafts` in `data_fetch.go` entirely with:
 
@@ -615,17 +615,17 @@ func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftI
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run "TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly|TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud|TestSyncDraftsBatch_AllDraftsToCloudWhenArchiveNil|TestSyncDraftsBatch_OldDraftPicksFetchOnce" -v`
 Expected: all 4 PASS.
 
-- [ ] **Step 5: Run the full existing draft-sync test suite for regressions**
+- [x] **Step 5: Run the full existing draft-sync test suite for regressions**
 
 Run: `cd backend && go test ./internal/activities/... -run TestSyncDraftsBatch -v`
 Expected: every pre-existing `TestSyncDraftsBatch_*` test PASSes unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/activities/data_fetch.go internal/activities/data_fetch_test.go
@@ -638,7 +638,7 @@ git commit -m "feat: route already-old drafts and picks straight to archive at i
 
 **Files:** none — verification only.
 
-- [ ] **Step 1: Full build, vet, and test suite**
+- [x] **Step 1: Full build, vet, and test suite**
 
 Run: `cd backend && go build ./... && go vet ./...`
 Expected: clean.
@@ -646,7 +646,7 @@ Expected: clean.
 Run: `cd backend && go test ./... -v 2>&1 | tail -100` (with `TEST_DATABASE_URL` set for the full suite)
 Expected: every test PASSes, including all Task 2/3 additions and every pre-existing test unchanged.
 
-- [ ] **Step 2: Manual worker-boot smoke test**
+- [x] **Step 2: Manual worker-boot smoke test**
 
 This task touches the hottest write path in the codebase (every league's transaction/draft sync), so beyond the thorough unit tests, do one real boot check confirming the wiring doesn't break startup — reuse the two-throwaway-database pattern from prior plans (T3/T5/T7/T8's verification steps):
 
@@ -669,7 +669,7 @@ psql "postgres://$(whoami)@localhost:5499/postgres?sslmode=disable" -c "DROP DAT
 ```
 Expected: `Connected to archive database (...)`, no panic, no error before the harmless Temporal-dial-failure tail (no local Temporal server needed for this check — Task 1's `dfa` construction happens before the dial, so this alone confirms the wiring is sound).
 
-- [ ] **Step 3: Update the master plan's status table**
+- [x] **Step 3: Update the master plan's status table**
 
 In `docs/superpowers/plans/2026-07-07-two-database-archive.md`, change T13's row status from "Not started" to "Done — PR #<N>" once the PR is up (fill in the actual number).
 
@@ -677,10 +677,10 @@ In `docs/superpowers/plans/2026-07-07-two-database-archive.md`, change T13's row
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` and `go vet ./...` clean.
-- [ ] `cd backend && go test ./...` — full suite passes, `TEST_DATABASE_URL` set or unset (this task's own tests need neither, but the suite as a whole still has PG-gated tests elsewhere).
-- [ ] Every pre-existing `TestSyncBatch_*`/`TestSyncDraftsBatch_*` test passes unchanged — proof the nil-`Archive` fallback preserves exact pre-T13 behavior.
-- [ ] Task 4 Step 2's manual boot check: `Archive` wiring doesn't break worker startup.
+- [x] `cd backend && go build ./...` and `go vet ./...` clean.
+- [x] `cd backend && go test ./...` — full suite passes, `TEST_DATABASE_URL` set or unset (this task's own tests need neither, but the suite as a whole still has PG-gated tests elsewhere).
+- [x] Every pre-existing `TestSyncBatch_*`/`TestSyncDraftsBatch_*` test passes unchanged — proof the nil-`Archive` fallback preserves exact pre-T13 behavior.
+- [x] Task 4 Step 2's manual boot check: `Archive` wiring doesn't break worker startup.
 
 ## Self-Review
 
