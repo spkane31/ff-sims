@@ -61,7 +61,7 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T3 | Second DB handle + archive migrations plumbing (tracer bullet) | S/M | T1* | Done — PR #151 |
 | T4 | Cloud migration 021: CONCURRENTLY indexes on txn `created_at`, draft `last_fetched_at` | S | — | Done — PR #151 |
 | T5 | Scavenger replicate phase + 6h schedule + archive worker | L | T3, T4 | In review — PR #152 |
-| T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Not started |
+| T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | In review — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Not started |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Not started |
 | T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8, **T10** | Not started |
