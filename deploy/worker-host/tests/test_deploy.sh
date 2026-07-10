@@ -16,9 +16,9 @@ git -C "$REPO" checkout -q -b main
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name test
 
-mkdir -p "$REPO/backend/cmd/worker" "$REPO/deploy/raspberry-pi"
-cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/raspberry-pi/deploy.sh"
-chmod +x "$REPO/deploy/raspberry-pi/deploy.sh"
+mkdir -p "$REPO/backend/cmd/worker" "$REPO/deploy/worker-host"
+cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/worker-host/deploy.sh"
+chmod +x "$REPO/deploy/worker-host/deploy.sh"
 
 cat > "$REPO/backend/go.mod" <<'EOF'
 module backend
@@ -50,7 +50,7 @@ export PATH="$BIN:$PATH"
 export REPO_DIR="$REPO"
 
 # --- scenario 1: no new commits -> no rebuild, no restart ---
-bash "$REPO/deploy/raspberry-pi/deploy.sh"
+bash "$REPO/deploy/worker-host/deploy.sh"
 [[ ! -f "$REPO/backend/worker" ]] || fail "should not have built a worker binary when up to date"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when up to date"
 
@@ -65,7 +65,7 @@ EOF
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "v2"
 git -C "$CLONE" push -q origin main
 
-bash "$REPO/deploy/raspberry-pi/deploy.sh"
+bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
 
@@ -80,7 +80,7 @@ EOF
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "broken"
 git -C "$CLONE" push -q origin main
 
-if bash "$REPO/deploy/raspberry-pi/deploy.sh"; then
+if bash "$REPO/deploy/worker-host/deploy.sh"; then
   fail "deploy.sh should exit non-zero on a build failure"
 fi
 new_hash="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
@@ -105,14 +105,14 @@ var marker = "unset"
 func main() { println(marker) }
 EOF
 sed "s/-X 'main.buildID=\${sha}'/-X 'main.buildID=\${sha}' -X 'main.marker=updated'/" \
-  "$CLONE/deploy/raspberry-pi/deploy.sh" > "$CLONE/deploy/raspberry-pi/deploy.sh.new"
-grep -q "main.marker=updated" "$CLONE/deploy/raspberry-pi/deploy.sh.new" || fail "test setup: sed did not patch build_worker's ldflags"
-mv "$CLONE/deploy/raspberry-pi/deploy.sh.new" "$CLONE/deploy/raspberry-pi/deploy.sh"
-chmod +x "$CLONE/deploy/raspberry-pi/deploy.sh"
+  "$CLONE/deploy/worker-host/deploy.sh" > "$CLONE/deploy/worker-host/deploy.sh.new"
+grep -q "main.marker=updated" "$CLONE/deploy/worker-host/deploy.sh.new" || fail "test setup: sed did not patch build_worker's ldflags"
+mv "$CLONE/deploy/worker-host/deploy.sh.new" "$CLONE/deploy/worker-host/deploy.sh"
+chmod +x "$CLONE/deploy/worker-host/deploy.sh"
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "build_worker now sets marker"
 git -C "$CLONE" push -q origin main
 
-bash "$REPO/deploy/raspberry-pi/deploy.sh"
+bash "$REPO/deploy/worker-host/deploy.sh"
 built_output="$("$REPO/backend/worker" 2>&1)"
 [[ "$built_output" == "updated" ]] || fail "expected the deploy that changed build_worker to use the NEW build_worker on the same cycle, got: $built_output"
 

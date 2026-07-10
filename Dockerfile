@@ -15,10 +15,13 @@ WORKDIR /app/backend
 # Accept an optional GIT_SHA override (e.g. for a CI system that already knows
 # the SHA). When not passed as a build-arg, it's computed below from the .git
 # directory in the build context so the image always carries a real per-commit
-# ID -- previously this silently defaulted to the literal string "unknown"
-# whenever the build invocation omitted --build-arg GIT_SHA=..., which is what
-# DigitalOcean's App Platform build does, breaking Worker Deployment Versioning
-# (every DO worker registered under build ID "unknown").
+# ID for cmd/server's /api/health version info -- previously this silently
+# defaulted to the literal string "unknown" whenever the build invocation
+# omitted --build-arg GIT_SHA=..., which is what DigitalOcean's App Platform
+# build does. Back when this Dockerfile also built cmd/worker, that same gap
+# broke Worker Deployment Versioning (every DO worker registered under build ID
+# "unknown"); now that cmd/worker is only built on the worker host, this GIT_SHA
+# is purely for API version reporting.
 ARG GIT_SHA=""
 ARG BUILD_TIME=unknown
 
@@ -26,19 +29,16 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 COPY .git /tmp/git-meta
-# promoteOnStart=true is unconditional below: this Dockerfile only ever builds the
-# DigitalOcean image, the fleet that should promote its build to the deployment's
-# Current Version. deploy/raspberry-pi/{deploy,setup}.sh never set this flag, so
-# Pi builds keep main.go's "false" default and never promote.
+# cmd/worker is NOT built here: DigitalOcean no longer runs a Temporal worker.
+# The worker host (deploy/worker-host/{deploy,setup}.sh) is the sole fleet that
+# builds and runs cmd/worker, and the sole promoter of the shared Worker
+# Deployment — see docs/worker-versioning.md.
 RUN apk add --no-cache git \
     && GIT_SHA="${GIT_SHA:-$(git --git-dir=/tmp/git-meta rev-parse --short=9 HEAD)}" \
     && rm -rf /tmp/git-meta \
     && CGO_ENABLED=0 GOOS=linux go build -o main \
        -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
-       ./cmd/server \
-    && CGO_ENABLED=0 GOOS=linux go build -o worker \
-       -ldflags="-X 'main.buildID=${GIT_SHA}' -X 'main.promoteOnStart=true'" \
-       ./cmd/worker
+       ./cmd/server
 
 # Stage 3: Build Python ESPN worker
 # Pin to bookworm so the compiled Python and .venv extensions share glibc 2.36
@@ -61,19 +61,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Go backend binaries (statically linked — no libc dependency)
+# Copy Go backend binary (statically linked — no libc dependency)
 COPY --from=backend-builder /app/backend/main /app/backend/
-COPY --from=backend-builder /app/backend/worker /app/backend/
 
 # Copy Python ESPN worker, its virtualenv, and uv
 # Python interpreter + stdlib are already present in the base image.
 COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
 COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
 
-# Entrypoint: Go Sleeper worker + Python ESPN worker + HTTP server
+# Entrypoint: Python ESPN worker + HTTP server. The Go Temporal worker
+# (cmd/worker) runs only on the worker host, not here — see
+# docs/worker-versioning.md.
 # --no-sync: venv was frozen at build time; prevents uv from attempting network
 # access inside the container if the lockfile appears out-of-date.
-RUN printf '#!/bin/sh\n/app/backend/worker &\ncd /app/workers/espn && uv run --no-sync python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN printf '#!/bin/sh\ncd /app/workers/espn && uv run --no-sync python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy Next.js build output
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
@@ -95,5 +96,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD /healthcheck.sh
 
-# Start worker (background) + HTTP server (foreground)
+# Start ESPN worker (background) + HTTP server (foreground)
 CMD ["/entrypoint.sh"]
