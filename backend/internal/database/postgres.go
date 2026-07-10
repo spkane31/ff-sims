@@ -42,3 +42,39 @@ func Initialize(cfg *config.Config) error {
 		cfg.DB.PoolMaxOpenConns, cfg.DB.PoolMaxIdleConns, cfg.DB.PoolConnMaxLifetime)
 	return nil
 }
+
+// Archive is the global archive-database instance. Nil unless
+// InitializeArchive has been called — only the worker does so, and only when
+// cfg.ArchiveDB.Enabled() (i.e. ARCHIVE_DATABASE_URL is set).
+var Archive *gorm.DB
+
+// InitializeArchive sets up the archive database connection and configures
+// its connection pool. Mirrors Initialize but targets cfg.ArchiveDB. Callers
+// must check cfg.ArchiveDB.Enabled() first — this returns an error rather
+// than silently no-op-ing when ConnectionString is empty, so a misconfigured
+// call site fails loudly instead of leaving Archive nil.
+func InitializeArchive(cfg *config.Config) error {
+	if !cfg.ArchiveDB.Enabled() {
+		return fmt.Errorf("archive database not configured (ARCHIVE_DATABASE_URL is empty)")
+	}
+	var err error
+	slog.Debug("Initializing archive database connection", "connectionString", cfg.ArchiveDB.ConnectionString)
+	Archive, err = gorm.Open(postgres.Open(cfg.ArchiveDB.ConnectionString), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect to archive database: %w", err)
+	}
+
+	sqlDB, err := Archive.DB()
+	if err != nil {
+		return fmt.Errorf("get underlying archive sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(cfg.ArchiveDB.PoolMaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.ArchiveDB.PoolMaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ArchiveDB.PoolConnMaxLifetime) * time.Second)
+
+	log.Printf("Connected to archive database (maxOpen=%d, maxIdle=%d, connLifetime=%ds)",
+		cfg.ArchiveDB.PoolMaxOpenConns, cfg.ArchiveDB.PoolMaxIdleConns, cfg.ArchiveDB.PoolConnMaxLifetime)
+	return nil
+}
