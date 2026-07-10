@@ -2,6 +2,7 @@ package activities_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -269,6 +270,89 @@ func TestReplicateDraftHeadersBatch_SecondRunIsNoOp(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 	res, err := a.ReplicateDraftHeadersBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res.Replicated != 0 || !res.Drained {
+		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res)
+	}
+}
+
+func TestReplicateDraftPicksBatch_CopiesDraftAndPicksWhenLastFetchedAtSet(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	fetchedAt := now
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Type: "snake", Status: "complete",
+		Season: "2026", LastFetchedAt: &fetchedAt, CreatedAt: now.Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+	for i := 1; i <= 2; i++ {
+		if err := cloud.Create(&models.SleeperDraftPick{
+			SleeperDraftID: "d1", Round: 1, PickNo: i, RosterID: i, SleeperPlayerID: fmt.Sprintf("p%d", i),
+		}).Error; err != nil {
+			t.Fatalf("seed pick %d: %v", i, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateDraftPicksBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateDraftPicksBatch: %v", err)
+	}
+	if res.Replicated != 1 || !res.Drained {
+		t.Errorf("res = %+v, want {Replicated: 1, Drained: true} (1 draft)", res)
+	}
+
+	var draft models.ArchiveSleeperDraft
+	if err := archive.Where("sleeper_draft_id = ?", "d1").First(&draft).Error; err != nil {
+		t.Fatalf("fetch archived draft: %v", err)
+	}
+	if draft.Status != "complete" || draft.LastFetchedAt == nil {
+		t.Errorf("archived draft mismatch: %+v", draft)
+	}
+	var pickCount int64
+	archive.Model(&models.ArchiveSleeperDraftPick{}).Where("sleeper_draft_id = ?", "d1").Count(&pickCount)
+	if pickCount != 2 {
+		t.Errorf("expected 2 archived picks, got %d", pickCount)
+	}
+}
+
+func TestReplicateDraftPicksBatch_SkipsDraftsWithoutPicksYet(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", Status: "pre_draft", Season: "2026", CreatedAt: now, LastFetchedAt: nil,
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateDraftPicksBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateDraftPicksBatch: %v", err)
+	}
+	if res.Replicated != 0 || !res.Drained {
+		t.Errorf("expected no drafts eligible (last_fetched_at NULL), got %+v", res)
+	}
+}
+
+func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	fetchedAt := now
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", Status: "complete", Season: "2026", LastFetchedAt: &fetchedAt, CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	if _, err := a.ReplicateDraftPicksBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10}); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	res, err := a.ReplicateDraftPicksBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}

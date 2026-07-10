@@ -219,6 +219,86 @@ func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, pa
 	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
 }
 
+const selectDraftsByPicksWatermarkSQL = `
+SELECT sleeper_draft_id, sleeper_league_id, type, status, season, last_fetched_at, created_at, updated_at
+FROM sleeper_drafts
+WHERE last_fetched_at IS NOT NULL
+  AND (last_fetched_at, sleeper_draft_id) > (?, ?)
+  AND last_fetched_at <= ?
+ORDER BY last_fetched_at, sleeper_draft_id
+LIMIT ?`
+
+// ReplicateDraftPicksBatch copies up to BatchSize drafts (plus all of their
+// picks) from cloud to archive, watermarked on sleeper_drafts.last_fetched_at
+// — the signal that picks have landed (set once, in data_fetch.go's
+// fetchDraftPicks). This also re-copies the draft row itself, so by the time
+// a draft's picks are replicated its status is current too (picks are only
+// fetched once a draft reaches "complete").
+func (a *ScavengerActivities) ReplicateDraftPicksBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
+	cur, err := readCursor(ctx, a.Archive, streamDraftPicks)
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+
+	var drafts []models.SleeperDraft
+	if err := a.Cloud.WithContext(ctx).Raw(selectDraftsByPicksWatermarkSQL,
+		cur.Time, cur.ID, time.Now().UTC().Add(-scavengerSafetyLag), params.BatchSize,
+	).Scan(&drafts).Error; err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	if len(drafts) == 0 {
+		return ReplicateBatchResult{Drained: true}, nil
+	}
+
+	draftIDs := make([]string, len(drafts))
+	archiveDrafts := make([]models.ArchiveSleeperDraft, len(drafts))
+	for i, d := range drafts {
+		draftIDs[i] = d.SleeperDraftID
+		archiveDrafts[i] = models.ArchiveSleeperDraft{
+			SleeperDraftID: d.SleeperDraftID, SleeperLeagueID: d.SleeperLeagueID, Type: d.Type,
+			Status: d.Status, Season: d.Season, LastFetchedAt: d.LastFetchedAt,
+			CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
+		}
+	}
+
+	var picks []models.SleeperDraftPick
+	if err := a.Cloud.WithContext(ctx).Where("sleeper_draft_id IN ?", draftIDs).Find(&picks).Error; err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	archivePicks := make([]models.ArchiveSleeperDraftPick, len(picks))
+	for i, p := range picks {
+		archivePicks[i] = models.ArchiveSleeperDraftPick{
+			SleeperDraftID: p.SleeperDraftID, Round: p.Round, PickNo: p.PickNo, RosterID: p.RosterID,
+			PickedByUserID: p.PickedByUserID, SleeperPlayerID: p.SleeperPlayerID, Metadata: p.Metadata,
+		}
+	}
+
+	last := drafts[len(drafts)-1]
+	newCursor := cursor{Time: *last.LastFetchedAt, ID: last.SleeperDraftID}
+
+	err = a.Archive.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "sleeper_draft_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"sleeper_league_id", "type", "status", "season", "last_fetched_at", "updated_at",
+			}),
+		}).CreateInBatches(archiveDrafts, 500).Error; err != nil {
+			return err
+		}
+		if len(archivePicks) > 0 {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+				CreateInBatches(archivePicks, 500).Error; err != nil {
+				return err
+			}
+		}
+		return writeCursor(tx, streamDraftPicks, newCursor)
+	})
+	if err != nil {
+		return ReplicateBatchResult{}, err
+	}
+	return ReplicateBatchResult{Replicated: len(drafts), Drained: len(drafts) < params.BatchSize}, nil
+}
+
 const selectTransactionsBatchSQL = `
 SELECT sleeper_transaction_id, sleeper_league_id, type, status, created_at_sleeper, leg,
        adds, drops, draft_picks, waiver_budget, created_at
