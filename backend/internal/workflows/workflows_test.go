@@ -9,6 +9,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 
 	"backend/internal/activities"
 	"backend/internal/models"
@@ -469,4 +470,73 @@ func TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams(t *testing.T)
 	require.Equal(t, 0, report.LeaguesReplicated)
 	require.Equal(t, 5, report.TransactionsReplicated)
 	env.AssertExpectations(t)
+}
+
+// ---- ArchiveBackfillWorkflow ----
+
+func TestArchiveBackfillWorkflow_CompletesWhenAllStreamsDrainWithinOneExecution(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Replicated: 3, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Replicated: 10, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Replicated: 2, Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Replicated: 1, Drained: true}, nil).Once()
+
+	env.ExecuteWorkflow(workflows.ArchiveBackfillWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestArchiveBackfillWorkflow_ContinuesAsNewWhenAStreamHitsTheBatchCap(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	// Transactions never reports Drained within this execution — the "huge
+	// backlog" case that must trigger ContinueAsNew.
+	env.OnActivity(sa.ReplicateTransactionsBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Replicated: 1, Drained: false}, nil)
+	env.OnActivity(sa.ReplicateDraftHeadersBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
+
+	env.ExecuteWorkflow(workflows.ArchiveBackfillWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.True(t, workflow.IsContinueAsNewError(env.GetWorkflowError()))
+	env.AssertExpectations(t)
+}
+
+func TestArchiveBackfillWorkflow_StreamFailureFailsTheExecution(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	sa := &activities.ScavengerActivities{}
+	cfg := activities.ScavengerConfig{LeagueBatchSize: 500, TxnBatchSize: 5000, DraftBatchSize: 200, MaxBatchesPerRun: 50}
+	env.OnActivity(sa.GetScavengerConfig, mock.Anything).Return(cfg, nil)
+	// Non-retryable so the mock isn't consumed by activity retries
+	// (defaultActivityOptions allows 3 attempts).
+	env.OnActivity(sa.ReplicateLeaguesBatch, mock.Anything, mock.Anything).
+		Return(activities.ReplicateBatchResult{}, temporal.NewNonRetryableApplicationError("boom", "test", nil))
+
+	env.ExecuteWorkflow(workflows.ArchiveBackfillWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	require.False(t, workflow.IsContinueAsNewError(env.GetWorkflowError()))
 }
