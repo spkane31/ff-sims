@@ -418,10 +418,30 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 				WaiverBudget:         waiverJSON,
 			}
 		}
-		if err := a.DB.WithContext(ctx).
-			Clauses(clause.OnConflict{DoNothing: true}).
-			CreateInBatches(rows, 500).Error; err != nil {
-			return fmt.Errorf("leg %d upsert: %w", leg, err)
+		cloudRows := rows
+		if a.Archive != nil {
+			cutoff := archiveRoutingCutoff()
+			var newRows, oldRows []models.SleeperTransaction
+			for _, r := range rows {
+				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
+					oldRows = append(oldRows, r)
+				} else {
+					newRows = append(newRows, r)
+				}
+			}
+			if len(oldRows) > 0 {
+				if err := a.upsertArchiveTransactions(ctx, oldRows); err != nil {
+					return fmt.Errorf("leg %d archive upsert: %w", leg, err)
+				}
+			}
+			cloudRows = newRows
+		}
+		if len(cloudRows) > 0 {
+			if err := a.DB.WithContext(ctx).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				CreateInBatches(cloudRows, 500).Error; err != nil {
+				return fmt.Errorf("leg %d upsert: %w", leg, err)
+			}
 		}
 		if leg > maxSeen {
 			maxSeen = leg
@@ -439,4 +459,21 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", lg.LeagueID).
 		Updates(updates).Error
+}
+
+// upsertArchiveTransactions writes rows directly to the archive DB, skipping
+// cloud — see syncOneLeague's age-based routing.
+func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, rows []models.SleeperTransaction) error {
+	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
+	for i, r := range rows {
+		archiveRows[i] = models.ArchiveSleeperTransaction{
+			SleeperTransactionID: r.SleeperTransactionID, SleeperLeagueID: r.SleeperLeagueID,
+			Type: r.Type, Status: r.Status, CreatedAtSleeper: r.CreatedAtSleeper, Leg: r.Leg,
+			Adds: r.Adds, Drops: r.Drops, DraftPicks: r.DraftPicks, WaiverBudget: r.WaiverBudget,
+			CreatedAt: time.Now().UTC(),
+		}
+	}
+	return a.Archive.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		CreateInBatches(archiveRows, 500).Error
 }
