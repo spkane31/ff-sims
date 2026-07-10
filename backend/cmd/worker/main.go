@@ -173,6 +173,7 @@ func main() {
 			SysInfoProvider:   sysinfo.SysInfoProvider(),
 		})
 		aw.RegisterWorkflow(workflows.ScavengerDispatcher)
+		aw.RegisterWorkflow(workflows.ArchiveBackfillWorkflow)
 		aw.RegisterActivity(sa)
 		workers = append(workers, aw)
 	}
