@@ -6,6 +6,28 @@ import (
 	"backend/internal/activities"
 )
 
+// drainStream runs up to maxBatches batches of a Replicate*Batch activity
+// (activityFn — one of ScavengerActivities' four replicate methods),
+// accumulating the replicated count. Returns once a batch reports Drained
+// (the stream is caught up), the batch cap is hit (more work remains), or
+// the activity errors. Callers decide what an error means for their own
+// context — ScavengerDispatcher logs and moves on (the next 6h tick
+// self-heals); ArchiveBackfillWorkflow fails the whole execution (it has no
+// next tick to fall back on).
+func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize, maxBatches int) (replicated int, drained bool, err error) {
+	for i := 0; i < maxBatches; i++ {
+		var res activities.ReplicateBatchResult
+		if err := workflow.ExecuteActivity(actCtx, activityFn, activities.ReplicateBatchParams{BatchSize: batchSize}).Get(ctx, &res); err != nil {
+			return replicated, false, err
+		}
+		replicated += res.Replicated
+		if res.Drained {
+			return replicated, true, nil
+		}
+	}
+	return replicated, false, nil
+}
+
 // ScavengerDispatcher replicates cloud → archive across four streams, in
 // order: leagues, transactions, draft headers, draft picks. Each stream
 // drains independently up to MaxBatchesPerRun batches or until a short
@@ -31,53 +53,29 @@ func ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, erro
 
 	var report activities.ScavengerReport
 
-	for i := 0; i < cfg.MaxBatchesPerRun; i++ {
-		var res activities.ReplicateBatchResult
-		if err := workflow.ExecuteActivity(actCtx, sa.ReplicateLeaguesBatch, activities.ReplicateBatchParams{BatchSize: cfg.LeagueBatchSize}).Get(ctx, &res); err != nil {
-			logger.Error("replicate leagues batch failed; stopping leagues for this run", "error", err)
-			break
-		}
-		report.LeaguesReplicated += res.Replicated
-		if res.Drained {
-			break
-		}
+	replicated, _, err := drainStream(ctx, actCtx, sa.ReplicateLeaguesBatch, cfg.LeagueBatchSize, cfg.MaxBatchesPerRun)
+	if err != nil {
+		logger.Error("replicate leagues batch failed; stopping leagues for this run", "error", err)
 	}
+	report.LeaguesReplicated = replicated
 
-	for i := 0; i < cfg.MaxBatchesPerRun; i++ {
-		var res activities.ReplicateBatchResult
-		if err := workflow.ExecuteActivity(actCtx, sa.ReplicateTransactionsBatch, activities.ReplicateBatchParams{BatchSize: cfg.TxnBatchSize}).Get(ctx, &res); err != nil {
-			logger.Error("replicate transactions batch failed; stopping transactions for this run", "error", err)
-			break
-		}
-		report.TransactionsReplicated += res.Replicated
-		if res.Drained {
-			break
-		}
+	replicated, _, err = drainStream(ctx, actCtx, sa.ReplicateTransactionsBatch, cfg.TxnBatchSize, cfg.MaxBatchesPerRun)
+	if err != nil {
+		logger.Error("replicate transactions batch failed; stopping transactions for this run", "error", err)
 	}
+	report.TransactionsReplicated = replicated
 
-	for i := 0; i < cfg.MaxBatchesPerRun; i++ {
-		var res activities.ReplicateBatchResult
-		if err := workflow.ExecuteActivity(actCtx, sa.ReplicateDraftHeadersBatch, activities.ReplicateBatchParams{BatchSize: cfg.DraftBatchSize}).Get(ctx, &res); err != nil {
-			logger.Error("replicate draft headers batch failed; stopping draft headers for this run", "error", err)
-			break
-		}
-		report.DraftHeadersReplicated += res.Replicated
-		if res.Drained {
-			break
-		}
+	replicated, _, err = drainStream(ctx, actCtx, sa.ReplicateDraftHeadersBatch, cfg.DraftBatchSize, cfg.MaxBatchesPerRun)
+	if err != nil {
+		logger.Error("replicate draft headers batch failed; stopping draft headers for this run", "error", err)
 	}
+	report.DraftHeadersReplicated = replicated
 
-	for i := 0; i < cfg.MaxBatchesPerRun; i++ {
-		var res activities.ReplicateBatchResult
-		if err := workflow.ExecuteActivity(actCtx, sa.ReplicateDraftPicksBatch, activities.ReplicateBatchParams{BatchSize: cfg.DraftBatchSize}).Get(ctx, &res); err != nil {
-			logger.Error("replicate draft picks batch failed; stopping draft picks for this run", "error", err)
-			break
-		}
-		report.DraftPicksReplicated += res.Replicated
-		if res.Drained {
-			break
-		}
+	replicated, _, err = drainStream(ctx, actCtx, sa.ReplicateDraftPicksBatch, cfg.DraftBatchSize, cfg.MaxBatchesPerRun)
+	if err != nil {
+		logger.Error("replicate draft picks batch failed; stopping draft picks for this run", "error", err)
 	}
+	report.DraftPicksReplicated = replicated
 
 	logger.Info("scavenger run complete", "leagues", report.LeaguesReplicated, "transactions", report.TransactionsReplicated,
 		"draftHeaders", report.DraftHeadersReplicated, "draftPicks", report.DraftPicksReplicated)
