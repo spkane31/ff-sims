@@ -64,8 +64,8 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Done — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Done — PR #157 |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Done — PR #154 |
-| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8, **T10** | Not started |
-| T10 | Daily backup (pg_dump + rclone, systemd timer) — **one verified dump before T9** | M | T1 | Not started |
+| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | Not started |
+| T10 | Daily backup (pg_dump + rclone, systemd timer) | M | T1 | Deferred — issue #160 (durability risk accepted for now; not required before T9) |
 | T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
 | T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | In review — PR #159 |
@@ -87,7 +87,7 @@ Parallel-friendly: T1 and T4 are independent starting points; T3 code can merge 
 
 ## Risks / open questions
 
-1. **Durability inversion** — post-purge the local machine holds the only >30d copy. Gated on T10 + restore drill; RPO ≤24h. Backup destination TBD.
+1. **Durability inversion** — post-purge the local machine holds the only >30d copy. Originally gated on T10 (backup) + restore drill; **2026-07-10: risk knowingly accepted for now** (test/personal project) — T10 deferred to issue #160, no longer a hard prerequisite for T9. Revisit before this becomes anything more than a test project.
 2. **Stats counts shrink** — `GetSleeperStats` and pagination totals collapse to the 30d window (user-visible). Cheap follow-up if it matters: scavenger-maintained all-time-counts row in cloud.
 3. **DO won't downsize in place** — `pg_repack` reclaims disk inside the cluster, but the bill is set by plan size. Real cost reduction = new smaller cluster + dump/restore (minutes, at post-purge size) + repoint both fleets — hence optional T12, only possible after T9.
 4. **Backfill over WAN** — may take many hours; pg_dump seed is the escape hatch.
