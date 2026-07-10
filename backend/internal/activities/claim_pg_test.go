@@ -3,19 +3,16 @@ package activities_test
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"backend/internal/activities"
 	"backend/internal/models"
+	"backend/internal/testutil"
 )
 
 // newPGTestDB opens TEST_DATABASE_URL inside a fresh throwaway schema and
@@ -27,35 +24,8 @@ func newPGTestDB(t *testing.T) *gorm.DB {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL not set; claim tests need Postgres (FOR UPDATE SKIP LOCKED)")
 	}
-	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	schema := fmt.Sprintf("claim_test_%d", rand.Int63())
-	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() {
-		admin.Exec("DROP SCHEMA " + schema + " CASCADE")
-		sqlDB, _ := admin.DB()
-		sqlDB.Close()
-	})
-
-	// search_path must ride in the DSN (not a session SET) so that every
-	// pooled connection — e.g. those used by concurrent claimers — sees the
-	// test schema.
-	sep := "?"
-	if strings.Contains(dsn, "?") {
-		sep = "&"
-	}
-	db, err := gorm.Open(postgres.Open(dsn+sep+"search_path="+schema), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open postgres (schema-scoped): %v", err)
-	}
-	t.Cleanup(func() {
-		sqlDB, _ := db.DB()
-		sqlDB.Close()
-	})
+	scopedDSN := testutil.NewPGSchema(t, dsn, "claim_test")
+	db := testutil.OpenGORM(t, scopedDSN)
 	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperUser{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
