@@ -426,21 +426,27 @@ func checkUnverifiedAlarm(stream string, oldest *time.Time, retentionDays int) e
 const selectPurgeTransactionCandidatesSQL = `
 SELECT sleeper_transaction_id AS id, created_at
 FROM sleeper_transactions
-WHERE created_at < ?
-ORDER BY created_at, sleeper_transaction_id
+WHERE created_at_sleeper < ?
+ORDER BY created_at_sleeper, sleeper_transaction_id
 LIMIT ?`
 
 // PurgeTransactionsBatch deletes up to BatchSize of the oldest cloud
-// transactions older than RetentionDays that are verified present in the
-// archive. Unverified rows (not yet replicated) are left in place — the next
-// batch/run naturally retries them since only verified rows are ever
-// deleted. Returns an error (see checkUnverifiedAlarm) if the oldest
-// unverified row has sat past retention+15d.
+// transactions — oldest by created_at_sleeper (Sleeper's own event
+// timestamp), not by created_at (when we happened to insert the row) — that
+// are older than RetentionDays and verified present in the archive. Using
+// event time means a freshly-backfilled old transaction (e.g. a newly
+// discovered league's history) is purge-eligible as soon as it's verified,
+// not 30 days after whenever it happened to be inserted. Unverified rows
+// (not yet replicated) are left in place — the next batch/run naturally
+// retries them since only verified rows are ever deleted. Returns an error
+// (see checkUnverifiedAlarm) if the oldest unverified row's insert time is
+// past retention+15d — that alarm intentionally stays on the insert-time
+// clock (it's tracking replication lag, not event age).
 func (a *ScavengerActivities) PurgeTransactionsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+	cutoffMs := time.Now().UTC().AddDate(0, 0, -params.RetentionDays).UnixMilli()
 
 	var candidates []purgeCandidate
-	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeTransactionCandidatesSQL, cutoff, params.BatchSize).
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeTransactionCandidatesSQL, cutoffMs, params.BatchSize).
 		Scan(&candidates).Error; err != nil {
 		return PurgeBatchResult{}, err
 	}
@@ -489,10 +495,10 @@ const selectPurgeDraftCandidatesSQL = `
 SELECT d.sleeper_draft_id AS id, d.created_at
 FROM sleeper_drafts d
 JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
-WHERE d.created_at < ?
+WHERE d.season < ?
   AND l.status IN ('in_season', 'complete')
   AND l.last_drafts_fetched_at IS NOT NULL
-ORDER BY d.created_at, d.sleeper_draft_id
+ORDER BY d.season, d.sleeper_draft_id
 LIMIT ?`
 
 // pickCountsByDraft returns sleeper_draft_id -> pick count for draftIDs,
@@ -518,23 +524,31 @@ func pickCountsByDraft(ctx context.Context, db *gorm.DB, draftIDs []string) (map
 }
 
 // PurgeDraftsBatch deletes up to BatchSize of the oldest cloud drafts (and
-// their picks) older than RetentionDays whose owning league satisfies the
-// claim-pool-exclusion predicate — status IN ('in_season','complete') AND
-// last_drafts_fetched_at IS NOT NULL, the same condition that permanently
-// excludes a league from ClaimLeaguesForDrafts (data_fetch.go:43-54).
-// Purging a draft whose league could still be re-claimed would let
-// syncOneLeagueDrafts recreate the header with last_fetched_at = NULL and
-// trigger a full pick-refetch loop.
+// their picks) whose season is before the current season (see
+// currentSleeperSeason in data_fetch.go) and whose owning league satisfies
+// the claim-pool-exclusion predicate — status IN ('in_season','complete')
+// AND last_drafts_fetched_at IS NOT NULL, the same condition that
+// permanently excludes a league from ClaimLeaguesForDrafts
+// (data_fetch.go:43-54). Purging a draft whose league could still be
+// re-claimed would let syncOneLeagueDrafts recreate the header with
+// last_fetched_at = NULL and trigger a full pick-refetch loop.
+//
+// Eligibility is season-based, not insert-time-based: drafts have no
+// per-row date, so "season" is the age proxy (same convention T13's ingest
+// routing uses). RetentionDays no longer affects eligibility here — a
+// season only ends once a year, so there's no day-granularity retention
+// concept to apply — but it's still passed to checkUnverifiedAlarm for the
+// stalled-replication threshold, which stays anchored to insert time.
 //
 // A draft is verified only when its header is present in the archive AND
 // its cloud and archive pick counts match exactly. Unverified drafts are
 // left in place — the next batch/run retries them. Picks are deleted before
 // the draft header (FK, no ON DELETE CASCADE in the cloud schema).
 func (a *ScavengerActivities) PurgeDraftsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+	cutoffSeason := currentSleeperSeason()
 
 	var candidates []purgeCandidate
-	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeDraftCandidatesSQL, cutoff, params.BatchSize).
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeDraftCandidatesSQL, cutoffSeason, params.BatchSize).
 		Scan(&candidates).Error; err != nil {
 		return PurgeBatchResult{}, err
 	}
