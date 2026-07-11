@@ -29,6 +29,13 @@ code.
    the case — see issue #160). Once purge deletes cloud rows, the archive
    becomes the only copy of anything older than the retention window.
 
+**Purge eligibility is based on when the data actually happened, not when
+it was inserted.** Transactions use `created_at_sleeper` (Sleeper's own
+event timestamp); drafts use `season`. This matters if you're backfilling
+history for newly-discovered leagues — that data can be purge-eligible
+immediately once verified in archive, not 30 days after whenever it
+happened to be synced.
+
 ## Step 1: Enable purge
 
 On the worker host:
@@ -74,11 +81,17 @@ task queue in the Temporal UI for a **red (failed) run** — that's the
 built-in alarm. It fires when some row has sat unverified for more than
 `retention + 15 days`, meaning replication has stalled, not just lagged.
 
-Direct SQL check of the remaining backlog, run against the **cloud** DB:
+Direct SQL check of the remaining backlog, run against the **cloud** DB —
+note this is by Sleeper's own event time (`created_at_sleeper`, epoch
+milliseconds), not insert time; a row can be purge-eligible the moment
+it's replicated even if it was only just inserted (e.g. during a new
+league's backfill):
 
 ```sql
-SELECT count(*) FROM sleeper_transactions WHERE created_at < now() - interval '30 days';
-SELECT count(*) FROM sleeper_drafts WHERE created_at < now() - interval '30 days';
+SELECT count(*) FROM sleeper_transactions
+WHERE created_at_sleeper < extract(epoch from now() - interval '30 days') * 1000;
+
+SELECT count(*) FROM sleeper_drafts WHERE season < to_char(now(), 'YYYY');
 ```
 
 (30 days is the `SCAVENGER_RETENTION_DAYS` default — adjust the interval if

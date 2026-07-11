@@ -39,7 +39,7 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 **Scavenger** (every 6h, overlap = Skip):
 1. Config activity: `SCAVENGER_BATCH_SIZE` (5000 txn / 200 draft), `SCAVENGER_MAX_BATCHES_PER_RUN` (50), `SCAVENGER_RETENTION_DAYS` (30), `SCAVENGER_PURGE_ENABLED` (**default false** — kill-switch).
 2. Replicate: leagues → transactions → drafts. Cursors: txns on `(created_at, id)` with a 5-min safety lag; drafts on **two watermarks** (`created_at` headers, `last_fetched_at` picks+status flip); leagues on `updated_at`.
-3. Purge (only if enabled and caught up): select cloud IDs past 30d → verify in archive → chunked deletes in short transactions. Drafts additionally require the claim-pool-exclusion predicate and pick-count parity. Unverified rows are skipped and counted; oldest unverified > retention+15d ⇒ activity error ⇒ **red run in Temporal UI = replication-stalled alarm**.
+3. Purge (only if enabled and caught up): select cloud IDs whose *event* age (transactions: `created_at_sleeper`; drafts: `season`) is past 30d/the current season → verify in archive → chunked deletes in short transactions. Drafts additionally require the claim-pool-exclusion predicate and pick-count parity. Unverified rows are skipped and counted; oldest unverified (by insert time) > retention+15d ⇒ activity error ⇒ **red run in Temporal UI = replication-stalled alarm**.
 4. Result: `ScavengerReport{Replicated, Purged, LagSeconds, Unverified}` — the observability surface.
 
 **Failure modes.** Machine down N days → cloud accumulates, drains over later runs. Watermark/rows can't diverge (same txn). Failed deletes re-verify next run. Archive unreachable → purge never reached. Clock skew irrelevant (cloud-side `now()`).
@@ -68,7 +68,8 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T10 | Daily backup (pg_dump + rclone, systemd timer) | M | T1 | Deferred — issue #160 (durability risk accepted for now; not required before T9) |
 | T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
-| T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | In review — PR #159 |
+| T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | Done — PR #159 |
+| T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | In review |
 
 \* T3 is env-gated and mergeable before T1; it just can't connect until the archive DB exists.
 
@@ -91,7 +92,7 @@ Parallel-friendly: T1 and T4 are independent starting points; T3 code can merge 
 2. **Stats counts shrink** — `GetSleeperStats` and pagination totals collapse to the 30d window (user-visible). Cheap follow-up if it matters: scavenger-maintained all-time-counts row in cloud.
 3. **DO won't downsize in place** — `pg_repack` reclaims disk inside the cluster, but the bill is set by plan size. Real cost reduction = new smaller cluster + dump/restore (minutes, at post-purge size) + repoint both fleets — hence optional T12, only possible after T9.
 4. **Backfill over WAN** — may take many hours; pg_dump seed is the escape hatch.
-5. **Insert-time retention** — freshly ingested old-season rows stay hot 30 days; accepted, self-correcting.
+5. ~~**Insert-time retention**~~ — **fixed (T14, 2026-07-11)**: purge originally filtered by `created_at` (insert time), meaning freshly-backfilled old data stayed hot for a full 30 days regardless of how old the underlying event actually was — this wasn't a deliberate tradeoff, it was a defect, discovered in production when ~40M backfilled transactions were all insert-time-recent and therefore zero were purge-eligible. Purge now filters transactions by `created_at_sleeper` (event time) and drafts by `season`. Replicate (T5) is unaffected — its cursor correctly still needs insert-time's monotonic-arrival guarantee.
 6. **Dual-use machine** — it's also a personal computer: disable sleep/hibernate, pin unattended-upgrade reboots to a window, accept that OS reinstalls/tinkering pause sync + replication (both fail safe: data goes stale, purge stalls). Single machine now runs everything — add a basic uptime ping later.
 7. **PG version parity** — local PGDG 16 = cloud = CI image; keep aligned for dump/restore and `PERCENTILE_CONT` parity.
 8. **Two promoting fleets during cutover** — `deploy.sh` is shared; the Pi must be stopped before `promoteOnStart` merges (enforced by T2's ordering).
