@@ -495,10 +495,10 @@ const selectPurgeDraftCandidatesSQL = `
 SELECT d.sleeper_draft_id AS id, d.created_at
 FROM sleeper_drafts d
 JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
-WHERE d.created_at < ?
+WHERE d.season < ?
   AND l.status IN ('in_season', 'complete')
   AND l.last_drafts_fetched_at IS NOT NULL
-ORDER BY d.created_at, d.sleeper_draft_id
+ORDER BY d.season, d.sleeper_draft_id
 LIMIT ?`
 
 // pickCountsByDraft returns sleeper_draft_id -> pick count for draftIDs,
@@ -524,23 +524,31 @@ func pickCountsByDraft(ctx context.Context, db *gorm.DB, draftIDs []string) (map
 }
 
 // PurgeDraftsBatch deletes up to BatchSize of the oldest cloud drafts (and
-// their picks) older than RetentionDays whose owning league satisfies the
-// claim-pool-exclusion predicate — status IN ('in_season','complete') AND
-// last_drafts_fetched_at IS NOT NULL, the same condition that permanently
-// excludes a league from ClaimLeaguesForDrafts (data_fetch.go:43-54).
-// Purging a draft whose league could still be re-claimed would let
-// syncOneLeagueDrafts recreate the header with last_fetched_at = NULL and
-// trigger a full pick-refetch loop.
+// their picks) whose season is before the current season (see
+// currentSleeperSeason in data_fetch.go) and whose owning league satisfies
+// the claim-pool-exclusion predicate — status IN ('in_season','complete')
+// AND last_drafts_fetched_at IS NOT NULL, the same condition that
+// permanently excludes a league from ClaimLeaguesForDrafts
+// (data_fetch.go:43-54). Purging a draft whose league could still be
+// re-claimed would let syncOneLeagueDrafts recreate the header with
+// last_fetched_at = NULL and trigger a full pick-refetch loop.
+//
+// Eligibility is season-based, not insert-time-based: drafts have no
+// per-row date, so "season" is the age proxy (same convention T13's ingest
+// routing uses). RetentionDays no longer affects eligibility here — a
+// season only ends once a year, so there's no day-granularity retention
+// concept to apply — but it's still passed to checkUnverifiedAlarm for the
+// stalled-replication threshold, which stays anchored to insert time.
 //
 // A draft is verified only when its header is present in the archive AND
 // its cloud and archive pick counts match exactly. Unverified drafts are
 // left in place — the next batch/run retries them. Picks are deleted before
 // the draft header (FK, no ON DELETE CASCADE in the cloud schema).
 func (a *ScavengerActivities) PurgeDraftsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+	cutoffSeason := currentSleeperSeason()
 
 	var candidates []purgeCandidate
-	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeDraftCandidatesSQL, cutoff, params.BatchSize).
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeDraftCandidatesSQL, cutoffSeason, params.BatchSize).
 		Scan(&candidates).Error; err != nil {
 		return PurgeBatchResult{}, err
 	}
