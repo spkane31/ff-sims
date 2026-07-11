@@ -37,7 +37,7 @@ var defaultActivityOptions = workflow.ActivityOptions{
 // re-processes only unstamped leagues.
 var batchActivityOptions = workflow.ActivityOptions{
 	StartToCloseTimeout: 30 * time.Minute,
-	HeartbeatTimeout:    2 * time.Minute,
+	HeartbeatTimeout:    4 * time.Minute,
 	RetryPolicy: &temporal.RetryPolicy{
 		InitialInterval:    5 * time.Second,
 		BackoffCoefficient: 2.0,
