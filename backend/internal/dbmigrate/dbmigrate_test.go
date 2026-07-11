@@ -83,7 +83,10 @@ func TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes(t *testing.T)
 	if err := dbmigrate.Run(scopedDSN, migrations.FS, "up", nil); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
-	for _, idx := range []string{"idx_sleeper_transactions_created_at", "idx_sleeper_drafts_last_fetched_at", "idx_sleeper_drafts_created_at"} {
+	for _, idx := range []string{
+		"idx_sleeper_transactions_created_at", "idx_sleeper_drafts_last_fetched_at", "idx_sleeper_drafts_created_at",
+		"idx_sleeper_transactions_created_at_sleeper", "idx_sleeper_drafts_season",
+	} {
 		if !indexExists(t, scopedDSN, idx) {
 			t.Errorf("expected index %s to exist after migrate up", idx)
 		}
