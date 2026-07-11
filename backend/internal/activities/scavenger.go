@@ -426,21 +426,27 @@ func checkUnverifiedAlarm(stream string, oldest *time.Time, retentionDays int) e
 const selectPurgeTransactionCandidatesSQL = `
 SELECT sleeper_transaction_id AS id, created_at
 FROM sleeper_transactions
-WHERE created_at < ?
-ORDER BY created_at, sleeper_transaction_id
+WHERE created_at_sleeper < ?
+ORDER BY created_at_sleeper, sleeper_transaction_id
 LIMIT ?`
 
 // PurgeTransactionsBatch deletes up to BatchSize of the oldest cloud
-// transactions older than RetentionDays that are verified present in the
-// archive. Unverified rows (not yet replicated) are left in place — the next
-// batch/run naturally retries them since only verified rows are ever
-// deleted. Returns an error (see checkUnverifiedAlarm) if the oldest
-// unverified row has sat past retention+15d.
+// transactions — oldest by created_at_sleeper (Sleeper's own event
+// timestamp), not by created_at (when we happened to insert the row) — that
+// are older than RetentionDays and verified present in the archive. Using
+// event time means a freshly-backfilled old transaction (e.g. a newly
+// discovered league's history) is purge-eligible as soon as it's verified,
+// not 30 days after whenever it happened to be inserted. Unverified rows
+// (not yet replicated) are left in place — the next batch/run naturally
+// retries them since only verified rows are ever deleted. Returns an error
+// (see checkUnverifiedAlarm) if the oldest unverified row's insert time is
+// past retention+15d — that alarm intentionally stays on the insert-time
+// clock (it's tracking replication lag, not event age).
 func (a *ScavengerActivities) PurgeTransactionsBatch(ctx context.Context, params PurgeBatchParams) (PurgeBatchResult, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -params.RetentionDays)
+	cutoffMs := time.Now().UTC().AddDate(0, 0, -params.RetentionDays).UnixMilli()
 
 	var candidates []purgeCandidate
-	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeTransactionCandidatesSQL, cutoff, params.BatchSize).
+	if err := a.Cloud.WithContext(ctx).Raw(selectPurgeTransactionCandidatesSQL, cutoffMs, params.BatchSize).
 		Scan(&candidates).Error; err != nil {
 		return PurgeBatchResult{}, err
 	}

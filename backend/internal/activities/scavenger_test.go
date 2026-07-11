@@ -374,15 +374,20 @@ func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
 
 func TestPurgeTransactionsBatch_DeletesVerifiedOldRows(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	old := time.Now().UTC().AddDate(0, 0, -400) // event happened well over a year ago
+	recentInsert := time.Now().UTC()            // but only just inserted — the exact scenario this fixes
 	for i, id := range []string{"t1", "t2"} {
 		if err := cloud.Create(&models.SleeperTransaction{
-			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+			SleeperTransactionID: id, SleeperLeagueID: "lg1",
+			CreatedAtSleeper: old.Add(time.Duration(i) * time.Second).UnixMilli(),
+			CreatedAt:        recentInsert,
 		}).Error; err != nil {
 			t.Fatalf("seed cloud txn %s: %v", id, err)
 		}
 		if err := archive.Create(&models.ArchiveSleeperTransaction{
-			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+			SleeperTransactionID: id, SleeperLeagueID: "lg1",
+			CreatedAtSleeper: old.Add(time.Duration(i) * time.Second).UnixMilli(),
+			CreatedAt:        recentInsert,
 		}).Error; err != nil {
 			t.Fatalf("seed archive txn %s: %v", id, err)
 		}
@@ -406,7 +411,9 @@ func TestPurgeTransactionsBatch_DeletesVerifiedOldRows(t *testing.T) {
 func TestPurgeTransactionsBatch_SkipsUnverifiedRows(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	old := time.Now().UTC().AddDate(0, 0, -40)
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: old}).Error; err != nil {
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: old.UnixMilli(), CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Not replicated to archive.
@@ -428,8 +435,10 @@ func TestPurgeTransactionsBatch_SkipsUnverifiedRows(t *testing.T) {
 
 func TestPurgeTransactionsBatch_IgnoresRowsWithinRetention(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	recent := time.Now().UTC().AddDate(0, 0, -5) // within the 30-day retention window
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: recent}).Error; err != nil {
+	recent := time.Now().UTC().AddDate(0, 0, -5) // event happened within the 30-day retention window
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: recent.UnixMilli(), CreatedAt: recent,
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -439,14 +448,16 @@ func TestPurgeTransactionsBatch_IgnoresRowsWithinRetention(t *testing.T) {
 		t.Fatalf("PurgeTransactionsBatch: %v", err)
 	}
 	if res.Purged != 0 || res.Unverified != 0 || !res.Drained {
-		t.Errorf("res = %+v, want no candidates found (row is within retention)", res)
+		t.Errorf("res = %+v, want no candidates found (event is within retention)", res)
 	}
 }
 
 func TestPurgeTransactionsBatch_ErrorsWhenOldestUnverifiedPastAlarmThreshold(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	waaayOld := time.Now().UTC().AddDate(0, 0, -46) // 30d retention + 15d alarm + 1
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: waaayOld}).Error; err != nil {
+	waaayOld := time.Now().UTC().AddDate(0, 0, -46) // 30d retention + 15d alarm + 1, by INSERT time — the alarm clock
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: waaayOld.UnixMilli(), CreatedAt: waaayOld,
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Not replicated to archive — stalled.
@@ -454,18 +465,23 @@ func TestPurgeTransactionsBatch_ErrorsWhenOldestUnverifiedPastAlarmThreshold(t *
 	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
 	_, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
 	if err == nil {
-		t.Fatal("expected an error once the oldest unverified row exceeds retention+15d, got nil")
+		t.Fatal("expected an error once the oldest unverified row exceeds retention+15d (by insert time), got nil")
 	}
 }
 
 func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	old := time.Now().UTC().AddDate(0, 0, -400)
 	for i, id := range []string{"t1", "t2", "t3"} {
-		if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+		ts := old.Add(time.Duration(i) * time.Second)
+		if err := cloud.Create(&models.SleeperTransaction{
+			SleeperTransactionID: id, CreatedAtSleeper: ts.UnixMilli(), CreatedAt: time.Now().UTC(),
+		}).Error; err != nil {
 			t.Fatalf("seed %s: %v", id, err)
 		}
-		if err := archive.Create(&models.ArchiveSleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+		if err := archive.Create(&models.ArchiveSleeperTransaction{
+			SleeperTransactionID: id, CreatedAtSleeper: ts.UnixMilli(), CreatedAt: time.Now().UTC(),
+		}).Error; err != nil {
 			t.Fatalf("seed archive %s: %v", id, err)
 		}
 	}
@@ -477,6 +493,31 @@ func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 	}
 	if res.Purged != 2 || res.Drained {
 		t.Errorf("expected a full, non-drained batch of 2, got %+v", res)
+	}
+}
+
+func TestPurgeTransactionsBatch_EligibleByEventTimeDespiteRecentInsertTime(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	eventTime := time.Now().UTC().AddDate(-1, 0, 0) // a year-old Sleeper transaction
+	insertTime := time.Now().UTC()                  // freshly inserted today (e.g. a new league's backfill)
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: eventTime.UnixMilli(), CreatedAt: insertTime,
+	}).Error; err != nil {
+		t.Fatalf("seed cloud: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: eventTime.UnixMilli(), CreatedAt: insertTime,
+	}).Error; err != nil {
+		t.Fatalf("seed archive: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 1 {
+		t.Errorf("expected the row to be purge-eligible despite being inserted today, because the underlying event is a year old; got %+v", res)
 	}
 }
 
