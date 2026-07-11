@@ -40,7 +40,7 @@
 
 **Interfaces:** no signature changes — `PurgeTransactionsBatch(ctx, PurgeBatchParams) (PurgeBatchResult, error)` stays identical; only its internal candidate-selection query changes.
 
-- [ ] **Step 1: Update the existing tests' fixtures to event-time framing**
+- [x] **Step 1: Update the existing tests' fixtures to event-time framing**
 
 In `scavenger_test.go`, the 5 existing `TestPurgeTransactionsBatch_*` tests currently encode "old enough to purge" via `CreatedAt: old` (insert time) and never set `CreatedAtSleeper` at all (leaving it at its zero value, epoch 0 — which would trivially satisfy *any* event-time cutoff, masking whether the fix actually works). Replace all 5 test bodies with:
 
@@ -199,12 +199,12 @@ func TestPurgeTransactionsBatch_EligibleByEventTimeDespiteRecentInsertTime(t *te
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run (with a disposable Postgres — see prior plans' Task setup): `cd backend && go test ./internal/activities/... -run "TestPurgeTransactionsBatch_EligibleByEventTimeDespiteRecentInsertTime|TestPurgeTransactionsBatch_DeletesVerifiedOldRows" -v`
 Expected: `TestPurgeTransactionsBatch_EligibleByEventTimeDespiteRecentInsertTime` FAILs (`res.Purged` is `0`, not `1` — the current `created_at`-based query sees `CreatedAt: insertTime` = today, well within retention, so it's never even a candidate). `TestPurgeTransactionsBatch_DeletesVerifiedOldRows` also FAILs for the same reason (both rows have recent `CreatedAt`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `scavenger.go`, replace `selectPurgeTransactionCandidatesSQL`:
 
@@ -244,12 +244,12 @@ func (a *ScavengerActivities) PurgeTransactionsBatch(ctx context.Context, params
 
 (The rest of the function — verification, `splitVerifiedCandidates`, `deleteInChunks`, `checkUnverifiedAlarm`, the returned `PurgeBatchResult` — is unchanged; `purgeCandidate.CreatedAt` is still populated from the SELECT's `created_at` column, still insert time, still what the alarm checks.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run TestPurgeTransactionsBatch -v`
 Expected: all 6 PASS (5 updated + 1 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -266,7 +266,7 @@ git commit -m "fix: purge transactions by event time (created_at_sleeper), not i
 
 **Interfaces:** no signature changes.
 
-- [ ] **Step 1: Update the existing tests' fixtures to season-based framing**
+- [x] **Step 1: Update the existing tests' fixtures to season-based framing**
 
 In `scavenger_test.go`, add `"strconv"` to the import block. All 4 existing `TestPurgeDraftsBatch_*` tests hardcode `Season: "2026"` and rely on `CreatedAt` for age — replace all 4 with:
 
@@ -461,12 +461,12 @@ func TestPurgeDraftsBatch_EligibleBySeasonDespiteRecentInsertTime(t *testing.T) 
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/activities/... -run "TestPurgeDraftsBatch_EligibleBySeasonDespiteRecentInsertTime|TestPurgeDraftsBatch_DeletesVerifiedDraftAndPicks" -v`
 Expected: both FAIL (current `created_at`-based query sees `CreatedAt: time.Now()` = today, well within retention).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `scavenger.go`, replace `selectPurgeDraftCandidatesSQL`:
 
@@ -518,17 +518,17 @@ func (a *ScavengerActivities) PurgeDraftsBatch(ctx context.Context, params Purge
 
 (The rest of the function is unchanged.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/activities/... -run TestPurgeDraftsBatch -v`
 Expected: all 5 PASS (4 updated + 1 new).
 
-- [ ] **Step 5: Run the full activities package for regressions**
+- [x] **Step 5: Run the full activities package for regressions**
 
 Run: `cd backend && go test ./internal/activities/... -v 2>&1 | grep -E "^(--- |FAIL|PASS|ok)"`
 Expected: everything PASSes, including every other pre-existing test untouched by this plan.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/activities/scavenger.go internal/activities/scavenger_test.go
@@ -545,7 +545,7 @@ git commit -m "fix: purge drafts by season, not insert time"
 
 **Interfaces:** none — pure SQL/test addition.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 ```sql
 -- backend/migrations/023_purge_event_time_indexes.sql
@@ -571,7 +571,7 @@ DROP INDEX CONCURRENTLY IF EXISTS idx_sleeper_drafts_season;
 DROP INDEX CONCURRENTLY IF EXISTS idx_sleeper_transactions_created_at_sleeper;
 ```
 
-- [ ] **Step 2: Extend the migration-index assertion test**
+- [x] **Step 2: Extend the migration-index assertion test**
 
 In `dbmigrate_test.go`, change `TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes`'s index list:
 
@@ -582,12 +582,12 @@ In `dbmigrate_test.go`, change `TestRun_CloudMigrations_ApplyCleanlyAndCreateSca
 	} {
 ```
 
-- [ ] **Step 3: Run the test**
+- [x] **Step 3: Run the test**
 
 Run: `cd backend && go test ./internal/dbmigrate/... -v`
 Expected: PASS — migration 023 applies cleanly and both new indexes exist.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add migrations/023_purge_event_time_indexes.sql internal/dbmigrate/dbmigrate_test.go
@@ -604,7 +604,7 @@ git commit -m "feat: add indexes for event-time purge eligibility (created_at_sl
 
 **Interfaces:** none — documentation only.
 
-- [ ] **Step 1: Fix the monitoring SQL and preconditions prose in `docs/archive-purge.md`**
+- [x] **Step 1: Fix the monitoring SQL and preconditions prose in `docs/archive-purge.md`**
 
 Replace the "direct SQL check of the remaining backlog" block in Step 2 (Monitor the drain):
 
@@ -634,7 +634,7 @@ immediately once verified in archive, not 30 days after whenever it
 happened to be synced.
 ```
 
-- [ ] **Step 2: Fetch latest `main` and correct the master plan doc**
+- [x] **Step 2: Fetch latest `main` and correct the master plan doc**
 
 This file has been edited by multiple concurrent short-lived doc PRs recently — fetch and merge `origin/main` into this branch before editing, so the diff is additive, not a conflicting rewrite (same lesson as the T9 runbook PR).
 
@@ -661,7 +661,7 @@ Add T14's row to the task table, right after T13:
 | T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | Done — PR #<fill in> |
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add ../docs/archive-purge.md ../docs/superpowers/plans/2026-07-07-two-database-archive.md
@@ -674,7 +674,7 @@ git commit -m "docs: correct purge eligibility docs to event-time (created_at_sl
 
 ### Task 5: Full verification
 
-- [ ] **Step 1: Full build, vet, and test suite**
+- [x] **Step 1: Full build, vet, and test suite**
 
 Run: `cd backend && go build ./... && go vet ./...`
 Expected: clean.
@@ -682,7 +682,7 @@ Expected: clean.
 Run (with `TEST_DATABASE_URL` set): `cd backend && go test ./... -v 2>&1 | tail -100`
 Expected: every test PASSes — the 11 updated/new purge tests, the new index-migration assertions, and every pre-existing test untouched by this plan (replicate tests, T7/T8/T13 tests, etc.).
 
-- [ ] **Step 2: Sanity-check the SQL directly against a real Postgres**
+- [x] **Step 2: Sanity-check the SQL directly against a real Postgres**
 
 The unit tests already run against real Postgres via `newScavengerTestDBs` (not SQLite — this package's tests are PG-only, per its existing convention), so the raw SQL is already exercised for correctness. No additional manual step needed beyond Step 1 — unlike T5/T7/T8/T13, this task adds no new DB handle wiring or worker startup path, so there's nothing new to smoke-test at the `cmd/worker` boot level.
 
@@ -690,12 +690,12 @@ The unit tests already run against real Postgres via `newScavengerTestDBs` (not 
 
 ## Verification
 
-- [ ] `cd backend && go build ./...` and `go vet ./...` clean.
-- [ ] `cd backend && go test ./...` — full suite passes.
-- [ ] All 11 purge tests (6 transaction + 5 draft) pass, including the 2 new ones that directly encode "eligible despite recent insert time."
-- [ ] `dbmigrate` tests confirm migration 023 applies cleanly and both new indexes exist.
-- [ ] `docs/archive-purge.md`'s monitoring SQL and preconditions prose reflect event-time eligibility.
-- [ ] The master plan doc's Risk #5, Scavenger design bullet, and task table (new T14 row) are corrected/updated.
+- [x] `cd backend && go build ./...` and `go vet ./...` clean.
+- [x] `cd backend && go test ./...` — full suite passes.
+- [x] All 11 purge tests (6 transaction + 5 draft) pass, including the 2 new ones that directly encode "eligible despite recent insert time."
+- [x] `dbmigrate` tests confirm migration 023 applies cleanly and both new indexes exist.
+- [x] `docs/archive-purge.md`'s monitoring SQL and preconditions prose reflect event-time eligibility.
+- [x] The master plan doc's Risk #5, Scavenger design bullet, and task table (new T14 row) are corrected/updated.
 
 ## Self-Review
 
