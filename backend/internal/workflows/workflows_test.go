@@ -43,6 +43,9 @@ func TestDiscoveryDispatcher_DrainsUntilShortClaim(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{UsersProcessed: 3}, report)
 	env.AssertExpectations(t)
 }
 
@@ -60,6 +63,9 @@ func TestDiscoveryDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -81,6 +87,9 @@ func TestDiscoveryDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the users' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{}, report)
 	env.AssertExpectations(t)
 }
 
