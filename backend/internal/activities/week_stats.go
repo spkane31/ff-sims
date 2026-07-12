@@ -33,22 +33,23 @@ type weekStatPoints struct {
 // positions, upserts sleeper_player_week_stats (overwriting on refetch so in-season
 // corrections land), and stamps sleeper_week_stat_fetches — including whether the
 // week is finalized per Sleeper's current NFL state.
-func (a *WeekStatsActivities) FetchWeekStats(ctx context.Context, params FetchWeekStatsParams) error {
+func (a *WeekStatsActivities) FetchWeekStats(ctx context.Context, params FetchWeekStatsParams) (WeekStatsResult, error) {
 	raw, err := a.Sleeper.GetWeekStats(ctx, params.Season, params.Week)
 	if err != nil {
 		var nfe *sleeper.NotFoundError
 		if !errors.As(err, &nfe) {
-			return err
+			return WeekStatsResult{}, err
 		}
 		raw = nil // no stats published for this week yet
 	}
 
+	upserted := 0
 	if len(raw) > 0 {
 		var players []models.SleeperPlayer
 		if err := a.DB.WithContext(ctx).
 			Where("position IN ?", fantasyPositions).
 			Find(&players).Error; err != nil {
-			return err
+			return WeekStatsResult{}, err
 		}
 		fantasyIDs := make(map[string]struct{}, len(players))
 		for _, p := range players {
@@ -61,7 +62,7 @@ func (a *WeekStatsActivities) FetchWeekStats(ctx context.Context, params FetchWe
 			}
 			var pts weekStatPoints
 			if err := json.Unmarshal(statBytes, &pts); err != nil {
-				return err
+				return WeekStatsResult{PlayersUpserted: upserted}, err
 			}
 			row := models.SleeperPlayerWeekStat{
 				Season:          params.Season,
@@ -78,14 +79,15 @@ func (a *WeekStatsActivities) FetchWeekStats(ctx context.Context, params FetchWe
 					"pts_ppr", "pts_half_ppr", "pts_std", "stats", "updated_at",
 				}),
 			}).Create(&row).Error; err != nil {
-				return err
+				return WeekStatsResult{PlayersUpserted: upserted}, err
 			}
+			upserted++
 		}
 	}
 
 	state, err := a.Sleeper.GetNFLState(ctx)
 	if err != nil {
-		return err
+		return WeekStatsResult{PlayersUpserted: upserted}, err
 	}
 	finalized := params.Season < state.Season || (params.Season == state.Season && params.Week < state.Week)
 
@@ -96,10 +98,14 @@ func (a *WeekStatsActivities) FetchWeekStats(ctx context.Context, params FetchWe
 		LastFetchedAt: &now,
 		Finalized:     finalized,
 	}
-	return a.DB.WithContext(ctx).Clauses(clause.OnConflict{
+	if err := a.DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "season"}, {Name: "week"}},
 		DoUpdates: clause.AssignmentColumns([]string{"last_fetched_at", "finalized"}),
-	}).Create(&fetchRow).Error
+	}).Create(&fetchRow).Error; err != nil {
+		return WeekStatsResult{PlayersUpserted: upserted}, err
+	}
+
+	return WeekStatsResult{PlayersUpserted: upserted, Finalized: finalized}, nil
 }
 
 // GetFinalizedWeeks returns the weeks already marked finalized for season, so
