@@ -116,4 +116,30 @@ bash "$REPO/deploy/worker-host/deploy.sh"
 built_output="$("$REPO/backend/worker" 2>&1)"
 [[ "$built_output" == "updated" ]] || fail "expected the deploy that changed build_worker to use the NEW build_worker on the same cycle, got: $built_output"
 
+# --- scenario 5: git fetch fails (e.g. broken SSH access) -> deploy.sh must
+# exit non-zero and must NOT report "up to date" ---
+#
+# Regression test for the incident where a root SSH key without GitHub access
+# caused `git fetch` to fail, but deploy.sh printed "up to date" anyway and
+# exited 0: current_and_remote_sha() runs inside a $(...) command
+# substitution, which bash does not run under -e/errexit by default, so the
+# failed fetch fell through to rev-parse'ing stale cached refs instead of
+# aborting.
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+git -C "$REPO" remote set-url origin "$WORK/does-not-exist.git"
+: > "$CALLS"
+
+set +e
+deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
+deploy_status=$?
+set -e
+
+[[ "$deploy_status" -ne 0 ]] || fail "deploy.sh should exit non-zero when git fetch fails"
+[[ "$deploy_output" != *"up to date"* ]] || fail "deploy.sh must not report 'up to date' when it never successfully checked origin/main, got: $deploy_output"
+worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should be unchanged when git fetch fails"
+[[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when git fetch fails"
+
+git -C "$REPO" remote set-url origin "$ORIGIN"
+
 echo "PASS: deploy.sh integration tests"

@@ -1,4 +1,4 @@
-.PHONY: help docker-run worker-host-setup worker-host-setup-archive-db
+.PHONY: help docker-run worker-host-setup worker-host-setup-archive-db build-worker
 
 help: ## Show this help message
 	@echo 'Usage:'
@@ -22,6 +22,9 @@ docker-dev: docker-build ## Build and run the Docker image in development mode w
 docker-stop: ## Stop and remove running ff-sims containers
 	docker ps -q --filter "ancestor=ff-sims" | xargs -r docker stop
 	docker ps -aq --filter "ancestor=ff-sims" | xargs -r docker rm
+
+build-worker: ## Build backend/worker with a real git-SHA build ID (same ldflags as deploy.sh/setup.sh — plain `go build`/`make build` silently skip cmd/worker)
+	cd backend && go build -ldflags "-X 'main.buildID=$$(git rev-parse --short=9 HEAD)' -X 'main.promoteOnStart=true'" -o worker ./cmd/worker
 
 worker-host-setup: ## Set up this machine as a Temporal worker host (run on the host itself, with sudo)
 	sudo ./deploy/worker-host/setup.sh

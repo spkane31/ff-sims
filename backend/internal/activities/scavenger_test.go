@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -374,15 +375,20 @@ func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
 
 func TestPurgeTransactionsBatch_DeletesVerifiedOldRows(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	old := time.Now().UTC().AddDate(0, 0, -400) // event happened well over a year ago
+	recentInsert := time.Now().UTC()            // but only just inserted — the exact scenario this fixes
 	for i, id := range []string{"t1", "t2"} {
 		if err := cloud.Create(&models.SleeperTransaction{
-			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+			SleeperTransactionID: id, SleeperLeagueID: "lg1",
+			CreatedAtSleeper: old.Add(time.Duration(i) * time.Second).UnixMilli(),
+			CreatedAt:        recentInsert,
 		}).Error; err != nil {
 			t.Fatalf("seed cloud txn %s: %v", id, err)
 		}
 		if err := archive.Create(&models.ArchiveSleeperTransaction{
-			SleeperTransactionID: id, SleeperLeagueID: "lg1", CreatedAt: old.Add(time.Duration(i) * time.Second),
+			SleeperTransactionID: id, SleeperLeagueID: "lg1",
+			CreatedAtSleeper: old.Add(time.Duration(i) * time.Second).UnixMilli(),
+			CreatedAt:        recentInsert,
 		}).Error; err != nil {
 			t.Fatalf("seed archive txn %s: %v", id, err)
 		}
@@ -406,7 +412,9 @@ func TestPurgeTransactionsBatch_DeletesVerifiedOldRows(t *testing.T) {
 func TestPurgeTransactionsBatch_SkipsUnverifiedRows(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	old := time.Now().UTC().AddDate(0, 0, -40)
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: old}).Error; err != nil {
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: old.UnixMilli(), CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Not replicated to archive.
@@ -428,8 +436,10 @@ func TestPurgeTransactionsBatch_SkipsUnverifiedRows(t *testing.T) {
 
 func TestPurgeTransactionsBatch_IgnoresRowsWithinRetention(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	recent := time.Now().UTC().AddDate(0, 0, -5) // within the 30-day retention window
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: recent}).Error; err != nil {
+	recent := time.Now().UTC().AddDate(0, 0, -5) // event happened within the 30-day retention window
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: recent.UnixMilli(), CreatedAt: recent,
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -439,14 +449,16 @@ func TestPurgeTransactionsBatch_IgnoresRowsWithinRetention(t *testing.T) {
 		t.Fatalf("PurgeTransactionsBatch: %v", err)
 	}
 	if res.Purged != 0 || res.Unverified != 0 || !res.Drained {
-		t.Errorf("res = %+v, want no candidates found (row is within retention)", res)
+		t.Errorf("res = %+v, want no candidates found (event is within retention)", res)
 	}
 }
 
 func TestPurgeTransactionsBatch_ErrorsWhenOldestUnverifiedPastAlarmThreshold(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	waaayOld := time.Now().UTC().AddDate(0, 0, -46) // 30d retention + 15d alarm + 1
-	if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", CreatedAt: waaayOld}).Error; err != nil {
+	waaayOld := time.Now().UTC().AddDate(0, 0, -46) // 30d retention + 15d alarm + 1, by INSERT time — the alarm clock
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: waaayOld.UnixMilli(), CreatedAt: waaayOld,
+	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Not replicated to archive — stalled.
@@ -454,18 +466,23 @@ func TestPurgeTransactionsBatch_ErrorsWhenOldestUnverifiedPastAlarmThreshold(t *
 	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
 	_, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
 	if err == nil {
-		t.Fatal("expected an error once the oldest unverified row exceeds retention+15d, got nil")
+		t.Fatal("expected an error once the oldest unverified row exceeds retention+15d (by insert time), got nil")
 	}
 }
 
 func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	old := time.Now().UTC().AddDate(0, 0, -400)
 	for i, id := range []string{"t1", "t2", "t3"} {
-		if err := cloud.Create(&models.SleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+		ts := old.Add(time.Duration(i) * time.Second)
+		if err := cloud.Create(&models.SleeperTransaction{
+			SleeperTransactionID: id, CreatedAtSleeper: ts.UnixMilli(), CreatedAt: time.Now().UTC(),
+		}).Error; err != nil {
 			t.Fatalf("seed %s: %v", id, err)
 		}
-		if err := archive.Create(&models.ArchiveSleeperTransaction{SleeperTransactionID: id, CreatedAt: old.Add(time.Duration(i) * time.Second)}).Error; err != nil {
+		if err := archive.Create(&models.ArchiveSleeperTransaction{
+			SleeperTransactionID: id, CreatedAtSleeper: ts.UnixMilli(), CreatedAt: time.Now().UTC(),
+		}).Error; err != nil {
 			t.Fatalf("seed archive %s: %v", id, err)
 		}
 	}
@@ -480,18 +497,43 @@ func TestPurgeTransactionsBatch_DrainedWhenFewerThanBatchSize(t *testing.T) {
 	}
 }
 
+func TestPurgeTransactionsBatch_EligibleByEventTimeDespiteRecentInsertTime(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	eventTime := time.Now().UTC().AddDate(-1, 0, 0) // a year-old Sleeper transaction
+	insertTime := time.Now().UTC()                  // freshly inserted today (e.g. a new league's backfill)
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: eventTime.UnixMilli(), CreatedAt: insertTime,
+	}).Error; err != nil {
+		t.Fatalf("seed cloud: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperTransaction{
+		SleeperTransactionID: "t1", CreatedAtSleeper: eventTime.UnixMilli(), CreatedAt: insertTime,
+	}).Error; err != nil {
+		t.Fatalf("seed archive: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeTransactionsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeTransactionsBatch: %v", err)
+	}
+	if res.Purged != 1 {
+		t.Errorf("expected the row to be purge-eligible despite being inserted today, because the underlying event is a year old; got %+v", res)
+	}
+}
+
 func TestPurgeDraftsBatch_DeletesVerifiedDraftAndPicks(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	fetchedAt := time.Now().UTC()
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	oldSeason := strconv.Itoa(time.Now().Year() - 1)
 	if err := cloud.Create(&models.SleeperLeague{
-		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+		SleeperLeagueID: "lg1", Season: oldSeason, Status: "complete", LastDraftsFetchedAt: &fetchedAt,
 	}).Error; err != nil {
 		t.Fatalf("seed league: %v", err)
 	}
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(), // inserted today, but last season — the exact scenario this fixes
 	}).Error; err != nil {
 		t.Fatalf("seed draft: %v", err)
 	}
@@ -499,8 +541,8 @@ func TestPurgeDraftsBatch_DeletesVerifiedDraftAndPicks(t *testing.T) {
 		t.Fatalf("seed pick: %v", err)
 	}
 	if err := archive.Create(&models.ArchiveSleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed archive draft: %v", err)
 	}
@@ -526,22 +568,22 @@ func TestPurgeDraftsBatch_DeletesVerifiedDraftAndPicks(t *testing.T) {
 
 func TestPurgeDraftsBatch_SkipsLeagueStillInSyncPool(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	oldSeason := strconv.Itoa(time.Now().Year() - 1)
 	if err := cloud.Create(&models.SleeperLeague{
-		SleeperLeagueID: "lg1", Season: "2026", Status: "pre_draft", // not yet excluded from the claim pool
+		SleeperLeagueID: "lg1", Season: oldSeason, Status: "pre_draft", // not yet excluded from the claim pool
 	}).Error; err != nil {
 		t.Fatalf("seed league: %v", err)
 	}
 	fetchedAt := time.Now().UTC()
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed draft: %v", err)
 	}
 	if err := archive.Create(&models.ArchiveSleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed archive draft: %v", err)
 	}
@@ -564,15 +606,15 @@ func TestPurgeDraftsBatch_SkipsLeagueStillInSyncPool(t *testing.T) {
 func TestPurgeDraftsBatch_SkipsPickCountMismatch(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	fetchedAt := time.Now().UTC()
-	old := time.Now().UTC().AddDate(0, 0, -40)
+	oldSeason := strconv.Itoa(time.Now().Year() - 1)
 	if err := cloud.Create(&models.SleeperLeague{
-		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+		SleeperLeagueID: "lg1", Season: oldSeason, Status: "complete", LastDraftsFetchedAt: &fetchedAt,
 	}).Error; err != nil {
 		t.Fatalf("seed league: %v", err)
 	}
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed draft: %v", err)
 	}
@@ -582,8 +624,8 @@ func TestPurgeDraftsBatch_SkipsPickCountMismatch(t *testing.T) {
 		}
 	}
 	if err := archive.Create(&models.ArchiveSleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: old,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("seed archive draft: %v", err)
 	}
@@ -610,15 +652,15 @@ func TestPurgeDraftsBatch_SkipsPickCountMismatch(t *testing.T) {
 func TestPurgeDraftsBatch_IgnoresRecentDrafts(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	fetchedAt := time.Now().UTC()
-	recent := time.Now().UTC().AddDate(0, 0, -5)
+	currentSeason := strconv.Itoa(time.Now().Year())
 	if err := cloud.Create(&models.SleeperLeague{
-		SleeperLeagueID: "lg1", Season: "2026", Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+		SleeperLeagueID: "lg1", Season: currentSeason, Status: "complete", LastDraftsFetchedAt: &fetchedAt,
 	}).Error; err != nil {
 		t.Fatalf("seed league: %v", err)
 	}
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026",
-		LastFetchedAt: &fetchedAt, CreatedAt: recent,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: currentSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC().AddDate(0, 0, -40), // inserted a while ago, but still the current season
 	}).Error; err != nil {
 		t.Fatalf("seed draft: %v", err)
 	}
@@ -629,6 +671,38 @@ func TestPurgeDraftsBatch_IgnoresRecentDrafts(t *testing.T) {
 		t.Fatalf("PurgeDraftsBatch: %v", err)
 	}
 	if res.Purged != 0 || !res.Drained {
-		t.Errorf("expected no candidates (draft is within retention), got %+v", res)
+		t.Errorf("expected no candidates (draft is the current season), got %+v", res)
+	}
+}
+
+func TestPurgeDraftsBatch_EligibleBySeasonDespiteRecentInsertTime(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	fetchedAt := time.Now().UTC()
+	oldSeason := strconv.Itoa(time.Now().Year() - 3) // several seasons old
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: oldSeason, Status: "complete", LastDraftsFetchedAt: &fetchedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(), // freshly inserted today — e.g. a new league's backfill
+	}).Error; err != nil {
+		t.Fatalf("seed draft: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: oldSeason,
+		LastFetchedAt: &fetchedAt, CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("seed archive draft: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.PurgeDraftsBatch(context.Background(), activities.PurgeBatchParams{BatchSize: 10, RetentionDays: 30})
+	if err != nil {
+		t.Fatalf("PurgeDraftsBatch: %v", err)
+	}
+	if res.Purged != 1 {
+		t.Errorf("expected the draft to be purge-eligible despite being inserted today, because its season is 3 years old; got %+v", res)
 	}
 }
