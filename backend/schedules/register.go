@@ -25,8 +25,9 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.DiscoveryBatchDispatcher,
-			TaskQueue: workflows.TaskQueueDiscovery,
+			Workflow:                 workflows.DiscoveryBatchDispatcher,
+			TaskQueue:                workflows.TaskQueueDiscovery,
+			WorkflowExecutionTimeout: 60 * time.Minute,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
@@ -41,8 +42,9 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.DraftSyncDispatcher,
-			TaskQueue: workflows.TaskQueueDrafts,
+			Workflow:                 workflows.DraftSyncDispatcher,
+			TaskQueue:                workflows.TaskQueueDrafts,
+			WorkflowExecutionTimeout: 60 * time.Minute,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
@@ -57,8 +59,9 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.TransactionSyncDispatcher,
-			TaskQueue: workflows.TaskQueueTransactions,
+			Workflow:                 workflows.TransactionSyncDispatcher,
+			TaskQueue:                workflows.TaskQueueTransactions,
+			WorkflowExecutionTimeout: 60 * time.Minute,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
@@ -77,8 +80,9 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.PlayerDatabaseSyncWorkflow,
-			TaskQueue: workflows.TaskQueuePlayerSync,
+			Workflow:                 workflows.PlayerDatabaseSyncWorkflow,
+			TaskQueue:                workflows.TaskQueuePlayerSync,
+			WorkflowExecutionTimeout: 60 * time.Minute,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
@@ -96,8 +100,9 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.WeekStatsSyncDispatcher,
-			TaskQueue: workflows.TaskQueueWeekStats,
+			Workflow:                 workflows.WeekStatsSyncDispatcher,
+			TaskQueue:                workflows.TaskQueueWeekStats,
+			WorkflowExecutionTimeout: 60 * time.Minute,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
@@ -132,12 +137,13 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 		ID: "sleeper-scavenger-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 6 * time.Hour},
+				{Every: 1 * time.Hour},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{
-			Workflow:  workflows.ScavengerDispatcher,
-			TaskQueue: workflows.TaskQueueArchive,
+			Workflow:                 workflows.ScavengerDispatcher,
+			TaskQueue:                workflows.TaskQueueArchive,
+			WorkflowExecutionTimeout: 4 * time.Hour,
 		},
 		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	})
