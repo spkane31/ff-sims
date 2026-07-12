@@ -251,13 +251,17 @@ func TestSyncWeekStats_SkipsFinalizedWeeks(t *testing.T) {
 	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
 		Return([]int{1, 2}, nil)
 	for week := 3; week <= 18; week++ {
-		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).
+			Return(activities.WeekStatsResult{PlayersUpserted: 1}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.SyncWeekStats, workflows.SyncWeekStatsParams{Season: "2025"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{WeeksFetched: 16, PlayersUpserted: 16}, report)
 	env.AssertExpectations(t)
 }
 
@@ -278,6 +282,9 @@ func TestSyncWeekStats_AllWeeksFinalized_NoFetchCalls(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -292,13 +299,17 @@ func TestWeekStatsSyncDispatcher_ResolvesSeasonAndSyncs(t *testing.T) {
 	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
 		Return([]int{}, nil)
 	for week := 1; week <= 18; week++ {
-		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).
+			Return(activities.WeekStatsResult{PlayersUpserted: 1}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.WeekStatsSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{WeeksFetched: 18, PlayersUpserted: 18}, report)
 	env.AssertExpectations(t)
 }
 
