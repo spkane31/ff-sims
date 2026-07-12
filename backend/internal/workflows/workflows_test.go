@@ -228,12 +228,15 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	psa := &activities.PlayerSyncActivities{}
-	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(nil)
+	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
 
 	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.PlayerSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.PlayerSyncReport{PlayersUpserted: 42}, report)
 	env.AssertExpectations(t)
 }
 
