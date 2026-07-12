@@ -7,7 +7,13 @@ GO_BIN="${GO_BIN:-/usr/local/go/bin/go}"
 [[ -x "$GO_BIN" ]] || GO_BIN="go"
 
 current_and_remote_sha() {
-  git -C "$REPO_DIR" fetch origin main --quiet
+  # `|| return 1` is required, not decorative: this function runs inside a
+  # $(...) command substitution (see deploy()), and bash does not inherit
+  # -e/errexit into command substitutions by default. Without an explicit
+  # check here, a failed `git fetch` (e.g. a broken SSH key) falls through
+  # silently to rev-parse'ing stale cached refs, and deploy() would report
+  # "up to date" without ever having actually checked origin/main.
+  git -C "$REPO_DIR" fetch origin main --quiet || return 1
   local local_sha remote_sha
   local_sha=$(git -C "$REPO_DIR" rev-parse HEAD)
   remote_sha=$(git -C "$REPO_DIR" rev-parse origin/main)
@@ -35,8 +41,12 @@ install_and_restart() {
 }
 
 deploy() {
-  local local_sha remote_sha
-  read -r local_sha remote_sha <<< "$(current_and_remote_sha)"
+  local shas local_sha remote_sha
+  if ! shas="$(current_and_remote_sha)"; then
+    echo "failed to fetch/compare origin/main (see git error above); leaving previous deploy in place" >&2
+    return 1
+  fi
+  read -r local_sha remote_sha <<< "$shas"
 
   if [[ "$local_sha" == "$remote_sha" ]]; then
     echo "up to date at $local_sha"
