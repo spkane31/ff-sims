@@ -197,6 +197,9 @@ func TestTransactionSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{LeaguesProcessed: 3}, report)
 	env.AssertExpectations(t)
 }
 
@@ -214,6 +217,9 @@ func TestTransactionSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -236,6 +242,9 @@ func TestTransactionSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
