@@ -120,6 +120,9 @@ func TestDraftSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{LeaguesProcessed: 3}, report)
 	env.AssertExpectations(t)
 }
 
@@ -137,6 +140,9 @@ func TestDraftSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -158,6 +164,9 @@ func TestDraftSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 

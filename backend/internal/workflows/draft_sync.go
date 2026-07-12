@@ -14,7 +14,7 @@ import (
 // for now, so the run exits and the schedule takes over. Failed batch
 // activities are logged, not propagated: their leagues' claims expire after
 // 20 minutes and re-queue.
-func DraftSyncDispatcher(ctx workflow.Context) error {
+func DraftSyncDispatcher(ctx workflow.Context) (DraftSyncReport, error) {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
@@ -22,9 +22,10 @@ func DraftSyncDispatcher(ctx workflow.Context) error {
 
 	var cfg activities.DraftSyncConfig
 	if err := workflow.ExecuteActivity(actCtx, dfa.GetDraftSyncConfig).Get(ctx, &cfg); err != nil {
-		return err
+		return DraftSyncReport{}, err
 	}
 
+	var report DraftSyncReport
 	for iter := 0; iter < MaxDispatchIterations; iter++ {
 		var futures []workflow.Future
 		drained := false
@@ -58,10 +59,12 @@ func DraftSyncDispatcher(ctx workflow.Context) error {
 				continue
 			}
 			logger.Info("draft batch done", "processed", res.Processed, "failed", res.Failed)
+			report.LeaguesProcessed += res.Processed
+			report.LeaguesFailed += res.Failed
 		}
 		if drained {
 			break
 		}
 	}
-	return nil
+	return report, nil
 }
