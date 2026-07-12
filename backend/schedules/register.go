@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 
 	"backend/internal/workflows"
@@ -27,6 +28,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.DiscoveryBatchDispatcher,
 			TaskQueue: workflows.TaskQueueDiscovery,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -42,6 +44,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.DraftSyncDispatcher,
 			TaskQueue: workflows.TaskQueueDrafts,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -57,6 +60,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.TransactionSyncDispatcher,
 			TaskQueue: workflows.TaskQueueTransactions,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -76,6 +80,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.PlayerDatabaseSyncWorkflow,
 			TaskQueue: workflows.TaskQueuePlayerSync,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -94,6 +99,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.WeekStatsSyncDispatcher,
 			TaskQueue: workflows.TaskQueueWeekStats,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -117,6 +123,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			TaskQueue:                workflows.TaskQueueADP,
 			WorkflowExecutionTimeout: 30 * time.Minute,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	}); err != nil {
 		return err
 	}
@@ -132,6 +139,7 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 			Workflow:  workflows.ScavengerDispatcher,
 			TaskQueue: workflows.TaskQueueArchive,
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
 	})
 }
 
