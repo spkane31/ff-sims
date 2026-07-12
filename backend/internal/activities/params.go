@@ -153,3 +153,21 @@ type PurgeBatchResult struct {
 	Unverified int
 	Drained    bool
 }
+
+// PlayerSyncResult reports how many players FetchAndUpsertAllPlayers upserted.
+type PlayerSyncResult struct {
+	PlayersUpserted int
+}
+
+// WeekStatsResult reports how many player rows FetchWeekStats upserted for one
+// week, and whether Sleeper considers that week finalized.
+type WeekStatsResult struct {
+	PlayersUpserted int
+	Finalized       bool
+}
+
+// ADPRollupResult reports how many player rows ComputeSegmentSeasonADP
+// upserted for one (segment, season) pair.
+type ADPRollupResult struct {
+	PlayersUpserted int
+}
