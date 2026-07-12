@@ -331,13 +331,16 @@ func TestADPRollupDispatcher_SpawnsChildPerSeasonSegment(t *testing.T) {
 		env.OnWorkflow(workflows.SegmentSeasonADPRollupWorkflow, mock.Anything, workflows.SegmentSeasonADPParams{
 			Segment: seg,
 			Season:  "2024",
-		}).Return(nil)
+		}).Return(workflows.SegmentADPReport{}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.ADPRollupDispatchReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.ADPRollupDispatchReport{SegmentsScheduled: 24}, report)
 	env.AssertExpectations(t)
 }
 
@@ -355,7 +358,7 @@ func TestADPRollupDispatcher_ChildWorkflowIDIsDeterministic(t *testing.T) {
 		env.OnActivity(ara.ComputeSegmentSeasonADP, mock.MatchedBy(func(ctx context.Context) bool {
 			seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
 			return true
-		}), activities.ComputeSegmentSeasonADPParams{Segment: seg, Season: "2024"}).Return(nil)
+		}), activities.ComputeSegmentSeasonADPParams{Segment: seg, Season: "2024"}).Return(activities.ADPRollupResult{}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
@@ -380,6 +383,9 @@ func TestADPRollupDispatcher_NoSeasons_NoChildren(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.ADPRollupDispatchReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.ADPRollupDispatchReport{}, report)
 }
 
 // ---- SegmentSeasonADPRollupWorkflow ----
@@ -393,7 +399,7 @@ func TestSegmentSeasonADPRollupWorkflow_CallsComputeActivity(t *testing.T) {
 	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
 		Segment: seg,
 		Season:  "2024",
-	}).Return(nil)
+	}).Return(activities.ADPRollupResult{PlayersUpserted: 5}, nil)
 
 	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
 		Segment: seg,
@@ -402,6 +408,9 @@ func TestSegmentSeasonADPRollupWorkflow_CallsComputeActivity(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.SegmentADPReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.SegmentADPReport{PlayersUpserted: 5}, report)
 	env.AssertExpectations(t)
 }
 
@@ -414,7 +423,7 @@ func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t 
 	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
 		Segment: seg,
 		Season:  "2024",
-	}).Return(temporal.NewApplicationError("db error", "DB_ERROR", nil))
+	}).Return(activities.ADPRollupResult{}, temporal.NewApplicationError("db error", "DB_ERROR", nil))
 
 	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
 		Segment: seg,
@@ -423,6 +432,9 @@ func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t 
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError()) // logged and swallowed, not propagated
+	var report workflows.SegmentADPReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.SegmentADPReport{}, report)
 	env.AssertExpectations(t)
 }
 
