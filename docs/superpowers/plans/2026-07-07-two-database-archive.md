@@ -64,12 +64,12 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Done — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Done — PR #157 |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Done — PR #154 |
-| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | Runbook ready — `docs/archive-purge.md`; execution is ops-only against real infra, pending |
+| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | In progress — enabled in production 2026-07-12 on a verified-current build (see T14 and the deploy-pipeline note below); draining, disk reclaim (`VACUUM`/`pg_repack`) not yet done |
 | T10 | Daily backup (pg_dump + rclone, systemd timer) | M | T1 | Deferred — issue #160 (durability risk accepted for now; not required before T9) |
 | T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
 | T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | Done — PR #159 |
-| T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | In review |
+| T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | Done — PR #163 |
 
 \* T3 is env-gated and mergeable before T1; it just can't connect until the archive DB exists.
 
@@ -96,3 +96,4 @@ Parallel-friendly: T1 and T4 are independent starting points; T3 code can merge 
 6. **Dual-use machine** — it's also a personal computer: disable sleep/hibernate, pin unattended-upgrade reboots to a window, accept that OS reinstalls/tinkering pause sync + replication (both fail safe: data goes stale, purge stalls). Single machine now runs everything — add a basic uptime ping later.
 7. **PG version parity** — local PGDG 16 = cloud = CI image; keep aligned for dump/restore and `PERCENTILE_CONT` parity.
 8. **Two promoting fleets during cutover** — `deploy.sh` is shared; the Pi must be stopped before `promoteOnStart` merges (enforced by T2's ordering).
+9. **Silent deploy drift (fixed, 2026-07-12)** — unrelated to the archive design itself, but it masked T14's fix for a day: the T1 rename (`deploy/raspberry-pi/` → `deploy/worker-host/`, PR #153) left `ff-sims-deploy.service`'s `ExecStart` pointing at the old path, so rosebud's 5-minute self-update timer had been failing every run since — the worker binary silently stayed pinned to commit `f606acc` (T13) while `main` moved on, including T14. `make build` also never covered `cmd/worker` at all, making a correct manual rebuild easy to get wrong mid-incident. Fixed by PR #164 (stale path + `make build-worker` + a unit-file regression test) and PR #165 (a related bug where `deploy.sh`'s own `git fetch` failure was silently swallowed by a bash command-substitution quirk, reporting "up to date" instead of erroring). Lesson: after any future rosebud deploy, verify `journalctl -u ff-sims-worker | grep build_id` against `git log -1` on the host rather than assuming a restart means new code is live.
