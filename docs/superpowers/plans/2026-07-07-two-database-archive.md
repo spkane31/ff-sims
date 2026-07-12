@@ -64,10 +64,10 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T6 | Purge phase — ships dark behind `SCAVENGER_PURGE_ENABLED=false` | M | T5 | Done — PR #155 |
 | T7 | ADP rollup reads archive (`{Read, Write}`) | S/M | T2, T5 | Done — PR #157 |
 | T8 | Initial backfill (workflow + runbook; parity checks) | S code / M ops | T1, T5 | Done — PR #154 |
-| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | In progress — enabled in production 2026-07-12 on a verified-current build (see T14 and the deploy-pipeline note below); draining, disk reclaim (`VACUUM`/`pg_repack`) not yet done |
+| T9 | Enable purge; drain; `VACUUM` + `pg_repack` to reclaim cloud disk | S code / M ops | T6–T8 | In progress — issue #167. Enabled in production 2026-07-12 on a verified-current build (see T14 and the deploy-pipeline note below); draining, disk reclaim (`VACUUM`/`pg_repack`) not yet done |
 | T10 | Daily backup (pg_dump + rclone, systemd timer) | M | T1 | Deferred — issue #160 (durability risk accepted for now; not required before T9) |
-| T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started |
-| T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started |
+| T11 | Docs: `docs/archive-operations.md`, runbook/versioning updates | S | rolling | Not started — issue #168 |
+| T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started — issue #169 |
 | T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | Done — PR #159 |
 | T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | Done — PR #163 |
 
