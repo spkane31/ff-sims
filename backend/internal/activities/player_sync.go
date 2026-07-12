@@ -20,10 +20,10 @@ type PlayerSyncActivities struct {
 
 // FetchAndUpsertAllPlayers fetches the full Sleeper player database (~5MB) and bulk-upserts
 // into sleeper_players. Heartbeats every 100 records so Temporal can detect worker crashes.
-func (a *PlayerSyncActivities) FetchAndUpsertAllPlayers(ctx context.Context) error {
+func (a *PlayerSyncActivities) FetchAndUpsertAllPlayers(ctx context.Context) (PlayerSyncResult, error) {
 	players, err := a.Sleeper.GetAllPlayers(ctx, "nfl")
 	if err != nil {
-		return err
+		return PlayerSyncResult{}, err
 	}
 
 	now := time.Now().UTC()
@@ -44,7 +44,7 @@ func (a *PlayerSyncActivities) FetchAndUpsertAllPlayers(ctx context.Context) err
 		})
 		if len(batch) >= 100 {
 			if err := a.upsertBatch(ctx, batch); err != nil {
-				return err
+				return PlayerSyncResult{PlayersUpserted: processed}, err
 			}
 			processed += len(batch)
 			activity.RecordHeartbeat(ctx, processed)
@@ -52,9 +52,12 @@ func (a *PlayerSyncActivities) FetchAndUpsertAllPlayers(ctx context.Context) err
 		}
 	}
 	if len(batch) > 0 {
-		return a.upsertBatch(ctx, batch)
+		if err := a.upsertBatch(ctx, batch); err != nil {
+			return PlayerSyncResult{PlayersUpserted: processed}, err
+		}
+		processed += len(batch)
 	}
-	return nil
+	return PlayerSyncResult{PlayersUpserted: processed}, nil
 }
 
 func (a *PlayerSyncActivities) upsertBatch(ctx context.Context, batch []models.SleeperPlayer) error {

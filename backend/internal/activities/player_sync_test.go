@@ -29,8 +29,12 @@ func TestFetchAndUpsertAllPlayers_InsertsPlayers(t *testing.T) {
 	defer srv.Close()
 
 	psa := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := psa.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	result, err := psa.FetchAndUpsertAllPlayers(context.Background())
+	if err != nil {
 		t.Fatalf("FetchAndUpsertAllPlayers error: %v", err)
+	}
+	if result.PlayersUpserted != 2 {
+		t.Errorf("expected PlayersUpserted 2, got %d", result.PlayersUpserted)
 	}
 
 	var count int64
@@ -60,11 +64,19 @@ func TestFetchAndUpsertAllPlayers_Idempotent(t *testing.T) {
 	defer srv.Close()
 
 	psa := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := psa.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	result1, err := psa.FetchAndUpsertAllPlayers(context.Background())
+	if err != nil {
 		t.Fatalf("first run error: %v", err)
 	}
-	if err := psa.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	if result1.PlayersUpserted != 1 {
+		t.Errorf("expected first run PlayersUpserted 1, got %d", result1.PlayersUpserted)
+	}
+	result2, err := psa.FetchAndUpsertAllPlayers(context.Background())
+	if err != nil {
 		t.Fatalf("second run error: %v", err)
+	}
+	if result2.PlayersUpserted != 1 {
+		t.Errorf("expected second run PlayersUpserted 1, got %d", result2.PlayersUpserted)
 	}
 
 	var count int64
@@ -86,8 +98,12 @@ func TestFetchAndUpsertAllPlayers_NumericYahooAndEspnID(t *testing.T) {
 	defer srv.Close()
 
 	psa := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := psa.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	result, err := psa.FetchAndUpsertAllPlayers(context.Background())
+	if err != nil {
 		t.Fatalf("FetchAndUpsertAllPlayers error: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1, got %d", result.PlayersUpserted)
 	}
 
 	var p models.SleeperPlayer
@@ -112,7 +128,7 @@ func TestFetchAndUpsertAllPlayers_UpdatesExisting(t *testing.T) {
 	defer srv1.Close()
 
 	psa1 := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv1.URL)}
-	if err := psa1.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	if _, err := psa1.FetchAndUpsertAllPlayers(context.Background()); err != nil {
 		t.Fatalf("first run error: %v", err)
 	}
 
@@ -125,8 +141,12 @@ func TestFetchAndUpsertAllPlayers_UpdatesExisting(t *testing.T) {
 	defer srv2.Close()
 
 	psa2 := &activities.PlayerSyncActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv2.URL)}
-	if err := psa2.FetchAndUpsertAllPlayers(context.Background()); err != nil {
+	result, err := psa2.FetchAndUpsertAllPlayers(context.Background())
+	if err != nil {
 		t.Fatalf("second run error: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1, got %d", result.PlayersUpserted)
 	}
 
 	var p models.SleeperPlayer
