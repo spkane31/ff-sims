@@ -547,6 +547,11 @@ func TestArchiveBackfillWorkflow_CompletesWhenAllStreamsDrainWithinOneExecution(
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.BackfillReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.BackfillReport{
+		LeaguesReplicated: 3, TransactionsReplicated: 10, DraftHeadersReplicated: 2, DraftPicksReplicated: 1,
+	}, report)
 	env.AssertExpectations(t)
 }
 
