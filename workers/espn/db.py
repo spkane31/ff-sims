@@ -15,7 +15,11 @@ else:
 
 
 def get_connection() -> psycopg.Connection:
-    return psycopg.connect(os.environ["DATABASE_URL"])
+    # TEST_DATABASE_URL takes precedence so tests can never fall through to
+    # production even if only DATABASE_URL is set in the environment —
+    # matches tests/conftest.py's db_conn fixture precedence.
+    url = os.environ.get("TEST_DATABASE_URL", os.environ["DATABASE_URL"])
+    return psycopg.connect(url)
 
 
 def resolve_league_id(conn: psycopg.Connection, espn_league_id: str) -> int:
