@@ -45,7 +45,7 @@ func TestDiscoveryDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	var report workflows.DiscoveryReport
 	require.NoError(t, env.GetWorkflowResult(&report))
-	require.Equal(t, workflows.DiscoveryReport{UsersProcessed: 3}, report)
+	require.Equal(t, workflows.DiscoveryReport{UsersProcessed: 3, UsersFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
@@ -122,7 +122,7 @@ func TestDraftSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	var report workflows.DraftSyncReport
 	require.NoError(t, env.GetWorkflowResult(&report))
-	require.Equal(t, workflows.DraftSyncReport{LeaguesProcessed: 3}, report)
+	require.Equal(t, workflows.DraftSyncReport{LeaguesProcessed: 3, LeaguesFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
@@ -199,7 +199,7 @@ func TestTransactionSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	var report workflows.TransactionSyncReport
 	require.NoError(t, env.GetWorkflowResult(&report))
-	require.Equal(t, workflows.TransactionSyncReport{LeaguesProcessed: 3}, report)
+	require.Equal(t, workflows.TransactionSyncReport{LeaguesProcessed: 3, LeaguesFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
