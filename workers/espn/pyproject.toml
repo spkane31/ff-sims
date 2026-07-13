@@ -9,6 +9,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.scripts]
+register-league = "register_league:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
@@ -18,3 +21,12 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+py-modules = ["register_league", "db", "temporal_client", "worker"]
+
+[tool.setuptools.packages.find]
+include = ["activities*", "workflows*"]

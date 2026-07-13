@@ -108,7 +108,7 @@ wheels = [
 [[package]]
 name = "espn-temporal-worker"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "espn-api" },
     { name = "psycopg", extra = ["binary"] },
