@@ -47,7 +47,7 @@ func (a *ScavengerActivities) GetScavengerConfig(ctx context.Context) (Scavenger
 		DraftBatchSize:   max(helpers.GetEnv("SCAVENGER_DRAFT_BATCH_SIZE", 200), 1),
 		MaxBatchesPerRun: max(helpers.GetEnv("SCAVENGER_MAX_BATCHES_PER_RUN", 50), 1),
 		RetentionDays:    max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1),
-		PurgeEnabled:     helpers.GetEnv("SCAVENGER_PURGE_ENABLED", false),
+		PurgeEnabled:     helpers.GetEnv("SCAVENGER_PURGE_ENABLED", true),
 	}, nil
 }
 
