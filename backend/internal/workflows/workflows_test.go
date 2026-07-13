@@ -37,7 +37,7 @@ func TestDiscoveryDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
@@ -114,7 +114,7 @@ func TestDraftSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
 
@@ -191,7 +191,7 @@ func TestTransactionSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
 

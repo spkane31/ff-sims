@@ -107,7 +107,7 @@ type ScavengerConfig struct {
 	DraftBatchSize   int  // SCAVENGER_DRAFT_BATCH_SIZE, default 200 (drafts per batch; each draft's picks are copied alongside it)
 	MaxBatchesPerRun int  // SCAVENGER_MAX_BATCHES_PER_RUN, default 50
 	RetentionDays    int  // SCAVENGER_RETENTION_DAYS, default 30 — cloud rows older than this are purge candidates
-	PurgeEnabled     bool // SCAVENGER_PURGE_ENABLED, default false — kill-switch; purge activities only run when true
+	PurgeEnabled     bool // SCAVENGER_PURGE_ENABLED, default true — kill-switch; purge activities only run when true
 }
 
 // ReplicateBatchParams is shared by all four Replicate*Batch activities —

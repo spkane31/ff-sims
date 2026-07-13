@@ -44,7 +44,7 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 //
 // After replication, the purge phase (transactions, then drafts+picks)
 // deletes verified-old cloud rows — but only when cfg.PurgeEnabled is true
-// (SCAVENGER_PURGE_ENABLED, default false: purge ships dark) AND the
+// (SCAVENGER_PURGE_ENABLED, default true) AND the
 // corresponding replicate stream(s) drained this run (per drainStream's
 // drained return), so purge never scans ahead of a backlog it already knows
 // exists. Unlike the replicate loops above, a purge activity error is NOT
