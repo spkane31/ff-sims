@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 import sys
@@ -102,11 +102,7 @@ def test_validation_failure_writes_nothing(db_conn):
 
 async def test_start_sync_workflow_calls_temporal_with_expected_id():
     mock_client = MagicMock()
-
-    async def fake_start_workflow(*args, **kwargs):
-        return None
-
-    mock_client.start_workflow = fake_start_workflow
+    mock_client.start_workflow = AsyncMock(return_value=None)
 
     async def fake_create_client():
         return mock_client
@@ -115,6 +111,19 @@ async def test_start_sync_workflow_calls_temporal_with_expected_id():
         workflow_id = await register_league.start_sync_workflow("345674", 2025)
 
     assert workflow_id == "espn-league-345674-2025"
+
+    # Verify client.start_workflow was called with correct arguments
+    mock_client.start_workflow.assert_called_once()
+    args, kwargs = mock_client.start_workflow.call_args
+
+    # Check positional args
+    assert args[0] == register_league.LeagueESPNSyncWorkflow.run
+    assert args[1].espn_league_id == "345674"
+    assert args[1].year == 2025
+
+    # Check keyword args
+    assert kwargs["id"] == "espn-league-345674-2025"
+    assert kwargs["task_queue"] == "espn-sync"
 
 
 def test_main_no_sync_registers_league_without_starting_workflow(db_conn, monkeypatch, capsys):
@@ -172,3 +181,8 @@ def test_main_warns_but_does_not_crash_when_workflow_start_fails(db_conn, monkey
     captured = capsys.readouterr()
     assert "Registered new league" in captured.out
     assert "Warning: could not start sync workflow" in captured.err
+
+    # Verify the league was persisted to DB despite workflow start failure
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5006",))
+        assert cur.fetchone()[0] == "Warn League"
