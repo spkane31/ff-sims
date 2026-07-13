@@ -39,9 +39,15 @@ func TestFetchWeekStats_FiltersToFantasyPositionsAndUpserts(t *testing.T) {
 	defer srv.Close()
 
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3})
+	result, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3})
 	if err != nil {
 		t.Fatalf("FetchWeekStats error: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1, got %d", result.PlayersUpserted)
+	}
+	if !result.Finalized {
+		t.Errorf("expected Finalized true (week 3, current week 10), got false")
 	}
 
 	var rows []models.SleeperPlayerWeekStat
@@ -60,7 +66,7 @@ func TestFetchWeekStats_RefetchOverwrites(t *testing.T) {
 
 	srv1 := weekStatsServer(t, `{"421":{"pts_ppr":10}}`, 10, "2025")
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv1.URL)}
-	if err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3}); err != nil {
+	if _, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3}); err != nil {
 		t.Fatalf("first fetch: %v", err)
 	}
 	srv1.Close()
@@ -68,8 +74,12 @@ func TestFetchWeekStats_RefetchOverwrites(t *testing.T) {
 	srv2 := weekStatsServer(t, `{"421":{"pts_ppr":15.5}}`, 10, "2025")
 	defer srv2.Close()
 	wsa2 := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv2.URL)}
-	if err := wsa2.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3}); err != nil {
+	result, err := wsa2.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3})
+	if err != nil {
 		t.Fatalf("second fetch: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1 on refetch, got %d", result.PlayersUpserted)
 	}
 
 	var row models.SleeperPlayerWeekStat
@@ -91,8 +101,12 @@ func TestFetchWeekStats_MarksFinalized_PastWeek(t *testing.T) {
 	defer srv.Close()
 
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3}); err != nil {
+	result, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 3})
+	if err != nil {
 		t.Fatalf("FetchWeekStats error: %v", err)
+	}
+	if !result.Finalized {
+		t.Errorf("expected result.Finalized true, got false")
 	}
 
 	var fetch models.SleeperWeekStatFetch
@@ -108,8 +122,12 @@ func TestFetchWeekStats_NotFinalized_CurrentWeek(t *testing.T) {
 	defer srv.Close()
 
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 10}); err != nil {
+	result, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 10})
+	if err != nil {
 		t.Fatalf("FetchWeekStats error: %v", err)
+	}
+	if result.Finalized {
+		t.Errorf("expected result.Finalized false, got true")
 	}
 
 	var fetch models.SleeperWeekStatFetch
@@ -125,8 +143,12 @@ func TestFetchWeekStats_PastSeasonAlwaysFinalized(t *testing.T) {
 	defer srv.Close()
 
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 18}); err != nil {
+	result, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 18})
+	if err != nil {
 		t.Fatalf("FetchWeekStats error: %v", err)
+	}
+	if !result.Finalized {
+		t.Errorf("expected result.Finalized true, got false")
 	}
 
 	var fetch models.SleeperWeekStatFetch
@@ -142,8 +164,12 @@ func TestFetchWeekStats_EmptyWeek404_NoRowsButFetchStamped(t *testing.T) {
 	defer srv.Close()
 
 	wsa := &activities.WeekStatsActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 20}); err != nil {
+	result, err := wsa.FetchWeekStats(context.Background(), activities.FetchWeekStatsParams{Season: "2025", Week: 20})
+	if err != nil {
 		t.Fatalf("FetchWeekStats error: %v", err)
+	}
+	if result.PlayersUpserted != 0 {
+		t.Errorf("expected PlayersUpserted 0 for 404 week, got %d", result.PlayersUpserted)
 	}
 
 	var statCount int64

@@ -16,7 +16,7 @@ import (
 // claims expire after 20 minutes and re-queue. Claiming (instead of the old
 // re-select + child-workflow-ID dedupe) means a stuck cohort can never
 // head-of-line-block discovery of the users behind it.
-func DiscoveryBatchDispatcher(ctx workflow.Context) error {
+func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 	da := &activities.DiscoveryActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
@@ -24,9 +24,10 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 
 	var cfg activities.DiscoveryConfig
 	if err := workflow.ExecuteActivity(actCtx, da.GetDiscoveryConfig).Get(ctx, &cfg); err != nil {
-		return err
+		return DiscoveryReport{}, err
 	}
 
+	var report DiscoveryReport
 	for iter := 0; iter < MaxDispatchIterations; iter++ {
 		var futures []workflow.Future
 		drained := false
@@ -60,10 +61,12 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 				continue
 			}
 			logger.Info("discovery batch done", "processed", res.Processed, "failed", res.Failed)
+			report.UsersProcessed += res.Processed
+			report.UsersFailed += res.Failed
 		}
 		if drained {
 			break
 		}
 	}
-	return nil
+	return report, nil
 }

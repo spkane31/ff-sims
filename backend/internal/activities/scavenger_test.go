@@ -29,8 +29,8 @@ func TestGetScavengerConfig_ReadsEnvWithDefaults(t *testing.T) {
 	if cfg.RetentionDays != 30 {
 		t.Errorf("RetentionDays = %d, want 30", cfg.RetentionDays)
 	}
-	if cfg.PurgeEnabled {
-		t.Errorf("PurgeEnabled = true, want false (kill-switch defaults off)")
+	if !cfg.PurgeEnabled {
+		t.Errorf("PurgeEnabled = false, want true (purge enabled by default)")
 	}
 }
 

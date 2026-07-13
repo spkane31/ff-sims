@@ -12,7 +12,7 @@ import (
 // PlayerDatabaseSyncWorkflow runs the daily full Sleeper player DB sync.
 // Uses a 15-minute StartToCloseTimeout and 30s HeartbeatTimeout to detect worker crashes
 // during the large (~5MB) API response processing.
-func PlayerDatabaseSyncWorkflow(ctx workflow.Context) error {
+func PlayerDatabaseSyncWorkflow(ctx workflow.Context) (PlayerSyncReport, error) {
 	psa := &activities.PlayerSyncActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 15 * time.Minute,
@@ -23,5 +23,9 @@ func PlayerDatabaseSyncWorkflow(ctx workflow.Context) error {
 			MaximumAttempts:    3,
 		},
 	})
-	return workflow.ExecuteActivity(actCtx, psa.FetchAndUpsertAllPlayers).Get(ctx, nil)
+	var res activities.PlayerSyncResult
+	if err := workflow.ExecuteActivity(actCtx, psa.FetchAndUpsertAllPlayers).Get(ctx, &res); err != nil {
+		return PlayerSyncReport{}, err
+	}
+	return PlayerSyncReport{PlayersUpserted: res.PlayersUpserted}, nil
 }

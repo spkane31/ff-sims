@@ -78,7 +78,7 @@ func adpSelectClause(dialect string) string {
 // draft_adp row per player. The 20-draft minimum sample size is enforced at
 // API read time, not here — every player who appears at least once is
 // upserted.
-func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, params ComputeSegmentSeasonADPParams) error {
+func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, params ComputeSegmentSeasonADPParams) (ADPRollupResult, error) {
 	db := a.Read.WithContext(ctx).
 		Table("sleeper_draft_picks p").
 		Select(adpSelectClause(a.Read.Dialector.Name())).
@@ -91,10 +91,10 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 
 	var rows []adpRow
 	if err := db.Group("p.sleeper_player_id").Scan(&rows).Error; err != nil {
-		return err
+		return ADPRollupResult{}, err
 	}
 	if len(rows) == 0 {
-		return nil
+		return ADPRollupResult{}, nil
 	}
 
 	segmentKey := params.Segment.Key()
@@ -120,12 +120,16 @@ func (a *ADPRollupActivities) ComputeSegmentSeasonADP(ctx context.Context, param
 	// Postgres happened to return the GROUP BY in — upserted for that
 	// segment/season, with no rollback. A single batched statement is both
 	// atomic and one round trip instead of hundreds.
-	return a.Write.WithContext(ctx).Clauses(clause.OnConflict{
+	if err := a.Write.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "segment"}, {Name: "season"}, {Name: "sleeper_player_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"avg_pick_no", "pick_count", "min_pick_no", "max_pick_no", "ci_low_pick_no", "ci_high_pick_no", "updated_at",
 		}),
-	}).CreateInBatches(&records, 500).Error
+	}).CreateInBatches(&records, 500).Error; err != nil {
+		return ADPRollupResult{}, err
+	}
+
+	return ADPRollupResult{PlayersUpserted: len(records)}, nil
 }
 
 // applySegmentPredicate appends WHERE conditions for one ADP segment's

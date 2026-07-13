@@ -15,39 +15,43 @@ const lastFantasyWeek = 18
 // delegated to by WeekStatsSyncDispatcher for the in-season schedule. Takes a
 // params struct (rather than a bare string) so future fields — e.g. a week
 // override or a force-refetch flag — don't require a breaking signature change.
-func SyncWeekStats(ctx workflow.Context, params SyncWeekStatsParams) error {
+func SyncWeekStats(ctx workflow.Context, params SyncWeekStatsParams) (WeekStatsReport, error) {
 	wsa := &activities.WeekStatsActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var finalizedWeeks []int
 	if err := workflow.ExecuteActivity(actCtx, wsa.GetFinalizedWeeks, activities.GetFinalizedWeeksParams{Season: params.Season}).Get(ctx, &finalizedWeeks); err != nil {
-		return err
+		return WeekStatsReport{}, err
 	}
 	finalized := make(map[int]bool, len(finalizedWeeks))
 	for _, w := range finalizedWeeks {
 		finalized[w] = true
 	}
 
+	var report WeekStatsReport
 	for week := 1; week <= lastFantasyWeek; week++ {
 		if finalized[week] {
 			continue
 		}
-		if err := workflow.ExecuteActivity(actCtx, wsa.FetchWeekStats, activities.FetchWeekStatsParams{Season: params.Season, Week: week}).Get(ctx, nil); err != nil {
-			return err
+		var res activities.WeekStatsResult
+		if err := workflow.ExecuteActivity(actCtx, wsa.FetchWeekStats, activities.FetchWeekStatsParams{Season: params.Season, Week: week}).Get(ctx, &res); err != nil {
+			return report, err
 		}
+		report.WeeksFetched++
+		report.PlayersUpserted += res.PlayersUpserted
 	}
-	return nil
+	return report, nil
 }
 
 // WeekStatsSyncDispatcher is the scheduled entry point: it resolves the current NFL
 // season via Sleeper's state endpoint, then runs SyncWeekStats for it.
-func WeekStatsSyncDispatcher(ctx workflow.Context) error {
+func WeekStatsSyncDispatcher(ctx workflow.Context) (WeekStatsReport, error) {
 	wsa := &activities.WeekStatsActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var season string
 	if err := workflow.ExecuteActivity(actCtx, wsa.GetCurrentSeason).Get(ctx, &season); err != nil {
-		return err
+		return WeekStatsReport{}, err
 	}
 	return SyncWeekStats(ctx, SyncWeekStatsParams{Season: season})
 }

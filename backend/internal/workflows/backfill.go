@@ -27,48 +27,55 @@ const backfillBatchesPerExecution = 100
 // and skipped: this is a manually-monitored one-time job, and silently
 // reporting "drained" while a stream is actually broken risks leaving data
 // behind unnoticed.
-func ArchiveBackfillWorkflow(ctx workflow.Context) error {
+func ArchiveBackfillWorkflow(ctx workflow.Context) (BackfillReport, error) {
 	sa := &activities.ScavengerActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	logger := workflow.GetLogger(ctx)
 
 	var cfg activities.ScavengerConfig
 	if err := workflow.ExecuteActivity(actCtx, sa.GetScavengerConfig).Get(ctx, &cfg); err != nil {
-		return err
+		return BackfillReport{}, err
 	}
 
 	allDrained := true
 
 	leaguesReplicated, leaguesDrained, err := drainStream(ctx, actCtx, sa.ReplicateLeaguesBatch, cfg.LeagueBatchSize, backfillBatchesPerExecution)
 	if err != nil {
-		return fmt.Errorf("replicate leagues: %w", err)
+		return BackfillReport{}, fmt.Errorf("replicate leagues: %w", err)
 	}
 	allDrained = allDrained && leaguesDrained
 
 	txnReplicated, txnDrained, err := drainStream(ctx, actCtx, sa.ReplicateTransactionsBatch, cfg.TxnBatchSize, backfillBatchesPerExecution)
 	if err != nil {
-		return fmt.Errorf("replicate transactions: %w", err)
+		return BackfillReport{}, fmt.Errorf("replicate transactions: %w", err)
 	}
 	allDrained = allDrained && txnDrained
 
 	headersReplicated, headersDrained, err := drainStream(ctx, actCtx, sa.ReplicateDraftHeadersBatch, cfg.DraftBatchSize, backfillBatchesPerExecution)
 	if err != nil {
-		return fmt.Errorf("replicate draft headers: %w", err)
+		return BackfillReport{}, fmt.Errorf("replicate draft headers: %w", err)
 	}
 	allDrained = allDrained && headersDrained
 
 	picksReplicated, picksDrained, err := drainStream(ctx, actCtx, sa.ReplicateDraftPicksBatch, cfg.DraftBatchSize, backfillBatchesPerExecution)
 	if err != nil {
-		return fmt.Errorf("replicate draft picks: %w", err)
+		return BackfillReport{}, fmt.Errorf("replicate draft picks: %w", err)
 	}
 	allDrained = allDrained && picksDrained
+
+	report := BackfillReport{
+		LeaguesReplicated:      leaguesReplicated,
+		TransactionsReplicated: txnReplicated,
+		DraftHeadersReplicated: headersReplicated,
+		DraftPicksReplicated:   picksReplicated,
+	}
 
 	logger.Info("backfill execution complete", "leagues", leaguesReplicated, "transactions", txnReplicated,
 		"draftHeaders", headersReplicated, "draftPicks", picksReplicated, "allDrained", allDrained)
 
 	if !allDrained {
-		return workflow.NewContinueAsNewError(ctx, ArchiveBackfillWorkflow)
+		return report, workflow.NewContinueAsNewError(ctx, ArchiveBackfillWorkflow)
 	}
 	logger.Info("archive backfill complete")
-	return nil
+	return report, nil
 }
