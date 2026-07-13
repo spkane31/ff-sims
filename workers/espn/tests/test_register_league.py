@@ -33,46 +33,52 @@ def test_validate_and_fetch_name_raises_on_bad_credentials():
 def test_upsert_creates_new_league_and_credentials(db_conn):
     _clear_league(db_conn, "5001")
 
-    internal_id, was_inserted = upsert_league_and_credentials(
-        db_conn, "New League", "5001", "s2-value", "swid-value"
-    )
-    assert was_inserted is True
-
-    with db_conn.cursor() as cur:
-        cur.execute("SELECT name, platform, external_id FROM leagues WHERE id = %s", (internal_id,))
-        assert cur.fetchone() == ("New League", "ESPN", "5001")
-
-        cur.execute(
-            "SELECT espn_s2, swid FROM espn_league_credentials WHERE espn_league_id = %s", ("5001",)
+    try:
+        internal_id, was_inserted = upsert_league_and_credentials(
+            db_conn, "New League", "5001", "s2-value", "swid-value"
         )
-        assert cur.fetchone() == ("s2-value", "swid-value")
+        assert was_inserted is True
+
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT name, platform, external_id FROM leagues WHERE id = %s", (internal_id,))
+            assert cur.fetchone() == ("New League", "ESPN", "5001")
+
+            cur.execute(
+                "SELECT espn_s2, swid FROM espn_league_credentials WHERE espn_league_id = %s", ("5001",)
+            )
+            assert cur.fetchone() == ("s2-value", "swid-value")
+    finally:
+        _clear_league(db_conn, "5001")
 
 
 def test_upsert_updates_existing_league_and_credentials(db_conn):
     _clear_league(db_conn, "5002")
 
-    first_id, first_inserted = upsert_league_and_credentials(
-        db_conn, "Original Name", "5002", "old-s2", "old-swid"
-    )
-    assert first_inserted is True
-
-    second_id, second_inserted = upsert_league_and_credentials(
-        db_conn, "Renamed League", "5002", "new-s2", "new-swid"
-    )
-    assert second_inserted is False
-    assert second_id == first_id
-
-    with db_conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM leagues WHERE external_id = %s", ("5002",))
-        assert cur.fetchone()[0] == 1
-
-        cur.execute("SELECT name FROM leagues WHERE id = %s", (first_id,))
-        assert cur.fetchone()[0] == "Renamed League"
-
-        cur.execute(
-            "SELECT espn_s2, swid FROM espn_league_credentials WHERE espn_league_id = %s", ("5002",)
+    try:
+        first_id, first_inserted = upsert_league_and_credentials(
+            db_conn, "Original Name", "5002", "old-s2", "old-swid"
         )
-        assert cur.fetchone() == ("new-s2", "new-swid")
+        assert first_inserted is True
+
+        second_id, second_inserted = upsert_league_and_credentials(
+            db_conn, "Renamed League", "5002", "new-s2", "new-swid"
+        )
+        assert second_inserted is False
+        assert second_id == first_id
+
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM leagues WHERE external_id = %s", ("5002",))
+            assert cur.fetchone()[0] == 1
+
+            cur.execute("SELECT name FROM leagues WHERE id = %s", (first_id,))
+            assert cur.fetchone()[0] == "Renamed League"
+
+            cur.execute(
+                "SELECT espn_s2, swid FROM espn_league_credentials WHERE espn_league_id = %s", ("5002",)
+            )
+            assert cur.fetchone() == ("new-s2", "new-swid")
+    finally:
+        _clear_league(db_conn, "5002")
 
 
 def test_validation_failure_writes_nothing(db_conn):
