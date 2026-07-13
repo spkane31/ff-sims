@@ -1,13 +1,16 @@
 import datetime
 
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from activities.draft import fetch_and_upsert_draft, mark_draft_fetched
     from activities.teams import ESPNLeagueSyncParams
 
-_LONG = dict(start_to_close_timeout=datetime.timedelta(minutes=30))
-_SHORT = dict(start_to_close_timeout=datetime.timedelta(seconds=30))
+# See workflows/teams.py for why ValueError is non-retryable here.
+_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=["ValueError"])
+_LONG = dict(start_to_close_timeout=datetime.timedelta(minutes=30), retry_policy=_RETRY)
+_SHORT = dict(start_to_close_timeout=datetime.timedelta(seconds=30), retry_policy=_RETRY)
 
 
 @workflow.defn

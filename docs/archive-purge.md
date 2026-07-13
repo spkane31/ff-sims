@@ -110,9 +110,7 @@ already caught the archive up per Precondition 3.
 Once the backlog counts in Step 2 hit zero:
 
 ```sql
-SELECT pg_size_pretty(pg_total_relation_size('sleeper_transactions'));
-SELECT pg_size_pretty(pg_total_relation_size('sleeper_drafts'));
-SELECT pg_size_pretty(pg_total_relation_size('sleeper_draft_picks'));
+clear
 ```
 
 Also check the DigitalOcean dashboard's database disk-usage graph — expect
