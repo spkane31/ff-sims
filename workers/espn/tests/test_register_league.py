@@ -128,61 +128,73 @@ async def test_start_sync_workflow_calls_temporal_with_expected_id():
 
 def test_main_no_sync_registers_league_without_starting_workflow(db_conn, monkeypatch, capsys):
     _clear_league(db_conn, "5004")
-    monkeypatch.setattr(
-        sys, "argv",
-        ["register-league", "--league-id", "5004", "--espn-s2", "s2v", "--swid", "swidv", "--no-sync"],
-    )
 
-    with patch("register_league.League", return_value=_mock_league("No Sync League")):
-        register_league.main()
+    try:
+        monkeypatch.setattr(
+            sys, "argv",
+            ["register-league", "--league-id", "5004", "--espn-s2", "s2v", "--swid", "swidv", "--no-sync"],
+        )
 
-    captured = capsys.readouterr()
-    assert "Registered new league" in captured.out
-    assert "Started sync workflow" not in captured.out
+        with patch("register_league.League", return_value=_mock_league("No Sync League")):
+            register_league.main()
 
-    with db_conn.cursor() as cur:
-        cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5004",))
-        assert cur.fetchone()[0] == "No Sync League"
+        captured = capsys.readouterr()
+        assert "Registered new league" in captured.out
+        assert "Started sync workflow" not in captured.out
+
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5004",))
+            assert cur.fetchone()[0] == "No Sync League"
+    finally:
+        _clear_league(db_conn, "5004")
 
 
 def test_main_with_sync_starts_workflow(db_conn, monkeypatch, capsys):
     _clear_league(db_conn, "5005")
-    monkeypatch.setattr(
-        sys, "argv",
-        ["register-league", "--league-id", "5005", "--espn-s2", "s2v", "--swid", "swidv"],
-    )
 
-    async def fake_start_sync_workflow(league_id, year):
-        return f"espn-league-{league_id}-{year}"
+    try:
+        monkeypatch.setattr(
+            sys, "argv",
+            ["register-league", "--league-id", "5005", "--espn-s2", "s2v", "--swid", "swidv"],
+        )
 
-    with patch("register_league.League", return_value=_mock_league("Synced League")), \
-         patch("register_league.start_sync_workflow", fake_start_sync_workflow):
-        register_league.main()
+        async def fake_start_sync_workflow(league_id, year):
+            return f"espn-league-{league_id}-{year}"
 
-    captured = capsys.readouterr()
-    assert "Registered new league" in captured.out
-    assert "Started sync workflow: espn-league-5005-" in captured.out
+        with patch("register_league.League", return_value=_mock_league("Synced League")), \
+             patch("register_league.start_sync_workflow", fake_start_sync_workflow):
+            register_league.main()
+
+        captured = capsys.readouterr()
+        assert "Registered new league" in captured.out
+        assert "Started sync workflow: espn-league-5005-" in captured.out
+    finally:
+        _clear_league(db_conn, "5005")
 
 
 def test_main_warns_but_does_not_crash_when_workflow_start_fails(db_conn, monkeypatch, capsys):
     _clear_league(db_conn, "5006")
-    monkeypatch.setattr(
-        sys, "argv",
-        ["register-league", "--league-id", "5006", "--espn-s2", "s2v", "--swid", "swidv"],
-    )
 
-    async def failing_start_sync_workflow(league_id, year):
-        raise RuntimeError("workflow already started")
+    try:
+        monkeypatch.setattr(
+            sys, "argv",
+            ["register-league", "--league-id", "5006", "--espn-s2", "s2v", "--swid", "swidv"],
+        )
 
-    with patch("register_league.League", return_value=_mock_league("Warn League")), \
-         patch("register_league.start_sync_workflow", failing_start_sync_workflow):
-        register_league.main()  # must not raise
+        async def failing_start_sync_workflow(league_id, year):
+            raise RuntimeError("workflow already started")
 
-    captured = capsys.readouterr()
-    assert "Registered new league" in captured.out
-    assert "Warning: could not start sync workflow" in captured.err
+        with patch("register_league.League", return_value=_mock_league("Warn League")), \
+             patch("register_league.start_sync_workflow", failing_start_sync_workflow):
+            register_league.main()  # must not raise
 
-    # Verify the league was persisted to DB despite workflow start failure
-    with db_conn.cursor() as cur:
-        cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5006",))
-        assert cur.fetchone()[0] == "Warn League"
+        captured = capsys.readouterr()
+        assert "Registered new league" in captured.out
+        assert "Warning: could not start sync workflow" in captured.err
+
+        # Verify the league was persisted to DB despite workflow start failure
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5006",))
+            assert cur.fetchone()[0] == "Warn League"
+    finally:
+        _clear_league(db_conn, "5006")
