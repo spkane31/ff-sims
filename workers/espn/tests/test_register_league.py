@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import sys
+
+import register_league
 
 from register_league import upsert_league_and_credentials, validate_and_fetch_name
 
@@ -95,3 +98,77 @@ def test_validation_failure_writes_nothing(db_conn):
             "SELECT COUNT(*) FROM espn_league_credentials WHERE espn_league_id = %s", ("5003",)
         )
         assert cur.fetchone()[0] == 0
+
+
+async def test_start_sync_workflow_calls_temporal_with_expected_id():
+    mock_client = MagicMock()
+
+    async def fake_start_workflow(*args, **kwargs):
+        return None
+
+    mock_client.start_workflow = fake_start_workflow
+
+    async def fake_create_client():
+        return mock_client
+
+    with patch("register_league.create_client", fake_create_client):
+        workflow_id = await register_league.start_sync_workflow("345674", 2025)
+
+    assert workflow_id == "espn-league-345674-2025"
+
+
+def test_main_no_sync_registers_league_without_starting_workflow(db_conn, monkeypatch, capsys):
+    _clear_league(db_conn, "5004")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["register-league", "--league-id", "5004", "--espn-s2", "s2v", "--swid", "swidv", "--no-sync"],
+    )
+
+    with patch("register_league.League", return_value=_mock_league("No Sync League")):
+        register_league.main()
+
+    captured = capsys.readouterr()
+    assert "Registered new league" in captured.out
+    assert "Started sync workflow" not in captured.out
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT name FROM leagues WHERE external_id = %s", ("5004",))
+        assert cur.fetchone()[0] == "No Sync League"
+
+
+def test_main_with_sync_starts_workflow(db_conn, monkeypatch, capsys):
+    _clear_league(db_conn, "5005")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["register-league", "--league-id", "5005", "--espn-s2", "s2v", "--swid", "swidv"],
+    )
+
+    async def fake_start_sync_workflow(league_id, year):
+        return f"espn-league-{league_id}-{year}"
+
+    with patch("register_league.League", return_value=_mock_league("Synced League")), \
+         patch("register_league.start_sync_workflow", fake_start_sync_workflow):
+        register_league.main()
+
+    captured = capsys.readouterr()
+    assert "Registered new league" in captured.out
+    assert "Started sync workflow: espn-league-5005-" in captured.out
+
+
+def test_main_warns_but_does_not_crash_when_workflow_start_fails(db_conn, monkeypatch, capsys):
+    _clear_league(db_conn, "5006")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["register-league", "--league-id", "5006", "--espn-s2", "s2v", "--swid", "swidv"],
+    )
+
+    async def failing_start_sync_workflow(league_id, year):
+        raise RuntimeError("workflow already started")
+
+    with patch("register_league.League", return_value=_mock_league("Warn League")), \
+         patch("register_league.start_sync_workflow", failing_start_sync_workflow):
+        register_league.main()  # must not raise
+
+    captured = capsys.readouterr()
+    assert "Registered new league" in captured.out
+    assert "Warning: could not start sync workflow" in captured.err

@@ -12,9 +12,18 @@ Usage:
   uv run register-league --league-id 345674 --espn-s2 '...' --swid '{...}' --year 2025
   uv run register-league --league-id 345674 --espn-s2 '...' --swid '{...}' --no-sync
 """
+import argparse
+import asyncio
+import datetime
+import sys
+
 from espn_api.football import League
 
 from db import get_connection
+from temporal_client import create_client
+from workflows.league_sync import LeagueDispatchParams, LeagueESPNSyncWorkflow
+
+TASK_QUEUE = "espn-sync"
 
 
 def validate_and_fetch_name(league_id: str, year: int, espn_s2: str, swid: str) -> str:
@@ -56,3 +65,63 @@ def upsert_league_and_credentials(
         )
     conn.commit()
     return internal_id, was_inserted
+
+
+async def start_sync_workflow(league_id: str, year: int) -> str:
+    """Start LeagueESPNSyncWorkflow for this league/year; return the workflow ID."""
+    client = await create_client()
+    workflow_id = f"espn-league-{league_id}-{year}"
+    await client.start_workflow(
+        LeagueESPNSyncWorkflow.run,
+        LeagueDispatchParams(espn_league_id=league_id, year=year),
+        id=workflow_id,
+        task_queue=TASK_QUEUE,
+    )
+    return workflow_id
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Register or re-authenticate an ESPN league")
+    parser.add_argument("--league-id", required=True, help="ESPN league ID")
+    parser.add_argument("--espn-s2", required=True, help="ESPN_S2 cookie value")
+    parser.add_argument("--swid", required=True, help="SWID cookie value")
+    parser.add_argument(
+        "--year", type=int, default=datetime.date.today().year,
+        help="Season year to validate against and sync (default: current year)",
+    )
+    parser.add_argument(
+        "--no-sync", action="store_true",
+        help="Write the database rows but skip starting the Temporal sync workflow",
+    )
+    args = parser.parse_args()
+
+    try:
+        name = validate_and_fetch_name(args.league_id, args.year, args.espn_s2, args.swid)
+    except Exception as exc:
+        print(f"Could not reach league {args.league_id}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with get_connection() as conn:
+            internal_id, was_inserted = upsert_league_and_credentials(
+                conn, name, args.league_id, args.espn_s2, args.swid
+            )
+    except Exception as exc:
+        print(f"Database error while registering league {args.league_id}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    verb = "Registered new" if was_inserted else "Updated existing"
+    print(f"{verb} league: {name!r} (internal id {internal_id}, ESPN id {args.league_id})")
+
+    if args.no_sync:
+        return
+
+    try:
+        workflow_id = asyncio.run(start_sync_workflow(args.league_id, args.year))
+        print(f"Started sync workflow: {workflow_id}")
+    except Exception as exc:
+        print(f"Warning: could not start sync workflow: {exc}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
