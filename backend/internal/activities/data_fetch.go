@@ -51,9 +51,9 @@ func currentSleeperSeason() string {
 // claim query's LIMIT.
 func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSyncConfig, error) {
 	return DraftSyncConfig{
-		ParallelBatches: max(helpers.GetEnv("DRAFT_SYNC_PARALLEL_BATCHES", 4), 1),
-		BatchSize:       max(helpers.GetEnv("DRAFT_SYNC_BATCH_SIZE", 250), 1),
-		Concurrency:     max(helpers.GetEnv("DRAFT_SYNC_LEAGUE_CONCURRENCY", 12), 1),
+		ParallelBatches: max(helpers.GetEnv("DRAFT_SYNC_PARALLEL_BATCHES", 2), 1),
+		BatchSize:       max(helpers.GetEnv("DRAFT_SYNC_BATCH_SIZE", 100), 1),
+		Concurrency:     max(helpers.GetEnv("DRAFT_SYNC_LEAGUE_CONCURRENCY", 8), 1),
 	}, nil
 }
 
@@ -329,9 +329,9 @@ func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftI
 // claim query's LIMIT.
 func (a *DataFetchActivities) GetTransactionSyncConfig(ctx context.Context) (TransactionSyncConfig, error) {
 	return TransactionSyncConfig{
-		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 4), 1),
-		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 250), 1),
-		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 12), 1),
+		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 2), 1),
+		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 100), 1),
+		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 8), 1),
 	}, nil
 }
 

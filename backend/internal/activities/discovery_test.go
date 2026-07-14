@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -235,6 +236,121 @@ func TestDiscoverUsersBatch_RetrySkipsAlreadyStampedUsers(t *testing.T) {
 	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{UserIDs: []string{"u1", "u2"}, Concurrency: 1})
 	if res.Processed != 1 {
 		t.Fatalf("expected only still-claimed u2 processed, got %+v", res)
+	}
+}
+
+// TestDiscoverUsersBatch_PerUserTimeoutDoesNotStallOtherUsers is the
+// regression test for the production incident: DiscoverUsersBatch's
+// wg.Wait blocks until every user in the batch finishes, so one user stuck
+// behind a slow/hanging Sleeper response used to drag the whole batch (and
+// eventually the whole activity, StartToCloseTimeout and all) down with it.
+// Each user now gets its own UserTimeoutSeconds sub-context, so a stuck user
+// times out and re-queues via claim expiry without blocking the rest.
+func TestDiscoverUsersBatch_PerUserTimeoutDoesNotStallOtherUsers(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "slow")
+	claimedUser(t, db, "fast")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		switch {
+		case parts[1] == "user" && parts[2] == "slow":
+			// Outlast the 1s per-user timeout used below; the request context
+			// should be cancelled out from under this handler well before it
+			// would otherwise respond.
+			select {
+			case <-time.After(2 * time.Second):
+			case <-r.Context().Done():
+			}
+		case parts[1] == "user" && parts[2] == "fast":
+			json.NewEncoder(w).Encode([]sleeper.League{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	start := time.Now()
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{
+		UserIDs:            []string{"slow", "fast"},
+		Concurrency:        2,
+		UserTimeoutSeconds: 1,
+	})
+	elapsed := time.Since(start)
+
+	if res.Processed != 1 || res.Failed != 1 {
+		t.Fatalf("expected the fast user to succeed and the slow user to time out, got %+v", res)
+	}
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("batch took %s; the slow user's per-user timeout should bound the whole batch near 1s, not the full 2s server delay", elapsed)
+	}
+
+	var fast models.SleeperUser
+	db.First(&fast, "sleeper_user_id = ?", "fast")
+	if fast.LastFetchedAt == nil || fast.ClaimedAt != nil {
+		t.Errorf("fast user should be stamped done despite the slow user's timeout: %+v", fast)
+	}
+	var slow models.SleeperUser
+	db.First(&slow, "sleeper_user_id = ?", "slow")
+	if slow.ClaimedAt == nil {
+		t.Errorf("slow user should remain claimed so it re-queues via claim expiry: %+v", slow)
+	}
+}
+
+// TestDiscoverOneUser_StopsProcessingLeaguesAfterContextCancelled is the
+// regression test for the log-spam side effect: once ctx is done, discovery
+// must not keep looping through the rest of leagueIDs, each of which would
+// otherwise fail instantly on ctx.Err() and flood the log (this is what
+// produced the 1,000+ near-simultaneous WARN lines seen in production once
+// an activity's StartToCloseTimeout fired).
+func TestDiscoverOneUser_StopsProcessingLeaguesAfterContextCancelled(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "user1")
+
+	var mu sync.Mutex
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if parts[1] == "user" {
+			json.NewEncoder(w).Encode([]sleeper.League{
+				{LeagueID: "lg1", Season: "2026", Sport: "nfl"},
+				{LeagueID: "lg2", Season: "2026", Sport: "nfl"},
+				{LeagueID: "lg3", Season: "2026", Sport: "nfl"},
+			})
+			return
+		}
+		mu.Lock()
+		hits = append(hits, r.URL.Path)
+		mu.Unlock()
+		if parts[2] == "lg1" {
+			// Outlast the per-user timeout so ctx is already done both when
+			// this handler would respond and when lg2/lg3 would be reached.
+			select {
+			case <-time.After(2 * time.Second):
+			case <-r.Context().Done():
+			}
+		}
+		json.NewEncoder(w).Encode(sleeper.League{LeagueID: parts[2]})
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{
+		UserIDs:            []string{"user1"},
+		Concurrency:        1,
+		UserTimeoutSeconds: 1,
+	})
+	if res.Failed != 1 {
+		t.Fatalf("expected the user to fail via per-user timeout, got %+v", res)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, h := range hits {
+		if strings.Contains(h, "lg2") || strings.Contains(h, "lg3") {
+			t.Errorf("expected lg2/lg3 to be skipped once the context was cancelled, but saw a request to %s", h)
+		}
 	}
 }
 

@@ -46,8 +46,9 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 				break
 			}
 			futures = append(futures, workflow.ExecuteActivity(batchCtx, da.DiscoverUsersBatch, activities.DiscoverUsersBatchParams{
-				UserIDs:     userIDs,
-				Concurrency: cfg.Concurrency,
+				UserIDs:            userIDs,
+				Concurrency:        cfg.Concurrency,
+				UserTimeoutSeconds: cfg.UserTimeoutSeconds,
 			}))
 			if len(userIDs) < cfg.BatchSize {
 				drained = true
