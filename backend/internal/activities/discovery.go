@@ -47,9 +47,10 @@ type DiscoveryActivities struct {
 // claim query's LIMIT.
 func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (DiscoveryConfig, error) {
 	return DiscoveryConfig{
-		ParallelBatches: max(helpers.GetEnv("DISCOVERY_PARALLEL_BATCHES", 2), 1),
-		BatchSize:       max(helpers.GetEnv("DISCOVERY_BATCH_SIZE", 50), 1),
-		Concurrency:     max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 8), 1),
+		ParallelBatches:    max(helpers.GetEnv("DISCOVERY_PARALLEL_BATCHES", 1), 1),
+		BatchSize:          max(helpers.GetEnv("DISCOVERY_BATCH_SIZE", 20), 1),
+		Concurrency:        max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 4), 1),
+		UserTimeoutSeconds: max(helpers.GetEnv("DISCOVERY_USER_TIMEOUT_SECONDS", 90), 1),
 	}, nil
 }
 
@@ -87,6 +88,14 @@ func (a *DiscoveryActivities) ClaimStaleUsers(ctx context.Context, params ClaimS
 // counted, not propagated: a failed user keeps its claim and re-enters the
 // queue when the claim expires. The activity heartbeats as users complete so
 // a dead worker is detected via HeartbeatTimeout.
+//
+// Each user gets its own UserTimeoutSeconds sub-context. wg.Wait below blocks
+// until every user in the batch finishes, so without a per-user bound, one
+// user stuck behind slow Sleeper responses (many leagues, or upstream
+// degradation) stalls the other 49 and can drag the whole activity past its
+// StartToCloseTimeout. Bounding each user lets the batch make forward
+// progress on the rest; the stuck user just keeps its claim and gets retried
+// once it expires.
 func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params DiscoverUsersBatchParams) (SyncBatchResult, error) {
 	logger := activity.GetLogger(ctx)
 	res := SyncBatchResult{}
@@ -104,6 +113,7 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 	}
 
 	concurrency := max(1, params.Concurrency)
+	userTimeout := time.Duration(max(1, params.UserTimeoutSeconds)) * time.Second
 	type userResult struct {
 		userID string
 		err    error
@@ -115,7 +125,9 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
-			results <- userResult{userID: id, err: a.discoverOneUser(ctx, logger, id)}
+			userCtx, cancel := context.WithTimeout(ctx, userTimeout)
+			defer cancel()
+			results <- userResult{userID: id, err: a.discoverOneUser(userCtx, logger, id)}
 		})
 	}
 	go func() { wg.Wait(); close(results) }()
@@ -158,6 +170,14 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 	}
 
 	for _, lid := range leagueIDs {
+		// Once ctx is done (user or activity deadline hit), every remaining
+		// Sleeper call would fail instantly on ctx.Err() without touching the
+		// network — looping through the rest of leagueIDs anyway just burns
+		// CPU and floods the log with one WARN line per remaining league.
+		// Bail out and let the caller's timeout/error handling take over.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err := a.FetchLeagueMembers(ctx, FetchLeagueMembersParams{LeagueID: lid}); err != nil {
 			logger.Warn("FetchLeagueMembers failed, continuing", "leagueID", lid, "error", err)
 		}
