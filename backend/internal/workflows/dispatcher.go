@@ -49,6 +49,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 				UserIDs:            userIDs,
 				Concurrency:        cfg.Concurrency,
 				UserTimeoutSeconds: cfg.UserTimeoutSeconds,
+				LeagueConcurrency:  cfg.LeagueConcurrency,
 			}))
 			if len(userIDs) < cfg.BatchSize {
 				drained = true

@@ -51,6 +51,7 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 		BatchSize:          max(helpers.GetEnv("DISCOVERY_BATCH_SIZE", 20), 1),
 		Concurrency:        max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 4), 1),
 		UserTimeoutSeconds: max(helpers.GetEnv("DISCOVERY_USER_TIMEOUT_SECONDS", 90), 1),
+		LeagueConcurrency:  max(helpers.GetEnv("DISCOVERY_LEAGUE_CONCURRENCY", 10), 1),
 	}, nil
 }
 
@@ -114,6 +115,7 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 
 	concurrency := max(1, params.Concurrency)
 	userTimeout := time.Duration(max(1, params.UserTimeoutSeconds)) * time.Second
+	leagueConcurrency := max(1, params.LeagueConcurrency)
 	type userResult struct {
 		userID string
 		err    error
@@ -127,7 +129,7 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 			defer func() { <-sem }()
 			userCtx, cancel := context.WithTimeout(ctx, userTimeout)
 			defer cancel()
-			results <- userResult{userID: id, err: a.discoverOneUser(userCtx, logger, id)}
+			results <- userResult{userID: id, err: a.discoverOneUser(userCtx, logger, id, leagueConcurrency)}
 		})
 	}
 	go func() { wg.Wait(); close(results) }()
@@ -154,7 +156,18 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 // the claim). Per-league failures are logged and skipped, matching the old
 // UserDiscoveryWorkflow's warn-and-continue behavior. A 404 on the user marks
 // them permanently skipped.
-func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string) error {
+//
+// Leagues already complete-and-fetched are skipped entirely (their metadata
+// and membership are immutable), and the remaining leagues are fetched with
+// up to leagueConcurrency in flight at once rather than one at a time. Some
+// Sleeper users belong to hundreds of leagues — at strictly one league per
+// round trip, such a user could never finish within any reasonable per-user
+// timeout, would never get last_fetched_at stamped, and (since ClaimStaleUsers
+// orders never-fetched users first) would permanently squat at the head of
+// the discovery queue, retried every claim cycle without ever making
+// progress. Fanning out league fetches turns "N leagues x 2 sequential
+// round trips" into roughly "N/leagueConcurrency rounds".
+func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string, leagueConcurrency int) error {
 	leagueIDs, err := a.FetchUserLeagues(ctx, FetchUserLeaguesParams{UserID: userID})
 	if err != nil {
 		if isNotFoundAppError(err) {
@@ -169,21 +182,34 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 		return err
 	}
 
+	sem := make(chan struct{}, max(1, leagueConcurrency))
+	var wg sync.WaitGroup
 	for _, lid := range leagueIDs {
 		// Once ctx is done (user or activity deadline hit), every remaining
 		// Sleeper call would fail instantly on ctx.Err() without touching the
-		// network — looping through the rest of leagueIDs anyway just burns
-		// CPU and floods the log with one WARN line per remaining league.
-		// Bail out and let the caller's timeout/error handling take over.
+		// network — dispatching the rest of leagueIDs anyway just burns CPU
+		// and floods the log with one WARN line per remaining league. Stop
+		// dispatching new work and let what's already in flight wind down.
 		if ctx.Err() != nil {
-			return ctx.Err()
+			break
 		}
-		if err := a.FetchLeagueMembers(ctx, FetchLeagueMembersParams{LeagueID: lid}); err != nil {
-			logger.Warn("FetchLeagueMembers failed, continuing", "leagueID", lid, "error", err)
+		if a.leagueFullySynced(ctx, lid) {
+			continue
 		}
-		if err := a.FetchLeagueDetails(ctx, FetchLeagueDetailsParams{LeagueID: lid}); err != nil {
-			logger.Warn("FetchLeagueDetails failed, continuing", "leagueID", lid, "error", err)
-		}
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			if err := a.FetchLeagueMembers(ctx, FetchLeagueMembersParams{LeagueID: lid}); err != nil {
+				logger.Warn("FetchLeagueMembers failed, continuing", "leagueID", lid, "error", err)
+			}
+			if err := a.FetchLeagueDetails(ctx, FetchLeagueDetailsParams{LeagueID: lid}); err != nil {
+				logger.Warn("FetchLeagueDetails failed, continuing", "leagueID", lid, "error", err)
+			}
+		})
+	}
+	wg.Wait()
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	return a.DB.WithContext(ctx).
@@ -289,17 +315,25 @@ func sleeperLeagueType(t int) string {
 	}
 }
 
+// leagueFullySynced reports whether leagueID is marked complete with details
+// already fetched — a completed league's metadata and membership are both
+// immutable, so neither needs to be re-fetched on future discovery passes.
+func (a *DiscoveryActivities) leagueFullySynced(ctx context.Context, leagueID string) bool {
+	var existing models.SleeperLeague
+	if err := a.DB.WithContext(ctx).
+		Where("sleeper_league_id = ?", leagueID).
+		First(&existing).Error; err != nil {
+		return false
+	}
+	return existing.Status == "complete" && existing.LastFetchedAt != nil
+}
+
 // FetchLeagueDetails fetches league metadata from Sleeper and stamps last_fetched_at.
 // Called during user discovery so league metadata is populated before draft/transaction sync.
 // Skips the API call for leagues already marked complete — their metadata is immutable.
 func (a *DiscoveryActivities) FetchLeagueDetails(ctx context.Context, params FetchLeagueDetailsParams) error {
-	var existing models.SleeperLeague
-	if err := a.DB.WithContext(ctx).
-		Where("sleeper_league_id = ?", params.LeagueID).
-		First(&existing).Error; err == nil {
-		if existing.Status == "complete" && existing.LastFetchedAt != nil {
-			return nil
-		}
+	if a.leagueFullySynced(ctx, params.LeagueID) {
+		return nil
 	}
 
 	league, err := a.Sleeper.GetLeague(ctx, params.LeagueID)
