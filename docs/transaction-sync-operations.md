@@ -4,7 +4,7 @@
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `SLEEPER_RPM` | 2000 | Sleeper API requests/minute budget for this process (per fleet IP). Start high, tune down if 429s appear in logs. |
+| `SLEEPER_MAX_CONCURRENT_REQUESTS` | 50 | Max simultaneous in-flight Sleeper requests for this process (per fleet IP). Not a throughput target — throughput is governed reactively via 429 `Retry-After`/backoff; this only bounds worst-case burst size. |
 | `TXN_SYNC_PARALLEL_BATCHES` | 4 | Transaction claim→batch pipelines per dispatcher iteration. |
 | `TXN_SYNC_BATCH_SIZE` | 250 | Leagues claimed per transaction batch activity. |
 | `TXN_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one transaction batch activity. |
@@ -38,7 +38,7 @@ head-of-line-block discovery of the users behind it.
 Task distribution is pull-based: the fleet with more free activity slots and
 pollers takes more of the queue — relevant if this ever runs across more than
 one worker process again. **Per-fleet** (each process reads its own env):
-`SLEEPER_RPM`, `WORKER_ACTIVITY_SLOTS`, `WORKER_ACTIVITY_POLLERS`,
+`SLEEPER_MAX_CONCURRENT_REQUESTS`, `WORKER_ACTIVITY_SLOTS`, `WORKER_ACTIVITY_POLLERS`,
 `DB_MAX_OPEN_CONNS`. **Global** (read once per dispatcher run by whichever
 worker executes the config activity): all `TXN_SYNC_*` knobs — do not use
 them to differentiate fleets.
@@ -52,7 +52,7 @@ by raising its budgets in `/etc/ff-sims-worker.env` and restarting
 ```
 WORKER_ACTIVITY_SLOTS=300
 WORKER_ACTIVITY_POLLERS=10
-SLEEPER_RPM=3000
+SLEEPER_MAX_CONCURRENT_REQUESTS=75
 DB_MAX_OPEN_CONNS=20
 ```
 
@@ -81,7 +81,7 @@ capped at the current NFL week (past seasons still sweep legs 1–18).
    versioning docs).
 3. Watch `/admin` fetch-age buckets: "Never fetched" and "24h+" should shrink
    visibly within hours at default settings (~4 × 250 leagues per claim wave).
-4. Watch worker logs for `rate limited (429)` — if present, lower `SLEEPER_RPM`.
+4. Watch worker logs for `rate limited (429)` — if it's persistent (not just occasional, self-recovering retries), lower `SLEEPER_MAX_CONCURRENT_REQUESTS`.
 
 ## Failure modes
 

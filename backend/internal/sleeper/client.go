@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"backend/internal/helpers"
 )
 
@@ -20,9 +18,14 @@ const (
 	backoffBase = 500 * time.Millisecond
 	backoffCap  = 30 * time.Second
 
-	// defaultRPM is the SLEEPER_RPM fallback: requests/minute budget per
-	// process, i.e. per-IP for the worker host. Start high, tune down.
-	defaultRPM = 2000
+	// defaultMaxConcurrentRequests is the SLEEPER_MAX_CONCURRENT_REQUESTS
+	// fallback: the ceiling isn't a throughput target (Sleeper's real per-IP
+	// tolerance is unknown and not worth guessing at), it's a blast-radius
+	// bound — the client is a process-wide singleton shared by every sync
+	// pipeline, so without *some* cap, a backlog spike across discovery +
+	// draft-sync + transaction-sync could fire an unbounded number of
+	// simultaneous requests before a single 429 comes back to react to.
+	defaultMaxConcurrentRequests = 50
 )
 
 const defaultBaseURL = "https://api.sleeper.app"
@@ -30,7 +33,7 @@ const defaultBaseURL = "https://api.sleeper.app"
 type Client struct {
 	http    *http.Client
 	baseURL string
-	limiter *rate.Limiter
+	sem     chan struct{}
 }
 
 func New() *Client {
@@ -41,24 +44,19 @@ func NewWithBaseURL(baseURL string) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: 30 * time.Second},
 		baseURL: baseURL,
-		limiter: newLimiter(),
+		sem:     make(chan struct{}, maxConcurrentRequests()),
 	}
 }
 
-// newLimiter builds the client-wide request limiter from SLEEPER_RPM
-// (requests/minute, default 2000). Burst of one second's worth of tokens keeps
-// short spikes smooth without letting the minute budget be spent all at once.
-func newLimiter() *rate.Limiter {
-	rpm := helpers.GetEnv("SLEEPER_RPM", defaultRPM)
-	if rpm <= 0 {
-		rpm = defaultRPM
+// maxConcurrentRequests reads SLEEPER_MAX_CONCURRENT_REQUESTS (default 50).
+// Throughput itself is governed reactively — via the 429 Retry-After/backoff
+// handling in get() — rather than a proactive requests-per-minute guess.
+func maxConcurrentRequests() int {
+	n := helpers.GetEnv("SLEEPER_MAX_CONCURRENT_REQUESTS", defaultMaxConcurrentRequests)
+	if n <= 0 {
+		n = defaultMaxConcurrentRequests
 	}
-	perSecond := float64(rpm) / 60.0
-	burst := int(perSecond)
-	if burst < 1 {
-		burst = 1
-	}
-	return rate.NewLimiter(rate.Limit(perSecond), burst)
+	return n
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
@@ -69,17 +67,12 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Every attempt (including retries) consumes a rate-limit token so the
-		// SLEEPER_RPM budget bounds actual requests on the wire.
-		if err := c.limiter.Wait(ctx); err != nil {
-			return err
-		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return err
 		}
-		resp, err := c.http.Do(req)
+		resp, err := c.doWithConcurrencyLimit(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -119,6 +112,21 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		}
 	}
 	return fmt.Errorf("sleeper: exhausted retries for %s: %w", url, lastErr)
+}
+
+// doWithConcurrencyLimit bounds how many Sleeper requests are in flight on
+// the wire at once. The semaphore slot is held only for the round trip
+// itself, not for any subsequent backoff sleep — a request waiting out a
+// 429's Retry-After isn't doing network work, so it shouldn't tie up a
+// concurrency slot other goroutines could be using.
+func (c *Client) doWithConcurrencyLimit(req *http.Request) (*http.Response, error) {
+	select {
+	case c.sem <- struct{}{}:
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+	defer func() { <-c.sem }()
+	return c.http.Do(req)
 }
 
 // waitBeforeRetry sleeps for d unless this is the last available attempt, in
