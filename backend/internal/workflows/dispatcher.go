@@ -27,8 +27,14 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 		return DiscoveryReport{}, err
 	}
 
+	logger.Info("discovery dispatch starting", "tag", activities.DiscoveryLogTag, "config", cfg)
+	workflowStart := workflow.Now(ctx)
+
 	var report DiscoveryReport
 	for iter := 0; iter < MaxDispatchIterations; iter++ {
+		logger.Info("discovery dispatch iteration starting", "tag", activities.DiscoveryLogTag,
+			"iteration", iter, "elapsed", workflow.Now(ctx).Sub(workflowStart),
+			"usersProcessedSoFar", report.UsersProcessed, "usersFailedSoFar", report.UsersFailed)
 		var futures []workflow.Future
 		drained := false
 		for k := 0; k < cfg.ParallelBatches; k++ {
@@ -37,7 +43,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 				BatchSize: cfg.BatchSize,
 			}).Get(ctx, &userIDs)
 			if err != nil {
-				logger.Error("user claim failed; stopping dispatch for this run", "error", err)
+				logger.Error("user claim failed; stopping dispatch for this run", "tag", activities.DiscoveryLogTag, "error", err)
 				drained = true
 				break
 			}
@@ -59,10 +65,10 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 		for _, f := range futures {
 			var res activities.SyncBatchResult
 			if err := f.Get(ctx, &res); err != nil {
-				logger.Error("discovery batch failed; claims will expire and re-queue", "error", err)
+				logger.Error("discovery batch failed; claims will expire and re-queue", "tag", activities.DiscoveryLogTag, "error", err)
 				continue
 			}
-			logger.Info("discovery batch done", "processed", res.Processed, "failed", res.Failed)
+			logger.Info("discovery batch done", "tag", activities.DiscoveryLogTag, "processed", res.Processed, "failed", res.Failed)
 			report.UsersProcessed += res.Processed
 			report.UsersFailed += res.Failed
 		}
@@ -70,5 +76,8 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 			break
 		}
 	}
+	logger.Info("discovery dispatch finished", "tag", activities.DiscoveryLogTag,
+		"elapsed", workflow.Now(ctx).Sub(workflowStart),
+		"usersProcessed", report.UsersProcessed, "usersFailed", report.UsersFailed)
 	return report, nil
 }
