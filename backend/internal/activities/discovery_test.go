@@ -354,6 +354,117 @@ func TestDiscoverOneUser_StopsProcessingLeaguesAfterContextCancelled(t *testing.
 	}
 }
 
+// TestDiscoverOneUser_FansOutLeagueFetchesConcurrently is the regression test
+// for the "mega-user" incident: a Sleeper user can belong to hundreds of
+// leagues, and fetching them one at a time (2 sequential calls per league)
+// made such a user structurally unable to finish within any reasonable
+// per-user timeout — and since ClaimStaleUsers orders never-fetched users
+// first, a user that can never finish permanently squats at the head of the
+// discovery queue. League fetches within a single user now fan out with
+// bounded concurrency instead of running strictly one at a time.
+func TestDiscoverOneUser_FansOutLeagueFetchesConcurrently(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "poweruser")
+
+	const numLeagues = 30
+	const perCallDelay = 150 * time.Millisecond
+
+	leagues := make([]sleeper.League, numLeagues)
+	for i := range leagues {
+		leagues[i] = sleeper.League{LeagueID: strconv.Itoa(i), Season: "2026", Sport: "nfl"}
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if parts[1] == "user" {
+			json.NewEncoder(w).Encode(leagues)
+			return
+		}
+		time.Sleep(perCallDelay)
+		if strings.HasSuffix(r.URL.Path, "/users") {
+			json.NewEncoder(w).Encode([]sleeper.LeagueUser{})
+			return
+		}
+		json.NewEncoder(w).Encode(sleeper.League{LeagueID: parts[2]})
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	start := time.Now()
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{
+		UserIDs:            []string{"poweruser"},
+		Concurrency:        1,
+		UserTimeoutSeconds: 30,
+		LeagueConcurrency:  10,
+	})
+	elapsed := time.Since(start)
+
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected the user to complete despite the large league count, got %+v", res)
+	}
+	// Sequential would take numLeagues * 2 * perCallDelay = 9s. At
+	// LeagueConcurrency 10, ~3 rounds of concurrent (members + details)
+	// pairs should land well under half that.
+	if elapsed > 4*time.Second {
+		t.Fatalf("discovery took %s; expected league fetches to fan out concurrently instead of running one at a time", elapsed)
+	}
+
+	var u models.SleeperUser
+	db.First(&u, "sleeper_user_id = ?", "poweruser")
+	if u.LastFetchedAt == nil || u.ClaimedAt != nil {
+		t.Errorf("power user should be fully stamped done: %+v", u)
+	}
+}
+
+// TestDiscoverOneUser_SkipsMembersForFullySyncedLeague extends the existing
+// FetchLeagueDetails completed-league skip to FetchLeagueMembers too: a
+// league marked complete with details already fetched has immutable
+// membership, so re-fetching it on every discovery pass (for every one of
+// its members, every time any of them comes up for rediscovery) was pure
+// waste — and for mega-users, it's exactly the redundant work that made
+// them unable to ever finish.
+func TestDiscoverOneUser_SkipsMembersForFullySyncedLeague(t *testing.T) {
+	db := newTestDB(t)
+	claimedUser(t, db, "user1")
+	past := time.Now().Add(-24 * time.Hour)
+	db.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg-done",
+		Status:          "complete",
+		LastFetchedAt:   &past,
+	})
+
+	var membersHit, detailsHit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if parts[1] == "user" {
+			json.NewEncoder(w).Encode([]sleeper.League{{LeagueID: "lg-done", Season: "2026", Sport: "nfl"}})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/users") {
+			membersHit = true
+			json.NewEncoder(w).Encode([]sleeper.LeagueUser{})
+			return
+		}
+		detailsHit = true
+		json.NewEncoder(w).Encode(sleeper.League{LeagueID: "lg-done"})
+	}))
+	defer srv.Close()
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res := runDiscoveryBatch(t, da, activities.DiscoverUsersBatchParams{
+		UserIDs: []string{"user1"}, Concurrency: 1, UserTimeoutSeconds: 5, LeagueConcurrency: 5,
+	})
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("expected user to complete, got %+v", res)
+	}
+	if membersHit {
+		t.Error("FetchLeagueMembers should be skipped for an already complete+fetched league")
+	}
+	if detailsHit {
+		t.Error("FetchLeagueDetails should be skipped for an already complete+fetched league")
+	}
+}
+
 func TestFetchUserLeagues_UpsertsLeagues(t *testing.T) {
 	db := newTestDB(t)
 

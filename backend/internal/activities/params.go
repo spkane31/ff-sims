@@ -15,12 +15,14 @@ type DiscoveryConfig struct {
 	BatchSize          int // DISCOVERY_BATCH_SIZE, default 20
 	Concurrency        int // DISCOVERY_USER_CONCURRENCY, default 4
 	UserTimeoutSeconds int // DISCOVERY_USER_TIMEOUT_SECONDS, default 90
+	LeagueConcurrency  int // DISCOVERY_LEAGUE_CONCURRENCY, default 10
 }
 
 type DiscoverUsersBatchParams struct {
 	UserIDs            []string
 	Concurrency        int
 	UserTimeoutSeconds int
+	LeagueConcurrency  int
 }
 
 type FetchUserLeaguesParams struct {
