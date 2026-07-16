@@ -58,16 +58,19 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 // claimStaleUsersSQL atomically claims up to batchSize stale users for
 // discovery (same pattern as the league sync paths). FOR UPDATE SKIP LOCKED
 // lets concurrent claimers partition the queue without double-claiming, and
-// the 20-minute expiry re-queues users claimed by a worker that died
-// mid-batch. Because ticks claim rather than re-select, a stuck cohort can
-// never head-of-line-block the queue the way the old workflow-ID-collision
-// dedupe did.
+// the 120-minute expiry re-queues users claimed by a worker that died
+// mid-batch. 120 minutes (not 20) because neither claimer of this column —
+// the Temporal path nor the cron path (internal/discoverycron) — imposes a
+// per-item timeout shorter than that; a shorter TTL risked a still-in-flight
+// user being reclaimed and processed a second time concurrently. Because
+// ticks claim rather than re-select, a stuck cohort can never head-of-line-
+// block the queue the way the old workflow-ID-collision dedupe did.
 const claimStaleUsersSQL = `
 UPDATE sleeper_users SET claimed_at = now()
 WHERE sleeper_user_id IN (
     SELECT sleeper_user_id FROM sleeper_users
     WHERE skipped_at IS NULL
-      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
+      AND (claimed_at IS NULL OR claimed_at < now() - interval '120 minutes')
     ORDER BY last_fetched_at ASC NULLS FIRST
     LIMIT ?
     FOR UPDATE SKIP LOCKED

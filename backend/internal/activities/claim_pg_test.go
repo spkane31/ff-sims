@@ -294,7 +294,7 @@ func TestClaimStaleUsers_RespectsAndExpiresClaims(t *testing.T) {
 	db := newPGTestDB(t)
 	now := time.Now().UTC()
 	fresh := now.Add(-1 * time.Minute)
-	stale := now.Add(-30 * time.Minute)
+	stale := now.Add(-150 * time.Minute)
 	seedUser(t, db, models.SleeperUser{SleeperUserID: "fresh-claim", ClaimedAt: &fresh})
 	seedUser(t, db, models.SleeperUser{SleeperUserID: "expired-claim", ClaimedAt: &stale})
 
