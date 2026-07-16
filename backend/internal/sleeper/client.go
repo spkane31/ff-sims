@@ -5,35 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
-
-	"backend/internal/helpers"
 )
 
 const (
 	maxAttempts = 6
 	backoffBase = 500 * time.Millisecond
 	backoffCap  = 30 * time.Second
-
-	// defaultMaxConcurrentRequests is the SLEEPER_MAX_CONCURRENT_REQUESTS
-	// fallback: the ceiling isn't a throughput target (Sleeper's real per-IP
-	// tolerance is unknown and not worth guessing at), it's a blast-radius
-	// bound — the client is a process-wide singleton shared by every sync
-	// pipeline, so without *some* cap, a backlog spike across discovery +
-	// draft-sync + transaction-sync could fire an unbounded number of
-	// simultaneous requests before a single 429 comes back to react to.
-	defaultMaxConcurrentRequests = 50
 )
 
 const defaultBaseURL = "https://api.sleeper.app"
 
+// Client has no proactive rate/concurrency limiting. An RPM-based token
+// bucket and, briefly, a concurrency semaphore were both tried here and both
+// turned out to cause more harm than the problem they were meant to prevent:
+// as a process-wide singleton shared by discovery, draft-sync, and
+// transaction-sync, any shared throttle — rate or concurrency — lets the
+// much higher-volume sync pipelines starve discovery's comparatively small,
+// latency-sensitive traffic out of its share, with no fairness between
+// pipelines. The 429/Retry-After handling in get() is the real defense: it
+// reacts to what Sleeper actually says and logs every occurrence, so if 429s
+// become a real problem it'll show up in the logs — at which point the fix
+// is scoping a limit per pipeline, not a single shared one.
 type Client struct {
 	http    *http.Client
 	baseURL string
-	sem     chan struct{}
 }
 
 func New() *Client {
@@ -44,19 +44,7 @@ func NewWithBaseURL(baseURL string) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: 30 * time.Second},
 		baseURL: baseURL,
-		sem:     make(chan struct{}, maxConcurrentRequests()),
 	}
-}
-
-// maxConcurrentRequests reads SLEEPER_MAX_CONCURRENT_REQUESTS (default 50).
-// Throughput itself is governed reactively — via the 429 Retry-After/backoff
-// handling in get() — rather than a proactive requests-per-minute guess.
-func maxConcurrentRequests() int {
-	n := helpers.GetEnv("SLEEPER_MAX_CONCURRENT_REQUESTS", defaultMaxConcurrentRequests)
-	if n <= 0 {
-		n = defaultMaxConcurrentRequests
-	}
-	return n
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
@@ -72,7 +60,7 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		if err != nil {
 			return err
 		}
-		resp, err := c.doWithConcurrencyLimit(req)
+		resp, err := c.http.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -91,6 +79,7 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		case resp.StatusCode == http.StatusTooManyRequests:
 			wait := retryAfterOrBackoff(resp, attempt)
 			lastErr = fmt.Errorf("sleeper: rate limited (429) for %s", url)
+			log.Printf("sleeper: 429 rate limited, attempt %d/%d, waiting %s: %s", attempt+1, maxAttempts, wait, url)
 			drainAndClose(resp)
 			if !c.waitBeforeRetry(ctx, wait, attempt) {
 				return ctx.Err()
@@ -112,21 +101,6 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		}
 	}
 	return fmt.Errorf("sleeper: exhausted retries for %s: %w", url, lastErr)
-}
-
-// doWithConcurrencyLimit bounds how many Sleeper requests are in flight on
-// the wire at once. The semaphore slot is held only for the round trip
-// itself, not for any subsequent backoff sleep — a request waiting out a
-// 429's Retry-After isn't doing network work, so it shouldn't tie up a
-// concurrency slot other goroutines could be using.
-func (c *Client) doWithConcurrencyLimit(req *http.Request) (*http.Response, error) {
-	select {
-	case c.sem <- struct{}{}:
-	case <-req.Context().Done():
-		return nil, req.Context().Err()
-	}
-	defer func() { <-c.sem }()
-	return c.http.Do(req)
 }
 
 // waitBeforeRetry sleeps for d unless this is the last available attempt, in
