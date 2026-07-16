@@ -93,13 +93,26 @@ that PR's throttling debate concluded.
 
 New migration: `sleeper_leagues.discovery_claimed_at TIMESTAMPTZ NULL`, plus a partial
 index mirroring the existing claim-query pattern (`WHERE discovery_claimed_at IS NULL OR
-discovery_claimed_at < now() - interval '20 minutes'`, likely combined with the
+discovery_claimed_at < now() - interval '120 minutes'`, likely combined with the
 `status <> 'complete' OR last_fetched_at IS NULL` exclusion — see claim query below).
 
 A new column is required because `sleeper_leagues.claimed_at` is already used by
 transaction-sync's `ClaimLeaguesForTransactions`, and `drafts_claimed_at` is already used
 by draft-sync's `ClaimLeaguesForDrafts`. Reusing either would collide claim state between
 unrelated pipelines sharing the same table.
+
+**Claim TTL: 20m -> 120m, for both the new league column and the existing
+`sleeper_users.claimed_at` query.** Without a per-item timeout (see Concurrency model —
+per-item timeouts are being dropped), a legitimately slow item can take several minutes,
+and a TTL that's too short relative to that risks the same item being reclaimed and
+processed a second time concurrently while the first attempt is still genuinely in
+flight — wasted duplicate work, not incorrectness (upserts are idempotent), but it eats
+pool capacity that could go to unstarted work. 120 minutes comfortably exceeds both this
+job's 50-minute ceiling and the 60-minute cron cadence. This means changing the existing
+`claimStaleUsersSQL` constant in `internal/activities/discovery.go` — a shared-constant
+tweak, not a code deletion, so it doesn't conflict with leaving the Temporal path's
+workflow/schedule/task-queue registration untouched; the still-running Temporal path
+benefits from the same reduced-duplicate-reclaim behavior.
 
 `last_fetched_at` on `sleeper_leagues` keeps its current meaning (members + details
 fetched — today set by `FetchLeagueDetails`); under the new design it becomes the
@@ -112,7 +125,7 @@ completion marker for discovery's league-work item specifically, analogous to ho
 - `FetchUserLeagues`, `FetchLeagueMembers`, `FetchLeagueDetails` (`internal/activities/discovery.go`)
 - The existing `sleeper_users` claim query and claim/stamp pattern
 
-**New, in a new `internal/discoverycron` package:**
+**New, in a new `internal/cron/discovery` package:**
 - `ClaimStaleLeagues(ctx, batchSize) ([]string, error)` — mirrors `ClaimStaleUsers`, but
   against `sleeper_leagues.discovery_claimed_at`, excluding leagues already
   `status='complete' AND last_fetched_at IS NOT NULL` from the query itself (not
@@ -146,12 +159,23 @@ for ctx not done:
     if free >= refillBatchSize:
         ids := claim(free)                      # one query, up to `free` items
         if len(ids) == 0: brief sleep; continue  # avoid busy-loop when queue's empty
-        for each id: launch a goroutine bounded by
-            min(time left until deadline, itemTimeoutSeconds)
+        for each id: launch a goroutine, bounded only by the job's own ctx
     else:
         wait for next completion signal, or a short poll interval
-wait for in-flight work to finish (bounded by their own sub-timeouts)
+wait for in-flight work to finish (bounded by the job's own deadline)
 ```
+
+**No per-item timeout.** Under the old design, a per-item timeout was a necessary
+band-aid because a single user's work was unbounded (could involve fetching hundreds of
+leagues inline — the mega-user problem from PR #175). Under this design, that's
+structurally no longer true: user-work is always exactly 2 season calls + DB upserts,
+and league-work is always exactly 2 API calls, regardless of how many leagues exist.
+Each item does a small, fixed amount of work by construction, so an artificial ceiling
+on top of that just risks recreating the PR #177 failure mode — killing legitimately-
+slow-but-would-have-succeeded work before Sleeper's own backoff signals resolve it. The
+real bounds that already exist are sufficient: the Sleeper client's own `30s`-per-request
+timeout times up to 6 retry attempts, and the job's overall 50-minute deadline, which
+every goroutine shares directly (no derived sub-context).
 
 Both pools get independently env-configurable pool size and refill-batch size, starting
 small (pool size 3-5, refill batch 1-2) and scalable up later without a code change. A
@@ -162,10 +186,8 @@ read by the Temporal path:
 |-----|-------------------|---------|
 | `CRON_DISCOVERY_USER_POOL_SIZE` | 4 | Max concurrent user-work goroutines. |
 | `CRON_DISCOVERY_USER_REFILL_BATCH` | 2 | Free user slots required before claiming more. |
-| `CRON_DISCOVERY_USER_TIMEOUT_SECONDS` | 90 | Per-user sub-context bound (mirrors today's `DISCOVERY_USER_TIMEOUT_SECONDS`). |
 | `CRON_DISCOVERY_LEAGUE_POOL_SIZE` | 4 | Max concurrent league-work goroutines. |
 | `CRON_DISCOVERY_LEAGUE_REFILL_BATCH` | 2 | Free league slots required before claiming more. |
-| `CRON_DISCOVERY_LEAGUE_TIMEOUT_SECONDS` | 30 | Per-league sub-context bound (one members call + one details call, no fan-out — should be much faster than a user's multi-league work). |
 
 (Exact starting numbers are easy to revise at plan/implementation time; the point fixed
 here is that they exist, are independent per pool, and are env-tunable without a
@@ -173,15 +195,15 @@ redeploy of orchestration code.)
 
 ### Error handling
 
-- **Per-item failure or timeout:** logged, claim left in place. Naturally retried once
-  its 20-minute TTL expires — either later in the same run (if it's still going) or by
-  next hour's run. No batch-level retry-count bookkeeping, per the earlier decision to
-  rely purely on claim expiry — it's the same recovery path a crashed worker already
+- **Per-item failure:** logged, claim left in place. Naturally retried once its
+  120-minute TTL expires — either later in the same run (if it's still going) or by a
+  subsequent hour's run. No batch-level retry-count bookkeeping, per the earlier decision
+  to rely purely on claim expiry — it's the same recovery path a crashed worker already
   needs, so a separate retry mechanism would just be duplicating it.
 - **Deadline reached:** top-level `ctx` cancels; both pools stop claiming new work;
-  in-flight items wind down on their own sub-timeouts (already bounded well under the
-  remaining time by construction); the job logs a final summary and exits 0 — this is
-  the expected outcome most hours, not a failure.
+  in-flight items wind down as their individual Sleeper calls hit `ctx.Done()` (bounded
+  by the client's own request timeout, not a separate per-item budget); the job logs a
+  final summary and exits 0 — this is the expected outcome most hours, not a failure.
 - **Process crash:** no special handling. Same DB-native resilience as today — claims
   simply expire and the next hourly run (or the still-running Temporal path) picks them
   back up.
@@ -210,7 +232,10 @@ debugging entry point for this path, separate from `ff-sims-worker`'s journal.
 
 1. New migration (`discovery_claimed_at` + partial index) — safe to apply live
    (`CREATE INDEX CONCURRENTLY`, matching the pattern used for prior claim-column
-   migrations).
+   migrations). The `claimStaleUsersSQL` TTL constant change (20m -> 120m) lives in
+   `internal/activities/discovery.go`, which `cmd/worker` also imports — that binary
+   needs rebuilding/redeploying too, even though none of its Temporal-facing behavior
+   is otherwise changing.
 2. New `cmd/cron` binary added to the existing worker-host build/deploy pipeline
    (`deploy/worker-host/{deploy,setup}.sh`), alongside `cmd/worker`.
 3. New systemd service + timer files, installed by the same setup script that installs
