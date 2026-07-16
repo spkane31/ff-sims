@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ff-sims-discovery hourly
+
+[Timer]
+OnBootSec=2min
+OnCalendar=hourly
+Unit=ff-sims-discovery.service
+
+[Install]
+WantedBy=timers.target

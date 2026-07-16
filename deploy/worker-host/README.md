@@ -45,6 +45,8 @@ after a full reinstall) — it picks up wherever it left off. Same for
 - Worker logs: `journalctl -u ff-sims-worker -f`
 - Deploy-check history (whether it found a new commit, built, restarted): `journalctl -u ff-sims-deploy`
 - Force an immediate deploy check without waiting for the timer: `sudo systemctl start ff-sims-deploy.service`
+- Discovery cron job logs (runs hourly, `Type=oneshot`): `journalctl -u ff-sims-discovery -f`
+- Force an immediate discovery run without waiting for the timer: `sudo systemctl start ff-sims-discovery.service`
 - This runs the *same* `backend/cmd/worker` binary as production, so it polls all six
   Temporal task queues (discovery, drafts, transactions, player-sync, week-stats, ADP), not
   just discovery/transactions — the idle pollers on the other queues cost nothing.

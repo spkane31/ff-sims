@@ -16,7 +16,7 @@ git -C "$REPO" checkout -q -b main
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name test
 
-mkdir -p "$REPO/backend/cmd/worker" "$REPO/deploy/worker-host"
+mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/deploy/worker-host"
 cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/worker-host/deploy.sh"
 chmod +x "$REPO/deploy/worker-host/deploy.sh"
 
@@ -26,6 +26,11 @@ module backend
 go 1.21
 EOF
 cat > "$REPO/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+func main() {}
+EOF
+cat > "$REPO/backend/cmd/cron/main.go" <<'EOF'
 package main
 
 func main() {}
@@ -52,6 +57,7 @@ export REPO_DIR="$REPO"
 # --- scenario 1: no new commits -> no rebuild, no restart ---
 bash "$REPO/deploy/worker-host/deploy.sh"
 [[ ! -f "$REPO/backend/worker" ]] || fail "should not have built a worker binary when up to date"
+[[ ! -f "$REPO/backend/cron" ]] || fail "should not have built a cron binary when up to date"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when up to date"
 
 # --- scenario 2: a new good commit -> rebuild + restart ---
@@ -67,6 +73,7 @@ git -C "$CLONE" push -q origin main
 
 bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
+[[ -x "$REPO/backend/cron" ]] || fail "expected a cron binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
 
 # --- scenario 3: a new commit that fails to compile -> old binary + service left alone ---
