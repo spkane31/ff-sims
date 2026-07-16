@@ -78,10 +78,8 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 
 	var userResult, leagueResult PoolResult
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		userResult = RunPool(ctx,
 			PoolConfig{Size: cfg.UserPoolSize, RefillBatch: cfg.UserRefillBatch, PollInterval: pollInterval},
 			func(ctx context.Context, n int) ([]string, error) {
@@ -94,10 +92,9 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 				logResult(logger, "user", id, err, duration)
 			},
 		)
-	}()
+	})
 
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		leagueResult = RunPool(ctx,
 			PoolConfig{Size: cfg.LeaguePoolSize, RefillBatch: cfg.LeagueRefillBatch, PollInterval: pollInterval},
 			func(ctx context.Context, n int) ([]string, error) {
@@ -110,7 +107,7 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 				logResult(logger, "league", id, err, duration)
 			},
 		)
-	}()
+	})
 
 	wg.Wait()
 
