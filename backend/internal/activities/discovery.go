@@ -208,7 +208,7 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string, leagueConcurrency int) (int, error) {
 	leagueIDs, err := a.FetchUserLeagues(ctx, FetchUserLeaguesParams{UserID: userID})
 	if err != nil {
-		if isNotFoundAppError(err) {
+		if IsNotFoundAppError(err) {
 			return 0, a.DB.WithContext(ctx).
 				Model(&models.SleeperUser{}).
 				Where("sleeper_user_id = ?", userID).
@@ -267,9 +267,9 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 		}).Error
 }
 
-// isNotFoundAppError reports whether err is the NOT_FOUND application error
+// IsNotFoundAppError reports whether err is the NOT_FOUND application error
 // produced by the fetch helpers when a Sleeper entity no longer exists.
-func isNotFoundAppError(err error) bool {
+func IsNotFoundAppError(err error) bool {
 	var appErr *temporal.ApplicationError
 	return errors.As(err, &appErr) && appErr.Type() == "NOT_FOUND"
 }
