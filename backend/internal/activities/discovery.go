@@ -19,6 +19,14 @@ import (
 	"backend/internal/sleeper"
 )
 
+// DiscoveryLogTag is stamped on every discovery-related log line (activity
+// and workflow) as a "tag" field, so a single grep on the shared worker
+// journal — which also carries draft-sync, transaction-sync, and ESPN
+// worker log lines — pulls out exactly the discovery pipeline's output:
+//
+//	journalctl -u ff-sims-worker | grep discovery_trace
+const DiscoveryLogTag = "discovery_trace"
+
 // firstScannedSeason is the earliest NFL season scraped per user discovery run.
 // Older seasons are excluded — their data is complete and not worth re-scanning.
 const firstScannedSeason = 2025
@@ -64,7 +72,10 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 // per-item timeout shorter than that; a shorter TTL risked a still-in-flight
 // user being reclaimed and processed a second time concurrently. Because
 // ticks claim rather than re-select, a stuck cohort can never head-of-line-
-// block the queue the way the old workflow-ID-collision dedupe did.
+// block the queue the way the old workflow-ID-collision dedupe did. The
+// tradeoff: a worker that dies mid-batch now leaves its claimed users
+// unclaimable for up to 120 minutes (not 20) before they become
+// re-queueable, a real if minor cost given crashes are rare.
 const claimStaleUsersSQL = `
 UPDATE sleeper_users SET claimed_at = now()
 WHERE sleeper_user_id IN (
@@ -103,6 +114,7 @@ func (a *DiscoveryActivities) ClaimStaleUsers(ctx context.Context, params ClaimS
 func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params DiscoverUsersBatchParams) (SyncBatchResult, error) {
 	logger := activity.GetLogger(ctx)
 	res := SyncBatchResult{}
+	batchStart := time.Now()
 
 	// Re-scope to users still claimed: on an activity retry, users stamped by
 	// the previous attempt have claimed_at cleared and must not re-run.
@@ -119,9 +131,15 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 	concurrency := max(1, params.Concurrency)
 	userTimeout := time.Duration(max(1, params.UserTimeoutSeconds)) * time.Second
 	leagueConcurrency := max(1, params.LeagueConcurrency)
+	logger.Info("discovery batch starting", "tag", DiscoveryLogTag,
+		"userCount", len(stillClaimed), "concurrency", concurrency,
+		"leagueConcurrency", leagueConcurrency, "userTimeoutSeconds", params.UserTimeoutSeconds)
+
 	type userResult struct {
-		userID string
-		err    error
+		userID      string
+		err         error
+		duration    time.Duration
+		leagueCount int
 	}
 	sem := make(chan struct{}, concurrency)
 	results := make(chan userResult, len(stillClaimed))
@@ -132,24 +150,39 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 			defer func() { <-sem }()
 			userCtx, cancel := context.WithTimeout(ctx, userTimeout)
 			defer cancel()
-			results <- userResult{userID: id, err: a.discoverOneUser(userCtx, logger, id, leagueConcurrency)}
+			start := time.Now()
+			leagueCount, err := a.discoverOneUser(userCtx, logger, id, leagueConcurrency)
+			results <- userResult{userID: id, err: err, duration: time.Since(start), leagueCount: leagueCount}
 		})
 	}
 	go func() { wg.Wait(); close(results) }()
 
+	// Heartbeat on every result rather than throttling by count: with a
+	// small Concurrency (e.g. 4) that doesn't evenly divide a fixed
+	// throttle interval, results can arrive in synchronized clusters that
+	// never land on the throttle boundary — see the incident this fixes,
+	// where a batch of uniformly-slow users produced zero heartbeats for
+	// its entire duration and tripped HeartbeatTimeout despite the activity
+	// actively working the whole time. RecordHeartbeat is cheap; the SDK
+	// itself throttles the actual server RPC, so callers don't need to.
 	done := 0
 	for r := range results {
 		done++
 		if r.err != nil {
 			res.Failed++
-			logger.Warn("user discovery failed", "userID", r.userID, "error", r.err)
+			logger.Warn("user discovery failed", "tag", DiscoveryLogTag,
+				"userID", r.userID, "error", r.err, "duration", r.duration, "leagueCount", r.leagueCount)
 		} else {
 			res.Processed++
+			logger.Info("user discovery completed", "tag", DiscoveryLogTag,
+				"userID", r.userID, "duration", r.duration, "leagueCount", r.leagueCount)
 		}
-		if done%5 == 0 {
-			activity.RecordHeartbeat(ctx, done)
-		}
+		activity.RecordHeartbeat(ctx, done)
 	}
+
+	logger.Info("discovery batch finished", "tag", DiscoveryLogTag,
+		"userCount", len(stillClaimed), "processed", res.Processed, "failed", res.Failed,
+		"duration", time.Since(batchStart))
 	return res, nil
 }
 
@@ -170,11 +203,16 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 // the discovery queue, retried every claim cycle without ever making
 // progress. Fanning out league fetches turns "N leagues x 2 sequential
 // round trips" into roughly "N/leagueConcurrency rounds".
-func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string, leagueConcurrency int) error {
+//
+// Returns the number of leagues discovered for userID (regardless of how
+// many were skipped, fetched, or failed) so callers can log it alongside
+// the outcome — a cheap way to spot mega-league users straight from
+// activity logs without a DB query.
+func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string, leagueConcurrency int) (int, error) {
 	leagueIDs, err := a.FetchUserLeagues(ctx, FetchUserLeaguesParams{UserID: userID})
 	if err != nil {
-		if isNotFoundAppError(err) {
-			return a.DB.WithContext(ctx).
+		if IsNotFoundAppError(err) {
+			return 0, a.DB.WithContext(ctx).
 				Model(&models.SleeperUser{}).
 				Where("sleeper_user_id = ?", userID).
 				Updates(map[string]interface{}{
@@ -182,9 +220,10 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 					"claimed_at": nil,
 				}).Error
 		}
-		return err
+		return 0, err
 	}
 
+	skipped := 0
 	sem := make(chan struct{}, max(1, leagueConcurrency))
 	var wg sync.WaitGroup
 	for _, lid := range leagueIDs {
@@ -197,25 +236,32 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 			break
 		}
 		if a.leagueFullySynced(ctx, lid) {
+			skipped++
 			continue
 		}
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
+			leagueStart := time.Now()
 			if err := a.FetchLeagueMembers(ctx, FetchLeagueMembersParams{LeagueID: lid}); err != nil {
-				logger.Warn("FetchLeagueMembers failed, continuing", "leagueID", lid, "error", err)
+				logger.Warn("FetchLeagueMembers failed, continuing", "tag", DiscoveryLogTag, "leagueID", lid, "error", err)
 			}
 			if err := a.FetchLeagueDetails(ctx, FetchLeagueDetailsParams{LeagueID: lid}); err != nil {
-				logger.Warn("FetchLeagueDetails failed, continuing", "leagueID", lid, "error", err)
+				logger.Warn("FetchLeagueDetails failed, continuing", "tag", DiscoveryLogTag, "leagueID", lid, "error", err)
+			}
+			if d := time.Since(leagueStart); d > 5*time.Second {
+				logger.Warn("slow league fetch", "tag", DiscoveryLogTag, "leagueID", lid, "userID", userID, "duration", d)
 			}
 		})
 	}
 	wg.Wait()
+	logger.Info("user leagues resolved", "tag", DiscoveryLogTag,
+		"userID", userID, "leagueCount", len(leagueIDs), "skippedAlreadySynced", skipped)
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return len(leagueIDs), ctx.Err()
 	}
 
-	return a.DB.WithContext(ctx).
+	return len(leagueIDs), a.DB.WithContext(ctx).
 		Model(&models.SleeperUser{}).
 		Where("sleeper_user_id = ?", userID).
 		Updates(map[string]interface{}{
@@ -224,9 +270,9 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 		}).Error
 }
 
-// isNotFoundAppError reports whether err is the NOT_FOUND application error
+// IsNotFoundAppError reports whether err is the NOT_FOUND application error
 // produced by the fetch helpers when a Sleeper entity no longer exists.
-func isNotFoundAppError(err error) bool {
+func IsNotFoundAppError(err error) bool {
 	var appErr *temporal.ApplicationError
 	return errors.As(err, &appErr) && appErr.Type() == "NOT_FOUND"
 }
