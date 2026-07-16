@@ -1082,10 +1082,13 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
 	cfg := discoverycron.Config{UserPoolSize: 2, UserRefillBatch: 1, LeaguePoolSize: 2, LeagueRefillBatch: 1}
 
-	// The job's own deadline stands in for cmd/cron's -max-duration; give it
-	// enough headroom to drain a tiny fixture, then rely on RunDiscovery
-	// itself detecting an empty queue rather than the deadline firing.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// The job's own deadline stands in for cmd/cron's -max-duration. RunPool
+	// (Task 4) has no early-exit-on-empty-queue behavior by design — it
+	// keeps polling until ctx is done, matching production (a cron run uses
+	// any leftover time to keep checking for newly-claimable work). So this
+	// test genuinely runs for close to its full deadline, not less; keep
+	// that deadline short so the suite stays fast.
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
 	defer cancel()
 	report, err := discoverycron.RunDiscovery(ctx, da, cfg)
 	if err != nil {
@@ -1108,7 +1111,7 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 }
 ```
 
-This test's queue is empty after processing the one user and two leagues, so `RunDiscovery` needs a defined way to return before its `ctx` deadline once both pools have nothing left to do — see the implementation step below (`RunDiscovery` returns once both pools' `RunPool` calls return, and `RunPool` only returns when `ctx` is done; for this test to complete before its 3s timeout, `RunDiscovery` must pass a shared ctx that both pools use, and the test's small fixture combined with a short poll interval is what keeps this fast — the pools spin on empty claims until `ctx` expires, exactly like production). Confirm this by checking the actual runtime in step 3 below is close to the poll interval you configure, not the full 3s timeout.
+`RunDiscovery` returns once both pools' `RunPool` calls return, and each pool only returns once its shared `ctx` is done — so this test's actual runtime is close to its 600ms deadline, not near-instant. That's expected, not a bug: it's exercising the same behavior production relies on (a cron run keeps polling for newly-claimable work, like `lg-new` discovered mid-run by `ProcessUser`, right up until its deadline). Use the package's `pollInterval` constant (200ms, from the implementation step below) as the actual work happens within the first one or two poll cycles; the remaining wall-clock time is the pools idling on empty claims until `ctx` expires.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1285,7 +1288,7 @@ func (l *stdLogger) log(level, msg string, kv []any) {
 cd backend && go test ./internal/discoverycron/... -run TestRunDiscovery -v -count=1
 ```
 
-Expected: PASS. If it hangs near the 3-second deadline instead of returning quickly, check that `pollInterval` (200ms) is being used — a hang usually means one pool's `RunPool` never sees `ctx.Err() != nil` because a goroutine leaked without reading from `results`; re-check `RunPool`'s `for ctx.Err() == nil` loop condition from Task 4.
+Expected: PASS, taking roughly 600ms (the test's deadline) — that's correct, not a hang, per the note in Step 1. If it takes noticeably *longer* than 600ms (e.g. seconds), that indicates a real bug: a goroutine leaked without reading from `results`, so `RunPool`'s final drain loop (`for inFlight > 0 { record(<-results) }`) blocks past `ctx` being done; re-check `RunPool`'s bookkeeping from Task 4.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -1387,6 +1390,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 
 	"backend/internal/activities"
@@ -1409,7 +1413,7 @@ var errUnknownJob = errors.New("unknown job")
 func resolveJob(registry map[string]func(context.Context) error, name string) (func(context.Context) error, error) {
 	fn, ok := registry[name]
 	if !ok {
-		return nil, errors.New(name + ": " + errUnknownJob.Error())
+		return nil, fmt.Errorf("%s: %w", name, errUnknownJob)
 	}
 	return fn, nil
 }
