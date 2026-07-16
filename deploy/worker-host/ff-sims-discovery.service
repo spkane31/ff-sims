@@ -1,0 +1,16 @@
+[Unit]
+Description=ff-sims discovery cron job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{SERVICE_USER}}
+WorkingDirectory={{REPO_DIR}}/backend
+EnvironmentFile=/etc/ff-sims-worker.env
+# Type=oneshot services default to DefaultTimeoutStartSec (commonly 90s)
+# before systemd kills them for "taking too long to start". This job runs up
+# to -max-duration=50m below, so the override must clear that comfortably or
+# every run gets SIGTERM'd at ~90s well before its own deadline fires.
+TimeoutStartSec=55min
+ExecStart={{REPO_DIR}}/backend/cron -job=discovery -max-duration=50m

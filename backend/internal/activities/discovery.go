@@ -66,16 +66,22 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 // claimStaleUsersSQL atomically claims up to batchSize stale users for
 // discovery (same pattern as the league sync paths). FOR UPDATE SKIP LOCKED
 // lets concurrent claimers partition the queue without double-claiming, and
-// the 20-minute expiry re-queues users claimed by a worker that died
-// mid-batch. Because ticks claim rather than re-select, a stuck cohort can
-// never head-of-line-block the queue the way the old workflow-ID-collision
-// dedupe did.
+// the 120-minute expiry re-queues users claimed by a worker that died
+// mid-batch. 120 minutes (not 20) because neither claimer of this column —
+// the Temporal path nor the cron path (internal/discoverycron) — imposes a
+// per-item timeout shorter than that; a shorter TTL risked a still-in-flight
+// user being reclaimed and processed a second time concurrently. Because
+// ticks claim rather than re-select, a stuck cohort can never head-of-line-
+// block the queue the way the old workflow-ID-collision dedupe did. The
+// tradeoff: a worker that dies mid-batch now leaves its claimed users
+// unclaimable for up to 120 minutes (not 20) before they become
+// re-queueable, a real if minor cost given crashes are rare.
 const claimStaleUsersSQL = `
 UPDATE sleeper_users SET claimed_at = now()
 WHERE sleeper_user_id IN (
     SELECT sleeper_user_id FROM sleeper_users
     WHERE skipped_at IS NULL
-      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
+      AND (claimed_at IS NULL OR claimed_at < now() - interval '120 minutes')
     ORDER BY last_fetched_at ASC NULLS FIRST
     LIMIT ?
     FOR UPDATE SKIP LOCKED
@@ -205,7 +211,7 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Logger, userID string, leagueConcurrency int) (int, error) {
 	leagueIDs, err := a.FetchUserLeagues(ctx, FetchUserLeaguesParams{UserID: userID})
 	if err != nil {
-		if isNotFoundAppError(err) {
+		if IsNotFoundAppError(err) {
 			return 0, a.DB.WithContext(ctx).
 				Model(&models.SleeperUser{}).
 				Where("sleeper_user_id = ?", userID).
@@ -264,9 +270,9 @@ func (a *DiscoveryActivities) discoverOneUser(ctx context.Context, logger log.Lo
 		}).Error
 }
 
-// isNotFoundAppError reports whether err is the NOT_FOUND application error
+// IsNotFoundAppError reports whether err is the NOT_FOUND application error
 // produced by the fetch helpers when a Sleeper entity no longer exists.
-func isNotFoundAppError(err error) bool {
+func IsNotFoundAppError(err error) bool {
 	var appErr *temporal.ApplicationError
 	return errors.As(err, &appErr) && appErr.Type() == "NOT_FOUND"
 }

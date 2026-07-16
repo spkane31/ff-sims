@@ -26,6 +26,12 @@ build_worker() {
   (cd "$REPO_DIR/backend" && "$GO_BIN" build -ldflags "-X 'main.buildID=${sha}' -X 'main.promoteOnStart=true'" -o worker.new ./cmd/worker)
 }
 
+build_cron() {
+  local sha
+  sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  (cd "$REPO_DIR/backend" && "$GO_BIN" build -ldflags "-X 'main.buildID=${sha}'" -o cron.new ./cmd/cron)
+}
+
 install_and_restart() {
   local sha
   sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
@@ -34,8 +40,13 @@ install_and_restart() {
     echo "build failed at $sha, leaving previous worker binary running" >&2
     return 1
   fi
+  if ! build_cron; then
+    echo "build failed at $sha, leaving previous cron binary in place" >&2
+    return 1
+  fi
 
   mv "$REPO_DIR/backend/worker.new" "$REPO_DIR/backend/worker"
+  mv "$REPO_DIR/backend/cron.new" "$REPO_DIR/backend/cron"
   systemctl restart "$WORKER_SERVICE"
   echo "deployed $sha"
 }
