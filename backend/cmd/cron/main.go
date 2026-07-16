@@ -40,6 +40,24 @@ func resolveJob(registry map[string]func(context.Context) error, name string) (f
 	return fn, nil
 }
 
+// jobFailed decides whether a discovery Report represents a silent total
+// failure that should make the process exit non-zero, rather than a
+// legitimate no-op. RunDiscovery/RunPool never return a Go error for "the
+// queue was empty" or "the DB was unreachable" — both look identical at the
+// Report level unless we check ClaimErrors: zero processed/failed items is
+// expected when there's genuinely nothing to claim, but zero processed/
+// failed items *and* at least one claim error means every attempt to talk
+// to the database failed for the whole run, which must not exit clean.
+func jobFailed(report discoverycron.Report) error {
+	totalProgress := report.UsersProcessed + report.UsersFailed + report.LeaguesProcessed + report.LeaguesFailed
+	claimErrors := report.UserClaimErrors + report.LeagueClaimErrors
+	if totalProgress == 0 && claimErrors > 0 {
+		return fmt.Errorf("discovery made no progress and saw %d claim error(s) (userClaimErrors=%d, leagueClaimErrors=%d): treating as failure",
+			claimErrors, report.UserClaimErrors, report.LeagueClaimErrors)
+	}
+	return nil
+}
+
 func main() {
 	jobName := flag.String("job", "", "job to run (see registry in main.go)")
 	maxDuration := flag.Duration("max-duration", 0, "hard deadline for the job, e.g. 50m")
@@ -65,8 +83,11 @@ func main() {
 
 	registry := map[string]func(context.Context) error{
 		"discovery": func(ctx context.Context) error {
-			_, err := discoverycron.RunDiscovery(ctx, da, discoverycron.LoadConfig())
-			return err
+			report, err := discoverycron.RunDiscovery(ctx, da, discoverycron.LoadConfig())
+			if err != nil {
+				return err
+			}
+			return jobFailed(report)
 		},
 	}
 

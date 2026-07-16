@@ -72,7 +72,10 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 // per-item timeout shorter than that; a shorter TTL risked a still-in-flight
 // user being reclaimed and processed a second time concurrently. Because
 // ticks claim rather than re-select, a stuck cohort can never head-of-line-
-// block the queue the way the old workflow-ID-collision dedupe did.
+// block the queue the way the old workflow-ID-collision dedupe did. The
+// tradeoff: a worker that dies mid-batch now leaves its claimed users
+// unclaimable for up to 120 minutes (not 20) before they become
+// re-queueable, a real if minor cost given crashes are rare.
 const claimStaleUsersSQL = `
 UPDATE sleeper_users SET claimed_at = now()
 WHERE sleeper_user_id IN (

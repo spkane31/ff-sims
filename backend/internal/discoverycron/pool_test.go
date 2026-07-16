@@ -2,6 +2,7 @@ package discoverycron_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -101,7 +102,7 @@ func TestRunPool_EmptyClaimDoesNotBusyLoop(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
+	res := discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
 		q.claimFn, process, func(string, error, time.Duration) {})
 
 	// 100ms / 20ms poll interval should yield roughly 5 claim attempts, not
@@ -109,6 +110,42 @@ func TestRunPool_EmptyClaimDoesNotBusyLoop(t *testing.T) {
 	// spinning.
 	if got := atomic.LoadInt32(&q.claim); got > 15 {
 		t.Errorf("expected a bounded number of claim attempts on an empty queue, got %d", got)
+	}
+	// An empty-but-no-error claim is a legitimate outcome (nothing to do
+	// right now), distinct from a claim error — it must not be counted as
+	// one.
+	if res.ClaimErrors != 0 {
+		t.Errorf("expected ClaimErrors == 0 for an empty queue with no error, got %d", res.ClaimErrors)
+	}
+}
+
+func TestRunPool_ClaimErrorIncrementsClaimErrorsAndDoesNotBusyLoop(t *testing.T) {
+	var claimCount int32
+	claimErr := errors.New("db unreachable")
+	claim := func(ctx context.Context, n int) ([]string, error) {
+		atomic.AddInt32(&claimCount, 1)
+		return nil, claimErr
+	}
+	process := func(ctx context.Context, id string) error { return nil }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	res := discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
+		claim, process, func(string, error, time.Duration) {})
+
+	if res.ClaimErrors == 0 {
+		t.Error("expected ClaimErrors to be incremented when claim() returns an error")
+	}
+	if got := atomic.LoadInt32(&claimCount); int(got) != res.ClaimErrors {
+		t.Errorf("expected ClaimErrors (%d) to equal the number of claim attempts (%d)", res.ClaimErrors, got)
+	}
+	// Same bound as the empty-queue busy-loop test: a claim error must still
+	// sleep pollInterval between attempts, not spin.
+	if got := atomic.LoadInt32(&claimCount); got > 15 {
+		t.Errorf("expected a bounded number of claim attempts on a persistent claim error, got %d", got)
+	}
+	if res.Processed != 0 || res.Failed != 0 {
+		t.Errorf("expected no items processed when every claim errors, got %+v", res)
 	}
 }
 

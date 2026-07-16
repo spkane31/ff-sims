@@ -30,6 +30,11 @@ type PoolConfig struct {
 type PoolResult struct {
 	Processed int
 	Failed    int
+	// ClaimErrors counts how many times claim(ctx, free) returned a non-nil
+	// error (e.g. the DB is unreachable) — distinct from an empty-but-error-
+	// free claim, which means "genuinely nothing to do right now" and isn't
+	// counted here.
+	ClaimErrors int
 }
 
 type itemResult struct {
@@ -104,7 +109,15 @@ func RunPool(
 		}
 
 		ids, err := claim(ctx, free)
-		if err != nil || len(ids) == 0 {
+		if err != nil {
+			res.ClaimErrors++
+			select {
+			case <-time.After(pollInterval):
+			case <-ctx.Done():
+			}
+			continue
+		}
+		if len(ids) == 0 {
 			select {
 			case <-time.After(pollInterval):
 			case <-ctx.Done():

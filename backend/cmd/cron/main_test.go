@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"backend/internal/discoverycron"
 )
 
 func TestResolveJob_KnownJobReturnsItsFunc(t *testing.T) {
@@ -33,5 +35,40 @@ func TestResolveJob_UnknownJobErrorsCleanly(t *testing.T) {
 	}
 	if !errors.Is(err, errUnknownJob) {
 		t.Errorf("expected errUnknownJob, got %v", err)
+	}
+}
+
+func TestJobFailed_ZeroProgressWithClaimErrorsIsFailure(t *testing.T) {
+	report := discoverycron.Report{UserClaimErrors: 1}
+	if err := jobFailed(report); err == nil {
+		t.Error("expected an error when the run made zero progress and saw a claim error")
+	}
+}
+
+func TestJobFailed_ZeroProgressWithLeagueClaimErrorsIsFailure(t *testing.T) {
+	report := discoverycron.Report{LeagueClaimErrors: 1}
+	if err := jobFailed(report); err == nil {
+		t.Error("expected an error when the run made zero progress and saw a league claim error")
+	}
+}
+
+func TestJobFailed_ZeroProgressWithNoClaimErrorsIsNotFailure(t *testing.T) {
+	report := discoverycron.Report{}
+	if err := jobFailed(report); err != nil {
+		t.Errorf("expected a genuinely-empty queue (no claim errors) to not be a failure, got %v", err)
+	}
+}
+
+func TestJobFailed_RealProgressIsNotFailureEvenWithClaimErrors(t *testing.T) {
+	report := discoverycron.Report{UsersProcessed: 1, UserClaimErrors: 5}
+	if err := jobFailed(report); err != nil {
+		t.Errorf("expected real progress alongside claim errors to not be a failure, got %v", err)
+	}
+}
+
+func TestJobFailed_OnlyFailedCountsStillCountAsProgress(t *testing.T) {
+	report := discoverycron.Report{LeaguesFailed: 1, LeagueClaimErrors: 1}
+	if err := jobFailed(report); err != nil {
+		t.Errorf("expected a run with real (even if failed) processing activity to not be treated as total failure, got %v", err)
 	}
 }

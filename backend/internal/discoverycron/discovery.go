@@ -19,6 +19,18 @@ const pollInterval = 200 * time.Millisecond
 // CRON_DISCOVERY_ prefix (distinct from the Temporal path's DISCOVERY_*
 // vars, which remain in effect for workflows.DiscoveryBatchDispatcher) so
 // the two paths can be tuned independently while both run.
+//
+// UserPoolSize and LeaguePoolSize are advertised as "scale up via env, no
+// code change needed" — but keep UserPoolSize + LeaguePoolSize comfortably
+// under DB_MAX_OPEN_CONNS (the process-wide DB connection pool ceiling,
+// shared with everything else the process does). ProcessLeague (process.go)
+// wraps FetchLeagueMembers + FetchLeagueDetails — each a Sleeper HTTP fetch
+// (up to 30s, times retries) plus a DB write — inside a single
+// db.Transaction, which holds a pooled connection (and row locks on the
+// leagues/users being upserted) for the full duration of both HTTP calls,
+// not just the writes. Pushing these pool sizes up toward or past
+// DB_MAX_OPEN_CONNS causes connection-acquisition starvation and stalls,
+// not more throughput.
 type Config struct {
 	UserPoolSize      int // CRON_DISCOVERY_USER_POOL_SIZE, default 4
 	UserRefillBatch   int // CRON_DISCOVERY_USER_REFILL_BATCH, default 2
@@ -43,6 +55,14 @@ type Report struct {
 	UsersFailed      int
 	LeaguesProcessed int
 	LeaguesFailed    int
+	// UserClaimErrors and LeagueClaimErrors count how many times each pool's
+	// claim call returned a non-nil error (e.g. Postgres unreachable) rather
+	// than a legitimately empty queue. A run with zero processed/failed items
+	// but nonzero claim errors means the job made no progress because it
+	// couldn't talk to the database, not because there was nothing to do —
+	// callers (cmd/cron) should treat that distinction as failure.
+	UserClaimErrors   int
+	LeagueClaimErrors int
 }
 
 // RunDiscovery runs the user pool and league pool concurrently until ctx is
@@ -95,10 +115,12 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 	wg.Wait()
 
 	report := Report{
-		UsersProcessed:   userResult.Processed,
-		UsersFailed:      userResult.Failed,
-		LeaguesProcessed: leagueResult.Processed,
-		LeaguesFailed:    leagueResult.Failed,
+		UsersProcessed:    userResult.Processed,
+		UsersFailed:       userResult.Failed,
+		LeaguesProcessed:  leagueResult.Processed,
+		LeaguesFailed:     leagueResult.Failed,
+		UserClaimErrors:   userResult.ClaimErrors,
+		LeagueClaimErrors: leagueResult.ClaimErrors,
 	}
 	logger.Info("discovery cron finished", "tag", activities.DiscoveryLogTag,
 		"duration", time.Since(start),

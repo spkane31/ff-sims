@@ -20,29 +20,29 @@ type SleeperUser struct {
 func (SleeperUser) TableName() string { return "sleeper_users" }
 
 type SleeperLeague struct {
-	SleeperLeagueID string          `gorm:"primaryKey;column:sleeper_league_id"`
-	Name            string          `gorm:"column:name"`
-	Season          string          `gorm:"column:season"`
-	Sport           string          `gorm:"column:sport"`
-	Status          string          `gorm:"column:status"`
-	TotalRosters    int             `gorm:"column:total_rosters"`
-	PPR             *float64        `gorm:"column:ppr"`
-	TEPremium       *float64        `gorm:"column:te_premium"`
-	IsSuperflex     *bool           `gorm:"column:is_superflex"`
-	DraftType       string          `gorm:"column:draft_type"`
-	LeagueType      string          `gorm:"column:league_type"`
-	ScoringSettings json.RawMessage `gorm:"column:scoring_settings;type:jsonb"`
-	RosterPositions json.RawMessage `gorm:"column:roster_positions;type:jsonb"`
-	LastFetchedAt             *time.Time `gorm:"column:last_fetched_at"`
-	LastDraftsFetchedAt       *time.Time `gorm:"column:last_drafts_fetched_at"`
-	LastTransactionsFetchedAt *time.Time `gorm:"column:last_transactions_fetched_at"`
-	LastTransactionLegFetched *int       `gorm:"column:last_transaction_leg_fetched"`
-	ClaimedAt                 *time.Time `gorm:"column:claimed_at"`
-	DraftsClaimedAt           *time.Time `gorm:"column:drafts_claimed_at"`
-	DiscoveryClaimedAt        *time.Time `gorm:"column:discovery_claimed_at"`
-	SkippedAt                 *time.Time `gorm:"column:skipped_at"`
-	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime"`
+	SleeperLeagueID           string          `gorm:"primaryKey;column:sleeper_league_id"`
+	Name                      string          `gorm:"column:name"`
+	Season                    string          `gorm:"column:season"`
+	Sport                     string          `gorm:"column:sport"`
+	Status                    string          `gorm:"column:status"`
+	TotalRosters              int             `gorm:"column:total_rosters"`
+	PPR                       *float64        `gorm:"column:ppr"`
+	TEPremium                 *float64        `gorm:"column:te_premium"`
+	IsSuperflex               *bool           `gorm:"column:is_superflex"`
+	DraftType                 string          `gorm:"column:draft_type"`
+	LeagueType                string          `gorm:"column:league_type"`
+	ScoringSettings           json.RawMessage `gorm:"column:scoring_settings;type:jsonb"`
+	RosterPositions           json.RawMessage `gorm:"column:roster_positions;type:jsonb"`
+	LastFetchedAt             *time.Time      `gorm:"column:last_fetched_at"`
+	LastDraftsFetchedAt       *time.Time      `gorm:"column:last_drafts_fetched_at"`
+	LastTransactionsFetchedAt *time.Time      `gorm:"column:last_transactions_fetched_at"`
+	LastTransactionLegFetched *int            `gorm:"column:last_transaction_leg_fetched"`
+	ClaimedAt                 *time.Time      `gorm:"column:claimed_at"`
+	DraftsClaimedAt           *time.Time      `gorm:"column:drafts_claimed_at"`
+	DiscoveryClaimedAt        *time.Time      `gorm:"column:discovery_claimed_at"`
+	SkippedAt                 *time.Time      `gorm:"column:skipped_at"`
+	CreatedAt                 time.Time       `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                 time.Time       `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (SleeperLeague) TableName() string { return "sleeper_leagues" }

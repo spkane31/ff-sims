@@ -97,3 +97,34 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 		t.Error("expected lg-new's details to have been fetched")
 	}
 }
+
+// TestRunDiscovery_AggregatesClaimErrorsFromBothPools uses the package's
+// SQLite fixture deliberately, not TEST_DATABASE_URL: both claimStaleUsersSQL
+// and claimStaleLeaguesSQL use Postgres-only syntax (now(), interval, FOR
+// UPDATE SKIP LOCKED), so every claim attempt against SQLite fails outright
+// — a cheap, deterministic way to force claim errors on both pools without a
+// real unreachable-Postgres scenario, and it runs in every environment
+// (no TEST_DATABASE_URL gate needed).
+func TestRunDiscovery_AggregatesClaimErrorsFromBothPools(t *testing.T) {
+	db := newSQLiteDB(t)
+
+	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.New()}
+	cfg := discoverycron.Config{UserPoolSize: 1, UserRefillBatch: 1, LeaguePoolSize: 1, LeagueRefillBatch: 1}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	report, err := discoverycron.RunDiscovery(ctx, da, cfg)
+	if err != nil {
+		t.Fatalf("RunDiscovery error: %v", err)
+	}
+
+	if report.UserClaimErrors == 0 {
+		t.Error("expected UserClaimErrors > 0 when the user claim query fails every attempt")
+	}
+	if report.LeagueClaimErrors == 0 {
+		t.Error("expected LeagueClaimErrors > 0 when the league claim query fails every attempt")
+	}
+	if report.UsersProcessed != 0 || report.LeaguesProcessed != 0 {
+		t.Errorf("expected nothing processed when claiming always fails, got %+v", report)
+	}
+}
