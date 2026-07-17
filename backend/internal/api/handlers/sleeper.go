@@ -242,7 +242,11 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 	return sides
 }
 
-// GetSleeperStats returns counts of leagues, trades, and completed drafts in the Sleeper DB.
+// GetSleeperStats returns counts of leagues, trades, and completed drafts in
+// the Sleeper DB. draftCount is cloud-only and will trend toward zero over
+// time: drafts now route straight to the archive DB at ingest (see
+// syncOneLeagueDrafts in internal/activities/data_fetch.go), and cmd/server
+// has no archive DB connection by design (only cmd/worker does).
 func GetSleeperStats(c *gin.Context) {
 	var leagueCount, tradeCount, draftCount int64
 
