@@ -1,19 +1,27 @@
 -- +goose Up
 
--- Hourly history of data-scraping table sizes (users/leagues/transactions/
--- drafts, by discovery state), snapshotted by cmd/cron's "lifetime-counts"
--- job. See models.SleeperLifetimeCount.
+-- Hourly history of data-scraping table sizes, snapshotted by cmd/cron's
+-- "lifetime-counts" job. One row per hour; see models.SleeperLifetimeCount.
+-- transactions_total/trades_completed/drafts_completed are nullable — they
+-- come from the archive DB and are left NULL (not 0) for any snapshot taken
+-- while no archive DB is configured.
 CREATE TABLE sleeper_lifetime_counts (
-    snapshot_at timestamptz NOT NULL,
-    metric text NOT NULL,
-    count bigint NOT NULL DEFAULT 0,
-    PRIMARY KEY (snapshot_at, metric)
-);
+    snapshot_at timestamptz PRIMARY KEY,
 
--- Serves "growth of metric X over time" queries (chart one metric's history)
--- without a full-table scan.
-CREATE INDEX IF NOT EXISTS idx_sleeper_lifetime_counts_metric_snapshot
-    ON sleeper_lifetime_counts (metric, snapshot_at DESC);
+    users_total    bigint NOT NULL DEFAULT 0,
+    users_expanded bigint NOT NULL DEFAULT 0,
+    users_pending  bigint NOT NULL DEFAULT 0,
+    users_skipped  bigint NOT NULL DEFAULT 0,
+
+    leagues_total    bigint NOT NULL DEFAULT 0,
+    leagues_expanded bigint NOT NULL DEFAULT 0,
+    leagues_pending  bigint NOT NULL DEFAULT 0,
+    leagues_skipped  bigint NOT NULL DEFAULT 0,
+
+    transactions_total bigint,
+    trades_completed   bigint,
+    drafts_completed   bigint
+);
 
 -- +goose Down
 

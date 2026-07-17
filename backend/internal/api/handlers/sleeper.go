@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -246,28 +247,26 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 // tables are trimmed to a hot window by the scavenger's purge phase (and,
 // for drafts, mostly bypassed entirely at ingest once the archive DB is
 // configured — see syncOneLeagueDrafts in internal/activities/data_fetch.go),
-// so a live COUNT there would undercount. A metric missing from the latest
-// snapshot (e.g. before the cron job's first run) reports as zero rather
-// than an error.
+// so a live COUNT there would undercount. No snapshot yet (e.g. before the
+// cron job's first run) reports all zeros rather than an error; likewise a
+// snapshot taken before an archive DB was configured leaves TradeCount/
+// DraftCount at zero rather than erroring on the nil column.
 func GetSleeperStats(c *gin.Context) {
-	var rows []models.SleeperLifetimeCount
-	if err := database.DB.
-		Where("snapshot_at = (SELECT MAX(snapshot_at) FROM sleeper_lifetime_counts)").
-		Find(&rows).Error; err != nil {
+	var row models.SleeperLifetimeCount
+	err := database.DB.Order("snapshot_at DESC").First(&row).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, map[string]string{"msg": err.Error()})
 		return
 	}
 
-	counts := make(map[string]int64, len(rows))
-	for _, r := range rows {
-		counts[r.Metric] = r.Count
+	resp := SleeperStatsResponse{LeagueCount: row.LeaguesExpanded}
+	if row.TradesCompleted != nil {
+		resp.TradeCount = *row.TradesCompleted
 	}
-
-	c.JSON(http.StatusOK, SleeperStatsResponse{
-		LeagueCount: counts[models.LifetimeMetricLeaguesExpanded],
-		TradeCount:  counts[models.LifetimeMetricTradesCompleted],
-		DraftCount:  counts[models.LifetimeMetricDraftsCompleted],
-	})
+	if row.DraftsCompleted != nil {
+		resp.DraftCount = *row.DraftsCompleted
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // applyLeagueFilters appends league-level filter conditions to a GORM query.

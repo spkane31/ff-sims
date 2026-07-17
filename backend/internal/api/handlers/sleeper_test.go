@@ -142,10 +142,11 @@ func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
 	db.Create(&models.SleeperDraft{SleeperDraftID: "d1", Status: "complete"})
 
 	// ...but the hourly-snapshotted lifetime table remembers the true, larger, all-time totals.
-	snapshot := now.Truncate(time.Hour)
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricLeaguesExpanded, Count: 42})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricTradesCompleted, Count: 100})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricDraftsCompleted, Count: 55})
+	trades, drafts := int64(100), int64(55)
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: now.Truncate(time.Hour), LeaguesExpanded: 42,
+		TradesCompleted: &trades, DraftsCompleted: &drafts,
+	})
 
 	resp := performGetSleeperStats(t)
 
@@ -163,18 +164,37 @@ func TestGetSleeperStats_UsesOnlyTheLatestSnapshot(t *testing.T) {
 
 	older := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
 	latest := time.Now().UTC().Truncate(time.Hour)
+	tenTrades, tenDrafts := int64(10), int64(10)
+	hundredTrades, fiftyFiveDrafts := int64(100), int64(55)
 
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricLeaguesExpanded, Count: 10})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricTradesCompleted, Count: 10})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricDraftsCompleted, Count: 10})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricLeaguesExpanded, Count: 42})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricTradesCompleted, Count: 100})
-	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricDraftsCompleted, Count: 55})
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: older, LeaguesExpanded: 10, TradesCompleted: &tenTrades, DraftsCompleted: &tenDrafts,
+	})
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: latest, LeaguesExpanded: 42, TradesCompleted: &hundredTrades, DraftsCompleted: &fiftyFiveDrafts,
+	})
 
 	resp := performGetSleeperStats(t)
 
 	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
 		t.Errorf("resp = %+v, want the latest snapshot's {42, 100, 55}, not the older one's {10, 10, 10}", resp)
+	}
+}
+
+// TestGetSleeperStats_NilArchiveColumnsDefaultToZero covers a snapshot taken
+// while no archive DB was configured (transactions_total/trades_completed/
+// drafts_completed are NULL, not 0) — the handler must not error dereferencing
+// a nil pointer, and must report 0 rather than propagate NULL.
+func TestGetSleeperStats_NilArchiveColumnsDefaultToZero(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: time.Now().UTC().Truncate(time.Hour), LeaguesExpanded: 7})
+
+	resp := performGetSleeperStats(t)
+
+	if resp.LeagueCount != 7 || resp.TradeCount != 0 || resp.DraftCount != 0 {
+		t.Errorf("resp = %+v, want {LeagueCount: 7, TradeCount: 0, DraftCount: 0}", resp)
 	}
 }
 

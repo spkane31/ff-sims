@@ -58,49 +58,36 @@ func TestRunSnapshot_CountsDiscoveryStateFromCloud(t *testing.T) {
 	cloud.Create(&models.SleeperLeague{SleeperLeagueID: "lg-b", Season: "2026", LastFetchedAt: &now})
 	cloud.Create(&models.SleeperLeague{SleeperLeagueID: "lg-c", Season: "2026"})
 
-	report, err := statscron.RunSnapshot(context.Background(), cloud, archive)
+	row, err := statscron.RunSnapshot(context.Background(), cloud, archive)
 	if err != nil {
 		t.Fatalf("RunSnapshot: %v", err)
 	}
 
-	want := map[string]int64{
-		models.LifetimeMetricUsersTotal:    3,
-		models.LifetimeMetricUsersExpanded: 1,
-		models.LifetimeMetricUsersPending:  1,
-		models.LifetimeMetricUsersSkipped:  1,
-
-		models.LifetimeMetricLeaguesTotal:    3,
-		models.LifetimeMetricLeaguesExpanded: 2,
-		models.LifetimeMetricLeaguesPending:  1,
-		models.LifetimeMetricLeaguesSkipped:  0,
+	if row.UsersTotal != 3 || row.UsersExpanded != 1 || row.UsersPending != 1 || row.UsersSkipped != 1 {
+		t.Errorf("users counts = %+v, want total=3 expanded=1 pending=1 skipped=1", row)
 	}
-	for metric, count := range want {
-		if report.Counts[metric] != count {
-			t.Errorf("metric %s: got %d, want %d", metric, report.Counts[metric], count)
-		}
+	if row.LeaguesTotal != 3 || row.LeaguesExpanded != 2 || row.LeaguesPending != 1 || row.LeaguesSkipped != 0 {
+		t.Errorf("leagues counts = %+v, want total=3 expanded=2 pending=1 skipped=0", row)
+	}
+	if !row.SnapshotAt.Equal(row.SnapshotAt.Truncate(time.Hour)) {
+		t.Errorf("expected SnapshotAt to be truncated to the hour, got %v", row.SnapshotAt)
 	}
 
-	if !report.SnapshotAt.Equal(report.SnapshotAt.Truncate(time.Hour)) {
-		t.Errorf("expected SnapshotAt to be truncated to the hour, got %v", report.SnapshotAt)
+	var persisted models.SleeperLifetimeCount
+	if err := cloud.Where("snapshot_at = ?", row.SnapshotAt).First(&persisted).Error; err != nil {
+		t.Fatalf("fetch persisted row: %v", err)
 	}
-
-	var rows []models.SleeperLifetimeCount
-	if err := cloud.Find(&rows).Error; err != nil {
-		t.Fatalf("fetch persisted rows: %v", err)
-	}
-	for _, r := range rows {
-		if !r.SnapshotAt.Equal(report.SnapshotAt) {
-			t.Errorf("row %s: SnapshotAt = %v, want %v", r.Metric, r.SnapshotAt, report.SnapshotAt)
-		}
+	if persisted.UsersTotal != 3 || persisted.LeaguesExpanded != 2 {
+		t.Errorf("persisted row = %+v, want it to match the returned row", persisted)
 	}
 }
 
-// TestRunSnapshot_TransactionAndDraftMetricsReflectFullArchiveHistory seeds
+// TestRunSnapshot_TransactionAndDraftColumnsReflectFullArchiveHistory seeds
 // cloud with only a trimmed hot window (as if the scavenger's purge phase
 // already ran) and archive with the same rows plus older, already-purged
-// ones, then asserts the archive-sourced metrics reflect the full history,
+// ones, then asserts the archive-sourced columns reflect the full history,
 // not just what's still in cloud.
-func TestRunSnapshot_TransactionAndDraftMetricsReflectFullArchiveHistory(t *testing.T) {
+func TestRunSnapshot_TransactionAndDraftColumnsReflectFullArchiveHistory(t *testing.T) {
 	cloud, archive := newStatscronTestDBs(t)
 	now := time.Now().UTC()
 
@@ -128,44 +115,40 @@ func TestRunSnapshot_TransactionAndDraftMetricsReflectFullArchiveHistory(t *test
 		SleeperDraftID: "d-pending", Status: "pre_draft", Season: "2026", CreatedAt: now,
 	})
 
-	report, err := statscron.RunSnapshot(context.Background(), cloud, archive)
+	row, err := statscron.RunSnapshot(context.Background(), cloud, archive)
 	if err != nil {
 		t.Fatalf("RunSnapshot: %v", err)
 	}
 
-	if report.Counts[models.LifetimeMetricTransactionsTotal] != 4 {
-		t.Errorf("transactions_total = %d, want 4 (full archive history)", report.Counts[models.LifetimeMetricTransactionsTotal])
+	if row.TransactionsTotal == nil || *row.TransactionsTotal != 4 {
+		t.Errorf("transactions_total = %v, want 4 (full archive history)", row.TransactionsTotal)
 	}
-	if report.Counts[models.LifetimeMetricTradesCompleted] != 3 {
-		t.Errorf("trades_completed = %d, want 3, not just cloud's hot-window 1", report.Counts[models.LifetimeMetricTradesCompleted])
+	if row.TradesCompleted == nil || *row.TradesCompleted != 3 {
+		t.Errorf("trades_completed = %v, want 3, not just cloud's hot-window 1", row.TradesCompleted)
 	}
-	if report.Counts[models.LifetimeMetricDraftsCompleted] != 2 {
-		t.Errorf("drafts_completed = %d, want 2, not just cloud's hot-window 1", report.Counts[models.LifetimeMetricDraftsCompleted])
+	if row.DraftsCompleted == nil || *row.DraftsCompleted != 2 {
+		t.Errorf("drafts_completed = %v, want 2, not just cloud's hot-window 1", row.DraftsCompleted)
 	}
 }
 
-func TestRunSnapshot_SkipsArchiveMetricsWhenArchiveIsNil(t *testing.T) {
+func TestRunSnapshot_LeavesArchiveColumnsNilWhenArchiveIsNil(t *testing.T) {
 	cloud, _ := newStatscronTestDBs(t)
 
-	report, err := statscron.RunSnapshot(context.Background(), cloud, nil)
+	row, err := statscron.RunSnapshot(context.Background(), cloud, nil)
 	if err != nil {
 		t.Fatalf("RunSnapshot: %v", err)
 	}
 
-	for _, metric := range []string{
-		models.LifetimeMetricTransactionsTotal,
-		models.LifetimeMetricTradesCompleted,
-		models.LifetimeMetricDraftsCompleted,
-	} {
-		if _, ok := report.Counts[metric]; ok {
-			t.Errorf("expected metric %s to be skipped (not written as a misleading zero) when archive is nil", metric)
-		}
+	if row.TransactionsTotal != nil || row.TradesCompleted != nil || row.DraftsCompleted != nil {
+		t.Errorf("expected archive-sourced columns to stay nil (not a misleading zero) when archive is nil, got %+v", row)
 	}
 
-	var rowCount int64
-	cloud.Model(&models.SleeperLifetimeCount{}).Where("metric = ?", models.LifetimeMetricTransactionsTotal).Count(&rowCount)
-	if rowCount != 0 {
-		t.Errorf("expected no persisted row for an archive-only metric when archive is nil, got %d", rowCount)
+	var persisted models.SleeperLifetimeCount
+	if err := cloud.Where("snapshot_at = ?", row.SnapshotAt).First(&persisted).Error; err != nil {
+		t.Fatalf("fetch persisted row: %v", err)
+	}
+	if persisted.TransactionsTotal != nil {
+		t.Errorf("expected persisted transactions_total to be NULL, got %v", *persisted.TransactionsTotal)
 	}
 }
 
@@ -178,19 +161,17 @@ func TestRunSnapshot_SameHourUpsertsInsteadOfDuplicating(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 	cloud.Create(&models.SleeperUser{SleeperUserID: "u2", LastFetchedAt: &now})
-	report, err := statscron.RunSnapshot(context.Background(), cloud, archive)
+	row, err := statscron.RunSnapshot(context.Background(), cloud, archive)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
-	if report.Counts[models.LifetimeMetricUsersExpanded] != 2 {
-		t.Errorf("expected second run to report 2 expanded users, got %d", report.Counts[models.LifetimeMetricUsersExpanded])
+	if row.UsersExpanded != 2 {
+		t.Errorf("expected second run to report 2 expanded users, got %d", row.UsersExpanded)
 	}
 
 	var rowCount int64
-	cloud.Model(&models.SleeperLifetimeCount{}).
-		Where("metric = ? AND snapshot_at = ?", models.LifetimeMetricUsersExpanded, report.SnapshotAt).
-		Count(&rowCount)
+	cloud.Model(&models.SleeperLifetimeCount{}).Where("snapshot_at = ?", row.SnapshotAt).Count(&rowCount)
 	if rowCount != 1 {
-		t.Errorf("expected exactly one row for this hour+metric (upsert, not insert), got %d", rowCount)
+		t.Errorf("expected exactly one row for this hour (upsert, not insert), got %d", rowCount)
 	}
 }
