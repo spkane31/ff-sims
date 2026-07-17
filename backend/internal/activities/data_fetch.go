@@ -146,8 +146,9 @@ func (a *DataFetchActivities) SyncLeagueDraftsBatch(ctx context.Context, params 
 // picks are fetch-once), and stamps completion (clearing the claim) in one
 // update. A 404 on the league marks it skipped; a 404 on a draft's picks
 // skips that draft. Each draft routes as a whole unit (header + picks) to
-// either cloud (current season, or no archive configured — the unchanged
-// pre-T13 path) or straight to archive (past seasons, when Archive is set).
+// archive whenever Archive is configured — draft data is immutable and has
+// no live-API reader, so there's no reason for any of it to ever land in
+// cloud. Falls back to cloud-only when no archive DB is configured.
 func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID string) error {
 	drafts, err := a.Sleeper.GetLeagueDrafts(ctx, leagueID)
 	if err != nil {
@@ -164,10 +165,9 @@ func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID 
 		return err
 	}
 
-	currentSeason := currentSleeperSeason()
 	var cloudCompletedIDs, archiveCompletedIDs []string
 	for _, d := range drafts {
-		if a.Archive != nil && d.Season < currentSeason {
+		if a.Archive != nil {
 			if err := a.upsertArchiveDraftHeader(ctx, d, leagueID); err != nil {
 				return err
 			}

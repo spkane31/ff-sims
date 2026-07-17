@@ -500,7 +500,7 @@ func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 	}
 }
 
-func TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly(t *testing.T) {
+func TestSyncDraftsBatch_RoutesDraftToArchiveOnly(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
 	draftClaimedLeague(t, cloud, "lg1")
@@ -539,7 +539,7 @@ func TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly(t *testing.T) {
 	}
 }
 
-func TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud(t *testing.T) {
+func TestSyncDraftsBatch_CurrentSeasonDraftRoutesToArchiveToo(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
 	draftClaimedLeague(t, cloud, "lg1")
@@ -555,11 +555,11 @@ func TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud(t *testing.T) {
 	var cloudCount, archiveCount int64
 	cloud.Model(&models.SleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&cloudCount)
 	archive.Model(&models.ArchiveSleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&archiveCount)
-	if cloudCount != 1 {
-		t.Errorf("expected current-season draft in cloud, got %d", cloudCount)
+	if cloudCount != 0 {
+		t.Errorf("expected current-season draft NOT in cloud when Archive is configured, got %d", cloudCount)
 	}
-	if archiveCount != 0 {
-		t.Errorf("expected current-season draft NOT in archive, got %d", archiveCount)
+	if archiveCount != 1 {
+		t.Errorf("expected current-season draft in archive, got %d", archiveCount)
 	}
 }
 
