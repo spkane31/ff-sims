@@ -9,6 +9,7 @@ package statscron
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,39 +31,56 @@ import (
 // syncOneLeagueDrafts in internal/activities/data_fetch.go). When archive is
 // nil (no ARCHIVE_DATABASE_URL — e.g. local dev), those three columns are
 // left nil on this row rather than written as misleading zeros.
+//
+// The users/leagues/archive counts are independent of each other, so they
+// run concurrently: each goroutine below only ever writes its own row
+// fields and its own error variable, so there's no shared mutable state
+// between them and no need for a mutex.
 func RunSnapshot(ctx context.Context, cloud, archive *gorm.DB) (models.SleeperLifetimeCount, error) {
 	row := models.SleeperLifetimeCount{SnapshotAt: time.Now().UTC().Truncate(time.Hour)}
 
-	var err error
-	row.UsersTotal, row.UsersExpanded, row.UsersPending, row.UsersSkipped, err =
-		countDiscoveryState(ctx, cloud, "sleeper_users")
-	if err != nil {
-		return models.SleeperLifetimeCount{}, err
-	}
-	row.LeaguesTotal, row.LeaguesExpanded, row.LeaguesPending, row.LeaguesSkipped, err =
-		countDiscoveryState(ctx, cloud, "sleeper_leagues")
-	if err != nil {
-		return models.SleeperLifetimeCount{}, err
-	}
+	var usersErr, leaguesErr, archiveErr error
+	var wg sync.WaitGroup
 
+	wg.Go(func() {
+		row.UsersTotal, row.UsersExpanded, row.UsersPending, row.UsersSkipped, usersErr =
+			countDiscoveryState(ctx, cloud, "sleeper_users")
+	})
+	wg.Go(func() {
+		row.LeaguesTotal, row.LeaguesExpanded, row.LeaguesPending, row.LeaguesSkipped, leaguesErr =
+			countDiscoveryState(ctx, cloud, "sleeper_leagues")
+	})
 	if archive != nil {
-		var transactionsTotal, tradesCompleted, draftsCompleted int64
-		if err := archive.WithContext(ctx).Table("sleeper_transactions").Count(&transactionsTotal).Error; err != nil {
-			return models.SleeperLifetimeCount{}, err
-		}
-		if err := archive.WithContext(ctx).Table("sleeper_transactions").
-			Where("type = ? AND status = ?", "trade", "complete").Count(&tradesCompleted).Error; err != nil {
-			return models.SleeperLifetimeCount{}, err
-		}
-		if err := archive.WithContext(ctx).Table("sleeper_drafts").
-			Where("status = ?", "complete").Count(&draftsCompleted).Error; err != nil {
-			return models.SleeperLifetimeCount{}, err
-		}
-		row.TransactionsTotal = &transactionsTotal
-		row.TradesCompleted = &tradesCompleted
-		row.DraftsCompleted = &draftsCompleted
+		wg.Go(func() {
+			var transactionsTotal, tradesCompleted, draftsCompleted int64
+			if archiveErr = archive.WithContext(ctx).Table("sleeper_transactions").Count(&transactionsTotal).Error; archiveErr != nil {
+				return
+			}
+			if archiveErr = archive.WithContext(ctx).Table("sleeper_transactions").
+				Where("type = ? AND status = ?", "trade", "complete").Count(&tradesCompleted).Error; archiveErr != nil {
+				return
+			}
+			if archiveErr = archive.WithContext(ctx).Table("sleeper_drafts").
+				Where("status = ?", "complete").Count(&draftsCompleted).Error; archiveErr != nil {
+				return
+			}
+			row.TransactionsTotal = &transactionsTotal
+			row.TradesCompleted = &tradesCompleted
+			row.DraftsCompleted = &draftsCompleted
+		})
 	} else {
 		log.Println("statscron: archive DB not configured, leaving transactions/drafts columns nil this run")
+	}
+
+	wg.Wait()
+	if usersErr != nil {
+		return models.SleeperLifetimeCount{}, usersErr
+	}
+	if leaguesErr != nil {
+		return models.SleeperLifetimeCount{}, leaguesErr
+	}
+	if archiveErr != nil {
+		return models.SleeperLifetimeCount{}, archiveErr
 	}
 
 	if err := cloud.WithContext(ctx).Clauses(clause.OnConflict{

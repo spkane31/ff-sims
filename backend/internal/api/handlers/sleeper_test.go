@@ -105,13 +105,13 @@ func TestValueAsOf(t *testing.T) {
 	}
 }
 
-func performGetSleeperStats(t *testing.T) SleeperStatsResponse {
+func performGetSleeperStats(t *testing.T, query string) SleeperStatsResponse {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/sleeper/stats", GetSleeperStats)
 
-	req := httptest.NewRequest(http.MethodGet, "/sleeper/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/sleeper/stats"+query, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -148,17 +148,21 @@ func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
 		TradesCompleted: &trades, DraftsCompleted: &drafts,
 	})
 
-	resp := performGetSleeperStats(t)
+	resp := performGetSleeperStats(t, "")
 
-	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
-		t.Errorf("resp = %+v, want {LeagueCount: 42, TradeCount: 100, DraftCount: 55}", resp)
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	if got.LeagueCount != 42 || got.TradeCount != 100 || got.DraftCount != 55 {
+		t.Errorf("snapshot = %+v, want {LeagueCount: 42, TradeCount: 100, DraftCount: 55}", got)
 	}
 }
 
-// TestGetSleeperStats_UsesOnlyTheLatestSnapshot seeds an older snapshot hour
-// with different values than the newest one, and asserts the handler reports
-// only the latest hour's counts — not a sum or an average across history.
-func TestGetSleeperStats_UsesOnlyTheLatestSnapshot(t *testing.T) {
+// TestGetSleeperStats_OrdersMostRecentFirst seeds two snapshot hours and
+// asserts the series comes back newest-first, matching what a "just the
+// latest" caller (limit=1) expects from index 0.
+func TestGetSleeperStats_OrdersMostRecentFirst(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)
 
@@ -174,10 +178,54 @@ func TestGetSleeperStats_UsesOnlyTheLatestSnapshot(t *testing.T) {
 		SnapshotAt: latest, LeaguesExpanded: 42, TradesCompleted: &hundredTrades, DraftsCompleted: &fiftyFiveDrafts,
 	})
 
-	resp := performGetSleeperStats(t)
+	resp := performGetSleeperStats(t, "")
 
-	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
-		t.Errorf("resp = %+v, want the latest snapshot's {42, 100, 55}, not the older one's {10, 10, 10}", resp)
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeagueCount != 42 || resp.Snapshots[1].LeagueCount != 10 {
+		t.Errorf("expected [latest, older] = [42, 10], got [%d, %d]", resp.Snapshots[0].LeagueCount, resp.Snapshots[1].LeagueCount)
+	}
+}
+
+// TestGetSleeperStats_LimitParam covers the home page's expected use (limit=1
+// for just the latest point) and a smaller-than-available limit generally.
+func TestGetSleeperStats_LimitParam(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC().Truncate(time.Hour)
+	for i := 0; i < 3; i++ {
+		db.Create(&models.SleeperLifetimeCount{SnapshotAt: now.Add(-time.Duration(i) * time.Hour), LeaguesExpanded: int64(i)})
+	}
+
+	resp := performGetSleeperStats(t, "?limit=1")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot with limit=1, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeagueCount != 0 { // i=0 -> now, the most recent
+		t.Errorf("expected the most recent snapshot (LeagueCount 0), got %d", resp.Snapshots[0].LeagueCount)
+	}
+}
+
+// TestGetSleeperStats_SkipParam covers paging past the most recent rows.
+func TestGetSleeperStats_SkipParam(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC().Truncate(time.Hour)
+	for i := 0; i < 3; i++ {
+		db.Create(&models.SleeperLifetimeCount{SnapshotAt: now.Add(-time.Duration(i) * time.Hour), LeaguesExpanded: int64(i)})
+	}
+
+	resp := performGetSleeperStats(t, "?limit=1&skip=2")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeagueCount != 2 { // i=2 -> oldest of the three
+		t.Errorf("expected skip=2 to land on the oldest snapshot (LeagueCount 2), got %d", resp.Snapshots[0].LeagueCount)
 	}
 }
 
@@ -191,21 +239,25 @@ func TestGetSleeperStats_NilArchiveColumnsDefaultToZero(t *testing.T) {
 
 	db.Create(&models.SleeperLifetimeCount{SnapshotAt: time.Now().UTC().Truncate(time.Hour), LeaguesExpanded: 7})
 
-	resp := performGetSleeperStats(t)
+	resp := performGetSleeperStats(t, "")
 
-	if resp.LeagueCount != 7 || resp.TradeCount != 0 || resp.DraftCount != 0 {
-		t.Errorf("resp = %+v, want {LeagueCount: 7, TradeCount: 0, DraftCount: 0}", resp)
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	if got.LeagueCount != 7 || got.TradeCount != 0 || got.DraftCount != 0 {
+		t.Errorf("snapshot = %+v, want {LeagueCount: 7, TradeCount: 0, DraftCount: 0}", got)
 	}
 }
 
-func TestGetSleeperStats_MissingMetricsDefaultToZero(t *testing.T) {
+func TestGetSleeperStats_EmptyTableReturnsEmptySeries(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)
 
-	resp := performGetSleeperStats(t)
+	resp := performGetSleeperStats(t, "")
 
-	if resp.LeagueCount != 0 || resp.TradeCount != 0 || resp.DraftCount != 0 {
-		t.Errorf("resp = %+v, want all zero when sleeper_lifetime_counts is empty", resp)
+	if len(resp.Snapshots) != 0 {
+		t.Errorf("expected an empty (non-nil) snapshots slice, got %d", len(resp.Snapshots))
 	}
 }
 

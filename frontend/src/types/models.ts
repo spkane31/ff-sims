@@ -209,9 +209,17 @@ export interface GetSimulationResponse {
 // Sleeper scraper data types
 
 export interface SleeperStats {
+  snapshot_at: string;
   league_count: number;
   trade_count: number;
   draft_count: number;
+}
+
+// GET /sleeper/stats returns a series of hourly snapshots (most recent
+// first), used for the home page's current totals (snapshots[0]) and,
+// eventually, /admin growth-over-time charts.
+export interface SleeperStatsResponse {
+  snapshots: SleeperStats[];
 }
 
 export interface TradeSidePlayer {

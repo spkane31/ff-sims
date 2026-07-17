@@ -9,6 +9,9 @@ import {
 } from '../types/models';
 import { sleeperService } from '../services/sleeperService';
 
+// useSleeperStats returns just the latest snapshot (limit=1), for the home
+// page's current totals. For a growth-over-time series (e.g. an /admin
+// chart), use useSleeperStatsHistory instead.
 export function useSleeperStats() {
   const [stats, setStats] = useState<SleeperStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,7 +21,8 @@ export function useSleeperStats() {
     try {
       setIsLoading(true);
       setError(null);
-      setStats(await sleeperService.getStats());
+      const data = await sleeperService.getStats(1);
+      setStats(data.snapshots[0] ?? null);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch Sleeper stats'));
     } finally {
@@ -28,6 +32,30 @@ export function useSleeperStats() {
 
   useEffect(() => { fetch(); }, [fetch]);
   return { stats, isLoading, error, refetch: fetch };
+}
+
+// useSleeperStatsHistory returns the hourly snapshot series (most recent
+// first) backing an eventual /admin growth-over-time chart.
+export function useSleeperStatsHistory(limit = 168, skip = 0) {
+  const [snapshots, setSnapshots] = useState<SleeperStats[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetch = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await sleeperService.getStats(limit, skip);
+      setSnapshots(data.snapshots);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch Sleeper stats history'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [limit, skip]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { snapshots, isLoading, error, refetch: fetch };
 }
 
 interface PaginatedState<T> {

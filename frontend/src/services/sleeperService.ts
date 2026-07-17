@@ -1,6 +1,6 @@
 import { apiClient } from './apiClient';
 import {
-  SleeperStats,
+  SleeperStatsResponse,
   SleeperTradesResponse,
   SleeperADPResponse,
   SleeperTransactionsResponse,
@@ -16,8 +16,11 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 }
 
 export const sleeperService = {
-  getStats: (): Promise<SleeperStats> =>
-    apiClient.get<SleeperStats>('/sleeper/stats'),
+  // limit/skip page through sleeper_lifetime_counts' hourly history, most
+  // recent first; omit both for just the latest point (limit defaults to
+  // 100 server-side, so pass limit=1 when only the latest is needed).
+  getStats: (limit?: number, skip?: number): Promise<SleeperStatsResponse> =>
+    apiClient.get<SleeperStatsResponse>(`/sleeper/stats${buildQuery({ limit, skip })}`),
 
   getTrades: (
     page = 1,
