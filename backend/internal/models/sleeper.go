@@ -135,27 +135,38 @@ type SleeperWeekStatFetch struct {
 func (SleeperWeekStatFetch) TableName() string { return "sleeper_week_stat_fetches" }
 
 // Lifetime count metric names stored in sleeper_lifetime_counts. Kept as
-// constants so the scavenger (writer) and the stats handler (reader) can't
-// drift on the key strings.
+// constants so the hourly snapshot cron (writer) and the stats/admin
+// handlers (readers) can't drift on the key strings.
 const (
-	LifetimeMetricLeagues         = "leagues"
-	LifetimeMetricTrades          = "trades"
-	LifetimeMetricCompletedDrafts = "completed_drafts"
+	LifetimeMetricUsersTotal    = "users_total"
+	LifetimeMetricUsersExpanded = "users_expanded"
+	LifetimeMetricUsersPending  = "users_pending"
+	LifetimeMetricUsersSkipped  = "users_skipped"
+
+	LifetimeMetricLeaguesTotal    = "leagues_total"
+	LifetimeMetricLeaguesExpanded = "leagues_expanded"
+	LifetimeMetricLeaguesPending  = "leagues_pending"
+	LifetimeMetricLeaguesSkipped  = "leagues_skipped"
+
+	LifetimeMetricTransactionsTotal = "transactions_total"
+	LifetimeMetricTradesCompleted   = "trades_completed"
+	LifetimeMetricDraftsCompleted   = "drafts_completed"
 )
 
-// SleeperLifetimeCount is a cloud-side, scavenger-maintained all-time total
-// for one metric (see the LifetimeMetric* constants). It exists because
+// SleeperLifetimeCount is one (hour, metric) row of a cloud-side history of
+// data-scraping table sizes, snapshotted hourly by cmd/cron's
+// "lifetime-counts" job (internal/statscron). It exists because
 // sleeper_transactions and sleeper_drafts are trimmed to a hot window by the
-// purge phase (see ScavengerActivities.PurgeTransactionsBatch/
-// PurgeDraftsBatch), and drafts are additionally routed straight to the
-// archive DB at ingest once configured (see syncOneLeagueDrafts) — so a
-// plain COUNT(*) against the cloud tables undercounts all-time totals.
-// UpdatedAt makes staleness visible: this table is only as fresh as the
-// scavenger's last run.
+// scavenger's purge phase, and drafts are additionally routed straight to
+// the archive DB at ingest once configured (see syncOneLeagueDrafts) — so a
+// plain COUNT(*) against the cloud tables undercounts all-time totals, and
+// there was previously no way to see growth over time at all. SnapshotAt is
+// truncated to the hour so a retried run upserts the same row instead of
+// duplicating it.
 type SleeperLifetimeCount struct {
-	Metric    string    `gorm:"primaryKey;column:metric"`
-	Count     int64     `gorm:"column:count"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	SnapshotAt time.Time `gorm:"primaryKey;column:snapshot_at"`
+	Metric     string    `gorm:"primaryKey;column:metric"`
+	Count      int64     `gorm:"column:count"`
 }
 
 func (SleeperLifetimeCount) TableName() string { return "sleeper_lifetime_counts" }

@@ -34,13 +34,13 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 // batch signals it's caught up; a stream's activity failure is logged and
 // stops only that stream for this run — the cursor didn't move (advance
 // commits atomically with the copied rows), so the next 6h run resumes from
-// the same position. All these activity calls use defaultActivityOptions
-// (not batchActivityOptions): unlike the per-league sync batch activities,
-// these are fast single-query DB-to-DB copies (or, for UpdateLifetimeCounts,
-// a handful of COUNTs) with no external API calls and no
-// activity.RecordHeartbeat — batchActivityOptions' HeartbeatTimeout is for
-// activities that actually heartbeat. Runs on the archive-maintenance queue,
-// which only exists when ARCHIVE_DATABASE_URL is set — see cmd/worker/main.go.
+// the same position. All five (four replicate + config) activity calls use
+// defaultActivityOptions (not batchActivityOptions): unlike the per-league
+// sync batch activities, these are fast single-query DB-to-DB copies with no
+// external API calls and no activity.RecordHeartbeat — batchActivityOptions'
+// HeartbeatTimeout is for activities that actually heartbeat. Runs on the
+// archive-maintenance queue, which only exists when ARCHIVE_DATABASE_URL is
+// set — see cmd/worker/main.go.
 //
 // After replication, the purge phase (transactions, then drafts+picks)
 // deletes verified-old cloud rows — but only when cfg.PurgeEnabled is true
@@ -52,12 +52,6 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 // error when the oldest unverified row has sat past retention+15d, meaning
 // replication has stalled — that must surface as a failed (red) run, the
 // intended Temporal-UI alarm.
-//
-// Finally, UpdateLifetimeCounts recomputes all-time totals (unconditionally,
-// not gated on drain/purge state) and upserts them into cloud's
-// sleeper_lifetime_counts, so home/admin-page totals stay correct once purge
-// has trimmed the hot tables. A failure here is logged and swallowed — the
-// table simply keeps its last-known values until the next run.
 func ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, error) {
 	sa := &activities.ScavengerActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
@@ -126,20 +120,9 @@ func ScavengerDispatcher(ctx workflow.Context) (activities.ScavengerReport, erro
 		}
 	}
 
-	var lifetime activities.LifetimeCountsResult
-	if err := workflow.ExecuteActivity(actCtx, sa.UpdateLifetimeCounts).Get(ctx, &lifetime); err != nil {
-		logger.Error("update lifetime counts failed; sleeper_lifetime_counts keeps its last-known values", "error", err)
-	} else {
-		report.LifetimeLeagues = lifetime.Leagues
-		report.LifetimeTrades = lifetime.Trades
-		report.LifetimeCompletedDrafts = lifetime.CompletedDrafts
-	}
-
 	logger.Info("scavenger run complete", "leagues", report.LeaguesReplicated, "transactions", report.TransactionsReplicated,
 		"draftHeaders", report.DraftHeadersReplicated, "draftPicks", report.DraftPicksReplicated,
 		"transactionsPurged", report.TransactionsPurged, "transactionsUnverified", report.TransactionsUnverified,
-		"draftsPurged", report.DraftsPurged, "draftsUnverified", report.DraftsUnverified,
-		"lifetimeLeagues", report.LifetimeLeagues, "lifetimeTrades", report.LifetimeTrades,
-		"lifetimeCompletedDrafts", report.LifetimeCompletedDrafts)
+		"draftsPurged", report.DraftsPurged, "draftsUnverified", report.DraftsUnverified)
 	return report, nil
 }

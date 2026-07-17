@@ -2,10 +2,10 @@
 // max-duration, runs the matching job under a deadline context, and exits.
 // It's the replacement entrypoint for pipelines migrated off Temporal — see
 // docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md.
-// Currently registers exactly one job ("discovery"); adding another
-// (draft-sync, transaction-sync, etc., when their turn comes) is a matter of
-// registering another function in the registry built in main(), not
-// restructuring this file.
+// Registers "discovery" and "lifetime-counts"; adding another (draft-sync,
+// transaction-sync, etc., when their turn comes) is a matter of registering
+// another function in the registry built in main(), not restructuring this
+// file.
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/discoverycron"
 	"backend/internal/sleeper"
+	"backend/internal/statscron"
 )
 
 // buildID identifies the commit this binary was built from. Set via
@@ -78,6 +79,17 @@ func main() {
 		log.Fatalf("db connect: %v", err)
 	}
 
+	// Archive is only needed by "lifetime-counts" (for its purge-immune
+	// transactions/drafts metrics — see statscron.RunSnapshot). Its migrations
+	// are applied by cmd/worker at startup on the same host, not here.
+	if cfg.ArchiveDB.Enabled() {
+		if err := database.InitializeArchive(cfg); err != nil {
+			log.Fatalf("archive db connect: %v", err)
+		}
+	} else {
+		log.Println("ARCHIVE_DATABASE_URL not set — archive database disabled")
+	}
+
 	sc := sleeper.New()
 	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
 
@@ -88,6 +100,10 @@ func main() {
 				return err
 			}
 			return jobFailed(report)
+		},
+		"lifetime-counts": func(ctx context.Context) error {
+			_, err := statscron.RunSnapshot(ctx, database.DB, database.Archive)
+			return err
 		},
 	}
 

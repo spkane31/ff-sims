@@ -240,18 +240,20 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 }
 
 // GetSleeperStats returns all-time counts of leagues, trades, and completed
-// drafts. These are read from sleeper_lifetime_counts, a small table the
-// scavenger keeps current on its regular schedule (see
-// ScavengerActivities.UpdateLifetimeCounts), rather than COUNT(*) against
-// sleeper_transactions/sleeper_drafts directly: those cloud tables are
-// trimmed to a hot window by the purge phase (and, for drafts, mostly
-// bypassed entirely at ingest once the archive DB is configured — see
-// syncOneLeagueDrafts in internal/activities/data_fetch.go), so a live COUNT
-// there would undercount. A metric missing from the table (e.g. before the
-// scavenger's first run) reports as zero rather than an error.
+// drafts, read from the most recent hourly row of sleeper_lifetime_counts
+// (see internal/statscron, the cmd/cron job that snapshots it) rather than
+// COUNT(*) against sleeper_transactions/sleeper_drafts directly: those cloud
+// tables are trimmed to a hot window by the scavenger's purge phase (and,
+// for drafts, mostly bypassed entirely at ingest once the archive DB is
+// configured — see syncOneLeagueDrafts in internal/activities/data_fetch.go),
+// so a live COUNT there would undercount. A metric missing from the latest
+// snapshot (e.g. before the cron job's first run) reports as zero rather
+// than an error.
 func GetSleeperStats(c *gin.Context) {
 	var rows []models.SleeperLifetimeCount
-	if err := database.DB.Find(&rows).Error; err != nil {
+	if err := database.DB.
+		Where("snapshot_at = (SELECT MAX(snapshot_at) FROM sleeper_lifetime_counts)").
+		Find(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, map[string]string{"msg": err.Error()})
 		return
 	}
@@ -262,9 +264,9 @@ func GetSleeperStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, SleeperStatsResponse{
-		LeagueCount: counts[models.LifetimeMetricLeagues],
-		TradeCount:  counts[models.LifetimeMetricTrades],
-		DraftCount:  counts[models.LifetimeMetricCompletedDrafts],
+		LeagueCount: counts[models.LifetimeMetricLeaguesExpanded],
+		TradeCount:  counts[models.LifetimeMetricTradesCompleted],
+		DraftCount:  counts[models.LifetimeMetricDraftsCompleted],
 	})
 }
 

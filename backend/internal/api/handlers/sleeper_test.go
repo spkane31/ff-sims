@@ -141,15 +141,40 @@ func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
 	db.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", Type: "trade", Status: "complete"})
 	db.Create(&models.SleeperDraft{SleeperDraftID: "d1", Status: "complete"})
 
-	// ...but the scavenger-maintained lifetime table remembers the true, larger, all-time totals.
-	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricLeagues, Count: 42, UpdatedAt: now})
-	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricTrades, Count: 100, UpdatedAt: now})
-	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricCompletedDrafts, Count: 55, UpdatedAt: now})
+	// ...but the hourly-snapshotted lifetime table remembers the true, larger, all-time totals.
+	snapshot := now.Truncate(time.Hour)
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricLeaguesExpanded, Count: 42})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricTradesCompleted, Count: 100})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: snapshot, Metric: models.LifetimeMetricDraftsCompleted, Count: 55})
 
 	resp := performGetSleeperStats(t)
 
 	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
 		t.Errorf("resp = %+v, want {LeagueCount: 42, TradeCount: 100, DraftCount: 55}", resp)
+	}
+}
+
+// TestGetSleeperStats_UsesOnlyTheLatestSnapshot seeds an older snapshot hour
+// with different values than the newest one, and asserts the handler reports
+// only the latest hour's counts — not a sum or an average across history.
+func TestGetSleeperStats_UsesOnlyTheLatestSnapshot(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	older := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
+	latest := time.Now().UTC().Truncate(time.Hour)
+
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricLeaguesExpanded, Count: 10})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricTradesCompleted, Count: 10})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: older, Metric: models.LifetimeMetricDraftsCompleted, Count: 10})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricLeaguesExpanded, Count: 42})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricTradesCompleted, Count: 100})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: latest, Metric: models.LifetimeMetricDraftsCompleted, Count: 55})
+
+	resp := performGetSleeperStats(t)
+
+	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
+		t.Errorf("resp = %+v, want the latest snapshot's {42, 100, 55}, not the older one's {10, 10, 10}", resp)
 	}
 }
 

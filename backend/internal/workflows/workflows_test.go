@@ -483,8 +483,6 @@ func TestScavengerDispatcher_DrainsAllStreamsUntilShortBatch(t *testing.T) {
 		Return(activities.ReplicateBatchResult{Replicated: 2, Drained: true}, nil).Once()
 	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
 		Return(activities.ReplicateBatchResult{Replicated: 1, Drained: true}, nil).Once()
-	env.OnActivity(sa.UpdateLifetimeCounts, mock.Anything).
-		Return(activities.LifetimeCountsResult{Leagues: 40, Trades: 400, CompletedDrafts: 40}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
 
@@ -494,7 +492,6 @@ func TestScavengerDispatcher_DrainsAllStreamsUntilShortBatch(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&report))
 	require.Equal(t, activities.ScavengerReport{
 		LeaguesReplicated: 3, TransactionsReplicated: 10, DraftHeadersReplicated: 2, DraftPicksReplicated: 1,
-		LifetimeLeagues: 40, LifetimeTrades: 400, LifetimeCompletedDrafts: 40,
 	}, report)
 	env.AssertExpectations(t)
 }
@@ -516,8 +513,6 @@ func TestScavengerDispatcher_StreamFailureDoesNotBlockOtherStreams(t *testing.T)
 		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
 	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, activities.ReplicateBatchParams{BatchSize: 200}).
 		Return(activities.ReplicateBatchResult{Drained: true}, nil).Once()
-	env.OnActivity(sa.UpdateLifetimeCounts, mock.Anything).
-		Return(activities.LifetimeCountsResult{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
 
@@ -623,7 +618,6 @@ func TestScavengerDispatcher_PurgeDisabledByDefault_NeverCallsPurgeActivities(t 
 	// No PurgeTransactionsBatch / PurgeDraftsBatch mocks registered: if the
 	// dispatcher calls them anyway, the test environment fails on the
 	// unmocked activity call.
-	env.OnActivity(sa.UpdateLifetimeCounts, mock.Anything).Return(activities.LifetimeCountsResult{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
 
@@ -650,7 +644,6 @@ func TestScavengerDispatcher_PurgeEnabledAndCaughtUp_RunsPurgeAndAccumulatesRepo
 		Return(activities.PurgeBatchResult{Purged: 100, Unverified: 2, Drained: true}, nil).Once()
 	env.OnActivity(sa.PurgeDraftsBatch, mock.Anything, activities.PurgeBatchParams{BatchSize: 200, RetentionDays: 30}).
 		Return(activities.PurgeBatchResult{Purged: 4, Unverified: 1, Drained: true}, nil).Once()
-	env.OnActivity(sa.UpdateLifetimeCounts, mock.Anything).Return(activities.LifetimeCountsResult{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
 
@@ -683,7 +676,6 @@ func TestScavengerDispatcher_PurgeSkippedWhenReplicateNotCaughtUp(t *testing.T) 
 	env.OnActivity(sa.ReplicateDraftPicksBatch, mock.Anything, mock.Anything).Return(activities.ReplicateBatchResult{Replicated: 200, Drained: false}, nil).Once()
 	// No purge mocks: neither stream drained, so purge must not run even
 	// though PurgeEnabled is true.
-	env.OnActivity(sa.UpdateLifetimeCounts, mock.Anything).Return(activities.LifetimeCountsResult{}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.ScavengerDispatcher)
 

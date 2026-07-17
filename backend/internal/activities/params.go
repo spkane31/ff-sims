@@ -129,25 +129,14 @@ type ReplicateBatchResult struct {
 
 // ScavengerReport summarizes one ScavengerDispatcher run.
 type ScavengerReport struct {
-	LeaguesReplicated       int
-	TransactionsReplicated  int
-	DraftHeadersReplicated  int
-	DraftPicksReplicated    int
-	TransactionsPurged      int
-	TransactionsUnverified  int
-	DraftsPurged            int
-	DraftsUnverified        int
-	LifetimeLeagues         int64
-	LifetimeTrades          int64
-	LifetimeCompletedDrafts int64
-}
-
-// LifetimeCountsResult reports the all-time totals UpdateLifetimeCounts wrote
-// to sleeper_lifetime_counts.
-type LifetimeCountsResult struct {
-	Leagues         int64
-	Trades          int64
-	CompletedDrafts int64
+	LeaguesReplicated      int
+	TransactionsReplicated int
+	DraftHeadersReplicated int
+	DraftPicksReplicated   int
+	TransactionsPurged     int
+	TransactionsUnverified int
+	DraftsPurged           int
+	DraftsUnverified       int
 }
 
 // PurgeBatchParams is shared by PurgeTransactionsBatch and PurgeDraftsBatch —

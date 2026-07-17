@@ -355,47 +355,6 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 	return ReplicateBatchResult{Replicated: len(rows), Drained: len(rows) < params.BatchSize}, nil
 }
 
-// UpdateLifetimeCounts recomputes all-time entity totals and upserts them
-// into sleeper_lifetime_counts (cloud), so home/admin-page totals stay
-// correct once the purge phase trims sleeper_transactions/sleeper_drafts to
-// a hot window. Leagues are counted from Cloud — sleeper_leagues is never
-// purged, so a live COUNT there is already exact. Trades and completed
-// drafts are counted from Archive, the full-history store: cloud's copies of
-// these are only the hot window (transactions) or, once Archive is
-// configured, mostly bypassed at ingest entirely (drafts — see
-// syncOneLeagueDrafts), so only Archive has the true all-time count.
-func (a *ScavengerActivities) UpdateLifetimeCounts(ctx context.Context) (LifetimeCountsResult, error) {
-	var leagues, trades, drafts int64
-
-	if err := a.Cloud.WithContext(ctx).Model(&models.SleeperLeague{}).
-		Where("last_fetched_at IS NOT NULL").Count(&leagues).Error; err != nil {
-		return LifetimeCountsResult{}, err
-	}
-	if err := a.Archive.WithContext(ctx).Model(&models.ArchiveSleeperTransaction{}).
-		Where("type = ? AND status = ?", "trade", "complete").Count(&trades).Error; err != nil {
-		return LifetimeCountsResult{}, err
-	}
-	if err := a.Archive.WithContext(ctx).Model(&models.ArchiveSleeperDraft{}).
-		Where("status = ?", "complete").Count(&drafts).Error; err != nil {
-		return LifetimeCountsResult{}, err
-	}
-
-	now := time.Now().UTC()
-	rows := []models.SleeperLifetimeCount{
-		{Metric: models.LifetimeMetricLeagues, Count: leagues, UpdatedAt: now},
-		{Metric: models.LifetimeMetricTrades, Count: trades, UpdatedAt: now},
-		{Metric: models.LifetimeMetricCompletedDrafts, Count: drafts, UpdatedAt: now},
-	}
-	if err := a.Cloud.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "metric"}},
-		DoUpdates: clause.AssignmentColumns([]string{"count", "updated_at"}),
-	}).Create(&rows).Error; err != nil {
-		return LifetimeCountsResult{}, err
-	}
-
-	return LifetimeCountsResult{Leagues: leagues, Trades: trades, CompletedDrafts: drafts}, nil
-}
-
 // purgeDeleteChunkSize caps each purge delete transaction so a single
 // batch's worth of deletes (up to a few thousand rows) doesn't hold row
 // locks on the hot cloud tables for one long transaction while the API is
