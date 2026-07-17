@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -9,8 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -242,50 +239,32 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 	return sides
 }
 
-// GetSleeperStats returns counts of leagues, trades, and completed drafts in
-// the Sleeper DB. draftCount is cloud-only and will trend toward zero over
-// time: drafts now route straight to the archive DB at ingest (see
-// syncOneLeagueDrafts in internal/activities/data_fetch.go), and cmd/server
-// has no archive DB connection by design (only cmd/worker does).
+// GetSleeperStats returns all-time counts of leagues, trades, and completed
+// drafts. These are read from sleeper_lifetime_counts, a small table the
+// scavenger keeps current on its regular schedule (see
+// ScavengerActivities.UpdateLifetimeCounts), rather than COUNT(*) against
+// sleeper_transactions/sleeper_drafts directly: those cloud tables are
+// trimmed to a hot window by the purge phase (and, for drafts, mostly
+// bypassed entirely at ingest once the archive DB is configured — see
+// syncOneLeagueDrafts in internal/activities/data_fetch.go), so a live COUNT
+// there would undercount. A metric missing from the table (e.g. before the
+// scavenger's first run) reports as zero rather than an error.
 func GetSleeperStats(c *gin.Context) {
-	var leagueCount, tradeCount, draftCount int64
-
-	ctx, cleanup := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cleanup()
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
-			Where("last_fetched_at IS NOT NULL").
-			Count(&leagueCount).Error
-	})
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperTransaction{}).
-			Where("type = ? AND status = ?", "trade", "complete").
-			Count(&tradeCount).Error
-	})
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperDraft{}).
-			Where("status = ?", "complete").
-			Count(&draftCount).Error
-	})
-
-	if err := g.Wait(); err != nil {
-		if ctx.Err() != nil {
-			c.JSON(http.StatusRequestTimeout, map[string]string{"msg": "request timed out"})
-			return
-		}
+	var rows []models.SleeperLifetimeCount
+	if err := database.DB.Find(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, map[string]string{"msg": err.Error()})
 		return
 	}
 
+	counts := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		counts[r.Metric] = r.Count
+	}
+
 	c.JSON(http.StatusOK, SleeperStatsResponse{
-		LeagueCount: leagueCount,
-		TradeCount:  tradeCount,
-		DraftCount:  draftCount,
+		LeagueCount: counts[models.LifetimeMetricLeagues],
+		TradeCount:  counts[models.LifetimeMetricTrades],
+		DraftCount:  counts[models.LifetimeMetricCompletedDrafts],
 	})
 }
 

@@ -70,7 +70,7 @@ func newScavengerTestDBs(t *testing.T) (cloud, archive *gorm.DB) {
 
 	cloudDSN := testutil.NewPGSchema(t, dsn, "scavenger_cloud")
 	cloud = testutil.OpenGORM(t, cloudDSN)
-	if err := cloud.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperDraft{}, &models.SleeperDraftPick{}); err != nil {
+	if err := cloud.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperDraft{}, &models.SleeperDraftPick{}, &models.SleeperLifetimeCount{}); err != nil {
 		t.Fatalf("automigrate cloud: %v", err)
 	}
 
@@ -672,6 +672,129 @@ func TestPurgeDraftsBatch_IgnoresRecentDrafts(t *testing.T) {
 	}
 	if res.Purged != 0 || !res.Drained {
 		t.Errorf("expected no candidates (draft is the current season), got %+v", res)
+	}
+}
+
+func TestUpdateLifetimeCounts_ReflectsFullArchiveHistoryNotJustHotWindow(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC()
+
+	// Cloud only holds a trimmed hot window: 1 trade and 1 completed draft
+	// survived the purge. Archive (full history) holds those same rows plus
+	// older ones that have already been purged from cloud.
+	if err := cloud.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "t-hot", Type: "trade", Status: "complete", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed cloud txn: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperDraft{
+		SleeperDraftID: "d-hot", Status: "complete", Season: "2026", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed cloud draft: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", LastFetchedAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("seed cloud league: %v", err)
+	}
+
+	for _, id := range []string{"t-hot", "t-purged-1", "t-purged-2"} {
+		if err := archive.Create(&models.ArchiveSleeperTransaction{
+			SleeperTransactionID: id, Type: "trade", Status: "complete", CreatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed archive txn %s: %v", id, err)
+		}
+	}
+	for _, id := range []string{"d-hot", "d-purged"} {
+		if err := archive.Create(&models.ArchiveSleeperDraft{
+			SleeperDraftID: id, Status: "complete", Season: "2025", CreatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed archive draft %s: %v", id, err)
+		}
+	}
+	// A non-trade, non-complete row in each archive table must not be counted.
+	if err := archive.Create(&models.ArchiveSleeperTransaction{
+		SleeperTransactionID: "t-waiver", Type: "waiver", Status: "complete", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed archive waiver: %v", err)
+	}
+	if err := archive.Create(&models.ArchiveSleeperDraft{
+		SleeperDraftID: "d-pending", Status: "pre_draft", Season: "2026", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed archive pending draft: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.UpdateLifetimeCounts(context.Background())
+	if err != nil {
+		t.Fatalf("UpdateLifetimeCounts: %v", err)
+	}
+	if res.Leagues != 1 || res.Trades != 3 || res.CompletedDrafts != 2 {
+		t.Errorf("res = %+v, want {Leagues: 1, Trades: 3, CompletedDrafts: 2} (full archive history, not just the hot cloud window)", res)
+	}
+
+	var rows []models.SleeperLifetimeCount
+	if err := cloud.Order("metric").Find(&rows).Error; err != nil {
+		t.Fatalf("fetch lifetime counts: %v", err)
+	}
+	got := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		got[r.Metric] = r.Count
+		if r.UpdatedAt.IsZero() {
+			t.Errorf("metric %s: expected non-zero updated_at", r.Metric)
+		}
+	}
+	want := map[string]int64{
+		models.LifetimeMetricLeagues:         1,
+		models.LifetimeMetricTrades:          3,
+		models.LifetimeMetricCompletedDrafts: 2,
+	}
+	for metric, count := range want {
+		if got[metric] != count {
+			t.Errorf("metric %s: got %d, want %d", metric, got[metric], count)
+		}
+	}
+}
+
+func TestUpdateLifetimeCounts_SecondRunUpdatesExistingRows(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC()
+
+	if err := archive.Create(&models.ArchiveSleeperTransaction{
+		SleeperTransactionID: "t1", Type: "trade", Status: "complete", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed archive txn: %v", err)
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	if _, err := a.UpdateLifetimeCounts(context.Background()); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	if err := archive.Create(&models.ArchiveSleeperTransaction{
+		SleeperTransactionID: "t2", Type: "trade", Status: "complete", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed second archive txn: %v", err)
+	}
+	res, err := a.UpdateLifetimeCounts(context.Background())
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res.Trades != 2 {
+		t.Errorf("expected second run to report 2 trades, got %d", res.Trades)
+	}
+
+	var row models.SleeperLifetimeCount
+	if err := cloud.Where("metric = ?", models.LifetimeMetricTrades).First(&row).Error; err != nil {
+		t.Fatalf("fetch trades row: %v", err)
+	}
+	if row.Count != 2 {
+		t.Errorf("expected upsert to update the existing row to 2, got %d", row.Count)
+	}
+	var rowCount int64
+	cloud.Model(&models.SleeperLifetimeCount{}).Where("metric = ?", models.LifetimeMetricTrades).Count(&rowCount)
+	if rowCount != 1 {
+		t.Errorf("expected exactly one row per metric (upsert, not insert), got %d", rowCount)
 	}
 }
 

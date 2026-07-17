@@ -133,3 +133,29 @@ type SleeperWeekStatFetch struct {
 }
 
 func (SleeperWeekStatFetch) TableName() string { return "sleeper_week_stat_fetches" }
+
+// Lifetime count metric names stored in sleeper_lifetime_counts. Kept as
+// constants so the scavenger (writer) and the stats handler (reader) can't
+// drift on the key strings.
+const (
+	LifetimeMetricLeagues         = "leagues"
+	LifetimeMetricTrades          = "trades"
+	LifetimeMetricCompletedDrafts = "completed_drafts"
+)
+
+// SleeperLifetimeCount is a cloud-side, scavenger-maintained all-time total
+// for one metric (see the LifetimeMetric* constants). It exists because
+// sleeper_transactions and sleeper_drafts are trimmed to a hot window by the
+// purge phase (see ScavengerActivities.PurgeTransactionsBatch/
+// PurgeDraftsBatch), and drafts are additionally routed straight to the
+// archive DB at ingest once configured (see syncOneLeagueDrafts) — so a
+// plain COUNT(*) against the cloud tables undercounts all-time totals.
+// UpdatedAt makes staleness visible: this table is only as fresh as the
+// scavenger's last run.
+type SleeperLifetimeCount struct {
+	Metric    string    `gorm:"primaryKey;column:metric"`
+	Count     int64     `gorm:"column:count"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+func (SleeperLifetimeCount) TableName() string { return "sleeper_lifetime_counts" }

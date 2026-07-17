@@ -2,8 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"backend/internal/models"
 )
 
 func TestSegmentKeyForLeague(t *testing.T) {
@@ -96,6 +102,65 @@ func TestValueAsOf(t *testing.T) {
 	}
 	if _, ok := valueAsOf(nil, d(30)); ok {
 		t.Error("expected no value for player with no snapshots")
+	}
+}
+
+func performGetSleeperStats(t *testing.T) SleeperStatsResponse {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/sleeper/stats", GetSleeperStats)
+
+	req := httptest.NewRequest(http.MethodGet, "/sleeper/stats", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SleeperStatsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	return resp
+}
+
+// TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables seeds sleeper_leagues/
+// sleeper_transactions/sleeper_drafts with counts that disagree with
+// sleeper_lifetime_counts — standing in for the purge having trimmed the
+// live tables to a hot window narrower than all-time history — and asserts
+// the handler reports the lifetime-counts values, not a live COUNT(*).
+func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+	// Only one hot-window row survives in each live table...
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2026", LastFetchedAt: &now})
+	db.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", Type: "trade", Status: "complete"})
+	db.Create(&models.SleeperDraft{SleeperDraftID: "d1", Status: "complete"})
+
+	// ...but the scavenger-maintained lifetime table remembers the true, larger, all-time totals.
+	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricLeagues, Count: 42, UpdatedAt: now})
+	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricTrades, Count: 100, UpdatedAt: now})
+	db.Create(&models.SleeperLifetimeCount{Metric: models.LifetimeMetricCompletedDrafts, Count: 55, UpdatedAt: now})
+
+	resp := performGetSleeperStats(t)
+
+	if resp.LeagueCount != 42 || resp.TradeCount != 100 || resp.DraftCount != 55 {
+		t.Errorf("resp = %+v, want {LeagueCount: 42, TradeCount: 100, DraftCount: 55}", resp)
+	}
+}
+
+func TestGetSleeperStats_MissingMetricsDefaultToZero(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	resp := performGetSleeperStats(t)
+
+	if resp.LeagueCount != 0 || resp.TradeCount != 0 || resp.DraftCount != 0 {
+		t.Errorf("resp = %+v, want all zero when sleeper_lifetime_counts is empty", resp)
 	}
 }
 
