@@ -1,1 +1,3 @@
 bin
+.worker-deployed-sha
+.cron-deployed-sha
