@@ -57,9 +57,9 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 	return DiscoveryConfig{
 		ParallelBatches:    max(helpers.GetEnv("DISCOVERY_PARALLEL_BATCHES", 1), 1),
 		BatchSize:          max(helpers.GetEnv("DISCOVERY_BATCH_SIZE", 20), 1),
-		Concurrency:        max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 6), 1),
+		Concurrency:        max(helpers.GetEnv("DISCOVERY_USER_CONCURRENCY", 8), 1),
 		UserTimeoutSeconds: max(helpers.GetEnv("DISCOVERY_USER_TIMEOUT_SECONDS", 90), 1),
-		LeagueConcurrency:  max(helpers.GetEnv("DISCOVERY_LEAGUE_CONCURRENCY", 10), 1),
+		LeagueConcurrency:  max(helpers.GetEnv("DISCOVERY_LEAGUE_CONCURRENCY", 12), 1),
 	}, nil
 }
 

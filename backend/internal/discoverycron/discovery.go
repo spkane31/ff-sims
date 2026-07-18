@@ -38,8 +38,7 @@ type Config struct {
 	LeagueRefillBatch int // CRON_DISCOVERY_LEAGUE_REFILL_BATCH, default 2
 }
 
-// LoadConfig reads Config from env, clamped to at least 1 so a bad value
-// can't stall the pools or break a claim query's LIMIT.
+// LoadConfig reads Config from env, clamped to at least 1.
 func LoadConfig() Config {
 	return Config{
 		UserPoolSize:      max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 4), 1),
