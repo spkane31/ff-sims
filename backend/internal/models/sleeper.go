@@ -133,3 +133,44 @@ type SleeperWeekStatFetch struct {
 }
 
 func (SleeperWeekStatFetch) TableName() string { return "sleeper_week_stat_fetches" }
+
+// SleeperLifetimeCount is one hourly snapshot row of data-scraping table
+// sizes, written by cmd/cron's "lifetime-counts" job (internal/statscron).
+// It exists because sleeper_transactions and sleeper_drafts are trimmed to a
+// hot window by the scavenger's purge phase, and drafts are additionally
+// routed straight to the archive DB at ingest once configured (see
+// syncOneLeagueDrafts) — so a plain COUNT(*) against the cloud tables
+// undercounts all-time totals, and there was previously no way to see growth
+// over time at all. SnapshotAt is truncated to the hour so a retried run
+// upserts the same row instead of duplicating it.
+//
+// Users/leagues columns are counted live from cloud (those tables are never
+// purged, so a live COUNT is already exact). Transactions/drafts columns are
+// counted from the archive DB (the full-history store, immune to purge) and
+// are nil — not zero — for any snapshot taken while no archive DB is
+// configured, so a local/dev run can't be mistaken for "genuinely zero
+// trades/drafts ever happened."
+//
+// New columns can be added here (plus a migration) as more of the /admin
+// page's counts are wanted; existing rows default new columns to 0/NULL,
+// which is an acceptable gap for historical snapshots taken before the
+// column existed.
+type SleeperLifetimeCount struct {
+	SnapshotAt time.Time `gorm:"primaryKey;column:snapshot_at"`
+
+	UsersTotal    int64 `gorm:"column:users_total"`
+	UsersExpanded int64 `gorm:"column:users_expanded"`
+	UsersPending  int64 `gorm:"column:users_pending"`
+	UsersSkipped  int64 `gorm:"column:users_skipped"`
+
+	LeaguesTotal    int64 `gorm:"column:leagues_total"`
+	LeaguesExpanded int64 `gorm:"column:leagues_expanded"`
+	LeaguesPending  int64 `gorm:"column:leagues_pending"`
+	LeaguesSkipped  int64 `gorm:"column:leagues_skipped"`
+
+	TransactionsTotal *int64 `gorm:"column:transactions_total"`
+	TradesCompleted   *int64 `gorm:"column:trades_completed"`
+	DraftsCompleted   *int64 `gorm:"column:drafts_completed"`
+}
+
+func (SleeperLifetimeCount) TableName() string { return "sleeper_lifetime_counts" }

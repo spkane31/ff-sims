@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -10,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -19,12 +16,27 @@ import (
 	"backend/internal/models"
 )
 
+// SleeperStatsSnapshot is one hourly all-time-count snapshot.
+type SleeperStatsSnapshot struct {
+	SnapshotAt  time.Time `json:"snapshot_at"`
+	LeagueCount int64     `json:"league_count"`
+	TradeCount  int64     `json:"trade_count"`
+	DraftCount  int64     `json:"draft_count"`
+}
+
 // SleeperStatsResponse is the response for GET /api/v1/sleeper/stats.
 type SleeperStatsResponse struct {
-	LeagueCount int64 `json:"league_count"`
-	TradeCount  int64 `json:"trade_count"`
-	DraftCount  int64 `json:"draft_count"`
+	Snapshots []SleeperStatsSnapshot `json:"snapshots"`
 }
+
+// defaultStatsLimit/maxStatsLimit bound GetSleeperStats' limit query param:
+// enough by default for a callable "just the latest" (limit=1) or a modest
+// chart without a param, but capped so an unbounded limit can't pull the
+// whole table's history in one request.
+const (
+	defaultStatsLimit = 100
+	maxStatsLimit     = 1000
+)
 
 // TradeSidePlayer is a single player in one side of a trade. Value is the
 // model's valuation as of the trade date (nil when the model has no snapshot
@@ -242,51 +254,50 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 	return sides
 }
 
-// GetSleeperStats returns counts of leagues, trades, and completed drafts in
-// the Sleeper DB. draftCount is cloud-only and will trend toward zero over
-// time: drafts now route straight to the archive DB at ingest (see
-// syncOneLeagueDrafts in internal/activities/data_fetch.go), and cmd/server
-// has no archive DB connection by design (only cmd/worker does).
+// GetSleeperStats returns a series of hourly all-time-count snapshots
+// (leagues, trades, completed drafts), most recent first, read from
+// sleeper_lifetime_counts (see internal/statscron, the cmd/cron job that
+// snapshots it) rather than COUNT(*) against sleeper_transactions/
+// sleeper_drafts directly: those cloud tables are trimmed to a hot window by
+// the scavenger's purge phase (and, for drafts, mostly bypassed entirely at
+// ingest once the archive DB is configured — see syncOneLeagueDrafts in
+// internal/activities/data_fetch.go), so a live COUNT there would
+// undercount. Supports limit (default 100, max 1000) and skip (default 0)
+// query params, so the home page can ask for just the latest point
+// (limit=1) and an eventual /admin chart can page through history. A
+// snapshot taken before an archive DB was configured leaves TradeCount/
+// DraftCount at zero for that point rather than erroring on the nil column.
 func GetSleeperStats(c *gin.Context) {
-	var leagueCount, tradeCount, draftCount int64
+	limit := defaultStatsLimit
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
+		limit = min(v, maxStatsLimit)
+	}
+	skip := 0
+	if v, err := strconv.Atoi(c.Query("skip")); err == nil && v >= 0 {
+		skip = v
+	}
 
-	ctx, cleanup := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cleanup()
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
-			Where("last_fetched_at IS NOT NULL").
-			Count(&leagueCount).Error
-	})
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperTransaction{}).
-			Where("type = ? AND status = ?", "trade", "complete").
-			Count(&tradeCount).Error
-	})
-
-	g.Go(func() error {
-		return database.DB.WithContext(ctx).Model(&models.SleeperDraft{}).
-			Where("status = ?", "complete").
-			Count(&draftCount).Error
-	})
-
-	if err := g.Wait(); err != nil {
-		if ctx.Err() != nil {
-			c.JSON(http.StatusRequestTimeout, map[string]string{"msg": "request timed out"})
-			return
-		}
+	var rows []models.SleeperLifetimeCount
+	if err := database.DB.Order("snapshot_at DESC").Limit(limit).Offset(skip).Find(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, map[string]string{"msg": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, SleeperStatsResponse{
-		LeagueCount: leagueCount,
-		TradeCount:  tradeCount,
-		DraftCount:  draftCount,
-	})
+	snapshots := make([]SleeperStatsSnapshot, len(rows))
+	for i, r := range rows {
+		snapshots[i] = SleeperStatsSnapshot{
+			SnapshotAt:  r.SnapshotAt,
+			LeagueCount: r.LeaguesExpanded,
+		}
+		if r.TradesCompleted != nil {
+			snapshots[i].TradeCount = *r.TradesCompleted
+		}
+		if r.DraftsCompleted != nil {
+			snapshots[i].DraftCount = *r.DraftsCompleted
+		}
+	}
+
+	c.JSON(http.StatusOK, SleeperStatsResponse{Snapshots: snapshots})
 }
 
 // applyLeagueFilters appends league-level filter conditions to a GORM query.
