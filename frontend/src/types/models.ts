@@ -217,8 +217,7 @@ export interface SleeperStats {
   users_skipped: number;
 
   leagues_total: number;
-  /** Leagues expanded (fetched). Named league_count to match the wire contract the home page depends on. */
-  league_count: number;
+  leagues_expanded: number;
   leagues_pending: number;
   leagues_skipped: number;
 

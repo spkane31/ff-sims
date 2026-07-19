@@ -51,7 +51,7 @@ function prepareChartData(snapshots: SleeperStats[]): ChartPoint[] {
       usersPending: s.users_pending,
       usersSkipped: s.users_skipped,
       leaguesTotal: s.leagues_total,
-      leaguesExpanded: s.league_count,
+      leaguesExpanded: s.leagues_expanded,
       leaguesPending: s.leagues_pending,
       leaguesSkipped: s.leagues_skipped,
       transactionsTotal: s.transactions_total,

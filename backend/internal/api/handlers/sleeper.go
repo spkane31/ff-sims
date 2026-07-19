@@ -30,11 +30,8 @@ type SleeperStatsSnapshot struct {
 	UsersPending  int64 `json:"users_pending"`
 	UsersSkipped  int64 `json:"users_skipped"`
 
-	LeaguesTotal int64 `json:"leagues_total"`
-	// LeaguesExpanded is named for symmetry with UsersExpanded; its JSON key
-	// stays league_count (the pre-existing wire contract the home page's
-	// useSleeperStats() depends on) so no frontend change is needed there.
-	LeaguesExpanded int64 `json:"league_count"`
+	LeaguesTotal    int64 `json:"leagues_total"`
+	LeaguesExpanded int64 `json:"leagues_expanded"`
 	LeaguesPending  int64 `json:"leagues_pending"`
 	LeaguesSkipped  int64 `json:"leagues_skipped"`
 
