@@ -103,17 +103,14 @@ func (sg *ScheduleGenerator) generateWeekMatches(teams []models.Team, week uint,
 		availableTeams := make([]uint, len(teamsAvailable))
 		copy(availableTeams, teamsAvailable)
 
-		// Shuffle teams for randomness
 		sg.shuffleTeams(availableTeams)
 
 		success := true
 
-		// Try to pair up all teams
 		for len(availableTeams) >= 2 {
 			homeTeamID := availableTeams[0]
 			availableTeams = availableTeams[1:]
 
-			// Find a valid opponent for homeTeam
 			validOpponentIndex := -1
 			for i, awayTeamID := range availableTeams {
 				if sg.canTeamsPlay(homeTeamID, awayTeamID, gamesPlayed, lastOpponent) {
@@ -131,7 +128,6 @@ func (sg *ScheduleGenerator) generateWeekMatches(teams []models.Team, week uint,
 			awayTeamID := availableTeams[validOpponentIndex]
 			availableTeams = append(availableTeams[:validOpponentIndex], availableTeams[validOpponentIndex+1:]...)
 
-			// Create the matchup
 			gameDate := time.Date(int(year), 9, int(week*7), 13, 0, 0, 0, time.UTC) // Sunday 1 PM
 			match := models.Matchup{
 				LeagueID:   leagueID,
@@ -158,7 +154,6 @@ func (sg *ScheduleGenerator) generateWeekMatches(teams []models.Team, week uint,
 
 // canTeamsPlay checks if two teams can play against each other given constraints
 func (sg *ScheduleGenerator) canTeamsPlay(team1ID, team2ID uint, gamesPlayed map[[2]uint]int, lastOpponent map[uint]uint) bool {
-	// Check if teams already played maximum allowed games
 	key := sg.makeTeamPairKey(team1ID, team2ID)
 	if gamesPlayed[key] >= sg.config.MaxGamesVsTeam {
 		return false
@@ -194,18 +189,15 @@ func (sg *ScheduleGenerator) ValidateSchedule(schedule []models.Matchup) error {
 		return errors.New("empty schedule")
 	}
 
-	// Count games between teams
 	gamesCount := make(map[[2]uint]int)
 
 	// Track consecutive games for each team
 	teamWeekOpponents := make(map[uint]map[uint]uint) // team -> week -> opponent
 
 	for _, match := range schedule {
-		// Count games between these teams
 		key := sg.makeTeamPairKey(match.HomeTeamID, match.AwayTeamID)
 		gamesCount[key]++
 
-		// Track weekly opponents
 		if teamWeekOpponents[match.HomeTeamID] == nil {
 			teamWeekOpponents[match.HomeTeamID] = make(map[uint]uint)
 		}
@@ -248,7 +240,6 @@ func (sg *ScheduleGenerator) GeneratePlayoffSchedule(teams []models.Team, standi
 		return nil, errors.New("need at least 6 teams for playoffs")
 	}
 
-	// Take top 6 teams from standings
 	playoffTeams := standings[:6]
 
 	var schedule []models.Matchup

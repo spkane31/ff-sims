@@ -261,9 +261,8 @@ func TestGetSleeperStats_EmptyTableReturnsEmptySeries(t *testing.T) {
 	}
 }
 
-// TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown covers the fields the
-// handler used to silently drop from the response despite already reading
-// them from sleeper_lifetime_counts: users/leagues total/pending/skipped.
+// TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown covers the
+// users/leagues total/pending/skipped breakdown fields in the response.
 func TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)

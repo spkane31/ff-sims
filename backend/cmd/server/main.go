@@ -45,7 +45,6 @@ func matchRouteSegments(dir string, segments []string) (string, bool) {
 		}
 	}
 
-	// Static: exact segment as subdirectory
 	subDir := filepath.Join(dir, seg)
 	if info, err := os.Stat(subDir); err == nil && info.IsDir() {
 		if f, ok := matchRouteSegments(subDir, rest); ok {
@@ -53,7 +52,6 @@ func matchRouteSegments(dir string, segments []string) (string, bool) {
 		}
 	}
 
-	// Dynamic: scan for [param] entries in current directory
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", false
@@ -63,11 +61,9 @@ func matchRouteSegments(dir string, segments []string) (string, bool) {
 		if !strings.HasPrefix(name, "[") {
 			continue
 		}
-		// Dynamic file match for last segment: [param].html
 		if len(rest) == 0 && !e.IsDir() && strings.HasSuffix(name, "].html") {
 			return filepath.Join(dir, name), true
 		}
-		// Dynamic directory match: recurse
 		if e.IsDir() {
 			if f, ok := matchRouteSegments(filepath.Join(dir, name), rest); ok {
 				return f, true
@@ -88,28 +84,23 @@ func main() {
 		log.Printf("Server will continue without database connection")
 	}
 
-	// Create a gin router with default middleware
 	r := gin.Default()
-	// Configure CORS - most permissive settings
 	config := cors.Config{
 		AllowAllOrigins:  true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"},
 		AllowHeaders:     []string{"*"},
 		ExposeHeaders:    []string{"*"},
-		AllowCredentials: false,     // Set to false when AllowAllOrigins is true
-		MaxAge:           12 * 3600, // 12 hours
+		AllowCredentials: false, // Set to false when AllowAllOrigins is true
+		MaxAge:           12 * 3600,
 	}
 	r.Use(cors.New(config))
 
 	api.SetupRouter(r)
 
-	// Static file serving for Next.js build assets
 	r.Static("/_next/static", "/app/frontend/.next/static")
 
-	// Serve public files with higher priority
 	r.StaticFS("/public", http.Dir("/app/frontend/public"))
 
-	// Individual static file routes for common public files
 	r.StaticFile("/favicon.ico", "/app/frontend/public/favicon.ico")
 	r.StaticFile("/robots.txt", "/app/frontend/public/robots.txt")
 
@@ -117,7 +108,6 @@ func main() {
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Skip API routes
 		if strings.HasPrefix(path, "/api/") {
 			c.Status(http.StatusNotFound)
 			return
@@ -129,20 +119,17 @@ func main() {
 			return
 		}
 
-		// Try to serve static files from public directory first
 		publicFile := filepath.Join("/app/frontend/public", path)
 		if _, err := os.Stat(publicFile); err == nil && !isDirectory(publicFile) {
 			c.File(publicFile)
 			return
 		}
 
-		// For Next.js pages, try to serve pre-built HTML
 		htmlFile := "/app/frontend/.next/server/pages" + path + ".html"
 		if path == "/" {
 			htmlFile = "/app/frontend/.next/server/pages/index.html"
 		}
 
-		// If HTML file exists, serve it
 		if _, err := os.Stat(htmlFile); err == nil {
 			c.File(htmlFile)
 			return

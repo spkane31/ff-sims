@@ -18,11 +18,11 @@ import (
 const backfillBatchesPerExecution = 100
 
 // ArchiveBackfillWorkflow is started once, manually, to catch the archive up
-// on pre-existing cloud history — the scavenger's 6h schedule only
+// on pre-existing cloud history — the scavenger's hourly schedule only
 // replicates forward from wherever the cursors already are. Reuses the same
 // four replicate activities and cursors as ScavengerDispatcher; it's the
 // same copy operation, just run back-to-back until there's nothing left
-// instead of capped per 6h tick. Unlike the scheduled scavenger, a stream's
+// instead of capped per tick. Unlike the scheduled scavenger, a stream's
 // activity failure here fails the whole execution rather than being logged
 // and skipped: this is a manually-monitored one-time job, and silently
 // reporting "drained" while a stream is actually broken risks leaving data

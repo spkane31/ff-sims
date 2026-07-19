@@ -8,25 +8,21 @@ import (
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	// Initialize database
 	if err := database.Initialize(cfg); err != nil {
 		log.Fatalf("Error initializing database: %v", err)
 	}
 
 	fmt.Println("Starting deduplication process...")
 
-	// Deduplicate matchups for 2023
 	if err := deduplicateMatchups(2023); err != nil {
 		log.Fatalf("Error deduplicating matchups: %v", err)
 	}
 
-	// Deduplicate box scores for 2023
 	if err := deduplicateBoxScores(2023); err != nil {
 		log.Fatalf("Error deduplicating box scores: %v", err)
 	}
@@ -39,11 +35,9 @@ func deduplicateMatchups(year int) error {
 
 	fmt.Printf("Deduplicating matchups for year %d...\n", year)
 
-	// Count duplicates before
 	var beforeCount int64
 	db.Table("matchups").Where("year = ?", year).Count(&beforeCount)
 
-	// Execute deduplication query
 	result := db.Exec(`
 		WITH unique_matchups AS (
 			SELECT DISTINCT ON (home_team_id, away_team_id, week, year)
@@ -64,7 +58,6 @@ func deduplicateMatchups(year int) error {
 		return fmt.Errorf("failed to deduplicate matchups: %w", result.Error)
 	}
 
-	// Count after
 	var afterCount int64
 	db.Table("matchups").Where("year = ?", year).Count(&afterCount)
 
@@ -79,13 +72,11 @@ func deduplicateBoxScores(year int) error {
 
 	fmt.Printf("Deduplicating box scores for year %d...\n", year)
 
-	// Count duplicates before
 	var beforeCount int64
 	db.Table("box_scores").
 		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).
 		Count(&beforeCount)
 
-	// Execute deduplication query
 	result := db.Exec(`
 		WITH unique_box_scores AS (
 			SELECT DISTINCT ON (bs.player_id, bs.matchup_id)
@@ -103,7 +94,6 @@ func deduplicateBoxScores(year int) error {
 		return fmt.Errorf("failed to deduplicate box scores: %w", result.Error)
 	}
 
-	// Count after
 	var afterCount int64
 	db.Table("box_scores").
 		Joins("JOIN matchups ON matchups.id = box_scores.matchup_id AND matchups.year = ?", year).

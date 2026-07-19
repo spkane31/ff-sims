@@ -6,21 +6,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// Player represents a football player
 type Player struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"` // Unique ESPN ID for the player
+	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"`
 	Name          string  `json:"name"`
 	Position      string  `json:"position"` // QB, RB, WR, TE, K, DEF
 	Team          string  `json:"team"`     // NFL team abbreviation
 	FantasyPoints float64 `json:"fantasy_points" gorm:"default:0"`
 	Status        string  `json:"status"` // Active, Injured, etc.
 
-	// Base stats - these represent career or season totals
 	Stats PlayerStats `json:"stats" gorm:"embedded"`
 
 	// Relationships
@@ -28,7 +26,6 @@ type Player struct {
 	BoxScores []BoxScore `json:"box_scores,omitempty" gorm:"foreignKey:PlayerID"`
 }
 
-// PlayerStats represents the statistical categories for a player
 type PlayerStats struct {
 	PassingYards   float64 `json:"passing_yards" gorm:"default:0"`
 	PassingTDs     float64 `json:"passing_tds" gorm:"default:0"`

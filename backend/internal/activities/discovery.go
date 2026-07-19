@@ -72,10 +72,9 @@ func (a *DiscoveryActivities) GetDiscoveryConfig(ctx context.Context) (Discovery
 // per-item timeout shorter than that; a shorter TTL risked a still-in-flight
 // user being reclaimed and processed a second time concurrently. Because
 // ticks claim rather than re-select, a stuck cohort can never head-of-line-
-// block the queue the way the old workflow-ID-collision dedupe did. The
-// tradeoff: a worker that dies mid-batch now leaves its claimed users
-// unclaimable for up to 120 minutes (not 20) before they become
-// re-queueable, a real if minor cost given crashes are rare.
+// block the queue. The tradeoff: a worker that dies mid-batch now leaves its
+// claimed users unclaimable for up to 120 minutes (not 20) before they
+// become re-queueable, a real if minor cost given crashes are rare.
 const claimStaleUsersSQL = `
 UPDATE sleeper_users SET claimed_at = now()
 WHERE sleeper_user_id IN (
@@ -189,9 +188,8 @@ func (a *DiscoveryActivities) DiscoverUsersBatch(ctx context.Context, params Dis
 // discoverOneUser fetches a user's leagues across configured seasons, then for
 // each league upserts its members (with NULL last_fetched_at so they enter the
 // discovery queue) and its details, and finally stamps the user done (clearing
-// the claim). Per-league failures are logged and skipped, matching the old
-// UserDiscoveryWorkflow's warn-and-continue behavior. A 404 on the user marks
-// them permanently skipped.
+// the claim). Per-league failures are logged and skipped (warn-and-continue).
+// A 404 on the user marks them permanently skipped.
 //
 // Leagues already complete-and-fetched are skipped entirely (their metadata
 // and membership are immutable), and the remaining leagues are fetched with

@@ -37,13 +37,7 @@ var buildID = "dev"
 // only builds cmd/server and the Python ESPN worker), so it's always the sole
 // promoter.
 //
-// This used to be asymmetric across two fleets (DigitalOcean promoting, the
-// Raspberry Pi joining) and had to stay baked in at build time rather than
-// configured via an env var, since a second promoting fleet racing
-// SetCurrentVersion could make stale code current and reintroduce the
-// non-determinism problem Worker Deployment Versioning exists to prevent. Now
-// that only one fleet ever runs this binary, that risk no longer applies, but
-// the flag stays build-time-baked rather than defaulted to "true" in source: an
+// The flag stays build-time-baked rather than defaulted to "true" in source: an
 // accidental second worker-host build (e.g. a dev running cmd/worker locally
 // without ldflags) should join the deployment, not fight to promote a dev build.
 var promoteOnStart = "false"
@@ -205,13 +199,11 @@ func main() {
 // version, so new workflow executions route to it. The version isn't registered
 // with the server until a worker has polled at least once, so early attempts may
 // fail — retry with capped backoff indefinitely rather than giving up. A single
-// missed window here previously meant the deployment never got a Current Version
-// at all, so every new workflow execution across every task queue was created but
-// could never be assigned to a worker (this is exactly what happened the first
-// time versioning shipped: the promotion never landed, and nothing retried after
-// the old one-minute budget expired). Only called when promoteOnStart is "true"
-// (the worker host's build); a build without the flag never calls this and just
-// joins whatever version its build produces.
+// missed window here would mean the deployment never gets a Current Version at
+// all, so every new workflow execution across every task queue would be created
+// but could never be assigned to a worker. Only called when promoteOnStart is
+// "true" (the worker host's build); a build without the flag never calls this
+// and just joins whatever version its build produces.
 func promoteDeploymentVersion(ctx context.Context, c client.Client, version worker.WorkerDeploymentVersion) {
 	handle := c.WorkerDeploymentClient().GetHandle(version.DeploymentName)
 	backoff := time.Second

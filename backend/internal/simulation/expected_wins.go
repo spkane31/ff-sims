@@ -16,7 +16,7 @@ type ExpectedWinsConfig struct {
 // GetExpectedWinsConfig returns configuration with defaults
 func GetExpectedWinsConfig() ExpectedWinsConfig {
 	config := ExpectedWinsConfig{
-		NumSimulations: 10000, // Default to 10,000 simulations
+		NumSimulations: 10000,
 	}
 
 	// Allow override via environment variable
@@ -48,29 +48,23 @@ func CalculateExpectedWins(schedule []*models.Matchup) ([]ExpectedWinsResult, er
 		return []ExpectedWinsResult{}, nil
 	}
 
-	// Extract team weekly scores from actual matchups
 	teamWeeklyScores, weeks := extractTeamWeeklyScores(schedule)
 	if len(teamWeeklyScores) == 0 {
 		return []ExpectedWinsResult{}, nil
 	}
 
-	// Get team IDs
 	teamIDs := make([]uint, 0, len(teamWeeklyScores))
 	for teamID := range teamWeeklyScores {
 		teamIDs = append(teamIDs, teamID)
 	}
 
-	// Calculate actual wins/losses for comparison
 	actualStats := calculateActualStats(schedule)
 
-	// Run simulations with random schedules
 	config := GetExpectedWinsConfig()
 	simulationResults := runScheduleSimulations(teamWeeklyScores, teamIDs, weeks, config.NumSimulations)
 
-	// Calculate strength of schedule
 	strengthOfSchedule := calculateStrengthOfSchedule(schedule, actualStats)
 
-	// Combine results
 	results := make([]ExpectedWinsResult, 0, len(teamIDs))
 	for _, teamID := range teamIDs {
 		expectedWins := simulationResults[teamID] / float64(config.NumSimulations)
@@ -129,7 +123,6 @@ func CalculateWeeklyExpectedWins(schedule []*models.Matchup, targetWeek uint) ([
 		teamWeeklyScores[matchup.AwayTeamID][targetWeek] = matchup.AwayTeamFinalScore
 	}
 
-	// Get team IDs
 	teamIDs := make([]uint, 0, len(teamWeeklyScores))
 	for teamID := range teamWeeklyScores {
 		teamIDs = append(teamIDs, teamID)
@@ -139,18 +132,14 @@ func CalculateWeeklyExpectedWins(schedule []*models.Matchup, targetWeek uint) ([
 		return []ExpectedWinsResult{}, nil
 	}
 
-	// Calculate actual stats for this week only
 	actualStats := calculateActualStats(weekMatchups)
 
-	// Run simulations for just this week
 	config := GetExpectedWinsConfig()
 	weeks := []uint{targetWeek}
 	simulationResults := runScheduleSimulations(teamWeeklyScores, teamIDs, weeks, config.NumSimulations)
 
-	// Calculate strength of schedule for this week
 	strengthOfSchedule := calculateStrengthOfSchedule(weekMatchups, actualStats)
 
-	// Combine results
 	results := make([]ExpectedWinsResult, 0, len(teamIDs))
 	for _, teamID := range teamIDs {
 		expectedWins := simulationResults[teamID] / float64(config.NumSimulations)
@@ -185,7 +174,6 @@ func extractTeamWeeklyScores(schedule []*models.Matchup) (map[uint]map[uint]floa
 			continue
 		}
 
-		// Initialize team score maps
 		if teamWeeklyScores[matchup.HomeTeamID] == nil {
 			teamWeeklyScores[matchup.HomeTeamID] = make(map[uint]float64)
 		}
@@ -193,19 +181,16 @@ func extractTeamWeeklyScores(schedule []*models.Matchup) (map[uint]map[uint]floa
 			teamWeeklyScores[matchup.AwayTeamID] = make(map[uint]float64)
 		}
 
-		// Record scores
 		teamWeeklyScores[matchup.HomeTeamID][matchup.Week] = matchup.HomeTeamFinalScore
 		teamWeeklyScores[matchup.AwayTeamID][matchup.Week] = matchup.AwayTeamFinalScore
 		weeksSet[matchup.Week] = true
 	}
 
-	// Convert weeks set to sorted slice
 	weeks := make([]uint, 0, len(weeksSet))
 	for week := range weeksSet {
 		weeks = append(weeks, week)
 	}
 
-	// Sort weeks
 	for i := 0; i < len(weeks); i++ {
 		for j := i + 1; j < len(weeks); j++ {
 			if weeks[i] > weeks[j] {
@@ -266,10 +251,8 @@ func runScheduleSimulations(teamWeeklyScores map[uint]map[uint]float64, teamIDs 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for sim := 0; sim < numSimulations; sim++ {
-		// Generate random schedule for this simulation
 		scheduleWins := simulateRandomSchedule(teamWeeklyScores, teamIDs, weeks, rng)
 
-		// Accumulate wins for each team
 		for teamID, wins := range scheduleWins {
 			results[teamID] += float64(wins)
 		}
@@ -282,21 +265,17 @@ func runScheduleSimulations(teamWeeklyScores map[uint]map[uint]float64, teamIDs 
 func simulateRandomSchedule(teamWeeklyScores map[uint]map[uint]float64, teamIDs []uint, weeks []uint, rng *rand.Rand) map[uint]int {
 	wins := make(map[uint]int)
 
-	// Ensure even number of teams
 	if len(teamIDs)%2 != 0 {
 		return wins
 	}
 
-	// For each week, create random pairings
 	for _, week := range weeks {
-		// Shuffle teams for this week
 		shuffledTeams := make([]uint, len(teamIDs))
 		copy(shuffledTeams, teamIDs)
 		rng.Shuffle(len(shuffledTeams), func(i, j int) {
 			shuffledTeams[i], shuffledTeams[j] = shuffledTeams[j], shuffledTeams[i]
 		})
 
-		// Create pairings and determine winners
 		for i := 0; i < len(shuffledTeams); i += 2 {
 			team1ID := shuffledTeams[i]
 			team2ID := shuffledTeams[i+1]
@@ -320,8 +299,8 @@ func simulateRandomSchedule(teamWeeklyScores map[uint]map[uint]float64, teamIDs 
 	return wins
 }
 
-// calculateStrengthOfSchedule calculates opponent strength for each team
-// This now includes both completed and future games to give full season SOS
+// calculateStrengthOfSchedule calculates opponent strength for each team,
+// including both completed and future games to give full season SOS
 func calculateStrengthOfSchedule(schedule []*models.Matchup, actualStats map[uint]struct {
 	ActualWins   int
 	ActualLosses int
@@ -366,7 +345,6 @@ func calculateStrengthOfSchedule(schedule []*models.Matchup, actualStats map[uin
 		}
 	}
 
-	// Average the opponent win rates
 	for teamID, totalStrength := range strengthOfSchedule {
 		if opponentCounts[teamID] > 0 {
 			strengthOfSchedule[teamID] = totalStrength / float64(opponentCounts[teamID])
