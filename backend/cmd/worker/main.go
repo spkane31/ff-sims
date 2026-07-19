@@ -149,12 +149,15 @@ func main() {
 
 	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw}
 	if cfg.ArchiveDB.Enabled() {
+		// The archive queue now only serves ArchiveBackfillWorkflow — the
+		// recurring replication it used to share with ScavengerDispatcher
+		// moved into cmd/cron's "lifetime-counts" job (see
+		// internal/statscron/archive_sync.go).
 		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
 		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
 			DeploymentOptions: deploymentOpts,
 			SysInfoProvider:   sysinfo.SysInfoProvider(),
 		})
-		aw.RegisterWorkflow(workflows.ScavengerDispatcher)
 		aw.RegisterWorkflow(workflows.ArchiveBackfillWorkflow)
 		aw.RegisterActivity(sa)
 		workers = append(workers, aw)
