@@ -154,8 +154,8 @@ func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
 		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
 	}
 	got := resp.Snapshots[0]
-	if got.LeagueCount != 42 || got.TradeCount != 100 || got.DraftCount != 55 {
-		t.Errorf("snapshot = %+v, want {LeagueCount: 42, TradeCount: 100, DraftCount: 55}", got)
+	if got.LeaguesExpanded != 42 || got.TradeCount != 100 || got.DraftCount != 55 {
+		t.Errorf("snapshot = %+v, want {LeaguesExpanded: 42, TradeCount: 100, DraftCount: 55}", got)
 	}
 }
 
@@ -183,8 +183,8 @@ func TestGetSleeperStats_OrdersMostRecentFirst(t *testing.T) {
 	if len(resp.Snapshots) != 2 {
 		t.Fatalf("expected 2 snapshots, got %d", len(resp.Snapshots))
 	}
-	if resp.Snapshots[0].LeagueCount != 42 || resp.Snapshots[1].LeagueCount != 10 {
-		t.Errorf("expected [latest, older] = [42, 10], got [%d, %d]", resp.Snapshots[0].LeagueCount, resp.Snapshots[1].LeagueCount)
+	if resp.Snapshots[0].LeaguesExpanded != 42 || resp.Snapshots[1].LeaguesExpanded != 10 {
+		t.Errorf("expected [latest, older] = [42, 10], got [%d, %d]", resp.Snapshots[0].LeaguesExpanded, resp.Snapshots[1].LeaguesExpanded)
 	}
 }
 
@@ -204,8 +204,8 @@ func TestGetSleeperStats_LimitParam(t *testing.T) {
 	if len(resp.Snapshots) != 1 {
 		t.Fatalf("expected 1 snapshot with limit=1, got %d", len(resp.Snapshots))
 	}
-	if resp.Snapshots[0].LeagueCount != 0 { // i=0 -> now, the most recent
-		t.Errorf("expected the most recent snapshot (LeagueCount 0), got %d", resp.Snapshots[0].LeagueCount)
+	if resp.Snapshots[0].LeaguesExpanded != 0 { // i=0 -> now, the most recent
+		t.Errorf("expected the most recent snapshot (LeaguesExpanded 0), got %d", resp.Snapshots[0].LeaguesExpanded)
 	}
 }
 
@@ -224,8 +224,8 @@ func TestGetSleeperStats_SkipParam(t *testing.T) {
 	if len(resp.Snapshots) != 1 {
 		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
 	}
-	if resp.Snapshots[0].LeagueCount != 2 { // i=2 -> oldest of the three
-		t.Errorf("expected skip=2 to land on the oldest snapshot (LeagueCount 2), got %d", resp.Snapshots[0].LeagueCount)
+	if resp.Snapshots[0].LeaguesExpanded != 2 { // i=2 -> oldest of the three
+		t.Errorf("expected skip=2 to land on the oldest snapshot (LeaguesExpanded 2), got %d", resp.Snapshots[0].LeaguesExpanded)
 	}
 }
 
@@ -245,8 +245,8 @@ func TestGetSleeperStats_NilArchiveColumnsDefaultToZero(t *testing.T) {
 		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
 	}
 	got := resp.Snapshots[0]
-	if got.LeagueCount != 7 || got.TradeCount != 0 || got.DraftCount != 0 {
-		t.Errorf("snapshot = %+v, want {LeagueCount: 7, TradeCount: 0, DraftCount: 0}", got)
+	if got.LeaguesExpanded != 7 || got.TradeCount != 0 || got.DraftCount != 0 {
+		t.Errorf("snapshot = %+v, want {LeaguesExpanded: 7, TradeCount: 0, DraftCount: 0}", got)
 	}
 }
 
@@ -258,6 +258,67 @@ func TestGetSleeperStats_EmptyTableReturnsEmptySeries(t *testing.T) {
 
 	if len(resp.Snapshots) != 0 {
 		t.Errorf("expected an empty (non-nil) snapshots slice, got %d", len(resp.Snapshots))
+	}
+}
+
+// TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown covers the fields the
+// handler used to silently drop from the response despite already reading
+// them from sleeper_lifetime_counts: users/leagues total/pending/skipped.
+func TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: time.Now().UTC().Truncate(time.Hour),
+		UsersTotal: 100, UsersExpanded: 60, UsersPending: 30, UsersSkipped: 10,
+		LeaguesTotal: 50, LeaguesExpanded: 42, LeaguesPending: 5, LeaguesSkipped: 3,
+	})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	want := SleeperStatsSnapshot{
+		UsersTotal: 100, UsersExpanded: 60, UsersPending: 30, UsersSkipped: 10,
+		LeaguesTotal: 50, LeaguesExpanded: 42, LeaguesPending: 5, LeaguesSkipped: 3,
+	}
+	if got.UsersTotal != want.UsersTotal || got.UsersExpanded != want.UsersExpanded ||
+		got.UsersPending != want.UsersPending || got.UsersSkipped != want.UsersSkipped ||
+		got.LeaguesTotal != want.LeaguesTotal || got.LeaguesExpanded != want.LeaguesExpanded ||
+		got.LeaguesPending != want.LeaguesPending || got.LeaguesSkipped != want.LeaguesSkipped {
+		t.Errorf("snapshot = %+v, want %+v", got, want)
+	}
+}
+
+// TestGetSleeperStats_TransactionsTotalNilVsSet covers the pointer
+// pass-through for transactions_total: nil (no archive DB configured for
+// that snapshot) must round-trip as a JSON-absent field (omitempty), not a
+// false zero, while a set value must pass through unchanged. Unmarshaling
+// into the *int64 field is itself the proof: a present-but-omitted key
+// leaves the pointer nil, and a present key sets it.
+func TestGetSleeperStats_TransactionsTotalNilVsSet(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	withoutArchive := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
+	withArchive := time.Now().UTC().Truncate(time.Hour)
+	txnTotal := int64(12345)
+
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: withoutArchive})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: withArchive, TransactionsTotal: &txnTotal})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].TransactionsTotal == nil || *resp.Snapshots[0].TransactionsTotal != txnTotal {
+		t.Errorf("expected TransactionsTotal %d for the archive-configured snapshot, got %v", txnTotal, resp.Snapshots[0].TransactionsTotal)
+	}
+	if resp.Snapshots[1].TransactionsTotal != nil {
+		t.Errorf("expected nil TransactionsTotal for the no-archive snapshot, got %v", *resp.Snapshots[1].TransactionsTotal)
 	}
 }
 

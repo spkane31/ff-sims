@@ -16,12 +16,28 @@ import (
 	"backend/internal/models"
 )
 
-// SleeperStatsSnapshot is one hourly all-time-count snapshot.
+// SleeperStatsSnapshot is one hourly all-time-count snapshot, mirroring
+// models.SleeperLifetimeCount. TransactionsTotal stays a pointer (omitted
+// from the JSON when nil) so callers can distinguish "no archive DB was
+// configured for this snapshot" from a real zero, matching the nullability
+// of the underlying column; TradeCount/DraftCount default to 0 for the same
+// nil case since that distinction isn't needed for those two callers today.
 type SleeperStatsSnapshot struct {
-	SnapshotAt  time.Time `json:"snapshot_at"`
-	LeagueCount int64     `json:"league_count"`
-	TradeCount  int64     `json:"trade_count"`
-	DraftCount  int64     `json:"draft_count"`
+	SnapshotAt time.Time `json:"snapshot_at"`
+
+	UsersTotal    int64 `json:"users_total"`
+	UsersExpanded int64 `json:"users_expanded"`
+	UsersPending  int64 `json:"users_pending"`
+	UsersSkipped  int64 `json:"users_skipped"`
+
+	LeaguesTotal    int64 `json:"leagues_total"`
+	LeaguesExpanded int64 `json:"leagues_expanded"`
+	LeaguesPending  int64 `json:"leagues_pending"`
+	LeaguesSkipped  int64 `json:"leagues_skipped"`
+
+	TransactionsTotal *int64 `json:"transactions_total,omitempty"`
+	TradeCount        int64  `json:"trade_count"`
+	DraftCount        int64  `json:"draft_count"`
 }
 
 // SleeperStatsResponse is the response for GET /api/v1/sleeper/stats.
@@ -254,19 +270,20 @@ func buildTradeSides(adds map[string]int, players map[string]TradeSidePlayer, ra
 	return sides
 }
 
-// GetSleeperStats returns a series of hourly all-time-count snapshots
-// (leagues, trades, completed drafts), most recent first, read from
-// sleeper_lifetime_counts (see internal/statscron, the cmd/cron job that
-// snapshots it) rather than COUNT(*) against sleeper_transactions/
-// sleeper_drafts directly: those cloud tables are trimmed to a hot window by
-// the scavenger's purge phase (and, for drafts, mostly bypassed entirely at
-// ingest once the archive DB is configured — see syncOneLeagueDrafts in
-// internal/activities/data_fetch.go), so a live COUNT there would
-// undercount. Supports limit (default 100, max 1000) and skip (default 0)
-// query params, so the home page can ask for just the latest point
-// (limit=1) and an eventual /admin chart can page through history. A
-// snapshot taken before an archive DB was configured leaves TradeCount/
-// DraftCount at zero for that point rather than erroring on the nil column.
+// GetSleeperStats returns a series of hourly all-time-count snapshots —
+// users/leagues discovery-state breakdowns plus trades/drafts/transactions
+// totals — most recent first, read from sleeper_lifetime_counts (see
+// internal/statscron, the cmd/cron job that snapshots it) rather than
+// COUNT(*) against sleeper_transactions/sleeper_drafts directly: those cloud
+// tables are trimmed to a hot window by the scavenger's purge phase (and,
+// for drafts, mostly bypassed entirely at ingest once the archive DB is
+// configured — see syncOneLeagueDrafts in internal/activities/data_fetch.go),
+// so a live COUNT there would undercount. Supports limit (default 100, max
+// 1000) and skip (default 0) query params, so the home page can ask for just
+// the latest point (limit=1) and /admin's growth-over-time charts can page
+// through history. A snapshot taken before an archive DB was configured
+// leaves TradeCount/DraftCount at zero and omits transactions_total entirely
+// for that point, rather than erroring on the nil columns.
 func GetSleeperStats(c *gin.Context) {
 	limit := defaultStatsLimit
 	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
@@ -286,8 +303,19 @@ func GetSleeperStats(c *gin.Context) {
 	snapshots := make([]SleeperStatsSnapshot, len(rows))
 	for i, r := range rows {
 		snapshots[i] = SleeperStatsSnapshot{
-			SnapshotAt:  r.SnapshotAt,
-			LeagueCount: r.LeaguesExpanded,
+			SnapshotAt: r.SnapshotAt,
+
+			UsersTotal:    r.UsersTotal,
+			UsersExpanded: r.UsersExpanded,
+			UsersPending:  r.UsersPending,
+			UsersSkipped:  r.UsersSkipped,
+
+			LeaguesTotal:    r.LeaguesTotal,
+			LeaguesExpanded: r.LeaguesExpanded,
+			LeaguesPending:  r.LeaguesPending,
+			LeaguesSkipped:  r.LeaguesSkipped,
+
+			TransactionsTotal: r.TransactionsTotal,
 		}
 		if r.TradesCompleted != nil {
 			snapshots[i].TradeCount = *r.TradesCompleted
