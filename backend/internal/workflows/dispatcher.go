@@ -13,9 +13,8 @@ import (
 // DiscoverUsersBatch activity per claim in parallel. A short or empty claim
 // means the queue is drained for now, so the run exits and the schedule takes
 // over. Failed batch activities are logged, not propagated: their users'
-// claims expire after 20 minutes and re-queue. Claiming (instead of the old
-// re-select + child-workflow-ID dedupe) means a stuck cohort can never
-// head-of-line-block discovery of the users behind it.
+// claims expire after 20 minutes and re-queue. Claiming means a stuck cohort
+// can never head-of-line-block discovery of the users behind it.
 func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 	da := &activities.DiscoveryActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)

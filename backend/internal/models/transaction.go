@@ -13,13 +13,13 @@ type DraftSelection struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	PlayerID       uint   `json:"player_id"` // Reference to Player model
+	PlayerID       uint   `json:"player_id"`
 	PlayerName     string `json:"player_name"`
 	PlayerPosition string `json:"player_position"` // QB, RB, WR, TE, K, DEF
-	TeamID         uint   `json:"team_id"`         // Team drafting the player
+	TeamID         uint   `json:"team_id"`
 	Round          uint   `json:"round"`
 	Pick           uint   `json:"pick"` // 1-based index
-	Year           uint   `json:"year"` // Draft year
+	Year           uint   `json:"year"`
 	LeagueID       uint   `json:"league_id"`
 
 	// Relationships
@@ -32,7 +32,6 @@ func (ds *DraftSelection) String() string {
 	return fmt.Sprintf("%s (Round %d, Pick %d)", ds.PlayerName, ds.Round, ds.Pick)
 }
 
-// Transaction represents various team transactions like adding/dropping/trading players
 type Transaction struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -40,19 +39,19 @@ type Transaction struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	TeamID          uint      `json:"team_id"`
-	PlayerID        uint      `json:"player_id"`        // References Player model
+	PlayerID        uint      `json:"player_id"`
 	TransactionType string    `json:"transaction_type"` // ADDED, DROPPED, TRADED
 	PlayerName      string    `json:"player_name"`      // Denormalized for quick access
 	BidAmount       int       `json:"bid_amount"`       // FAAB bid amount (for waiver claims)
-	Date            time.Time `json:"date"`             // When the transaction occurred
-	Year            uint      `json:"year"`             // Season year
-	Week            uint      `json:"week"`             // Week of transaction
+	Date            time.Time `json:"date"`
+	Year            uint      `json:"year"`
+	Week            uint      `json:"week"`
 	LeagueID        uint      `json:"league_id"`
 
 	// For trades
 	RelatedTransactionID *uint  `json:"related_transaction_id,omitempty"` // For linking trade partners
 	TradePartnerTeamID   *uint  `json:"trade_partner_team_id,omitempty"`  // Only for TRADED type
-	Notes                string `json:"notes,omitempty"`                  // Additional transaction info
+	Notes                string `json:"notes,omitempty"`
 
 	// Relationships
 	Team         *Team        `json:"team,omitempty"`

@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Team represents a fantasy football team
 type Team struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -65,7 +64,6 @@ func (t *Team) BeforeUpdate(tx *gorm.DB) error {
 		return err
 	}
 
-	// If the name has changed, update history
 	if oldTeam.Name != t.Name && t.Name != "" {
 		// Close previous name record
 		var lastNameRecord TeamNameHistory
@@ -79,7 +77,6 @@ func (t *Team) BeforeUpdate(tx *gorm.DB) error {
 			}
 		}
 
-		// Create new name record
 		nameHistory := TeamNameHistory{
 			TeamID:    t.ID,
 			Name:      t.Name,
@@ -123,15 +120,12 @@ func (t *Team) GetTeamBoxScores(db *gorm.DB, year uint) ([]BoxScore, error) {
 func UpdateTeamName(db *gorm.DB, teamID uint, newName string) error {
 	// Transaction to ensure both team update and history are consistent
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Get the team
 		var team Team
 		if err := tx.First(&team, teamID).Error; err != nil {
 			return err
 		}
 
-		// Only proceed if the name is actually changing
 		if team.Name != newName {
-			// Update the team's name
 			team.Name = newName
 			if err := tx.Save(&team).Error; err != nil {
 				return err

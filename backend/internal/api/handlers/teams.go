@@ -18,8 +18,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// Removed isThirdPlaceGame function - now using utils.GetPlayoffGameType
-
 type GetTeamsResponse struct {
 	Teams []TeamResponse `json:"teams"`
 }
@@ -122,9 +120,7 @@ func GetTeams(c *gin.Context) {
 			continue
 		}
 
-		// Add to resp
 		for i, team := range resp.Teams {
-			// Add total points scored and against
 			if team.ID == fmt.Sprintf("%d", matchup.HomeTeamID) {
 				resp.Teams[i].Points.Scored += matchup.HomeTeamFinalScore
 				resp.Teams[i].Points.Against += matchup.AwayTeamFinalScore
@@ -133,7 +129,6 @@ func GetTeams(c *gin.Context) {
 				resp.Teams[i].Points.Against += matchup.HomeTeamFinalScore
 			}
 
-			// Use the new playoff utility to determine game type
 			if utils.ShouldIncludeInPlayoffRecord(matchup, fullSchedule) {
 				// For playoff games, we need to track playoff records separately
 				if matchup.HomeTeamFinalScore > matchup.AwayTeamFinalScore {
@@ -210,7 +205,6 @@ func GetTeamByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch the team
 	var team models.Team
 	if err := database.DB.Where("espn_id = ? AND league_id = ?", id, leagueID).First(&team).Error; err != nil {
 		slog.Error("Failed to fetch team from database", "error", err, "id", id)
@@ -219,7 +213,7 @@ func GetTeamByID(c *gin.Context) {
 	}
 	team.Wins, team.Losses = 0, 0
 
-	// Fetch team's schedule (all matchups for this team, including incomplete games for display)
+	// Fetch team's schedule (this team's completed matchups)
 	var schedule []models.Matchup
 	if err := database.DB.Where("(home_team_id = ? OR away_team_id = ?) AND league_id = ? AND completed = true", team.ID, team.ID, leagueID).
 		Order("year desc, week asc").Find(&schedule).Error; err != nil {
@@ -240,14 +234,12 @@ func GetTeamByID(c *gin.Context) {
 			matchup.HomeTeamFinalScore, matchup.AwayTeamFinalScore)
 	}
 
-	// Fetch team's draft picks from DraftSelection table
 	var draftSelections []models.DraftSelection
 	if err := database.DB.Where("team_id = ?", team.ID).
 		Order("year desc, round asc, pick asc").Find(&draftSelections).Error; err != nil {
 		slog.Error("Failed to fetch team draft picks", "error", err, "team_id", team.ID)
 	}
 
-	// Transform draft picks data
 	var draftPicks []DraftPickResponse
 	for _, selection := range draftSelections {
 		teamOwner := ""
@@ -314,7 +306,6 @@ func GetTeamByID(c *gin.Context) {
 	for date, group := range groupedTransactions {
 		var playersGained, playersLost []TransactionPlayer
 		var transactionType string
-		// var description string
 		var week uint
 		var year uint
 		for _, transaction := range group {
@@ -376,7 +367,6 @@ func GetTeamByID(c *gin.Context) {
 	}
 
 	slices.SortStableFunc(transactionsResp, func(a, b TransactionResponse) int {
-		// Sort by date descending
 		if a.Date != b.Date {
 			if b.Date.Before(a.Date) {
 				return -1 // a is more recent than b
@@ -399,14 +389,12 @@ func GetTeamByID(c *gin.Context) {
 		var isHome bool
 
 		if matchup.HomeTeamID == team.ID {
-			// This team is home
 			isHome = true
 			teamScore = matchup.HomeTeamFinalScore
 			opponentScore = matchup.AwayTeamFinalScore
 			opponent = teamMap[matchup.AwayTeamID].Owner
 			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.AwayTeamID].ESPNID)
 		} else {
-			// This team is away
 			isHome = false
 			teamScore = matchup.AwayTeamFinalScore
 			opponentScore = matchup.HomeTeamFinalScore
@@ -414,7 +402,6 @@ func GetTeamByID(c *gin.Context) {
 			opponentESPNID = fmt.Sprintf("%d", teamMap[matchup.HomeTeamID].ESPNID)
 		}
 
-		// Use our playoff detection utility to determine if this is a playoff game
 		isPlayoff := utils.ShouldIncludeInPlayoffRecord(matchup, fullSchedule)
 
 		var result string
@@ -549,7 +536,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 	}
 	yearUint := uint(year)
 
-	// Fetch all teams in this league
 	var allTeams []models.Team
 	if err := database.DB.Where("league_id = ?", leagueID).Find(&allTeams).Error; err != nil {
 		slog.Error("Failed to fetch teams from database", "error", err)
@@ -557,7 +543,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 		return
 	}
 
-	// Fetch current year's matchups
 	var matchups []models.Matchup
 	if err := database.DB.Where("league_id = ? AND year = ? AND completed = true", leagueID, yearUint).Find(&matchups).Error; err != nil {
 		slog.Error("Failed to fetch matchups", "error", err)
@@ -639,7 +624,6 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 			}
 		}
 
-		// Add expected wins data if available (using aggregated weekly data)
 		if summary, exists := expectedWinsMap[team.ID]; exists {
 			standing.ExpectedWins = &summary.TotalExpectedWins
 			standing.ExpectedLosses = &summary.TotalExpectedLosses

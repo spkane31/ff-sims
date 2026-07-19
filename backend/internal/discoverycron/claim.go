@@ -2,8 +2,7 @@
 // (workflows.DiscoveryBatchDispatcher / activities.DiscoverUsersBatch) with
 // a plain Go implementation driven by a systemd timer instead of a Temporal
 // Schedule. See docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md
-// for the design and docs/superpowers/plans/2026-07-15-discovery-cron-migration.md
-// for how it was built. Both paths run concurrently against the same claim
+// for the design. Both paths run concurrently against the same claim
 // queues for now — this package does not touch the existing Temporal code.
 package discoverycron
 

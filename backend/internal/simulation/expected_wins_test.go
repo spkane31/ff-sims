@@ -133,8 +133,6 @@ func TestCalculateExpectedWins_ConsistentGameCounts(t *testing.T) {
 	}
 }
 
-// Removed logistic probability tests as we now use simulation-based approach
-
 func TestCalculateExpectedWins_EmptySchedule(t *testing.T) {
 	results, err := CalculateExpectedWins([]*models.Matchup{})
 
@@ -359,12 +357,6 @@ func TestCalculateWeeklyExpectedWins_SingleWeek(t *testing.T) {
 	}
 }
 
-// Removed season-related tests as CalculateSeasonExpectedWins function was removed
-// in favor of the simulation-based approach
-
-// Test edge cases
-// Removed logistic probability edge case tests as we now use simulation-based approach
-
 // Benchmark tests
 func BenchmarkCalculateExpectedWins(b *testing.B) {
 	// Create a realistic set of matchups
@@ -378,5 +370,3 @@ func BenchmarkCalculateExpectedWins(b *testing.B) {
 		_, _ = CalculateExpectedWins(matchups)
 	}
 }
-
-// Removed logistic probability benchmark as we now use simulation-based approach

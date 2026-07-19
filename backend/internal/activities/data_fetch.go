@@ -20,10 +20,9 @@ import (
 
 // DataFetchActivities holds dependencies for per-league data fetching activities.
 // Archive is nil unless ARCHIVE_DATABASE_URL is configured — every use of it
-// is nil-checked, falling back to cloud-only (the pre-T13 behavior) when
-// unset. Unlike ScavengerActivities/ADPRollupActivities, this struct's
-// worker is never gated on archive availability: sync must keep working
-// with or without one.
+// is nil-checked, falling back to cloud-only when unset. Unlike
+// ScavengerActivities/ADPRollupActivities, this struct's worker is never
+// gated on archive availability: sync must keep working with or without one.
 type DataFetchActivities struct {
 	DB      *gorm.DB
 	Archive *gorm.DB

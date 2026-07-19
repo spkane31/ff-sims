@@ -98,7 +98,6 @@ func GetSchedules(c *gin.Context) {
 	// Apply server-side filtering using playoff detection logic
 	filteredSchedule := utils.FilterPlayoffGames(schedule)
 
-	// Further filter based on gameType query parameter
 	if gameTypeFilter != "" && gameTypeFilter != "all" {
 		var typeFilteredSchedule []models.Matchup
 		for _, matchup := range filteredSchedule {
@@ -154,9 +153,9 @@ func GetSchedules(c *gin.Context) {
 	// Sort in reverse order by year and week
 	slices.SortStableFunc(resp.Data.Matchups, func(a, b Matchup) int {
 		if a.Year != b.Year {
-			return int(b.Year - a.Year) // Reverse order by year
+			return int(b.Year - a.Year)
 		}
-		return int(b.Week - a.Week) // Reverse order by week
+		return int(b.Week - a.Week)
 	})
 
 	c.JSON(http.StatusOK, resp)
@@ -196,7 +195,6 @@ type BoxScorePlayer struct {
 	IsStarter       bool    `json:"isStarter"`
 }
 
-// getPositionOrder returns the sort order for fantasy positions
 func getPositionOrder(position string) int {
 	switch position {
 	case "QB":
@@ -281,7 +279,6 @@ func GetMatchup(c *gin.Context) {
 	if len(matchups) != 1 {
 		slog.Error("Matchup not found", "id", id, "count", len(matchups))
 		if len(matchups) == 0 {
-			// No matchup found
 			c.JSON(http.StatusNotFound, gin.H{"error": "Matchup not found"})
 			return
 		}
@@ -292,7 +289,6 @@ func GetMatchup(c *gin.Context) {
 
 	matchup := matchups[0]
 
-	// Find team names and ESPN IDs
 	homeTeamName := "Unknown Team"
 	awayTeamName := "Unknown Team"
 	homeTeamESPNID := uint(0)
@@ -342,7 +338,6 @@ func GetMatchup(c *gin.Context) {
 		}
 	}
 
-	// Sort players by position order
 	sort.Slice(homeTeamPlayers, func(i, j int) bool {
 		return getPositionOrder(homeTeamPlayers[i].SlotPosition) < getPositionOrder(homeTeamPlayers[j].SlotPosition)
 	})
