@@ -9,8 +9,10 @@ User={{SERVICE_USER}}
 WorkingDirectory={{REPO_DIR}}/backend
 EnvironmentFile=/etc/ff-sims-worker.env
 # Type=oneshot services default to DefaultTimeoutStartSec (commonly 90s)
-# before systemd kills them for "taking too long to start". A handful of
-# COUNT queries finish in well under a minute, but this override matches
-# ff-sims-discovery's for consistency and headroom.
-TimeoutStartSec=10min
-ExecStart={{REPO_DIR}}/backend/cron -job=lifetime-counts -max-duration=5m
+# before systemd kills them for "taking too long to start". This job does
+# archive replicate/purge work as well as the snapshot write — most hourly
+# runs should finish in well under a minute once caught up, but the ceiling
+# needs real headroom for the batches a slow/backlogged run might do.
+# Mirrors how ff-sims-discovery budgets 50m inside a 55min TimeoutStartSec.
+TimeoutStartSec=50min
+ExecStart={{REPO_DIR}}/backend/cron -job=lifetime-counts -max-duration=45m

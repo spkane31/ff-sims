@@ -127,7 +127,7 @@ type ReplicateBatchResult struct {
 	Drained    bool
 }
 
-// ScavengerReport summarizes one ScavengerDispatcher run.
+// ScavengerReport summarizes one archive-sync run.
 type ScavengerReport struct {
 	LeaguesReplicated      int
 	TransactionsReplicated int

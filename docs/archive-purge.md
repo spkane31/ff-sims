@@ -11,9 +11,13 @@ code.
 
 1. T1–T8 are not just merged but actually **deployed and running** on the
    worker host (`sudo systemctl status ff-sims-worker`).
-2. The scavenger schedule (`sleeper-scavenger-schedule`) has been ticking
-   every 6h with successful (non-red) runs — check via the Temporal UI or
-   `temporal schedule describe --schedule-id sleeper-scavenger-schedule`.
+2. The archive sync — part of `cmd/cron -job=lifetime-counts`, which runs
+   hourly via the `ff-sims-lifetime-counts` systemd timer — has been
+   ticking with successful (non-failed) runs: `journalctl -u
+   ff-sims-lifetime-counts | grep "archive sync complete"`. (This used to
+   be a separately-scheduled Temporal workflow, `ScavengerDispatcher`;
+   that's been retired in favor of running the same replication inline in
+   this cron job.)
 3. **`ArchiveBackfillWorkflow` (T8) has been run to completion and its
    parity checks (`docs/archive-backfill.md`) have passed.** This is the
    precondition most likely to be silently unmet — the code has been merged
@@ -46,24 +50,25 @@ sudo vi /etc/ff-sims-worker.env
 SCAVENGER_PURGE_ENABLED=true
 ```
 
-Then:
+No restart needed — `cmd/cron` re-reads `/etc/ff-sims-worker.env` fresh on
+every invocation, so the next hourly `ff-sims-lifetime-counts` run picks up
+the change automatically:
 
 ```bash
-sudo systemctl restart ff-sims-worker
-journalctl -u ff-sims-worker -n 50 --no-pager   # confirm it restarted cleanly
+journalctl -u ff-sims-lifetime-counts -n 50 --no-pager   # confirm the next run picked it up
 ```
 
 Purge only actually deletes anything once the *replicate* side of the same
-stream has fully caught up within a given scavenger run (so it never scans
-ahead of a backlog it doesn't yet know is safe) — see the next section for
-what to expect on the runs right after flipping the switch.
+stream has fully caught up within a given run (so it never scans ahead of a
+backlog it doesn't yet know is safe) — see the next section for what to
+expect on the runs right after flipping the switch.
 
 ## Step 2: Monitor the drain
 
-Each 6h scavenger run logs one summary line:
+Each hourly run logs one summary line:
 
 ```bash
-journalctl -u ff-sims-worker | grep "scavenger run complete"
+journalctl -u ff-sims-lifetime-counts | grep "archive sync complete"
 ```
 
 Fields to watch: `transactionsPurged`, `transactionsUnverified`,
@@ -76,10 +81,13 @@ Fields to watch: `transactionsPurged`, `transactionsUnverified`,
   hasn't been backfilled/replicated into archive yet for that range —
   investigate (see Precondition 3) before assuming purge is just slow.
 
-Also watch the `ScavengerDispatcher` workflow on the `archive-maintenance`
-task queue in the Temporal UI for a **red (failed) run** — that's the
-built-in alarm. It fires when some row has sat unverified for more than
-`retention + 15 days`, meaning replication has stalled, not just lagged.
+Also watch for a **failed run**: `journalctl -u ff-sims-lifetime-counts |
+grep "job lifetime-counts failed"` (or `systemctl status
+ff-sims-lifetime-counts` showing a recent failure) — that's the built-in
+alarm. It fires when some row has sat unverified for more than `retention +
+15 days`, meaning replication has stalled, not just lagged; on a failed run
+the whole hour's `sleeper_lifetime_counts` snapshot is skipped too, not
+just the purge.
 
 Direct SQL check of the remaining backlog, run against the **cloud** DB —
 note this is by Sleeper's own event time (`created_at_sleeper`, epoch
@@ -96,14 +104,14 @@ SELECT count(*) FROM sleeper_drafts WHERE season < to_char(now(), 'YYYY');
 
 (30 days is the `SCAVENGER_RETENTION_DAYS` default — adjust the interval if
 you've overridden it.) Watch these counts drop toward zero over successive
-6h runs.
+hourly runs.
 
 With the default batch sizing (`SCAVENGER_TXN_BATCH_SIZE=5000`,
 `SCAVENGER_DRAFT_BATCH_SIZE=200`, `SCAVENGER_MAX_BATCHES_PER_RUN=50`), one
 run can purge up to 250,000 transactions or 10,000 drafts once verified —
 for the ~20GB of history this project started with, expect the backlog to
-clear within a handful of 6h cycles (well under a day), assuming backfill
-already caught the archive up per Precondition 3.
+clear within a handful of hourly cycles, assuming backfill already caught
+the archive up per Precondition 3.
 
 ## Step 3: Verify cloud actually shrunk
 
