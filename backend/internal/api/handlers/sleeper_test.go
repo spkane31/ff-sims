@@ -2,8 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"backend/internal/models"
 )
 
 func TestSegmentKeyForLeague(t *testing.T) {
@@ -96,6 +102,222 @@ func TestValueAsOf(t *testing.T) {
 	}
 	if _, ok := valueAsOf(nil, d(30)); ok {
 		t.Error("expected no value for player with no snapshots")
+	}
+}
+
+func performGetSleeperStats(t *testing.T, query string) SleeperStatsResponse {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/sleeper/stats", GetSleeperStats)
+
+	req := httptest.NewRequest(http.MethodGet, "/sleeper/stats"+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SleeperStatsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	return resp
+}
+
+// TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables seeds sleeper_leagues/
+// sleeper_transactions/sleeper_drafts with counts that disagree with
+// sleeper_lifetime_counts — standing in for the purge having trimmed the
+// live tables to a hot window narrower than all-time history — and asserts
+// the handler reports the lifetime-counts values, not a live COUNT(*).
+func TestGetSleeperStats_ReadsLifetimeCountsNotLiveTables(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+	// Only one hot-window row survives in each live table...
+	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2026", LastFetchedAt: &now})
+	db.Create(&models.SleeperTransaction{SleeperTransactionID: "t1", Type: "trade", Status: "complete"})
+	db.Create(&models.SleeperDraft{SleeperDraftID: "d1", Status: "complete"})
+
+	// ...but the hourly-snapshotted lifetime table remembers the true, larger, all-time totals.
+	trades, drafts := int64(100), int64(55)
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: now.Truncate(time.Hour), LeaguesExpanded: 42,
+		TradesCompleted: &trades, DraftsCompleted: &drafts,
+	})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	if got.LeaguesExpanded != 42 || got.TradeCount != 100 || got.DraftCount != 55 {
+		t.Errorf("snapshot = %+v, want {LeaguesExpanded: 42, TradeCount: 100, DraftCount: 55}", got)
+	}
+}
+
+// TestGetSleeperStats_OrdersMostRecentFirst seeds two snapshot hours and
+// asserts the series comes back newest-first, matching what a "just the
+// latest" caller (limit=1) expects from index 0.
+func TestGetSleeperStats_OrdersMostRecentFirst(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	older := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
+	latest := time.Now().UTC().Truncate(time.Hour)
+	tenTrades, tenDrafts := int64(10), int64(10)
+	hundredTrades, fiftyFiveDrafts := int64(100), int64(55)
+
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: older, LeaguesExpanded: 10, TradesCompleted: &tenTrades, DraftsCompleted: &tenDrafts,
+	})
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: latest, LeaguesExpanded: 42, TradesCompleted: &hundredTrades, DraftsCompleted: &fiftyFiveDrafts,
+	})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeaguesExpanded != 42 || resp.Snapshots[1].LeaguesExpanded != 10 {
+		t.Errorf("expected [latest, older] = [42, 10], got [%d, %d]", resp.Snapshots[0].LeaguesExpanded, resp.Snapshots[1].LeaguesExpanded)
+	}
+}
+
+// TestGetSleeperStats_LimitParam covers the home page's expected use (limit=1
+// for just the latest point) and a smaller-than-available limit generally.
+func TestGetSleeperStats_LimitParam(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC().Truncate(time.Hour)
+	for i := 0; i < 3; i++ {
+		db.Create(&models.SleeperLifetimeCount{SnapshotAt: now.Add(-time.Duration(i) * time.Hour), LeaguesExpanded: int64(i)})
+	}
+
+	resp := performGetSleeperStats(t, "?limit=1")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot with limit=1, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeaguesExpanded != 0 { // i=0 -> now, the most recent
+		t.Errorf("expected the most recent snapshot (LeaguesExpanded 0), got %d", resp.Snapshots[0].LeaguesExpanded)
+	}
+}
+
+// TestGetSleeperStats_SkipParam covers paging past the most recent rows.
+func TestGetSleeperStats_SkipParam(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC().Truncate(time.Hour)
+	for i := 0; i < 3; i++ {
+		db.Create(&models.SleeperLifetimeCount{SnapshotAt: now.Add(-time.Duration(i) * time.Hour), LeaguesExpanded: int64(i)})
+	}
+
+	resp := performGetSleeperStats(t, "?limit=1&skip=2")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].LeaguesExpanded != 2 { // i=2 -> oldest of the three
+		t.Errorf("expected skip=2 to land on the oldest snapshot (LeaguesExpanded 2), got %d", resp.Snapshots[0].LeaguesExpanded)
+	}
+}
+
+// TestGetSleeperStats_NilArchiveColumnsDefaultToZero covers a snapshot taken
+// while no archive DB was configured (transactions_total/trades_completed/
+// drafts_completed are NULL, not 0) — the handler must not error dereferencing
+// a nil pointer, and must report 0 rather than propagate NULL.
+func TestGetSleeperStats_NilArchiveColumnsDefaultToZero(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: time.Now().UTC().Truncate(time.Hour), LeaguesExpanded: 7})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	if got.LeaguesExpanded != 7 || got.TradeCount != 0 || got.DraftCount != 0 {
+		t.Errorf("snapshot = %+v, want {LeaguesExpanded: 7, TradeCount: 0, DraftCount: 0}", got)
+	}
+}
+
+func TestGetSleeperStats_EmptyTableReturnsEmptySeries(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 0 {
+		t.Errorf("expected an empty (non-nil) snapshots slice, got %d", len(resp.Snapshots))
+	}
+}
+
+// TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown covers the
+// users/leagues total/pending/skipped breakdown fields in the response.
+func TestGetSleeperStats_ExposesUsersAndLeaguesBreakdown(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	db.Create(&models.SleeperLifetimeCount{
+		SnapshotAt: time.Now().UTC().Truncate(time.Hour),
+		UsersTotal: 100, UsersExpanded: 60, UsersPending: 30, UsersSkipped: 10,
+		LeaguesTotal: 50, LeaguesExpanded: 42, LeaguesPending: 5, LeaguesSkipped: 3,
+	})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(resp.Snapshots))
+	}
+	got := resp.Snapshots[0]
+	want := SleeperStatsSnapshot{
+		UsersTotal: 100, UsersExpanded: 60, UsersPending: 30, UsersSkipped: 10,
+		LeaguesTotal: 50, LeaguesExpanded: 42, LeaguesPending: 5, LeaguesSkipped: 3,
+	}
+	if got.UsersTotal != want.UsersTotal || got.UsersExpanded != want.UsersExpanded ||
+		got.UsersPending != want.UsersPending || got.UsersSkipped != want.UsersSkipped ||
+		got.LeaguesTotal != want.LeaguesTotal || got.LeaguesExpanded != want.LeaguesExpanded ||
+		got.LeaguesPending != want.LeaguesPending || got.LeaguesSkipped != want.LeaguesSkipped {
+		t.Errorf("snapshot = %+v, want %+v", got, want)
+	}
+}
+
+// TestGetSleeperStats_TransactionsTotalNilVsSet covers the pointer
+// pass-through for transactions_total: nil (no archive DB configured for
+// that snapshot) must round-trip as a JSON-absent field (omitempty), not a
+// false zero, while a set value must pass through unchanged. Unmarshaling
+// into the *int64 field is itself the proof: a present-but-omitted key
+// leaves the pointer nil, and a present key sets it.
+func TestGetSleeperStats_TransactionsTotalNilVsSet(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	withoutArchive := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
+	withArchive := time.Now().UTC().Truncate(time.Hour)
+	txnTotal := int64(12345)
+
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: withoutArchive})
+	db.Create(&models.SleeperLifetimeCount{SnapshotAt: withArchive, TransactionsTotal: &txnTotal})
+
+	resp := performGetSleeperStats(t, "")
+
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].TransactionsTotal == nil || *resp.Snapshots[0].TransactionsTotal != txnTotal {
+		t.Errorf("expected TransactionsTotal %d for the archive-configured snapshot, got %v", txnTotal, resp.Snapshots[0].TransactionsTotal)
+	}
+	if resp.Snapshots[1].TransactionsTotal != nil {
+		t.Errorf("expected nil TransactionsTotal for the no-archive snapshot, got %v", *resp.Snapshots[1].TransactionsTotal)
 	}
 }
 

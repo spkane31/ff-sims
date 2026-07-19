@@ -71,9 +71,6 @@ func GetStats(c *gin.Context) {
 	teamScoresMap := make(map[uint][]float64)
 
 	for _, matchup := range matchups {
-		// homeTeamID := fmt.Sprintf("%d", matchup.HomeTeamID)
-		// awayTeamID := fmt.Sprintf("%d", matchup.AwayTeamID)
-
 		if _, exists := teamScoresMap[matchup.HomeTeamID]; !exists {
 			teamScoresMap[matchup.HomeTeamID] = []float64{matchup.HomeTeamFinalScore}
 		} else {

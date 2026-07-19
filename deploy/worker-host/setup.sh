@@ -81,14 +81,23 @@ ensure_env_file() {
 
 first_build() {
   echo "Building worker binary"
-  local sha
+  local sha full_sha
   sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  full_sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
   (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}' -X 'main.promoteOnStart=true'" -o worker ./cmd/worker)
+  echo "Building cron binary"
+  (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}'" -o cron ./cmd/cron)
+
+  # Seed deploy.sh's per-binary "last built" state so the first periodic
+  # deploy check has a real baseline instead of forcing an immediate,
+  # redundant rebuild on the very next cycle.
+  echo "$full_sha" > "$REPO_DIR/backend/.worker-deployed-sha"
+  echo "$full_sha" > "$REPO_DIR/backend/.cron-deployed-sha"
 }
 
 install_units() {
   echo "Installing systemd units"
-  for unit in ff-sims-worker.service ff-sims-deploy.service ff-sims-deploy.timer; do
+  for unit in ff-sims-worker.service ff-sims-deploy.service ff-sims-deploy.timer ff-sims-discovery.service ff-sims-discovery.timer ff-sims-lifetime-counts.service ff-sims-lifetime-counts.timer; do
     sed "s#{{REPO_DIR}}#${REPO_DIR}#g; s#{{SERVICE_USER}}#${SERVICE_USER}#g" \
       "$SCRIPT_DIR/$unit" > "$SYSTEMD_DIR/$unit"
   done
@@ -107,8 +116,10 @@ Worker host public IP: ${ip}
      in the DigitalOcean dashboard if you haven't already.
 
 Logs:
-  journalctl -u ff-sims-worker -f      # worker logs
+  journalctl -u ff-sims-worker -f      # Temporal worker logs (drafts, transactions, etc.)
   journalctl -u ff-sims-deploy         # deploy-check history
+  journalctl -u ff-sims-discovery -f   # discovery cron job logs (runs hourly)
+  journalctl -u ff-sims-lifetime-counts -f   # lifetime-counts snapshot job logs (runs hourly)
 EOF
 }
 
@@ -120,8 +131,8 @@ main() {
   install_units
 
   if ensure_env_file; then
-    systemctl enable ff-sims-worker.service ff-sims-deploy.timer
-    systemctl start ff-sims-worker.service ff-sims-deploy.timer
+    systemctl enable ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
+    systemctl start ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
   else
     echo "Skipping service start until $ENV_FILE is filled in."
   fi

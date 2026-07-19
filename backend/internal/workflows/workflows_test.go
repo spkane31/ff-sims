@@ -37,12 +37,15 @@ func TestDiscoveryDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(da.DiscoverUsersBatch, mock.Anything, activities.DiscoverUsersBatchParams{UserIDs: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DiscoveryBatchDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{UsersProcessed: 3, UsersFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
@@ -60,6 +63,9 @@ func TestDiscoveryDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -81,6 +87,9 @@ func TestDiscoveryDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the users' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DiscoveryReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DiscoveryReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -105,12 +114,15 @@ func TestDraftSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(dfa.SyncLeagueDraftsBatch, mock.Anything, activities.SyncLeagueDraftsBatchParams{LeagueIDs: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.DraftSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{LeaguesProcessed: 3, LeaguesFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
@@ -128,6 +140,9 @@ func TestDraftSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -149,6 +164,9 @@ func TestDraftSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.DraftSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.DraftSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -173,12 +191,15 @@ func TestTransactionSyncDispatcher_DrainsUntilShortClaim(t *testing.T) {
 	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: full, Concurrency: 4}).
 		Return(activities.SyncBatchResult{Processed: 2}, nil).Once()
 	env.OnActivity(dfa.SyncLeagueTransactionsBatch, mock.Anything, activities.SyncLeagueTransactionsBatchParams{Leagues: short, Concurrency: 4}).
-		Return(activities.SyncBatchResult{Processed: 1}, nil).Once()
+		Return(activities.SyncBatchResult{Processed: 1, Failed: 1}, nil).Once()
 
 	env.ExecuteWorkflow(workflows.TransactionSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{LeaguesProcessed: 3, LeaguesFailed: 1}, report)
 	env.AssertExpectations(t)
 }
 
@@ -196,6 +217,9 @@ func TestTransactionSyncDispatcher_EmptyClaimStopsImmediately(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -218,6 +242,9 @@ func TestTransactionSyncDispatcher_BatchFailureDoesNotFailRun(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	// Failed batches are logged; the leagues' claims expire and re-queue.
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.TransactionSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.TransactionSyncReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -228,12 +255,15 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	psa := &activities.PlayerSyncActivities{}
-	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(nil)
+	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
 
 	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.PlayerSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.PlayerSyncReport{PlayersUpserted: 42}, report)
 	env.AssertExpectations(t)
 }
 
@@ -248,13 +278,17 @@ func TestSyncWeekStats_SkipsFinalizedWeeks(t *testing.T) {
 	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
 		Return([]int{1, 2}, nil)
 	for week := 3; week <= 18; week++ {
-		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).
+			Return(activities.WeekStatsResult{PlayersUpserted: 1}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.SyncWeekStats, workflows.SyncWeekStatsParams{Season: "2025"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{WeeksFetched: 16, PlayersUpserted: 16}, report)
 	env.AssertExpectations(t)
 }
 
@@ -275,6 +309,9 @@ func TestSyncWeekStats_AllWeeksFinalized_NoFetchCalls(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -289,13 +326,17 @@ func TestWeekStatsSyncDispatcher_ResolvesSeasonAndSyncs(t *testing.T) {
 	env.OnActivity(wsa.GetFinalizedWeeks, mock.Anything, activities.GetFinalizedWeeksParams{Season: "2025"}).
 		Return([]int{}, nil)
 	for week := 1; week <= 18; week++ {
-		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).Return(nil)
+		env.OnActivity(wsa.FetchWeekStats, mock.Anything, activities.FetchWeekStatsParams{Season: "2025", Week: week}).
+			Return(activities.WeekStatsResult{PlayersUpserted: 1}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.WeekStatsSyncDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.WeekStatsReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.WeekStatsReport{WeeksFetched: 18, PlayersUpserted: 18}, report)
 	env.AssertExpectations(t)
 }
 
@@ -317,13 +358,16 @@ func TestADPRollupDispatcher_SpawnsChildPerSeasonSegment(t *testing.T) {
 		env.OnWorkflow(workflows.SegmentSeasonADPRollupWorkflow, mock.Anything, workflows.SegmentSeasonADPParams{
 			Segment: seg,
 			Season:  "2024",
-		}).Return(nil)
+		}).Return(workflows.SegmentADPReport{}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.ADPRollupDispatchReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.ADPRollupDispatchReport{SegmentsScheduled: 24}, report)
 	env.AssertExpectations(t)
 }
 
@@ -341,7 +385,7 @@ func TestADPRollupDispatcher_ChildWorkflowIDIsDeterministic(t *testing.T) {
 		env.OnActivity(ara.ComputeSegmentSeasonADP, mock.MatchedBy(func(ctx context.Context) bool {
 			seenIDs[activity.GetInfo(ctx).WorkflowExecution.ID] = true
 			return true
-		}), activities.ComputeSegmentSeasonADPParams{Segment: seg, Season: "2024"}).Return(nil)
+		}), activities.ComputeSegmentSeasonADPParams{Segment: seg, Season: "2024"}).Return(activities.ADPRollupResult{}, nil)
 	}
 
 	env.ExecuteWorkflow(workflows.ADPRollupDispatcher)
@@ -366,6 +410,9 @@ func TestADPRollupDispatcher_NoSeasons_NoChildren(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.ADPRollupDispatchReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.ADPRollupDispatchReport{}, report)
 }
 
 // ---- SegmentSeasonADPRollupWorkflow ----
@@ -379,7 +426,7 @@ func TestSegmentSeasonADPRollupWorkflow_CallsComputeActivity(t *testing.T) {
 	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
 		Segment: seg,
 		Season:  "2024",
-	}).Return(nil)
+	}).Return(activities.ADPRollupResult{PlayersUpserted: 5}, nil)
 
 	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
 		Segment: seg,
@@ -388,6 +435,9 @@ func TestSegmentSeasonADPRollupWorkflow_CallsComputeActivity(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.SegmentADPReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.SegmentADPReport{PlayersUpserted: 5}, report)
 	env.AssertExpectations(t)
 }
 
@@ -400,7 +450,7 @@ func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t 
 	env.OnActivity(ara.ComputeSegmentSeasonADP, mock.Anything, activities.ComputeSegmentSeasonADPParams{
 		Segment: seg,
 		Season:  "2024",
-	}).Return(temporal.NewApplicationError("db error", "DB_ERROR", nil))
+	}).Return(activities.ADPRollupResult{}, temporal.NewApplicationError("db error", "DB_ERROR", nil))
 
 	env.ExecuteWorkflow(workflows.SegmentSeasonADPRollupWorkflow, workflows.SegmentSeasonADPParams{
 		Segment: seg,
@@ -409,6 +459,9 @@ func TestSegmentSeasonADPRollupWorkflow_ActivityFailure_WorkflowStillSucceeds(t 
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError()) // logged and swallowed, not propagated
+	var report workflows.SegmentADPReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.SegmentADPReport{}, report)
 	env.AssertExpectations(t)
 }
 
@@ -494,6 +547,11 @@ func TestArchiveBackfillWorkflow_CompletesWhenAllStreamsDrainWithinOneExecution(
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	var report workflows.BackfillReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.BackfillReport{
+		LeaguesReplicated: 3, TransactionsReplicated: 10, DraftHeadersReplicated: 2, DraftPicksReplicated: 1,
+	}, report)
 	env.AssertExpectations(t)
 }
 

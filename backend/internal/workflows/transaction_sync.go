@@ -13,7 +13,7 @@ import (
 // or empty claim means the backlog is drained for now, so the run exits and
 // the 10-minute schedule takes over. Failed batch activities are logged, not
 // propagated: their leagues' claims expire after 20 minutes and re-queue.
-func TransactionSyncDispatcher(ctx workflow.Context) error {
+func TransactionSyncDispatcher(ctx workflow.Context) (TransactionSyncReport, error) {
 	dfa := &activities.DataFetchActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
@@ -21,9 +21,10 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 
 	var cfg activities.TransactionSyncConfig
 	if err := workflow.ExecuteActivity(actCtx, dfa.GetTransactionSyncConfig).Get(ctx, &cfg); err != nil {
-		return err
+		return TransactionSyncReport{}, err
 	}
 
+	var report TransactionSyncReport
 	for iter := 0; iter < MaxDispatchIterations; iter++ {
 		var futures []workflow.Future
 		drained := false
@@ -57,10 +58,12 @@ func TransactionSyncDispatcher(ctx workflow.Context) error {
 				continue
 			}
 			logger.Info("transaction batch done", "processed", res.Processed, "failed", res.Failed)
+			report.LeaguesProcessed += res.Processed
+			report.LeaguesFailed += res.Failed
 		}
 		if drained {
 			break
 		}
 	}
-	return nil
+	return report, nil
 }

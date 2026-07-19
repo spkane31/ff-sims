@@ -209,9 +209,29 @@ export interface GetSimulationResponse {
 // Sleeper scraper data types
 
 export interface SleeperStats {
-  league_count: number;
+  snapshot_at: string;
+
+  users_total: number;
+  users_expanded: number;
+  users_pending: number;
+  users_skipped: number;
+
+  leagues_total: number;
+  leagues_expanded: number;
+  leagues_pending: number;
+  leagues_skipped: number;
+
+  /** Absent (not 0) for snapshots taken before an archive DB was configured. */
+  transactions_total?: number;
   trade_count: number;
   draft_count: number;
+}
+
+// GET /sleeper/stats returns a series of hourly snapshots (most recent
+// first), used for the home page's current totals (snapshots[0]) and the
+// /admin page's growth-over-time charts.
+export interface SleeperStatsResponse {
+  snapshots: SleeperStats[];
 }
 
 export interface TradeSidePlayer {

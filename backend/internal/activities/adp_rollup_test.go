@@ -85,11 +85,15 @@ func TestComputeSegmentSeasonADP_ComputesAverages(t *testing.T) {
 	seedADPPick(t, db, "d2", 1, 4, "p2")
 
 	a := &activities.ADPRollupActivities{Read: db, Write: db}
-	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+	result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+	}
+	if result.PlayersUpserted != 2 {
+		t.Errorf("expected PlayersUpserted 2, got %d", result.PlayersUpserted)
 	}
 
 	var p1, p2 models.DraftADP
@@ -128,11 +132,15 @@ func TestComputeSegmentSeasonADP_CIFieldsAreZeroUnderSQLite(t *testing.T) {
 	}
 
 	a := &activities.ADPRollupActivities{Read: db, Write: db}
-	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+	result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1, got %d", result.PlayersUpserted)
 	}
 
 	var row models.DraftADP
@@ -158,11 +166,15 @@ func TestComputeSegmentSeasonADP_ExcludesAuctionAndNonRedraft(t *testing.T) {
 	seedADPPick(t, db, "d-dynasty", 1, 1, "p-dynasty")
 
 	a := &activities.ADPRollupActivities{Read: db, Write: db}
-	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+	result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+	}
+	if result.PlayersUpserted != 0 {
+		t.Errorf("expected PlayersUpserted 0 (auction/dynasty excluded), got %d", result.PlayersUpserted)
 	}
 
 	var count int64
@@ -179,11 +191,15 @@ func TestComputeSegmentSeasonADP_NoMinDraftsThresholdAtWriteTime(t *testing.T) {
 	seedADPPick(t, db, "d1", 1, 1, "p1") // only 1 qualifying draft, well under the API's 20-draft threshold
 
 	a := &activities.ADPRollupActivities{Read: db, Write: db}
-	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+	result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+	}
+	if result.PlayersUpserted != 1 {
+		t.Errorf("expected PlayersUpserted 1, got %d", result.PlayersUpserted)
 	}
 
 	var row models.DraftADP
@@ -203,11 +219,15 @@ func TestComputeSegmentSeasonADP_UpsertOverwritesPreviousRun(t *testing.T) {
 
 	a := &activities.ADPRollupActivities{Read: db, Write: db}
 	run := func() {
-		if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+		result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 			Segment: adpTestSegment,
 			Season:  "2024",
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("ComputeSegmentSeasonADP error: %v", err)
+		}
+		if result.PlayersUpserted != 1 {
+			t.Errorf("expected PlayersUpserted 1 (one distinct player), got %d", result.PlayersUpserted)
 		}
 	}
 	run() // first run: p1 picks [1] -> avg=1, count=1
@@ -274,11 +294,15 @@ func TestComputeSegmentSeasonADP_ReadsFromArchiveWritesToCloud(t *testing.T) {
 	seedADPPick(t, read, "d1", 1, 2, "p2")
 
 	a := &activities.ADPRollupActivities{Read: read, Write: write}
-	if err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
+	result, err := a.ComputeSegmentSeasonADP(context.Background(), activities.ComputeSegmentSeasonADPParams{
 		Segment: adpTestSegment,
 		Season:  "2024",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ComputeSegmentSeasonADP: %v", err)
+	}
+	if result.PlayersUpserted != 2 {
+		t.Errorf("expected PlayersUpserted 2, got %d", result.PlayersUpserted)
 	}
 
 	var writeCount int64

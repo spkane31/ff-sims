@@ -11,7 +11,7 @@ type PlayoffGameType string
 const (
 	PlayoffGameTypeRegular       PlayoffGameType = "REGULAR"
 	PlayoffGameTypePlayoff       PlayoffGameType = "PLAYOFF"
-	PlayoffGameTypeLosersBracket PlayoffGameType = "LOSERS_BRACKET" // Not used in our logic, but defined for completeness
+	PlayoffGameTypeLosersBracket PlayoffGameType = "LOSERS_BRACKET"
 	PlayoffGameTypeChampionship  PlayoffGameType = "CHAMPIONSHIP"
 	PlayoffGameTypeThirdPlace    PlayoffGameType = "THIRD_PLACE"
 )

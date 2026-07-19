@@ -47,7 +47,7 @@ func (a *ScavengerActivities) GetScavengerConfig(ctx context.Context) (Scavenger
 		DraftBatchSize:   max(helpers.GetEnv("SCAVENGER_DRAFT_BATCH_SIZE", 200), 1),
 		MaxBatchesPerRun: max(helpers.GetEnv("SCAVENGER_MAX_BATCHES_PER_RUN", 50), 1),
 		RetentionDays:    max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1),
-		PurgeEnabled:     helpers.GetEnv("SCAVENGER_PURGE_ENABLED", false),
+		PurgeEnabled:     helpers.GetEnv("SCAVENGER_PURGE_ENABLED", true),
 	}, nil
 }
 
@@ -164,11 +164,13 @@ func (a *ScavengerActivities) ReplicateLeaguesBatch(ctx context.Context, params 
 }
 
 const selectDraftHeadersBatchSQL = `
-SELECT sleeper_draft_id, sleeper_league_id, type, status, season, last_fetched_at, created_at, updated_at
-FROM sleeper_drafts
-WHERE (created_at, sleeper_draft_id) > (?, ?)
-  AND created_at <= ?
-ORDER BY created_at, sleeper_draft_id
+SELECT d.sleeper_draft_id, d.sleeper_league_id, d.type, d.status, d.season, d.last_fetched_at, d.created_at, d.updated_at
+FROM sleeper_drafts d
+JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
+WHERE l.league_type = 'redraft'
+  AND (d.created_at, d.sleeper_draft_id) > (?, ?)
+  AND d.created_at <= ?
+ORDER BY d.created_at, d.sleeper_draft_id
 LIMIT ?`
 
 // ReplicateDraftHeadersBatch copies up to BatchSize draft rows from cloud to
@@ -176,7 +178,10 @@ LIMIT ?`
 // drafts as they're first created. It does not catch later status changes on
 // an existing draft (sleeper_drafts.updated_at is dead — never assigned by
 // the upsert in data_fetch.go); those are caught separately, once picks
-// land, by ReplicateDraftPicksBatch's last_fetched_at watermark.
+// land, by ReplicateDraftPicksBatch's last_fetched_at watermark. The join to
+// sleeper_leagues (excluding keeper/dynasty, as in claimLeaguesForDraftsSQL)
+// is defense-in-depth: this path is otherwise dead since T15 routes all
+// drafts straight to archive, never through cloud.
 func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
 	cur, err := readCursor(ctx, a.Archive, streamDraftHeaders)
 	if err != nil {
@@ -222,12 +227,14 @@ func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, pa
 }
 
 const selectDraftsByPicksWatermarkSQL = `
-SELECT sleeper_draft_id, sleeper_league_id, type, status, season, last_fetched_at, created_at, updated_at
-FROM sleeper_drafts
-WHERE last_fetched_at IS NOT NULL
-  AND (last_fetched_at, sleeper_draft_id) > (?, ?)
-  AND last_fetched_at <= ?
-ORDER BY last_fetched_at, sleeper_draft_id
+SELECT d.sleeper_draft_id, d.sleeper_league_id, d.type, d.status, d.season, d.last_fetched_at, d.created_at, d.updated_at
+FROM sleeper_drafts d
+JOIN sleeper_leagues l ON l.sleeper_league_id = d.sleeper_league_id
+WHERE l.league_type = 'redraft'
+  AND d.last_fetched_at IS NOT NULL
+  AND (d.last_fetched_at, d.sleeper_draft_id) > (?, ?)
+  AND d.last_fetched_at <= ?
+ORDER BY d.last_fetched_at, d.sleeper_draft_id
 LIMIT ?`
 
 // ReplicateDraftPicksBatch copies up to BatchSize drafts (plus all of their
@@ -235,7 +242,8 @@ LIMIT ?`
 // — the signal that picks have landed (set once, in data_fetch.go's
 // fetchDraftPicks). This also re-copies the draft row itself, so by the time
 // a draft's picks are replicated its status is current too (picks are only
-// fetched once a draft reaches "complete").
+// fetched once a draft reaches "complete"). Joined to sleeper_leagues to
+// exclude keeper/dynasty leagues — see selectDraftHeadersBatchSQL.
 func (a *ScavengerActivities) ReplicateDraftPicksBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
 	cur, err := readCursor(ctx, a.Archive, streamDraftPicks)
 	if err != nil {
@@ -330,22 +338,30 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 		return ReplicateBatchResult{Drained: true}, nil
 	}
 
-	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
-	for i, r := range rows {
-		archiveRows[i] = models.ArchiveSleeperTransaction{
+	// Rows filtered out by isPlayerOnlyTransaction still advance the cursor
+	// below: cursor position tracks how far into cloud we've scanned, not
+	// what got written to archive.
+	var archiveRows []models.ArchiveSleeperTransaction
+	for _, r := range rows {
+		if !isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
+			continue
+		}
+		archiveRows = append(archiveRows, models.ArchiveSleeperTransaction{
 			SleeperTransactionID: r.SleeperTransactionID, SleeperLeagueID: r.SleeperLeagueID,
 			Type: r.Type, Status: r.Status, CreatedAtSleeper: r.CreatedAtSleeper, Leg: r.Leg,
 			Adds: r.Adds, Drops: r.Drops, DraftPicks: r.DraftPicks, WaiverBudget: r.WaiverBudget,
 			CreatedAt: r.CreatedAt,
-		}
+		})
 	}
 	last := rows[len(rows)-1]
 	newCursor := cursor{Time: last.CreatedAt, ID: last.SleeperTransactionID}
 
 	err = a.Archive.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
-			CreateInBatches(archiveRows, 500).Error; err != nil {
-			return err
+		if len(archiveRows) > 0 {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+				CreateInBatches(archiveRows, 500).Error; err != nil {
+				return err
+			}
 		}
 		return writeCursor(tx, streamTransactions, newCursor)
 	})

@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TeamNameHistory tracks the history of team name changes over time
 type TeamNameHistory struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`

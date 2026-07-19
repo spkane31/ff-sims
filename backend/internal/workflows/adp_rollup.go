@@ -10,19 +10,16 @@ import (
 	"backend/internal/models"
 )
 
-// ADPRollupDispatcher is a scheduled workflow that discovers every season
-// with qualifying draft data, crosses it with the fixed set of 24 ADP
-// segments, and spawns one SegmentSeasonADPRollupWorkflow child per
-// (season, segment) pair (fire-and-forget).
-func ADPRollupDispatcher(ctx workflow.Context) error {
+func ADPRollupDispatcher(ctx workflow.Context) (ADPRollupDispatchReport, error) {
 	ara := &activities.ADPRollupActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
 	var seasons []string
 	if err := workflow.ExecuteActivity(actCtx, ara.ListADPSeasons).Get(ctx, &seasons); err != nil {
-		return err
+		return ADPRollupDispatchReport{}, err
 	}
 
+	var report ADPRollupDispatchReport
 	for _, season := range seasons {
 		for _, seg := range models.AllADPSegments() {
 			cwo := workflow.ChildWorkflowOptions{
@@ -35,25 +32,29 @@ func ADPRollupDispatcher(ctx workflow.Context) error {
 			if err := f.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
 				workflow.GetLogger(ctx).Warn("failed to start SegmentSeasonADPRollupWorkflow",
 					"segment", seg.Key(), "season", season, "error", err)
+				continue
 			}
+			report.SegmentsScheduled++
 		}
 	}
-	return nil
+	return report, nil
 }
 
 // SegmentSeasonADPRollupWorkflow computes and upserts ADP for one
 // (segment, season) pair. A compute failure is logged rather than returned,
 // so one bad segment/season doesn't surface as a workflow failure.
-func SegmentSeasonADPRollupWorkflow(ctx workflow.Context, params SegmentSeasonADPParams) error {
+func SegmentSeasonADPRollupWorkflow(ctx workflow.Context, params SegmentSeasonADPParams) (SegmentADPReport, error) {
 	ara := &activities.ADPRollupActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 
+	var res activities.ADPRollupResult
 	if err := workflow.ExecuteActivity(actCtx, ara.ComputeSegmentSeasonADP, activities.ComputeSegmentSeasonADPParams{
 		Segment: params.Segment,
 		Season:  params.Season,
-	}).Get(ctx, nil); err != nil {
+	}).Get(ctx, &res); err != nil {
 		workflow.GetLogger(ctx).Warn("ComputeSegmentSeasonADP failed",
 			"segment", params.Segment.Key(), "season", params.Season, "error", err)
+		return SegmentADPReport{}, nil
 	}
-	return nil
+	return SegmentADPReport{PlayersUpserted: res.PlayersUpserted}, nil
 }

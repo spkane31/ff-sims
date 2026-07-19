@@ -3,7 +3,13 @@ import { useAdminBacklog } from "../../hooks/useAdminBacklog";
 import { useAdminSegments } from "../../hooks/useAdminSegments";
 import { useAdminDatabaseSize } from "../../hooks/useAdminDatabaseSize";
 import { useAdminDiscoveryFrontier } from "../../hooks/useAdminDiscoveryFrontier";
+import { useSleeperStatsHistory } from "../../hooks/useSleeperData";
 import { AdminBacklogResponse } from "../../services/adminService";
+import {
+  UsersDiscoveryChart,
+  LeaguesDiscoveryChart,
+  ArchiveGrowthChart,
+} from "../../components/SleeperGrowthCharts";
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -398,6 +404,39 @@ function DiscoveryFrontier({ backlog }: { backlog: AdminBacklogResponse | null }
   );
 }
 
+function LifetimeGrowth() {
+  const { snapshots, isLoading, error } = useSleeperStatsHistory();
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-blue-600 mb-2">Lifetime Growth</h2>
+      <p className="text-gray-600 dark:text-gray-300 mb-4">
+        Hourly snapshots of discovery state and all-time totals from{" "}
+        <code>sleeper_lifetime_counts</code>, over the last 7 days — the same rollup the home
+        page&apos;s totals are drawn from, so it stays accurate even after the cloud database
+        purges old data.
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p>Loading lifetime growth...</p>
+        </div>
+      )}
+
+      {error && <p className="text-red-600">Failed to load lifetime growth.</p>}
+
+      {!isLoading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <UsersDiscoveryChart snapshots={snapshots} />
+          <LeaguesDiscoveryChart snapshots={snapshots} />
+          <ArchiveGrowthChart snapshots={snapshots} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminBacklog() {
   const { backlog, isLoading, error } = useAdminBacklog();
 
@@ -452,6 +491,8 @@ export default function AdminBacklog() {
         <DatabaseSize />
 
         <DiscoveryFrontier backlog={backlog} />
+
+        <LifetimeGrowth />
       </div>
     </Layout>
   );

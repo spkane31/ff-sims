@@ -20,10 +20,9 @@ import (
 
 // DataFetchActivities holds dependencies for per-league data fetching activities.
 // Archive is nil unless ARCHIVE_DATABASE_URL is configured — every use of it
-// is nil-checked, falling back to cloud-only (the pre-T13 behavior) when
-// unset. Unlike ScavengerActivities/ADPRollupActivities, this struct's
-// worker is never gated on archive availability: sync must keep working
-// with or without one.
+// is nil-checked, falling back to cloud-only when unset. Unlike
+// ScavengerActivities/ADPRollupActivities, this struct's worker is never
+// gated on archive availability: sync must keep working with or without one.
 type DataFetchActivities struct {
 	DB      *gorm.DB
 	Archive *gorm.DB
@@ -51,9 +50,9 @@ func currentSleeperSeason() string {
 // claim query's LIMIT.
 func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSyncConfig, error) {
 	return DraftSyncConfig{
-		ParallelBatches: max(helpers.GetEnv("DRAFT_SYNC_PARALLEL_BATCHES", 4), 1),
-		BatchSize:       max(helpers.GetEnv("DRAFT_SYNC_BATCH_SIZE", 250), 1),
-		Concurrency:     max(helpers.GetEnv("DRAFT_SYNC_LEAGUE_CONCURRENCY", 12), 1),
+		ParallelBatches: max(helpers.GetEnv("DRAFT_SYNC_PARALLEL_BATCHES", 2), 1),
+		BatchSize:       max(helpers.GetEnv("DRAFT_SYNC_BATCH_SIZE", 100), 1),
+		Concurrency:     max(helpers.GetEnv("DRAFT_SYNC_LEAGUE_CONCURRENCY", 8), 1),
 	}, nil
 }
 
@@ -62,12 +61,16 @@ func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSync
 // the two sync paths never contend). Leagues whose drafting is finished
 // (in_season/complete) and already fetched are excluded — completed drafts are
 // immutable, so refetching them buys nothing; pre_draft and drafting leagues
-// keep rechecking until their drafts complete.
+// keep rechecking until their drafts complete. league_type = 'redraft'
+// excludes keeper/dynasty leagues, which the valuation model never reads
+// (analysis/src/db.py get_adp); last_fetched_at IS NOT NULL above guarantees
+// league_type is already populated (set together in FetchLeagueDetails).
 const claimLeaguesForDraftsSQL = `
 UPDATE sleeper_leagues SET drafts_claimed_at = now()
 WHERE sleeper_league_id IN (
     SELECT sleeper_league_id FROM sleeper_leagues
     WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
+      AND league_type = 'redraft'
       AND NOT (status IN ('in_season', 'complete') AND last_drafts_fetched_at IS NOT NULL)
       AND (drafts_claimed_at IS NULL OR drafts_claimed_at < now() - interval '20 minutes')
     ORDER BY last_drafts_fetched_at ASC NULLS FIRST
@@ -146,8 +149,9 @@ func (a *DataFetchActivities) SyncLeagueDraftsBatch(ctx context.Context, params 
 // picks are fetch-once), and stamps completion (clearing the claim) in one
 // update. A 404 on the league marks it skipped; a 404 on a draft's picks
 // skips that draft. Each draft routes as a whole unit (header + picks) to
-// either cloud (current season, or no archive configured — the unchanged
-// pre-T13 path) or straight to archive (past seasons, when Archive is set).
+// archive whenever Archive is configured — draft data is immutable and has
+// no live-API reader, so there's no reason for any of it to ever land in
+// cloud. Falls back to cloud-only when no archive DB is configured.
 func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID string) error {
 	drafts, err := a.Sleeper.GetLeagueDrafts(ctx, leagueID)
 	if err != nil {
@@ -164,10 +168,9 @@ func (a *DataFetchActivities) syncOneLeagueDrafts(ctx context.Context, leagueID 
 		return err
 	}
 
-	currentSeason := currentSleeperSeason()
 	var cloudCompletedIDs, archiveCompletedIDs []string
 	for _, d := range drafts {
-		if a.Archive != nil && d.Season < currentSeason {
+		if a.Archive != nil {
 			if err := a.upsertArchiveDraftHeader(ctx, d, leagueID); err != nil {
 				return err
 			}
@@ -329,9 +332,9 @@ func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftI
 // claim query's LIMIT.
 func (a *DataFetchActivities) GetTransactionSyncConfig(ctx context.Context) (TransactionSyncConfig, error) {
 	return TransactionSyncConfig{
-		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 4), 1),
-		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 250), 1),
-		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 12), 1),
+		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 2), 1),
+		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 100), 1),
+		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 8), 1),
 	}, nil
 }
 
@@ -506,7 +509,11 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					oldRows = append(oldRows, r)
+					// Old rows route straight to archive; skipping here means the
+					// row is dropped entirely, not sent to cloud instead.
+					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
+						oldRows = append(oldRows, r)
+					}
 				} else {
 					newRows = append(newRows, r)
 				}
@@ -541,6 +548,24 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", lg.LeagueID).
 		Updates(updates).Error
+}
+
+// isPlayerOnlyTransaction mirrors the valuation model's query-time filter
+// (analysis/src/parsing.py parse_trade) at write time, so this data never
+// reaches the archive DB at all.
+func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
+	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
+}
+
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true // SQL NULL / zero value
+	}
+	var v []json.RawMessage
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	return len(v) == 0
 }
 
 // upsertArchiveTransactions writes rows directly to the archive DB, skipping

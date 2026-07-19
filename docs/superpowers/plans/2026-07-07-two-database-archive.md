@@ -70,6 +70,7 @@ The DO managed Postgres is ~20GB, nearly all `sleeper_transactions` + `sleeper_d
 | T12 | Optional: migrate cloud to a smaller DO cluster (dump/restore + repoint `DATABASE_URL`) | S ops | T9 | Not started — issue #169 |
 | T13 | Age-based write routing: `DataFetchActivities` writes already-old transactions/drafts/picks straight to archive, skipping cloud, instead of write-then-replicate-then-purge | L | T3, **T6** (shared retention concept; sequence after to avoid file conflicts) | Done — PR #159 |
 | T14 | Fix purge eligibility to use event time (`created_at_sleeper`/`season`), not insert time — see Risk #5 | S/M | T6 | Done — PR #163 |
+| T15 | Close T13's current-season gap for drafts: route ALL drafts+picks (not just past-season) straight to archive when configured — draft data is immutable with no live-API reader, so cloud never needs any of it | S | T13 | Done — PR #179 |
 
 \* T3 is env-gated and mergeable before T1; it just can't connect until the archive DB exists.
 

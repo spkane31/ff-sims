@@ -6,6 +6,18 @@ WORKER_SERVICE="${WORKER_SERVICE:-ff-sims-worker.service}"
 GO_BIN="${GO_BIN:-/usr/local/go/bin/go}"
 [[ -x "$GO_BIN" ]] || GO_BIN="go"
 
+# Persists the sha each binary was last actually built from. Needed because
+# git reset --hard (in deploy(), below) already advances HEAD to the new
+# remote sha before install_and_restart can run, and install_and_restart runs
+# in a re-exec'd process that doesn't share deploy()'s local variables — so
+# without this, there'd be no way to know what "previously deployed" means.
+# These live as untracked files next to the binaries themselves (see
+# backend/.gitignore) and are only updated after a successful build, so a
+# build failure doesn't get silently treated as "already deployed" on the
+# next cycle.
+WORKER_SHA_FILE="$REPO_DIR/backend/.worker-deployed-sha"
+CRON_SHA_FILE="$REPO_DIR/backend/.cron-deployed-sha"
+
 current_and_remote_sha() {
   # `|| return 1` is required, not decorative: this function runs inside a
   # $(...) command substitution (see deploy()), and bash does not inherit
@@ -20,24 +32,87 @@ current_and_remote_sha() {
   echo "$local_sha $remote_sha"
 }
 
+# Prints whether $2 (new sha) touches anything $3 (a Go package pattern, e.g.
+# ./cmd/worker) actually depends on, diffed against $1 (old sha). The
+# dependency set is computed fresh via `go list -deps` against the
+# already-updated checkout, rather than a hand-maintained path list, so it
+# can't silently go stale if worker/cron start importing a new internal
+# package — a false negative here (skipping a rebuild the binary actually
+# needed) is worse than a false positive (an unnecessary rebuild).
+relevant_changed() {
+  local old_sha="$1" new_sha="$2" pkg="$3"
+  local deps
+  if ! deps="$(cd "$REPO_DIR/backend" && "$GO_BIN" list -deps -f '{{.ImportPath}}' "$pkg" 2>&1)"; then
+    echo "warning: 'go list -deps $pkg' failed, assuming changes are relevant: $deps" >&2
+    return 0
+  fi
+
+  local pathspecs=() dep
+  while IFS= read -r dep; do
+    [[ "$dep" == backend/* ]] && pathspecs+=("$dep")
+  done <<< "$deps"
+  # go.mod/go.sum aren't Go packages so `go list -deps` never names them, but
+  # a dependency version bump can change any imported package's behavior
+  # without touching a single .go file.
+  pathspecs+=("backend/go.mod" "backend/go.sum")
+
+  [[ -n "$(git -C "$REPO_DIR" diff --name-only "$old_sha" "$new_sha" -- "${pathspecs[@]}")" ]]
+}
+
 build_worker() {
   local sha
   sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
   (cd "$REPO_DIR/backend" && "$GO_BIN" build -ldflags "-X 'main.buildID=${sha}' -X 'main.promoteOnStart=true'" -o worker.new ./cmd/worker)
 }
 
-install_and_restart() {
+build_cron() {
   local sha
-  sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  (cd "$REPO_DIR/backend" && "$GO_BIN" build -ldflags "-X 'main.buildID=${sha}'" -o cron.new ./cmd/cron)
+}
 
-  if ! build_worker; then
+install_and_restart() {
+  local sha last_worker_sha last_cron_sha
+  sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  last_worker_sha=""
+  last_cron_sha=""
+  [[ -f "$WORKER_SHA_FILE" ]] && last_worker_sha="$(<"$WORKER_SHA_FILE")"
+  [[ -f "$CRON_SHA_FILE" ]] && last_cron_sha="$(<"$CRON_SHA_FILE")"
+
+  local rebuild_worker=1 rebuild_cron=1
+  if [[ -n "$last_worker_sha" ]] && ! relevant_changed "$last_worker_sha" "$sha" ./cmd/worker; then
+    rebuild_worker=0
+  fi
+  if [[ -n "$last_cron_sha" ]] && ! relevant_changed "$last_cron_sha" "$sha" ./cmd/cron; then
+    rebuild_cron=0
+  fi
+
+  if [[ "$rebuild_worker" -eq 0 ]]; then
+    echo "worker: up to date, no worker-relevant changes since ${last_worker_sha:0:5}"
+  elif ! build_worker; then
     echo "build failed at $sha, leaving previous worker binary running" >&2
     return 1
   fi
 
-  mv "$REPO_DIR/backend/worker.new" "$REPO_DIR/backend/worker"
-  systemctl restart "$WORKER_SERVICE"
-  echo "deployed $sha"
+  if [[ "$rebuild_cron" -eq 0 ]]; then
+    echo "cron: up to date, no cron-relevant changes since ${last_cron_sha:0:5}"
+  elif ! build_cron; then
+    echo "build failed at $sha, leaving previous cron binary in place" >&2
+    return 1
+  fi
+
+  if [[ "$rebuild_worker" -eq 1 ]]; then
+    mv "$REPO_DIR/backend/worker.new" "$REPO_DIR/backend/worker"
+    systemctl restart "$WORKER_SERVICE"
+    echo "$sha" > "$WORKER_SHA_FILE"
+    echo "deployed worker $sha"
+  fi
+
+  if [[ "$rebuild_cron" -eq 1 ]]; then
+    mv "$REPO_DIR/backend/cron.new" "$REPO_DIR/backend/cron"
+    echo "$sha" > "$CRON_SHA_FILE"
+    echo "deployed cron $sha"
+  fi
 }
 
 deploy() {

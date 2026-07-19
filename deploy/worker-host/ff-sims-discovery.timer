@@ -1,0 +1,13 @@
+[Unit]
+Description=Run ff-sims-discovery hourly
+
+[Timer]
+# Persistent=true is intentionally omitted: setup.sh's disable_sleep step
+# already keeps the host from sleeping through a missed tick, so there's
+# nothing for a catch-up run to make up for.
+OnBootSec=2min
+OnCalendar=hourly
+Unit=ff-sims-discovery.service
+
+[Install]
+WantedBy=timers.target

@@ -11,7 +11,7 @@ import (
 // accumulating the replicated count. Returns once a batch reports Drained
 // (the stream is caught up), the batch cap is hit (more work remains), or
 // the activity errors. Callers decide what an error means for their own
-// context — ScavengerDispatcher logs and moves on (the next 6h tick
+// context — ScavengerDispatcher logs and moves on (the next hourly tick
 // self-heals); ArchiveBackfillWorkflow fails the whole execution (it has no
 // next tick to fall back on).
 func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize, maxBatches int) (replicated int, drained bool, err error) {
@@ -33,8 +33,8 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 // drains independently up to MaxBatchesPerRun batches or until a short
 // batch signals it's caught up; a stream's activity failure is logged and
 // stops only that stream for this run — the cursor didn't move (advance
-// commits atomically with the copied rows), so the next 6h run resumes from
-// the same position. All five (four replicate + config) activity calls use
+// commits atomically with the copied rows), so the next hourly run resumes
+// from the same position. All five (four replicate + config) activity calls use
 // defaultActivityOptions (not batchActivityOptions): unlike the per-league
 // sync batch activities, these are fast single-query DB-to-DB copies with no
 // external API calls and no activity.RecordHeartbeat — batchActivityOptions'
@@ -44,7 +44,7 @@ func drainStream(ctx, actCtx workflow.Context, activityFn interface{}, batchSize
 //
 // After replication, the purge phase (transactions, then drafts+picks)
 // deletes verified-old cloud rows — but only when cfg.PurgeEnabled is true
-// (SCAVENGER_PURGE_ENABLED, default false: purge ships dark) AND the
+// (SCAVENGER_PURGE_ENABLED, default true) AND the
 // corresponding replicate stream(s) drained this run (per drainStream's
 // drained return), so purge never scans ahead of a backlog it already knows
 // exists. Unlike the replicate loops above, a purge activity error is NOT

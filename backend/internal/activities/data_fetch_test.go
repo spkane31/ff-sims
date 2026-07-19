@@ -345,7 +345,7 @@ func TestSyncBatch_LegLoopCappedAtCurrentWeek(t *testing.T) {
 		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
 		Concurrency: 1,
 	})
-	// 1 state call + legs 1..3 = 4 total; the old code would have made 19.
+	// 1 state call + legs 1..3 = 4 total.
 	if got := calls.Load(); got != 4 {
 		t.Errorf("expected 4 HTTP calls (state + 3 legs), got %d", got)
 	}
@@ -477,6 +477,41 @@ func TestSyncBatch_RoutesOldTransactionsToArchiveOnly(t *testing.T) {
 	}
 }
 
+func TestSyncBatch_ArchiveExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	claimedLeague(t, cloud, "lg1")
+
+	oldMs := time.Now().UTC().AddDate(0, 0, -60).UnixMilli() // past the 30-day default retention
+	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+		"lg1/2": {
+			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: oldMs},
+			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: oldMs,
+				DraftPicks: []interface{}{map[string]interface{}{"season": "2027", "round": float64(1)}}},
+			{TransactionID: "tx-faab", Type: "waiver", Status: "complete", Leg: 2, Created: oldMs,
+				WaiverBudget: []interface{}{map[string]interface{}{"amount": float64(10)}}},
+		},
+	}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
+		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
+		Concurrency: 1,
+	})
+
+	var archiveIDs []string
+	archive.Model(&models.ArchiveSleeperTransaction{}).Pluck("sleeper_transaction_id", &archiveIDs)
+	if len(archiveIDs) != 1 || archiveIDs[0] != "tx-clean" {
+		t.Errorf("expected only tx-clean in archive, got %v", archiveIDs)
+	}
+	var cloudCount int64
+	cloud.Model(&models.SleeperTransaction{}).Count(&cloudCount)
+	if cloudCount != 0 {
+		t.Errorf("expected no rows in cloud (all old), got %d", cloudCount)
+	}
+}
+
 func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 	cloud := newTestDB(t)
 	claimedLeague(t, cloud, "lg1")
@@ -500,7 +535,7 @@ func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 	}
 }
 
-func TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly(t *testing.T) {
+func TestSyncDraftsBatch_RoutesDraftToArchiveOnly(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
 	draftClaimedLeague(t, cloud, "lg1")
@@ -539,7 +574,7 @@ func TestSyncDraftsBatch_RoutesOldDraftToArchiveOnly(t *testing.T) {
 	}
 }
 
-func TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud(t *testing.T) {
+func TestSyncDraftsBatch_CurrentSeasonDraftRoutesToArchiveToo(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
 	draftClaimedLeague(t, cloud, "lg1")
@@ -555,11 +590,11 @@ func TestSyncDraftsBatch_CurrentSeasonDraftStaysInCloud(t *testing.T) {
 	var cloudCount, archiveCount int64
 	cloud.Model(&models.SleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&cloudCount)
 	archive.Model(&models.ArchiveSleeperDraft{}).Where("sleeper_draft_id = ?", "d-current").Count(&archiveCount)
-	if cloudCount != 1 {
-		t.Errorf("expected current-season draft in cloud, got %d", cloudCount)
+	if cloudCount != 0 {
+		t.Errorf("expected current-season draft NOT in cloud when Archive is configured, got %d", cloudCount)
 	}
-	if archiveCount != 0 {
-		t.Errorf("expected current-season draft NOT in archive, got %d", archiveCount)
+	if archiveCount != 1 {
+		t.Errorf("expected current-season draft in archive, got %d", archiveCount)
 	}
 }
 

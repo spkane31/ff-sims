@@ -1,12 +1,15 @@
 package sleeper_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,6 +77,46 @@ func TestGetUser_RateLimitRetries(t *testing.T) {
 	}
 	if attempts != 3 {
 		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+// TestGetUser_RateLimitLogsEachOccurrence is the regression test for the
+// "we should have logging for 429s" ask: with no proactive rate/concurrency
+// limiting left in the client, the 429/Retry-After backoff loop is the only
+// defense against Sleeper-side throttling, so every occurrence must be
+// visible in the process log — not just the terminal "exhausted retries"
+// error, which only fires if a request never recovers.
+func TestGetUser_RateLimitLogsEachOccurrence(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		json.NewEncoder(w).Encode(sleeper.User{UserID: "456"})
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	prevOutput := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevOutput)
+		log.SetFlags(prevFlags)
+	}()
+
+	c := sleeper.NewWithBaseURL(srv.URL)
+	if _, err := c.GetUser(context.Background(), "someone"); err != nil {
+		t.Fatalf("GetUser error after retries: %v", err)
+	}
+
+	logged := logBuf.String()
+	occurrences := strings.Count(logged, "429")
+	if occurrences != 2 {
+		t.Errorf("expected one log line per 429 response (2), got %d occurrences in log output: %q", occurrences, logged)
 	}
 }
 

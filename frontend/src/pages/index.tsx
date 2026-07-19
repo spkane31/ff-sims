@@ -60,7 +60,7 @@ export default function Home() {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { label: "Leagues", count: sleeperStats?.league_count ?? null, link: "/sleeper/drafts", description: "Total leagues tracked" },
+              { label: "Leagues", count: sleeperStats?.leagues_expanded ?? null, link: "/sleeper/drafts", description: "Total leagues tracked" },
               { label: "Trades", count: sleeperStats?.trade_count ?? null, link: "/sleeper/trades", description: "Completed trades recorded" },
               { label: "Drafts", count: sleeperStats?.draft_count ?? null, link: "/sleeper/drafts", description: "Completed drafts with picks" },
             ].map((card) => (

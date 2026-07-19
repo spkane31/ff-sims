@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Simulation represents a fantasy football simulation run
 type Simulation struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -23,7 +22,7 @@ type Simulation struct {
 	Completed      bool   `json:"completed" gorm:"default:false"`
 
 	// Simulation parameters
-	VarFactor float64 `json:"var_factor" gorm:"default:1.0"` // Variance factor for simulations
+	VarFactor float64 `json:"var_factor" gorm:"default:1.0"`
 
 	// Relationships
 	League      *League         `json:"-"`

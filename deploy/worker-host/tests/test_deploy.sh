@@ -16,7 +16,7 @@ git -C "$REPO" checkout -q -b main
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name test
 
-mkdir -p "$REPO/backend/cmd/worker" "$REPO/deploy/worker-host"
+mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/deploy/worker-host"
 cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/worker-host/deploy.sh"
 chmod +x "$REPO/deploy/worker-host/deploy.sh"
 
@@ -26,6 +26,11 @@ module backend
 go 1.21
 EOF
 cat > "$REPO/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+func main() {}
+EOF
+cat > "$REPO/backend/cmd/cron/main.go" <<'EOF'
 package main
 
 func main() {}
@@ -52,6 +57,7 @@ export REPO_DIR="$REPO"
 # --- scenario 1: no new commits -> no rebuild, no restart ---
 bash "$REPO/deploy/worker-host/deploy.sh"
 [[ ! -f "$REPO/backend/worker" ]] || fail "should not have built a worker binary when up to date"
+[[ ! -f "$REPO/backend/cron" ]] || fail "should not have built a cron binary when up to date"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when up to date"
 
 # --- scenario 2: a new good commit -> rebuild + restart ---
@@ -67,6 +73,7 @@ git -C "$CLONE" push -q origin main
 
 bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
+[[ -x "$REPO/backend/cron" ]] || fail "expected a cron binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
 
 # --- scenario 3: a new commit that fails to compile -> old binary + service left alone ---
@@ -141,5 +148,101 @@ worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when git fetch fails"
 
 git -C "$REPO" remote set-url origin "$ORIGIN"
+
+# --- scenario 6: a commit outside backend/ entirely (e.g. docs) -> the local
+# checkout still advances, but neither binary rebuilds and the service is not
+# restarted; a clear reason is logged for both ---
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+: > "$CALLS"
+echo "unrelated change" > "$CLONE/NOTES.md"
+git -C "$CLONE" add NOTES.md
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "docs: unrelated change"
+git -C "$CLONE" push -q origin main
+
+deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
+echo "$deploy_output" | grep -q "worker: up to date, no worker-relevant changes" || fail "expected a clear skip reason for the worker, got: $deploy_output"
+echo "$deploy_output" | grep -q "cron: up to date, no cron-relevant changes" || fail "expected a clear skip reason for cron, got: $deploy_output"
+
+[[ "$(git -C "$REPO" rev-parse HEAD)" == "$(git -C "$REPO" rev-parse origin/main)" ]] \
+  || fail "local checkout should still advance to origin/main even when the build is skipped"
+worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for a docs-only change"
+[[ "$cron_hash_before" == "$cron_hash_after" ]] || fail "cron binary should not rebuild for a docs-only change"
+[[ ! -s "$CALLS" ]] || fail "systemctl should not have been called for a docs-only change"
+
+# --- scenario 7: a change to cmd/cron only -> cron rebuilds independently of
+# the worker (each binary is gated on its own dependency graph); the worker
+# binary and its service restart are left untouched ---
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+: > "$CALLS"
+cat > "$CLONE/backend/cmd/cron/main.go" <<'EOF'
+package main
+
+func main() { println("cron v2") }
+EOF
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "cron v2"
+git -C "$CLONE" push -q origin main
+
+bash "$REPO/deploy/worker-host/deploy.sh"
+worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for a cron-only change"
+[[ "$cron_hash_before" != "$cron_hash_after" ]] || fail "cron binary should have been rebuilt for a cron-only change"
+[[ ! -s "$CALLS" ]] || fail "systemctl should not restart the worker service for a cron-only change"
+
+# --- scenario 8: a build failure must keep being retried on later cycles even
+# if the intervening commit doesn't touch worker paths itself ---
+#
+# Regression test for exactly the risk called out in issue #172: if deploy.sh
+# diffed from whatever sha was last checked out (which already advances past
+# a failed build via git reset --hard) instead of from the last sha the
+# worker was actually, successfully built from, a broken worker commit
+# followed by an unrelated commit would look like "nothing worker-relevant
+# changed since last time" and the rebuild would silently stop being
+# retried -- permanently freezing the worker on the last-good binary with no
+# further failures ever logged. Uses a type error (not a syntax error) so
+# `go list -deps` succeeds and the git-diff comparison itself is what's under
+# test, not the "go list failed, assume relevant" fallback.
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+
+cat > "$CLONE/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+func main() { var x int = "not an int"; _ = x }
+EOF
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "broken (type error)"
+git -C "$CLONE" push -q origin main
+
+if bash "$REPO/deploy/worker-host/deploy.sh"; then
+  fail "deploy.sh should exit non-zero on this build failure"
+fi
+worker_hash_after_break="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after_break" ]] || fail "worker binary should be unchanged after this failed build"
+
+echo "more unrelated" >> "$CLONE/NOTES.md"
+git -C "$CLONE" add NOTES.md
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "docs: more unrelated"
+git -C "$CLONE" push -q origin main
+
+if bash "$REPO/deploy/worker-host/deploy.sh"; then
+  fail "deploy.sh should still retry (and fail) the worker build, since the source is still broken relative to the last successful build"
+fi
+worker_hash_after_unrelated="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after_unrelated" ]] || fail "worker binary should still be unchanged"
+
+# fix it back up so the suite ends in a clean, buildable state
+cat > "$CLONE/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+func main() { println("v3") }
+EOF
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "fixed"
+git -C "$CLONE" push -q origin main
+bash "$REPO/deploy/worker-host/deploy.sh"
+worker_hash_after_fix="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+[[ "$worker_hash_before" != "$worker_hash_after_fix" ]] || fail "expected worker to rebuild once fixed"
 
 echo "PASS: deploy.sh integration tests"

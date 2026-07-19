@@ -37,6 +37,9 @@ func seedLeague(t *testing.T, db *gorm.DB, l models.SleeperLeague) {
 	if l.Season == "" {
 		l.Season = "2026"
 	}
+	if l.LeagueType == "" {
+		l.LeagueType = "redraft"
+	}
 	if err := db.Create(&l).Error; err != nil {
 		t.Fatalf("seed league %s: %v", l.SleeperLeagueID, err)
 	}
@@ -192,6 +195,30 @@ func TestClaimLeaguesForDrafts_Eligibility(t *testing.T) {
 	}
 }
 
+func TestClaimLeaguesForDrafts_ExcludesNonRedraftLeagues(t *testing.T) {
+	db := newPGTestDB(t)
+	now := time.Now().UTC()
+	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "redraft-lg", Status: "pre_draft", LastFetchedAt: &now, LeagueType: "redraft"})
+	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "keeper-lg", Status: "pre_draft", LastFetchedAt: &now, LeagueType: "keeper"})
+	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "dynasty-lg", Status: "pre_draft", LastFetchedAt: &now, LeagueType: "dynasty"})
+
+	a := &activities.DataFetchActivities{DB: db}
+	got, err := a.ClaimLeaguesForDrafts(context.Background(), activities.ClaimLeaguesForDraftsParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	claimed := map[string]bool{}
+	for _, id := range got {
+		claimed[id] = true
+	}
+	if !claimed["redraft-lg"] {
+		t.Error("expected redraft-lg to be claimed")
+	}
+	if claimed["keeper-lg"] || claimed["dynasty-lg"] {
+		t.Errorf("expected keeper/dynasty leagues NOT to be claimed, got %v", got)
+	}
+}
+
 func TestClaimLeaguesForDrafts_RespectsAndExpiresClaims(t *testing.T) {
 	db := newPGTestDB(t)
 	now := time.Now().UTC()
@@ -294,7 +321,7 @@ func TestClaimStaleUsers_RespectsAndExpiresClaims(t *testing.T) {
 	db := newPGTestDB(t)
 	now := time.Now().UTC()
 	fresh := now.Add(-1 * time.Minute)
-	stale := now.Add(-30 * time.Minute)
+	stale := now.Add(-150 * time.Minute)
 	seedUser(t, db, models.SleeperUser{SleeperUserID: "fresh-claim", ClaimedAt: &fresh})
 	seedUser(t, db, models.SleeperUser{SleeperUserID: "expired-claim", ClaimedAt: &stale})
 

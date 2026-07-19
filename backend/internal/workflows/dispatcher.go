@@ -13,10 +13,9 @@ import (
 // DiscoverUsersBatch activity per claim in parallel. A short or empty claim
 // means the queue is drained for now, so the run exits and the schedule takes
 // over. Failed batch activities are logged, not propagated: their users'
-// claims expire after 20 minutes and re-queue. Claiming (instead of the old
-// re-select + child-workflow-ID dedupe) means a stuck cohort can never
-// head-of-line-block discovery of the users behind it.
-func DiscoveryBatchDispatcher(ctx workflow.Context) error {
+// claims expire after 20 minutes and re-queue. Claiming means a stuck cohort
+// can never head-of-line-block discovery of the users behind it.
+func DiscoveryBatchDispatcher(ctx workflow.Context) (DiscoveryReport, error) {
 	da := &activities.DiscoveryActivities{}
 	actCtx := workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	batchCtx := workflow.WithActivityOptions(ctx, batchActivityOptions)
@@ -24,10 +23,17 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 
 	var cfg activities.DiscoveryConfig
 	if err := workflow.ExecuteActivity(actCtx, da.GetDiscoveryConfig).Get(ctx, &cfg); err != nil {
-		return err
+		return DiscoveryReport{}, err
 	}
 
+	logger.Info("discovery dispatch starting", "tag", activities.DiscoveryLogTag, "config", cfg)
+	workflowStart := workflow.Now(ctx)
+
+	var report DiscoveryReport
 	for iter := 0; iter < MaxDispatchIterations; iter++ {
+		logger.Info("discovery dispatch iteration starting", "tag", activities.DiscoveryLogTag,
+			"iteration", iter, "elapsed", workflow.Now(ctx).Sub(workflowStart),
+			"usersProcessedSoFar", report.UsersProcessed, "usersFailedSoFar", report.UsersFailed)
 		var futures []workflow.Future
 		drained := false
 		for k := 0; k < cfg.ParallelBatches; k++ {
@@ -36,7 +42,7 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 				BatchSize: cfg.BatchSize,
 			}).Get(ctx, &userIDs)
 			if err != nil {
-				logger.Error("user claim failed; stopping dispatch for this run", "error", err)
+				logger.Error("user claim failed; stopping dispatch for this run", "tag", activities.DiscoveryLogTag, "error", err)
 				drained = true
 				break
 			}
@@ -45,8 +51,10 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 				break
 			}
 			futures = append(futures, workflow.ExecuteActivity(batchCtx, da.DiscoverUsersBatch, activities.DiscoverUsersBatchParams{
-				UserIDs:     userIDs,
-				Concurrency: cfg.Concurrency,
+				UserIDs:            userIDs,
+				Concurrency:        cfg.Concurrency,
+				UserTimeoutSeconds: cfg.UserTimeoutSeconds,
+				LeagueConcurrency:  cfg.LeagueConcurrency,
 			}))
 			if len(userIDs) < cfg.BatchSize {
 				drained = true
@@ -56,14 +64,19 @@ func DiscoveryBatchDispatcher(ctx workflow.Context) error {
 		for _, f := range futures {
 			var res activities.SyncBatchResult
 			if err := f.Get(ctx, &res); err != nil {
-				logger.Error("discovery batch failed; claims will expire and re-queue", "error", err)
+				logger.Error("discovery batch failed; claims will expire and re-queue", "tag", activities.DiscoveryLogTag, "error", err)
 				continue
 			}
-			logger.Info("discovery batch done", "processed", res.Processed, "failed", res.Failed)
+			logger.Info("discovery batch done", "tag", activities.DiscoveryLogTag, "processed", res.Processed, "failed", res.Failed)
+			report.UsersProcessed += res.Processed
+			report.UsersFailed += res.Failed
 		}
 		if drained {
 			break
 		}
 	}
-	return nil
+	logger.Info("discovery dispatch finished", "tag", activities.DiscoveryLogTag,
+		"elapsed", workflow.Now(ctx).Sub(workflowStart),
+		"usersProcessed", report.UsersProcessed, "usersFailed", report.UsersFailed)
+	return report, nil
 }

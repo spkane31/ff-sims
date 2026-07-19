@@ -23,6 +23,7 @@ import datetime
 from dataclasses import dataclass
 
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from activities.expected_wins import (
@@ -32,8 +33,10 @@ with workflow.unsafe.imports_passed_through():
     )
 
 TASK_QUEUE = "espn-sync"
-_LONG = dict(start_to_close_timeout=datetime.timedelta(minutes=30))
-_SHORT = dict(start_to_close_timeout=datetime.timedelta(seconds=30))
+# See workflows/teams.py for why ValueError is non-retryable here.
+_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=["ValueError"])
+_LONG = dict(start_to_close_timeout=datetime.timedelta(minutes=30), retry_policy=_RETRY)
+_SHORT = dict(start_to_close_timeout=datetime.timedelta(seconds=30), retry_policy=_RETRY)
 
 
 @dataclass

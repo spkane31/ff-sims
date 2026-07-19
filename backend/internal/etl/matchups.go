@@ -50,7 +50,6 @@ func processPureMatchups(filePath string, leagueID uint, createdTeams []*models.
 			GameType:  matchup.GameType,
 			IsPlayoff: matchup.IsPlayoff,
 		}
-		// Look up team IDs from createdTeams
 		for _, team := range createdTeams {
 			if team.ESPNID == uint(matchup.HomeTeamESPNID) {
 				entry.HomeTeamID = team.ID
@@ -67,7 +66,6 @@ func processPureMatchups(filePath string, leagueID uint, createdTeams []*models.
 			return fmt.Errorf("away team with ESPN ID %d not found in database", matchup.AwayTeamESPNID)
 		}
 
-		// Create or update the matchup in the database
 		var existingMatchup models.Matchup
 		err := database.DB.Where("home_team_id = ? AND away_team_id = ? AND week = ? AND year = ?",
 			entry.HomeTeamID, entry.AwayTeamID, entry.Week, entry.Year).First(&existingMatchup).Error
@@ -77,13 +75,11 @@ func processPureMatchups(filePath string, leagueID uint, createdTeams []*models.
 				return fmt.Errorf("error checking existing pure matchup for home team ID %d and away team ID %d: %w",
 					entry.HomeTeamID, entry.AwayTeamID, err)
 			}
-			// Matchup does not exist, create a new one
 			if createErr := database.DB.Create(entry).Error; createErr != nil {
 				return fmt.Errorf("error creating new pure matchup for home team ID %d: %w", entry.HomeTeamID, createErr)
 			}
 			logging.Infof("Created new pure matchup: %s", entry)
 		} else {
-			// Matchup exists, update its details
 			existingMatchup.Completed = entry.Completed
 			existingMatchup.GameType = entry.GameType
 			existingMatchup.IsPlayoff = entry.IsPlayoff

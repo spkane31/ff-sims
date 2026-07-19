@@ -12,7 +12,6 @@ import (
 func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 	db := database.DB
 
-	// 1. Check if we have any weekly expected wins data for this league/year
 	var weeklyCount int64
 	db.Model(&models.WeeklyExpectedWins{}).
 		Where("league_id = ? AND year = ?", leagueID, year).
@@ -25,7 +24,6 @@ func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 
 	log.Printf("Found %d weekly expected wins records for league %d, year %d. Creating season aggregates.", weeklyCount, leagueID, year)
 
-	// 2. Get all teams that have weekly data for this league/year
 	var teamIDs []uint
 	db.Model(&models.WeeklyExpectedWins{}).
 		Where("league_id = ? AND year = ?", leagueID, year).
@@ -37,7 +35,6 @@ func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 		return nil
 	}
 
-	// 3. Process each team
 	for _, teamID := range teamIDs {
 		err := finalizeTeamSeasonFromWeeklyData(db, teamID, leagueID, year)
 		if err != nil {
@@ -51,7 +48,6 @@ func FinalizeSeasonExpectedWins(leagueID uint, year uint) error {
 
 // finalizeTeamSeasonFromWeeklyData creates season totals by aggregating existing weekly data
 func finalizeTeamSeasonFromWeeklyData(db *gorm.DB, teamID uint, leagueID uint, year uint) error {
-	// Get all weekly data for this team/year
 	allWeeklyData, err := models.GetTeamWeeklyProgression(db, teamID, year)
 	if err != nil || len(allWeeklyData) == 0 {
 		log.Printf("No weekly progression data found for team %d, year %d", teamID, year)
@@ -80,7 +76,6 @@ func finalizeTeamSeasonFromWeeklyData(db *gorm.DB, teamID uint, leagueID uint, y
 	cumulativeActualLosses := finalWeekData.ActualLosses
 	lastStrengthOfSchedule := finalWeekData.StrengthOfSchedule
 
-	// Calculate season aggregates for points
 	seasonStats, err := models.CalculateSeasonAggregates(db, teamID, year, finalWeek)
 	if err != nil {
 		log.Printf("Failed to calculate season aggregates for team %d, year %d: %v", teamID, year, err)
@@ -88,10 +83,8 @@ func finalizeTeamSeasonFromWeeklyData(db *gorm.DB, teamID uint, leagueID uint, y
 		seasonStats = &models.SeasonAggregates{}
 	}
 
-	// Get playoff and standing info
 	playoffMade, finalStanding := models.GetTeamSeasonOutcome(db, teamID, year)
 
-	// Create season record using the aggregated data
 	seasonRecord := &models.SeasonExpectedWins{
 		TeamID:               teamID,
 		Year:                 year,
