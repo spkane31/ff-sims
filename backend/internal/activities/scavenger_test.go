@@ -283,9 +283,8 @@ func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
 	}
 }
 
-// seedRedraftLeague creates a minimal redraft-type league row so draft
-// replicate queries' INNER JOIN to sleeper_leagues (added to exclude
-// keeper/dynasty leagues) finds a match.
+// seedRedraftLeague satisfies the draft replicate queries' INNER JOIN to
+// sleeper_leagues (added to exclude keeper/dynasty leagues).
 func seedRedraftLeague(t *testing.T, cloud *gorm.DB, id string) {
 	t.Helper()
 	if err := cloud.Create(&models.SleeperLeague{SleeperLeagueID: id, Season: "2026", LeagueType: "redraft"}).Error; err != nil {
