@@ -1,4 +1,4 @@
-.PHONY: build build-migrate clean run etl migrate migrate-status migrate-down migrate-archive migrate-archive-status migrate-archive-down deduplicate help
+.PHONY: build build-migrate clean run etl migrate migrate-status migrate-down migrate-archive migrate-archive-status migrate-archive-down help
 
 help: ## Show this help message
 	@echo 'Makefile for backend'
@@ -50,7 +50,3 @@ migrate-archive-status: build-migrate ## Show goose migration status for the arc
 
 migrate-archive-down: build-migrate ## Roll back the last archive migration (requires ARCHIVE_DATABASE_URL)
 	@./bin/migrate -db=archive down
-
-deduplicate: ## Remove duplicate records from database
-	@echo "Running deduplication process..."
-	@go run ./cmd/deduplicate
