@@ -81,11 +81,18 @@ ensure_env_file() {
 
 first_build() {
   echo "Building worker binary"
-  local sha
+  local sha full_sha
   sha="$(git -C "$REPO_DIR" rev-parse --short=9 HEAD)"
+  full_sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
   (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}' -X 'main.promoteOnStart=true'" -o worker ./cmd/worker)
   echo "Building cron binary"
   (cd "$REPO_DIR/backend" && /usr/local/go/bin/go build -ldflags "-X 'main.buildID=${sha}'" -o cron ./cmd/cron)
+
+  # Seed deploy.sh's per-binary "last built" state so the first periodic
+  # deploy check has a real baseline instead of forcing an immediate,
+  # redundant rebuild on the very next cycle.
+  echo "$full_sha" > "$REPO_DIR/backend/.worker-deployed-sha"
+  echo "$full_sha" > "$REPO_DIR/backend/.cron-deployed-sha"
 }
 
 install_units() {

@@ -43,7 +43,12 @@ after a full reinstall) — it picks up wherever it left off. Same for
 ## Operating
 
 - Worker logs: `journalctl -u ff-sims-worker -f`
-- Deploy-check history (whether it found a new commit, built, restarted): `journalctl -u ff-sims-deploy`
+- Deploy-check history (whether it found a new commit, built, restarted): `journalctl -u ff-sims-deploy`.
+  The checkout always advances to `origin/main`, but the worker and cron binaries are only
+  rebuilt (and the worker service only restarted) when the new commits actually touch a path
+  either binary depends on (computed via `go list -deps` against `backend/cmd/worker` /
+  `backend/cmd/cron`) — a docs/frontend-only push just logs "up to date, no
+  worker/cron-relevant changes" and skips the rebuild.
 - Force an immediate deploy check without waiting for the timer: `sudo systemctl start ff-sims-deploy.service`
 - Discovery cron job logs (runs hourly, `Type=oneshot`): `journalctl -u ff-sims-discovery -f`
 - Force an immediate discovery run without waiting for the timer: `sudo systemctl start ff-sims-discovery.service`
