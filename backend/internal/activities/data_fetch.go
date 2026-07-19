@@ -63,12 +63,9 @@ func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSync
 // (in_season/complete) and already fetched are excluded — completed drafts are
 // immutable, so refetching them buys nothing; pre_draft and drafting leagues
 // keep rechecking until their drafts complete. league_type = 'redraft'
-// excludes keeper/dynasty leagues entirely: the valuation model's ADP query
-// only ever reads redraft drafts (analysis/src/db.py get_adp), so there's no
-// reason to spend a Sleeper API call fetching, or archive space storing,
-// drafts the model will never use. league_type is guaranteed populated by
-// this point — FetchLeagueDetails (discovery.go) always sets it before
-// last_fetched_at, which this query already requires.
+// excludes keeper/dynasty leagues, which the valuation model never reads
+// (analysis/src/db.py get_adp); last_fetched_at IS NOT NULL above guarantees
+// league_type is already populated (set together in FetchLeagueDetails).
 const claimLeaguesForDraftsSQL = `
 UPDATE sleeper_leagues SET drafts_claimed_at = now()
 WHERE sleeper_league_id IN (
@@ -554,21 +551,16 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Updates(updates).Error
 }
 
-// isPlayerOnlyTransaction reports whether a transaction moves only players —
-// no attached draft picks and no FAAB (waiver_budget) — the same guard the
-// valuation model applies at query time (analysis/src/parsing.py parse_trade),
-// applied here at write time so that data never reaches the archive DB at
-// all. Used by both direct-to-archive routing (syncOneLeague) and the
-// scavenger's replicate phase (ReplicateTransactionsBatch).
+// isPlayerOnlyTransaction mirrors the valuation model's query-time filter
+// (analysis/src/parsing.py parse_trade) at write time, so this data never
+// reaches the archive DB at all.
 func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
 	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
 }
 
-// isEmptyJSONArray reports whether raw is absent (SQL NULL / zero value) or
-// decodes to a nil/empty JSON array.
 func isEmptyJSONArray(raw json.RawMessage) bool {
 	if len(raw) == 0 {
-		return true
+		return true // SQL NULL / zero value
 	}
 	var v []json.RawMessage
 	if err := json.Unmarshal(raw, &v); err != nil {

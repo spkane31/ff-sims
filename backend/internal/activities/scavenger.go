@@ -178,12 +178,10 @@ LIMIT ?`
 // drafts as they're first created. It does not catch later status changes on
 // an existing draft (sleeper_drafts.updated_at is dead — never assigned by
 // the upsert in data_fetch.go); those are caught separately, once picks
-// land, by ReplicateDraftPicksBatch's last_fetched_at watermark. Joined to
-// sleeper_leagues to exclude keeper/dynasty leagues — same redraft-only
-// filter as claimLeaguesForDraftsSQL (data_fetch.go), kept here too as
-// defense-in-depth for the case archive is disabled and later re-enabled
-// (this path is otherwise dead in normal operation since T15 routes all
-// drafts straight to archive, never through cloud).
+// land, by ReplicateDraftPicksBatch's last_fetched_at watermark. The join to
+// sleeper_leagues (excluding keeper/dynasty, as in claimLeaguesForDraftsSQL)
+// is defense-in-depth: this path is otherwise dead since T15 routes all
+// drafts straight to archive, never through cloud.
 func (a *ScavengerActivities) ReplicateDraftHeadersBatch(ctx context.Context, params ReplicateBatchParams) (ReplicateBatchResult, error) {
 	cur, err := readCursor(ctx, a.Archive, streamDraftHeaders)
 	if err != nil {
@@ -340,10 +338,9 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 		return ReplicateBatchResult{Drained: true}, nil
 	}
 
-	// Skip rows carrying draft picks or FAAB — the valuation model never reads
-	// them (analysis/src/parsing.py parse_trade), so they're not worth archive
-	// space. Filtered-out rows still advance the cursor below: cursor position
-	// tracks how far into cloud we've scanned, not what got written.
+	// Rows filtered out by isPlayerOnlyTransaction still advance the cursor
+	// below: cursor position tracks how far into cloud we've scanned, not
+	// what got written to archive.
 	var archiveRows []models.ArchiveSleeperTransaction
 	for _, r := range rows {
 		if !isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
