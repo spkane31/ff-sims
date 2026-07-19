@@ -79,17 +79,25 @@ func RunSnapshot(ctx context.Context, cloud, archive *gorm.DB) (models.SleeperLi
 
 			var transactionsTotal, tradesCompleted, draftsCompleted int64
 			// Plain COUNT(*) against archive's full, never-purged
-			// sleeper_transactions (unlike the two filtered counts below,
-			// no WHERE clause can be indexed) forces a full scan that gets
-			// slower as the table grows without bound — it was the actual
-			// cause of this job blowing its -max-duration deadline in
-			// production. n_live_tup is the same autovacuum-maintained
-			// estimate GetAdminDatabaseSize already uses for its "Rows
-			// (est.)" column (internal/api/handlers/admin.go); an all-time
-			// growth metric doesn't need exact precision.
-			if archiveErr = archive.WithContext(ctx).Raw(
-				`SELECT COALESCE(n_live_tup, 0) FROM pg_catalog.pg_stat_user_tables WHERE relname = 'sleeper_transactions'`,
-			).Scan(&transactionsTotal).Error; archiveErr != nil {
+			// sleeper_transactions — unlike the two filtered counts below,
+			// no WHERE clause here can be served by an index, so this forces
+			// a full scan that gets slower as the table grows without
+			// bound, and was likely a contributor to this job blowing its
+			// old 5m deadline in production (see the -max-duration bump in
+			// ff-sims-lifetime-counts.service). An autovacuum-maintained
+			// estimate (pg_stat_user_tables.n_live_tup, the technique
+			// GetAdminDatabaseSize uses for its "Rows (est.)" column) would
+			// be faster, but doesn't satisfy this column's contract: it
+			// must reflect the archive table's actual row count regardless
+			// of how rows got there (replication, manual backfill, ...) —
+			// an estimate lags until the next autovacuum ANALYZE, which
+			// TestRunSnapshot_TransactionAndDraftColumnsReflectFullArchiveHistory
+			// correctly catches by seeding archive directly and asserting
+			// an exact total. If this still isn't fast enough with real
+			// headroom, the right fix is a maintained running counter kept
+			// in sync with every write path (e.g. via a DB trigger — this
+			// codebase has none yet), not a lossy estimate.
+			if archiveErr = archive.WithContext(ctx).Table("sleeper_transactions").Count(&transactionsTotal).Error; archiveErr != nil {
 				return
 			}
 			if archiveErr = archive.WithContext(ctx).Table("sleeper_transactions").
