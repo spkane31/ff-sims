@@ -513,11 +513,8 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					// Old rows route straight to archive (never touch cloud), so a
-					// non-player-only row skipped here isn't written anywhere —
-					// that's the point: the valuation model never reads FAAB/pick
-					// transactions (analysis/src/parsing.py parse_trade), so there's
-					// no reason to spend archive space on them.
+					// Old rows route straight to archive; skipping here means the
+					// row is dropped entirely, not sent to cloud instead.
 					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
 						oldRows = append(oldRows, r)
 					}
