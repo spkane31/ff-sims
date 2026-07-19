@@ -62,12 +62,19 @@ func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSync
 // the two sync paths never contend). Leagues whose drafting is finished
 // (in_season/complete) and already fetched are excluded — completed drafts are
 // immutable, so refetching them buys nothing; pre_draft and drafting leagues
-// keep rechecking until their drafts complete.
+// keep rechecking until their drafts complete. league_type = 'redraft'
+// excludes keeper/dynasty leagues entirely: the valuation model's ADP query
+// only ever reads redraft drafts (analysis/src/db.py get_adp), so there's no
+// reason to spend a Sleeper API call fetching, or archive space storing,
+// drafts the model will never use. league_type is guaranteed populated by
+// this point — FetchLeagueDetails (discovery.go) always sets it before
+// last_fetched_at, which this query already requires.
 const claimLeaguesForDraftsSQL = `
 UPDATE sleeper_leagues SET drafts_claimed_at = now()
 WHERE sleeper_league_id IN (
     SELECT sleeper_league_id FROM sleeper_leagues
     WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
+      AND league_type = 'redraft'
       AND NOT (status IN ('in_season', 'complete') AND last_drafts_fetched_at IS NOT NULL)
       AND (drafts_claimed_at IS NULL OR drafts_claimed_at < now() - interval '20 minutes')
     ORDER BY last_drafts_fetched_at ASC NULLS FIRST
@@ -506,7 +513,14 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					oldRows = append(oldRows, r)
+					// Old rows route straight to archive (never touch cloud), so a
+					// non-player-only row skipped here isn't written anywhere —
+					// that's the point: the valuation model never reads FAAB/pick
+					// transactions (analysis/src/parsing.py parse_trade), so there's
+					// no reason to spend archive space on them.
+					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
+						oldRows = append(oldRows, r)
+					}
 				} else {
 					newRows = append(newRows, r)
 				}
@@ -541,6 +555,29 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", lg.LeagueID).
 		Updates(updates).Error
+}
+
+// isPlayerOnlyTransaction reports whether a transaction moves only players —
+// no attached draft picks and no FAAB (waiver_budget) — the same guard the
+// valuation model applies at query time (analysis/src/parsing.py parse_trade),
+// applied here at write time so that data never reaches the archive DB at
+// all. Used by both direct-to-archive routing (syncOneLeague) and the
+// scavenger's replicate phase (ReplicateTransactionsBatch).
+func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
+	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
+}
+
+// isEmptyJSONArray reports whether raw is absent (SQL NULL / zero value) or
+// decodes to a nil/empty JSON array.
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	var v []json.RawMessage
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	return len(v) == 0
 }
 
 // upsertArchiveTransactions writes rows directly to the archive DB, skipping
