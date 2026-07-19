@@ -2,6 +2,7 @@ package activities_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -224,6 +225,47 @@ func TestReplicateTransactionsBatch_SecondRunIsNoOp(t *testing.T) {
 	}
 }
 
+func TestReplicateTransactionsBatch_ExcludesRowsWithDraftPicksOrFAAB(t *testing.T) {
+	cloud, archive := newScavengerTestDBs(t)
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	rows := []models.SleeperTransaction{
+		{SleeperTransactionID: "t-clean", Type: "waiver", Status: "complete", CreatedAt: now},
+		{SleeperTransactionID: "t-picks", Type: "trade", Status: "complete", CreatedAt: now.Add(time.Second),
+			DraftPicks: json.RawMessage(`[{"season":"2027","round":1}]`)},
+		{SleeperTransactionID: "t-faab", Type: "waiver", Status: "complete", CreatedAt: now.Add(2 * time.Second),
+			WaiverBudget: json.RawMessage(`[{"amount":10}]`)},
+	}
+	for _, r := range rows {
+		if err := cloud.Create(&r).Error; err != nil {
+			t.Fatalf("seed txn %s: %v", r.SleeperTransactionID, err)
+		}
+	}
+
+	a := &activities.ScavengerActivities{Cloud: cloud, Archive: archive}
+	res, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("ReplicateTransactionsBatch: %v", err)
+	}
+	// All 3 rows are scanned/cursor-advanced even though only 1 is archived.
+	if res.Replicated != 3 || !res.Drained {
+		t.Errorf("res = %+v, want {Replicated: 3, Drained: true}", res)
+	}
+	var archiveIDs []string
+	archive.Model(&models.ArchiveSleeperTransaction{}).Pluck("sleeper_transaction_id", &archiveIDs)
+	if len(archiveIDs) != 1 || archiveIDs[0] != "t-clean" {
+		t.Errorf("expected only t-clean in archive, got %v", archiveIDs)
+	}
+
+	// Second run must not re-scan the filtered-out rows (cursor advanced past them).
+	res2, err := a.ReplicateTransactionsBatch(context.Background(), activities.ReplicateBatchParams{BatchSize: 10})
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if res2.Replicated != 0 || !res2.Drained {
+		t.Errorf("second run = %+v, want {Replicated: 0, Drained: true}", res2)
+	}
+}
+
 func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	tooRecent := time.Now().UTC().Add(-1 * time.Minute)
@@ -241,9 +283,19 @@ func TestReplicateTransactionsBatch_RespectsSafetyLag(t *testing.T) {
 	}
 }
 
+// seedRedraftLeague satisfies the draft replicate queries' INNER JOIN to
+// sleeper_leagues (added to exclude keeper/dynasty leagues).
+func seedRedraftLeague(t *testing.T, cloud *gorm.DB, id string) {
+	t.Helper()
+	if err := cloud.Create(&models.SleeperLeague{SleeperLeagueID: id, Season: "2026", LeagueType: "redraft"}).Error; err != nil {
+		t.Fatalf("seed league %s: %v", id, err)
+	}
+}
+
 func TestReplicateDraftHeadersBatch_CopiesRowsAndAdvancesCursor(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	now := time.Now().UTC().Add(-10 * time.Minute)
+	seedRedraftLeague(t, cloud, "lg1")
 	for i, id := range []string{"d1", "d2"} {
 		if err := cloud.Create(&models.SleeperDraft{
 			SleeperDraftID: id, SleeperLeagueID: "lg1", Type: "snake", Status: "pre_draft",
@@ -273,7 +325,8 @@ func TestReplicateDraftHeadersBatch_CopiesRowsAndAdvancesCursor(t *testing.T) {
 func TestReplicateDraftHeadersBatch_SecondRunIsNoOp(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	now := time.Now().UTC().Add(-10 * time.Minute)
-	if err := cloud.Create(&models.SleeperDraft{SleeperDraftID: "d1", Season: "2026", CreatedAt: now}).Error; err != nil {
+	seedRedraftLeague(t, cloud, "lg1")
+	if err := cloud.Create(&models.SleeperDraft{SleeperDraftID: "d1", SleeperLeagueID: "lg1", Season: "2026", CreatedAt: now}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -293,6 +346,7 @@ func TestReplicateDraftHeadersBatch_SecondRunIsNoOp(t *testing.T) {
 func TestReplicateDraftPicksBatch_CopiesDraftAndPicksWhenLastFetchedAtSet(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	now := time.Now().UTC().Add(-10 * time.Minute)
+	seedRedraftLeague(t, cloud, "lg1")
 	fetchedAt := now
 	if err := cloud.Create(&models.SleeperDraft{
 		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Type: "snake", Status: "complete",
@@ -334,8 +388,9 @@ func TestReplicateDraftPicksBatch_CopiesDraftAndPicksWhenLastFetchedAtSet(t *tes
 func TestReplicateDraftPicksBatch_SkipsDraftsWithoutPicksYet(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	now := time.Now().UTC().Add(-10 * time.Minute)
+	seedRedraftLeague(t, cloud, "lg1")
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", Status: "pre_draft", Season: "2026", CreatedAt: now, LastFetchedAt: nil,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "pre_draft", Season: "2026", CreatedAt: now, LastFetchedAt: nil,
 	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -353,9 +408,10 @@ func TestReplicateDraftPicksBatch_SkipsDraftsWithoutPicksYet(t *testing.T) {
 func TestReplicateDraftPicksBatch_SecondRunIsNoOp(t *testing.T) {
 	cloud, archive := newScavengerTestDBs(t)
 	now := time.Now().UTC().Add(-10 * time.Minute)
+	seedRedraftLeague(t, cloud, "lg1")
 	fetchedAt := now
 	if err := cloud.Create(&models.SleeperDraft{
-		SleeperDraftID: "d1", Status: "complete", Season: "2026", LastFetchedAt: &fetchedAt, CreatedAt: now,
+		SleeperDraftID: "d1", SleeperLeagueID: "lg1", Status: "complete", Season: "2026", LastFetchedAt: &fetchedAt, CreatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}

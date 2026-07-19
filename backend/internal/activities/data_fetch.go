@@ -61,12 +61,16 @@ func (a *DataFetchActivities) GetDraftSyncConfig(ctx context.Context) (DraftSync
 // the two sync paths never contend). Leagues whose drafting is finished
 // (in_season/complete) and already fetched are excluded — completed drafts are
 // immutable, so refetching them buys nothing; pre_draft and drafting leagues
-// keep rechecking until their drafts complete.
+// keep rechecking until their drafts complete. league_type = 'redraft'
+// excludes keeper/dynasty leagues, which the valuation model never reads
+// (analysis/src/db.py get_adp); last_fetched_at IS NOT NULL above guarantees
+// league_type is already populated (set together in FetchLeagueDetails).
 const claimLeaguesForDraftsSQL = `
 UPDATE sleeper_leagues SET drafts_claimed_at = now()
 WHERE sleeper_league_id IN (
     SELECT sleeper_league_id FROM sleeper_leagues
     WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
+      AND league_type = 'redraft'
       AND NOT (status IN ('in_season', 'complete') AND last_drafts_fetched_at IS NOT NULL)
       AND (drafts_claimed_at IS NULL OR drafts_claimed_at < now() - interval '20 minutes')
     ORDER BY last_drafts_fetched_at ASC NULLS FIRST
@@ -505,7 +509,11 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					oldRows = append(oldRows, r)
+					// Old rows route straight to archive; skipping here means the
+					// row is dropped entirely, not sent to cloud instead.
+					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
+						oldRows = append(oldRows, r)
+					}
 				} else {
 					newRows = append(newRows, r)
 				}
@@ -540,6 +548,24 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		Model(&models.SleeperLeague{}).
 		Where("sleeper_league_id = ?", lg.LeagueID).
 		Updates(updates).Error
+}
+
+// isPlayerOnlyTransaction mirrors the valuation model's query-time filter
+// (analysis/src/parsing.py parse_trade) at write time, so this data never
+// reaches the archive DB at all.
+func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
+	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
+}
+
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true // SQL NULL / zero value
+	}
+	var v []json.RawMessage
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	return len(v) == 0
 }
 
 // upsertArchiveTransactions writes rows directly to the archive DB, skipping
