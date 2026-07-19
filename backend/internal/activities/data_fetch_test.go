@@ -345,7 +345,7 @@ func TestSyncBatch_LegLoopCappedAtCurrentWeek(t *testing.T) {
 		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
 		Concurrency: 1,
 	})
-	// 1 state call + legs 1..3 = 4 total; the old code would have made 19.
+	// 1 state call + legs 1..3 = 4 total.
 	if got := calls.Load(); got != 4 {
 		t.Errorf("expected 4 HTTP calls (state + 3 legs), got %d", got)
 	}

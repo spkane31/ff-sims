@@ -31,13 +31,13 @@ type WeeklyExpectedWins struct {
 	WeeklyActualWin bool `json:"weekly_actual_win"` // Did they win this week
 
 	// Metrics
-	StrengthOfSchedule   float64 `json:"strength_of_schedule"`   // Average opponent strength
-	WeeklyWinProbability float64 `json:"weekly_win_probability"` // Win probability for this week's matchup
+	StrengthOfSchedule   float64 `json:"strength_of_schedule"` // Average opponent strength
+	WeeklyWinProbability float64 `json:"weekly_win_probability"`
 
 	// Performance context
-	TeamScore         float64 `json:"team_score"`         // Team's score this week
-	OpponentScore     float64 `json:"opponent_score"`     // Opponent's score this week
-	OpponentTeamID    uint    `json:"opponent_team_id"`   // Who they played
+	TeamScore         float64 `json:"team_score"`
+	OpponentScore     float64 `json:"opponent_score"`
+	OpponentTeamID    uint    `json:"opponent_team_id"`
 	PointDifferential float64 `json:"point_differential"` // TeamScore - OpponentScore
 
 	// Relationships

@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// BoxScore represents a player's performance in a specific matchup
 type BoxScore struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -16,7 +15,7 @@ type BoxScore struct {
 	MatchupID   uint `json:"matchup_id"`
 	PlayerID    uint `json:"player_id"`
 	TeamID      uint `json:"team_id"` // The team the player was on for this matchup
-	StartedFlag bool `json:"started_flag" gorm:"default:false"` // Whether player was in starting lineup
+	StartedFlag bool `json:"started_flag" gorm:"default:false"`
 
 	SlotPosition string `json:"slot_position"` // Position in fantasy lineup (e.g., "QB", "RB", etc.)
 
@@ -24,7 +23,6 @@ type BoxScore struct {
 	ActualPoints    float64 `json:"actual_points"`
 	ProjectedPoints float64 `json:"projected_points"`
 
-	// Game stats (embedded from PlayerStats)
 	GameStats PlayerStats `json:"game_stats" gorm:"embedded"`
 
 	// Relationships

@@ -76,7 +76,6 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 
 	weekParam := c.Query("week")
 	if weekParam != "" {
-		// Get specific week
 		week, err := strconv.ParseUint(weekParam, 10, 32)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid week parameter"})
@@ -90,7 +89,6 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 			return
 		}
 
-		// Convert to response format with calculated win_luck
 		responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
 		for i, weekly := range data {
 			responseData[i] = WeeklyExpectedWinsWithLuck{
@@ -101,7 +99,6 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 
 		c.JSON(http.StatusOK, GetWeeklyExpectedWinsResponse{Data: responseData})
 	} else {
-		// Get all weeks for season progression
 		data, err := models.GetAllWeeklyExpectedWins(database.DB, leagueID, year)
 		if err != nil {
 			slog.Error("Failed to fetch all weekly expected wins", "error", err, "league", leagueID, "year", year)
@@ -109,7 +106,6 @@ func GetWeeklyExpectedWins(c *gin.Context) {
 			return
 		}
 
-		// Convert to response format with calculated win_luck
 		responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
 		for i, weekly := range data {
 			responseData[i] = WeeklyExpectedWinsWithLuck{
@@ -142,7 +138,6 @@ func GetSeasonExpectedWins(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format with calculated win_luck
 	responseData := make([]SeasonExpectedWinsWithLuck, len(data))
 	for i, season := range data {
 		responseData[i] = SeasonExpectedWinsWithLuck{
@@ -226,7 +221,6 @@ func GetTeamProgression(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format with calculated win_luck
 	responseData := make([]WeeklyExpectedWinsWithLuck, len(data))
 	for i, weekly := range data {
 		responseData[i] = WeeklyExpectedWinsWithLuck{
@@ -237,10 +231,6 @@ func GetTeamProgression(c *gin.Context) {
 
 	c.JSON(http.StatusOK, GetTeamProgressionResponse{Data: responseData})
 }
-
-// NOTE: Management/Admin endpoints for recalculation have been removed
-// Expected wins recalculation is now only available via ETL scripts to prevent server stress
-// Use: backend/cmd/etl/main.go --calculate-expected-wins for recalculation
 
 // GetAllTimeExpectedWins returns all-time expected wins totals for all teams in a league.
 func GetAllTimeExpectedWins(c *gin.Context) {
@@ -286,7 +276,6 @@ func GetAllTimeExpectedWins(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format
 	data := make([]AllTimeExpectedWins, len(results))
 	for i, result := range results {
 		data[i] = AllTimeExpectedWins{

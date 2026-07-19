@@ -13,27 +13,23 @@ import (
 	"math"
 )
 
-// calculateStandardDeviation calculates the standard deviation of a slice of float64 values
 func calculateStandardDeviation(values []float64) float64 {
 	if len(values) < 2 {
 		return 0
 	}
 
-	// Calculate mean
 	sum := 0.0
 	for _, v := range values {
 		sum += v
 	}
 	mean := sum / float64(len(values))
 
-	// Calculate variance
 	variance := 0.0
 	for _, v := range values {
 		variance += math.Pow(v-mean, 2)
 	}
 	variance /= float64(len(values))
 
-	// Return standard deviation
 	return math.Sqrt(variance)
 }
 
@@ -144,18 +140,6 @@ func GetPlayers(c *gin.Context) {
 
 	slog.Info("Fetching players", "position", position, "year", year, "rank", rank, "page", page, "limit", limit)
 
-	// Build the SQL query similar to your provided query
-	// SELECT p.id, p.name, p.position, p.team, p.status, p.espn_id,
-	//        SUM(bs.actual_points) AS total_points,
-	//        SUM(bs.projected_points) AS total_proj_points,
-	//        COUNT(bs.id) AS games_played
-	// FROM players p
-	// JOIN box_scores bs ON p.id = bs.player_id
-	// WHERE bs.year = ? [AND p.position = ?]
-	// GROUP BY p.id, p.name, p.position, p.team, p.status, p.espn_id
-	// ORDER BY total_points DESC
-	// LIMIT ? OFFSET ?
-
 	type PlayerAggregateResult struct {
 		ID                   uint    `json:"id"`
 		Name                 string  `json:"name"`
@@ -178,7 +162,6 @@ func GetPlayers(c *gin.Context) {
 			COALESCE(SUM(bs.projected_points), 0) AS total_projected_points,
 			COALESCE(COUNT(bs.id), 0) AS games_played`)
 
-	// Add year filter if not "all"
 	if year == "all" {
 		query = query.Joins("LEFT JOIN box_scores bs ON p.id = bs.player_id")
 	} else {
@@ -190,12 +173,10 @@ func GetPlayers(c *gin.Context) {
 
 	query = query.Group("p.id, p.name, p.position, p.team, p.status, p.espn_id")
 
-	// Add position filter if provided
 	if position != "" {
 		query = query.Where("p.position = ?", position)
 	}
 
-	// Get total count for pagination
 	countQuery := database.DB.Table("players p")
 	if position != "" {
 		countQuery = countQuery.Where("position = ?", position)
@@ -206,7 +187,6 @@ func GetPlayers(c *gin.Context) {
 		return
 	}
 
-	// Determine ordering based on rank parameter
 	var orderBy string
 	switch rank {
 	case "fantasy_points":
@@ -220,10 +200,9 @@ func GetPlayers(c *gin.Context) {
 	case "vs_projection":
 		orderBy = "(COALESCE(SUM(bs.actual_points), 0) - COALESCE(SUM(bs.projected_points), 0)) DESC"
 	default:
-		orderBy = "COALESCE(SUM(bs.actual_points), 0) DESC" // Default to fantasy points
+		orderBy = "COALESCE(SUM(bs.actual_points), 0) DESC"
 	}
 
-	// Execute the main query with pagination and ordering
 	if err := query.Order(orderBy).
 		Limit(limit).
 		Offset(offset).
@@ -258,7 +237,6 @@ func GetPlayers(c *gin.Context) {
 		}
 	}
 
-	// Create map for detailed stats lookup
 	playerDetailedStats := make(map[uint]PlayerStatsResponse)
 	for _, boxScore := range boxScores {
 		stats := playerDetailedStats[boxScore.PlayerID]
@@ -285,7 +263,6 @@ func GetPlayers(c *gin.Context) {
 		Limit: limit,
 	}
 
-	// Convert results to response format
 	for _, result := range results {
 		avgFantasyPoints := 0.0
 		if result.GamesPlayed > 0 {
@@ -294,7 +271,6 @@ func GetPlayers(c *gin.Context) {
 
 		difference := result.TotalPoints - result.TotalProjectedPoints
 
-		// Calculate position rank
 		positionRanks[result.Position]++
 
 		resp.Players = append(resp.Players, PlayerSummaryResponse{
@@ -323,7 +299,6 @@ func GetPlayerByID(c *gin.Context) {
 
 	slog.Info("Fetching player by ID", "id", id)
 
-	// Convert ID to uint
 	playerID, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
 		slog.Error("Invalid player ID", "id", id, "error", err)
@@ -331,7 +306,6 @@ func GetPlayerByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch player from database
 	var player models.Player
 	if err := database.DB.Where("id = ?", playerID).First(&player).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -344,7 +318,6 @@ func GetPlayerByID(c *gin.Context) {
 		return
 	}
 
-	// Fetch all box scores for the player
 	year := c.DefaultQuery("year", "all")
 
 	var boxScores []models.BoxScore
@@ -369,7 +342,6 @@ func GetPlayerByID(c *gin.Context) {
 		}
 	}
 
-	// Aggregate statistics
 	var totalFantasyPoints, totalProjectedPoints float64
 	var totalStats PlayerStatsResponse
 	gamesPlayed := len(boxScores)
@@ -378,7 +350,6 @@ func GetPlayerByID(c *gin.Context) {
 		totalFantasyPoints += boxScore.ActualPoints
 		totalProjectedPoints += boxScore.ProjectedPoints
 
-		// Aggregate stats
 		totalStats.PassingYards += int(boxScore.GameStats.PassingYards)
 		totalStats.PassingTDs += int(boxScore.GameStats.PassingTDs)
 		totalStats.Interceptions += int(boxScore.GameStats.Interceptions)
@@ -399,8 +370,7 @@ func GetPlayerByID(c *gin.Context) {
 
 	difference := totalFantasyPoints - totalProjectedPoints
 
-	// TODO: Position rank calculation removed for performance
-	// Will be implemented using pre-calculated rankings in player_season_stats table
+	// TODO: implement position rank using pre-calculated rankings in player_season_stats table
 	positionRank := 0
 
 	// Calculate annual statistics
@@ -430,10 +400,8 @@ func GetPlayerByID(c *gin.Context) {
 		entry.TotalFantasyPoints += boxScore.ActualPoints
 		entry.TotalProjectedPoints += boxScore.ProjectedPoints
 
-		// Track individual game points
 		yearlyGamePoints[year] = append(yearlyGamePoints[year], boxScore.ActualPoints)
 
-		// Update best game
 		if boxScore.ActualPoints > entry.BestGame.Points {
 			entry.BestGame = GamePerformance{
 				Points: boxScore.ActualPoints,
@@ -451,7 +419,6 @@ func GetPlayerByID(c *gin.Context) {
 			}
 		}
 
-		// Aggregate stats for the year
 		entry.TotalStats.PassingYards += int(boxScore.GameStats.PassingYards)
 		entry.TotalStats.PassingTDs += int(boxScore.GameStats.PassingTDs)
 		entry.TotalStats.Interceptions += int(boxScore.GameStats.Interceptions)
@@ -473,7 +440,6 @@ func GetPlayerByID(c *gin.Context) {
 		}
 		entry.Difference = entry.TotalFantasyPoints - entry.TotalProjectedPoints
 
-		// Calculate consistency score (standard deviation)
 		if gamePoints, exists := yearlyGamePoints[year]; exists {
 			entry.ConsistencyScore = calculateStandardDeviation(gamePoints)
 		}
@@ -590,7 +556,6 @@ func GetPlayerByID(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetPlayerStats returns player statistics
 func GetPlayerStats(c *gin.Context) {
 	// In a real implementation, you would query the database
 	// Optionally filter by week, season, etc.

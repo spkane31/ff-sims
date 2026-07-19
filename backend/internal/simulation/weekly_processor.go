@@ -12,7 +12,6 @@ import (
 func ProcessWeeklyExpectedWins(leagueID uint, year uint, week uint) error {
 	db := database.DB
 
-	// 1. Get all completed matchups for this week
 	matchups, err := GetCompletedMatchupsByWeek(db, leagueID, year, week)
 	if err != nil {
 		return err
@@ -23,7 +22,6 @@ func ProcessWeeklyExpectedWins(leagueID uint, year uint, week uint) error {
 		return nil
 	}
 
-	// 2. Get all teams for this league
 	teams, err := models.GetAllTeamsByLeague(db, leagueID)
 	if err != nil {
 		return err
@@ -58,7 +56,6 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		return err
 	}
 
-	// For strength of schedule calculation, use all season matchups (completed and future)
 	allMatchupPointers := convertMatchupsToPointers(allTeamMatchups)
 	cumulativeResults, err := CalculateExpectedWins(allMatchupPointers)
 	if err != nil {
@@ -79,10 +76,8 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		return nil
 	}
 
-	// Get this week's specific matchup for additional context
 	weekMatchup := findTeamMatchupForWeek(teamMatchupsThrough, week)
 
-	// Skip teams that didn't play this week
 	if weekMatchup == nil {
 		return nil // Team didn't play this week, skip processing
 	}
@@ -107,22 +102,18 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 	// Calculate weekly expected wins using simulation for just this week
 	var weeklyExpectedWins float64
 
-	// Get all league matchups for just this week to calculate weekly expected wins
 	allWeekMatchups, err := GetCompletedMatchupsByWeek(db, team.LeagueID, year, week)
 	if err != nil {
 		return err
 	}
 
-	// Convert to pointers
 	weekMatchupPointers := convertMatchupsToPointers(allWeekMatchups)
 
-	// Calculate expected wins for just this week using simulation
 	weeklyResults, err := CalculateWeeklyExpectedWins(weekMatchupPointers, week)
 	if err != nil {
 		return err
 	}
 
-	// Find this team's weekly result
 	for _, r := range weeklyResults {
 		if r.TeamID == team.ID {
 			weeklyExpectedWins = r.ExpectedWins // This should be 0-1
@@ -133,7 +124,6 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 	// Only skip if team truly didn't play (no matchup found for this week)
 	// weeklyExpectedWins of 0 is valid - it means they were the lowest score of the week
 
-	// Get cumulative actual wins/losses from previous week
 	var prevWeekActualWins, prevWeekActualLosses int
 	var prevCumulativeExpectedWins, prevCumulativeExpectedLosses float64
 	if week > 1 {
@@ -146,11 +136,9 @@ func processTeamWeeklyExpectedWins(db *gorm.DB, team models.Team, year uint, wee
 		}
 	}
 
-	// Calculate cumulative expected wins by adding this week's expected wins to previous weeks
 	cumulativeExpectedWins := prevCumulativeExpectedWins + weeklyExpectedWins
 	cumulativeExpectedLosses := prevCumulativeExpectedLosses + (1.0 - weeklyExpectedWins)
 
-	// Calculate cumulative actual wins/losses
 	cumulativeActualWins := prevWeekActualWins
 	cumulativeActualLosses := prevWeekActualLosses
 	if weeklyWin {

@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Matchup represents a fantasy football matchup between two teams
 type Matchup struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -27,10 +26,6 @@ type Matchup struct {
 	AwayTeamFinalScore         float64 `json:"away_score"`
 	HomeTeamESPNProjectedScore float64 `json:"home_projected_score"`
 	AwayTeamESPNProjectedScore float64 `json:"away_projected_score"`
-
-	// Expected wins
-	// HomeTeamExpectedWin float64 `json:"home_expected_win"`
-	// AwayTeamExpectedWin float64 `json:"away_expected_win"`
 
 	// Status flags
 	Completed bool `json:"completed" gorm:"default:false"`

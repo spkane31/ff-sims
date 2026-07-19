@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// League represents a fantasy football league
 type League struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -35,7 +34,6 @@ type League struct {
 	Simulations []Simulation `json:"-"`
 }
 
-// RosterSettings defines the roster composition requirements
 type RosterSettings struct {
 	QB   int `json:"qb" gorm:"default:1"`
 	RB   int `json:"rb" gorm:"default:2"`
@@ -48,7 +46,6 @@ type RosterSettings struct {
 	IR   int `json:"ir" gorm:"default:1"` // Injured reserve
 }
 
-// ScoringSettings defines how fantasy points are calculated
 type ScoringSettings struct {
 	PassingYards    float64 `json:"passing_yards" gorm:"default:0.04"` // Points per passing yard
 	PassingTD       float64 `json:"passing_td" gorm:"default:4"`
