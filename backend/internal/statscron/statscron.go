@@ -5,9 +5,7 @@
 // job also owns keeping the archive DB itself in sync (see archive_sync.go)
 // — replicating cloud → archive and purging verified-old cloud rows — since
 // sleeper_lifetime_counts is the only consumer of archive's transaction/
-// draft counts; that used to be a separately-scheduled Temporal workflow
-// (ScavengerDispatcher), which let its schedule silently drift out of sync
-// with this job's cadence. See
+// draft counts. See
 // docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md for
 // the cmd/cron job-runner conventions this follows.
 package statscron
@@ -78,25 +76,18 @@ func RunSnapshot(ctx context.Context, cloud, archive *gorm.DB) (models.SleeperLi
 			}
 
 			var transactionsTotal, tradesCompleted, draftsCompleted int64
-			// Plain COUNT(*) against archive's full, never-purged
-			// sleeper_transactions — unlike the two filtered counts below,
-			// no WHERE clause here can be served by an index, so this forces
-			// a full scan that gets slower as the table grows without
-			// bound, and was likely a contributor to this job blowing its
-			// old 5m deadline in production (see the -max-duration bump in
-			// ff-sims-lifetime-counts.service). An autovacuum-maintained
-			// estimate (pg_stat_user_tables.n_live_tup, the technique
-			// GetAdminDatabaseSize uses for its "Rows (est.)" column) would
-			// be faster, but doesn't satisfy this column's contract: it
-			// must reflect the archive table's actual row count regardless
-			// of how rows got there (replication, manual backfill, ...) —
-			// an estimate lags until the next autovacuum ANALYZE, which
+			// Deliberately a plain, unfiltered COUNT(*) rather than a faster
+			// pg_stat_user_tables.n_live_tup estimate (the technique
+			// GetAdminDatabaseSize uses for its "Rows (est.)" column): this
+			// column must reflect the archive table's actual row count
+			// regardless of how rows got there (replication, manual
+			// backfill, ...), and an estimate lags until the next
+			// autovacuum ANALYZE —
 			// TestRunSnapshot_TransactionAndDraftColumnsReflectFullArchiveHistory
-			// correctly catches by seeding archive directly and asserting
-			// an exact total. If this still isn't fast enough with real
-			// headroom, the right fix is a maintained running counter kept
-			// in sync with every write path (e.g. via a DB trigger — this
-			// codebase has none yet), not a lossy estimate.
+			// enforces the exact-count contract by seeding archive directly.
+			// If this ever needs to be faster, the fix is a maintained
+			// running counter kept in sync with every write path, not a
+			// lossy estimate.
 			if archiveErr = archive.WithContext(ctx).Table("sleeper_transactions").Count(&transactionsTotal).Error; archiveErr != nil {
 				return
 			}

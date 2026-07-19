@@ -127,10 +127,7 @@ type ReplicateBatchResult struct {
 	Drained    bool
 }
 
-// ScavengerReport summarizes one archive-sync run (see
-// internal/statscron/archive_sync.go's syncArchive, and
-// ArchiveBackfillWorkflow's BackfillReport for the one-time backfill
-// equivalent).
+// ScavengerReport summarizes one archive-sync run.
 type ScavengerReport struct {
 	LeaguesReplicated      int
 	TransactionsReplicated int

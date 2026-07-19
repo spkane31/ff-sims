@@ -15,10 +15,7 @@ import (
 // schedule already exists it is left unchanged (idempotent). archiveEnabled
 // gates the ADP rollup schedule — registering it when no worker polls its
 // queue would just be a schedule that fires and returns a "no worker
-// available" fail, forever, on a queue nobody's listening to. (The archive
-// scavenger schedule that used to live here — replicating cloud → archive —
-// was retired in favor of running that work inline inside cmd/cron's
-// "lifetime-counts" job; see internal/statscron/archive_sync.go.)
+// available" fail, forever, on a queue nobody's listening to.
 func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-discovery-schedule",

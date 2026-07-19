@@ -11,10 +11,7 @@ import (
 // method (batchFn), accumulating the replicated count. Returns once a batch
 // reports Drained (the stream is caught up), the batch cap is hit (more work
 // remains — the next hourly run resumes from wherever the cursor landed), or
-// the activity errors. Plain-Go equivalent of the Temporal-era
-// internal/workflows/scavenger.go's drainStream (still used there by
-// ArchiveBackfillWorkflow), just calling batchFn directly instead of
-// workflow.ExecuteActivity.
+// the activity errors.
 func drainBatches(
 	ctx context.Context,
 	batchFn func(context.Context, activities.ReplicateBatchParams) (activities.ReplicateBatchResult, error),
@@ -37,8 +34,7 @@ func drainBatches(
 // syncArchive needs — an interface (rather than taking the concrete type
 // directly) so tests can supply a fake and assert syncArchive's
 // orchestration (stream order, which errors are swallowed vs propagated,
-// purge gating) without a real database, the same thing the Temporal-era
-// ScavengerDispatcher's tests did via env.OnActivity mocks.
+// purge gating) without a real database.
 type scavengerOps interface {
 	ReplicateLeaguesBatch(context.Context, activities.ReplicateBatchParams) (activities.ReplicateBatchResult, error)
 	ReplicateTransactionsBatch(context.Context, activities.ReplicateBatchParams) (activities.ReplicateBatchResult, error)
@@ -64,13 +60,7 @@ type scavengerOps interface {
 // PurgeDraftsBatch only ever return an error when the oldest unverified row
 // has sat past retention+15d, meaning replication has stalled — that must
 // surface as a failed run (RunSnapshot's caller treats a non-nil error as
-// "skip writing this hour's row"), the intended stalled-replication alarm
-// now that there's no Temporal UI to show a red run.
-//
-// This is the direct successor to the Temporal-era ScavengerDispatcher
-// workflow (formerly internal/workflows/scavenger.go), ported to run inline
-// as part of the lifetime-counts cron job instead of on its own Temporal
-// schedule — see RunSnapshot's doc comment for why.
+// "skip writing this hour's row"), the intended stalled-replication alarm.
 func syncArchive(ctx context.Context, sa scavengerOps, cfg activities.ScavengerConfig) (activities.ScavengerReport, error) {
 	var report activities.ScavengerReport
 
