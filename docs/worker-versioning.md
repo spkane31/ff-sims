@@ -1,11 +1,12 @@
 # Worker deployment versioning
 
 The worker host (`deploy/worker-host/`) is the sole fleet that runs
-`backend/cmd/worker`, against the same Temporal Cloud namespace as production.
-DigitalOcean only builds/serves `cmd/server` (the API) and the Python ESPN worker —
-it no longer runs a Go Temporal worker at all. A systemd timer on the host polls
-`origin/main` and rebuilds + restarts the worker when there's a new commit; a failed
-build leaves the old binary running indefinitely.
+`backend/cmd/worker` and the Python ESPN worker (`workers/espn`), against the same
+Temporal Cloud namespace as production. DigitalOcean only builds/serves `cmd/server`
+(the API) — it no longer runs any Temporal worker at all. A systemd timer on the host
+polls `origin/main` and rebuilds/resyncs + restarts each worker when there's a new
+relevant commit; a failed build/sync leaves the previous binary/deps running
+indefinitely.
 
 This replaced an earlier two-fleet setup (DigitalOcean + a Raspberry Pi, both running
 `cmd/worker`) that needed Worker Deployment Versioning to prevent stale code on one

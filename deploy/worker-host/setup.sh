@@ -39,6 +39,19 @@ ensure_service_user() {
   fi
 }
 
+# Installed to a fixed system-wide path (not the per-user default of
+# ~/.local/bin) so ff-sims-espn-worker.service's ExecStart can reference it by
+# absolute path regardless of which user runs setup.sh vs. which user
+# (SERVICE_USER) the service itself runs as.
+ensure_uv() {
+  if [[ -x /usr/local/bin/uv ]]; then
+    echo "uv already installed ($(/usr/local/bin/uv --version))"
+    return
+  fi
+  echo "Installing uv"
+  curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+}
+
 # Masking these targets prevents the host from suspending/hibernating out from
 # under the worker and deploy timer. Idempotent and harmless to re-run.
 disable_sleep() {
@@ -95,9 +108,19 @@ first_build() {
   echo "$full_sha" > "$REPO_DIR/backend/.cron-deployed-sha"
 }
 
+first_sync_espn() {
+  echo "Syncing ESPN worker dependencies"
+  local full_sha
+  full_sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  (cd "$REPO_DIR/workers/espn" && /usr/local/bin/uv sync --frozen --no-dev)
+
+  # Same baseline-seeding purpose as first_build's sha files, above.
+  echo "$full_sha" > "$REPO_DIR/workers/espn/.espn-deployed-sha"
+}
+
 install_units() {
   echo "Installing systemd units"
-  for unit in ff-sims-worker.service ff-sims-deploy.service ff-sims-deploy.timer ff-sims-discovery.service ff-sims-discovery.timer ff-sims-lifetime-counts.service ff-sims-lifetime-counts.timer; do
+  for unit in ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.service ff-sims-deploy.timer ff-sims-discovery.service ff-sims-discovery.timer ff-sims-lifetime-counts.service ff-sims-lifetime-counts.timer; do
     sed "s#{{REPO_DIR}}#${REPO_DIR}#g; s#{{SERVICE_USER}}#${SERVICE_USER}#g" \
       "$SCRIPT_DIR/$unit" > "$SYSTEMD_DIR/$unit"
   done
@@ -116,7 +139,8 @@ Worker host public IP: ${ip}
      in the DigitalOcean dashboard if you haven't already.
 
 Logs:
-  journalctl -u ff-sims-worker -f      # Temporal worker logs (drafts, transactions, etc.)
+  journalctl -u ff-sims-worker -f      # Go Temporal worker logs (drafts, transactions, etc.)
+  journalctl -u ff-sims-espn-worker -f # Python ESPN Temporal worker logs
   journalctl -u ff-sims-deploy         # deploy-check history
   journalctl -u ff-sims-discovery -f   # discovery cron job logs (runs hourly)
   journalctl -u ff-sims-lifetime-counts -f   # lifetime-counts snapshot job logs (runs hourly)
@@ -125,14 +149,16 @@ EOF
 
 main() {
   ensure_go
+  ensure_uv
   ensure_service_user
   disable_sleep
   first_build
+  first_sync_espn
   install_units
 
   if ensure_env_file; then
-    systemctl enable ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
-    systemctl start ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
+    systemctl enable ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
+    systemctl start ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
   else
     echo "Skipping service start until $ENV_FILE is filled in."
   fi

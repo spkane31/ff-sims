@@ -40,41 +40,18 @@ RUN apk add --no-cache git \
        -ldflags="-X 'backend/pkg/version.GitSHA=${GIT_SHA}' -X 'backend/pkg/version.BuildTime=${BUILD_TIME}'" \
        ./cmd/server
 
-# Stage 3: Build Python ESPN worker
-# Pin to bookworm so the compiled Python and .venv extensions share glibc 2.36
-# with the runtime stage. The untagged python:3.12-slim moved to Trixie (glibc 2.38)
-# which is incompatible with debian:bookworm-slim.
-FROM python:3.12-slim-bookworm AS espn-worker-builder
-WORKDIR /app/workers/espn
-RUN pip install --no-cache-dir uv
-COPY workers/espn/pyproject.toml workers/espn/uv.lock ./
-RUN uv sync --frozen --no-dev
-COPY workers/espn/ ./
-
-# Stage 4: Final runtime image with Go serving everything
-# python:3.12-slim-bookworm provides the Python runtime that matches the builder,
-# eliminating glibc version mismatches. Go binaries are CGO_ENABLED=0 (statically
-# linked) and work on any Linux. We skip copying Python itself from the builder
-# because the runtime image already carries the identical interpreter and stdlib.
-FROM python:3.12-slim-bookworm
+# Stage 3: Final runtime image
+# The Python ESPN worker no longer runs here — it moved to the worker host
+# (deploy/worker-host/) as a native systemd service alongside the Go Temporal
+# worker, for direct `journalctl` access instead of digging through container
+# logs. See deploy/worker-host/README.md.
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl openssl \
+    ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Go backend binary (statically linked — no libc dependency)
 COPY --from=backend-builder /app/backend/main /app/backend/
-
-# Copy Python ESPN worker, its virtualenv, and uv
-# Python interpreter + stdlib are already present in the base image.
-COPY --from=espn-worker-builder /app/workers/espn /app/workers/espn
-COPY --from=espn-worker-builder /usr/local/bin/uv /usr/local/bin/uv
-
-# Entrypoint: Python ESPN worker + HTTP server. The Go Temporal worker
-# (cmd/worker) runs only on the worker host, not here — see
-# docs/worker-versioning.md.
-# --no-sync: venv was frozen at build time; prevents uv from attempting network
-# access inside the container if the lockfile appears out-of-date.
-RUN printf '#!/bin/sh\ncd /app/workers/espn && uv run --no-sync python worker.py &\nexec /app/backend/main\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Copy Next.js build output
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
@@ -96,5 +73,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD /healthcheck.sh
 
-# Start ESPN worker (background) + HTTP server (foreground)
-CMD ["/entrypoint.sh"]
+# Start the HTTP server
+CMD ["/app/backend/main"]

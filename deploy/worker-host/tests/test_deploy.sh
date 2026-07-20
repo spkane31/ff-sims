@@ -16,7 +16,7 @@ git -C "$REPO" checkout -q -b main
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name test
 
-mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/deploy/worker-host"
+mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/workers/espn" "$REPO/deploy/worker-host"
 cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/worker-host/deploy.sh"
 chmod +x "$REPO/deploy/worker-host/deploy.sh"
 
@@ -35,6 +35,7 @@ package main
 
 func main() {}
 EOF
+echo "v1" > "$REPO/workers/espn/worker.py"
 
 git -C "$REPO" add -A
 git -C "$REPO" commit -q -m "initial"
@@ -53,6 +54,21 @@ EOF
 chmod +x "$BIN/systemctl"
 export PATH="$BIN:$PATH"
 export REPO_DIR="$REPO"
+
+# --- stub uv so ESPN-worker deploy assertions don't depend on real network
+# access / dependency resolution — same idea as the systemctl stub above.
+# UV_FAIL_FLAG lets a scenario simulate a sync failure on demand.
+UV_CALLS="$WORK/uv_calls"
+UV_FAIL_FLAG="$WORK/uv_should_fail"
+: > "$UV_CALLS"
+cat > "$BIN/uv" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >> "$UV_CALLS"
+[[ -f "$UV_FAIL_FLAG" ]] && exit 1
+exit 0
+EOF
+chmod +x "$BIN/uv"
+export UV_BIN="$BIN/uv"
 
 # --- scenario 1: no new commits -> no rebuild, no restart ---
 bash "$REPO/deploy/worker-host/deploy.sh"
@@ -75,10 +91,14 @@ bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
 [[ -x "$REPO/backend/cron" ]] || fail "expected a cron binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
+grep -q "sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the ESPN worker on first deploy"
+grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected systemctl restart to be called for the ESPN worker"
+[[ -f "$REPO/workers/espn/.espn-deployed-sha" ]] || fail "expected ESPN sha file to be written after first deploy"
 
 # --- scenario 3: a new commit that fails to compile -> old binary + service left alone ---
 old_hash="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 : > "$CALLS"
+: > "$UV_CALLS"
 cat > "$CLONE/backend/cmd/worker/main.go" <<'EOF'
 package main
 
@@ -93,6 +113,7 @@ fi
 new_hash="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 [[ "$old_hash" == "$new_hash" ]] || fail "worker binary should be unchanged after a failed build"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called after a failed build"
+[[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called when the worker build already failed earlier in the cycle"
 
 # --- scenario 4: a commit that changes build_worker itself must take effect on
 # THIS deploy cycle, not the next ---
@@ -135,6 +156,7 @@ built_output="$("$REPO/backend/worker" 2>&1)"
 worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 git -C "$REPO" remote set-url origin "$WORK/does-not-exist.git"
 : > "$CALLS"
+: > "$UV_CALLS"
 
 set +e
 deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
@@ -146,6 +168,7 @@ set -e
 worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 [[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should be unchanged when git fetch fails"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called when git fetch fails"
+[[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called when git fetch fails"
 
 git -C "$REPO" remote set-url origin "$ORIGIN"
 
@@ -155,6 +178,7 @@ git -C "$REPO" remote set-url origin "$ORIGIN"
 worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 : > "$CALLS"
+: > "$UV_CALLS"
 echo "unrelated change" > "$CLONE/NOTES.md"
 git -C "$CLONE" add NOTES.md
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "docs: unrelated change"
@@ -163,6 +187,7 @@ git -C "$CLONE" push -q origin main
 deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
 echo "$deploy_output" | grep -q "worker: up to date, no worker-relevant changes" || fail "expected a clear skip reason for the worker, got: $deploy_output"
 echo "$deploy_output" | grep -q "cron: up to date, no cron-relevant changes" || fail "expected a clear skip reason for cron, got: $deploy_output"
+echo "$deploy_output" | grep -q "espn-worker: up to date, no changes" || fail "expected a clear skip reason for the ESPN worker, got: $deploy_output"
 
 [[ "$(git -C "$REPO" rev-parse HEAD)" == "$(git -C "$REPO" rev-parse origin/main)" ]] \
   || fail "local checkout should still advance to origin/main even when the build is skipped"
@@ -171,6 +196,7 @@ cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 [[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for a docs-only change"
 [[ "$cron_hash_before" == "$cron_hash_after" ]] || fail "cron binary should not rebuild for a docs-only change"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not have been called for a docs-only change"
+[[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called for a docs-only change"
 
 # --- scenario 7: a change to cmd/cron only -> cron rebuilds independently of
 # the worker (each binary is gated on its own dependency graph); the worker
@@ -178,6 +204,7 @@ cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 : > "$CALLS"
+: > "$UV_CALLS"
 cat > "$CLONE/backend/cmd/cron/main.go" <<'EOF'
 package main
 
@@ -192,6 +219,7 @@ cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 [[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for a cron-only change"
 [[ "$cron_hash_before" != "$cron_hash_after" ]] || fail "cron binary should have been rebuilt for a cron-only change"
 [[ ! -s "$CALLS" ]] || fail "systemctl should not restart the worker service for a cron-only change"
+[[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called for a cron-only change"
 
 # --- scenario 8: a build failure must keep being retried on later cycles even
 # if the intervening commit doesn't touch worker paths itself ---
@@ -244,5 +272,69 @@ git -C "$CLONE" push -q origin main
 bash "$REPO/deploy/worker-host/deploy.sh"
 worker_hash_after_fix="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 [[ "$worker_hash_before" != "$worker_hash_after_fix" ]] || fail "expected worker to rebuild once fixed"
+
+# --- scenario 9: an ESPN-only change syncs + restarts the ESPN worker
+# independently of the Go worker/cron; a uv sync failure leaves it alone and
+# is retried on a later cycle, mirroring the Go build-failure behavior above ---
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+: > "$CALLS"
+: > "$UV_CALLS"
+echo "v2" > "$CLONE/workers/espn/worker.py"
+git -C "$CLONE" add workers/espn/worker.py
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "espn worker v2"
+git -C "$CLONE" push -q origin main
+
+bash "$REPO/deploy/worker-host/deploy.sh"
+grep -q "sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync for an ESPN-relevant change"
+grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected the ESPN worker service to be restarted"
+worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for an ESPN-only change"
+[[ "$cron_hash_before" == "$cron_hash_after" ]] || fail "cron binary should not rebuild for an ESPN-only change"
+
+# a subsequent deploy with no further workers/espn changes should skip the sync
+: > "$CALLS"
+: > "$UV_CALLS"
+cat > "$CLONE/backend/cmd/worker/main.go" <<'EOF'
+package main
+
+func main() { println("v4") }
+EOF
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "v4"
+git -C "$CLONE" push -q origin main
+
+deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
+echo "$deploy_output" | grep -q "espn-worker: up to date, no changes" || fail "expected the ESPN worker to skip when nothing under workers/espn changed, got: $deploy_output"
+[[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called when nothing under workers/espn changed"
+
+# a uv sync failure must not restart the service, and must be retried later
+: > "$CALLS"
+: > "$UV_CALLS"
+touch "$UV_FAIL_FLAG"
+echo "v3" > "$CLONE/workers/espn/worker.py"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "espn worker v3 (uv will fail)"
+git -C "$CLONE" push -q origin main
+
+if bash "$REPO/deploy/worker-host/deploy.sh"; then
+  fail "deploy.sh should exit non-zero when uv sync fails"
+fi
+grep -q "restart ff-sims-espn-worker.service" "$CALLS" && fail "the ESPN worker service should not be restarted after a failed uv sync"
+rm -f "$UV_FAIL_FLAG"
+
+# git reset --hard already advanced the local checkout to the failing commit,
+# so a bare re-run would see local_sha == remote_sha and report "up to date"
+# without ever re-checking the ESPN worker. Push one more (unrelated) commit
+# so deploy() has a new remote sha to diff against — exactly how scenario 8
+# above retries a stuck Go build.
+: > "$CALLS"
+: > "$UV_CALLS"
+echo "trigger retry" >> "$CLONE/NOTES.md"
+git -C "$CLONE" add NOTES.md
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "docs: trigger retry"
+git -C "$CLONE" push -q origin main
+bash "$REPO/deploy/worker-host/deploy.sh"
+grep -q "sync --frozen --no-dev" "$UV_CALLS" || fail "expected the ESPN sync to be retried once uv succeeds again"
+grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected the ESPN worker service to be restarted once the retried sync succeeds"
 
 echo "PASS: deploy.sh integration tests"

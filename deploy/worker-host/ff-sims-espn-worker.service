@@ -1,0 +1,20 @@
+[Unit]
+Description=ff-sims ESPN Temporal worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{SERVICE_USER}}
+WorkingDirectory={{REPO_DIR}}/workers/espn
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/ff-sims-worker.env
+# --no-sync: deploy.sh/setup.sh run `uv sync` explicitly when workers/espn
+# changes; this just runs the already-synced venv without uv touching the
+# lockfile or network on every restart.
+ExecStart=/usr/local/bin/uv run --no-sync python worker.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
