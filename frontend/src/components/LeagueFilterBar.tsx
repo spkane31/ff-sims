@@ -5,7 +5,7 @@ interface LeagueFilterBarProps {
   onChange: (filters: SleeperLeagueFilters) => void;
   txType?: string;
   onTxTypeChange?: (type: string) => void;
-  showPicksFilter?: boolean;
+  showSuperflexFilter?: boolean;
 }
 
 const LEAGUE_SIZES = [
@@ -39,9 +39,10 @@ const TX_TYPES = [
   { value: 'waiver', label: 'Waiver' },
   { value: 'free_agent', label: 'Free agent' },
 ];
-const PICKS_OPTIONS = [
+const SUPERFLEX_OPTIONS = [
   { value: '', label: 'Any' },
-  { value: 'true', label: 'Players only' },
+  { value: 'true', label: 'Superflex' },
+  { value: 'false', label: '1QB' },
 ];
 
 function pillClass(active: boolean) {
@@ -84,14 +85,14 @@ export default function LeagueFilterBar({
   onChange,
   txType,
   onTxTypeChange,
-  showPicksFilter,
+  showSuperflexFilter,
 }: LeagueFilterBarProps) {
   const hasFilters =
     !!filters.league_size ||
     !!filters.scoring_format ||
     !!filters.draft_type ||
     !!filters.league_type ||
-    !!filters.exclude_picks ||
+    !!filters.superflex ||
     !!txType;
 
   function set(key: keyof SleeperLeagueFilters, value: string) {
@@ -153,12 +154,12 @@ export default function LeagueFilterBar({
           onChange={v => set('league_type', v)}
         />
 
-        {showPicksFilter && (
+        {showSuperflexFilter && (
           <PillGroup
-            label="Assets"
-            options={PICKS_OPTIONS}
-            value={filters.exclude_picks ?? ''}
-            onChange={v => set('exclude_picks', v)}
+            label="Format"
+            options={SUPERFLEX_OPTIONS}
+            value={filters.superflex ?? ''}
+            onChange={v => set('superflex', v)}
           />
         )}
       </div>

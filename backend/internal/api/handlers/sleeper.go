@@ -352,6 +352,9 @@ func applyLeagueFilters(db *gorm.DB, c *gin.Context, leagueAlias string) *gorm.D
 	if v := c.Query("league_type"); v != "" {
 		db = db.Where(leagueAlias+".league_type = ?", v)
 	}
+	if v := c.Query("superflex"); v != "" {
+		db = db.Where(leagueAlias+".is_superflex = ?", v == "true")
+	}
 	return db
 }
 
@@ -361,12 +364,13 @@ func hasLeagueFilters(c *gin.Context) bool {
 	return c.Query("league_size") != "" ||
 		c.Query("scoring_format") != "" ||
 		c.Query("draft_type") != "" ||
-		c.Query("league_type") != ""
+		c.Query("league_type") != "" ||
+		c.Query("superflex") != ""
 }
 
 // GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
 // with each trade's adds grouped by roster into named sides.
-// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty), exclude_picks (bool).
+// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty), superflex (bool), exclude_picks (bool).
 func GetSleeperTrades(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
