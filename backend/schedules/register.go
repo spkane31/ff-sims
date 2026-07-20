@@ -18,23 +18,6 @@ import (
 // available" fail, forever, on a queue nobody's listening to.
 func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 	if err := upsert(ctx, c, client.ScheduleOptions{
-		ID: "sleeper-discovery-schedule",
-		Spec: client.ScheduleSpec{
-			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 10 * time.Minute},
-			},
-		},
-		Action: &client.ScheduleWorkflowAction{
-			Workflow:                 workflows.DiscoveryBatchDispatcher,
-			TaskQueue:                workflows.TaskQueueDiscovery,
-			WorkflowExecutionTimeout: 60 * time.Minute,
-		},
-		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
-	}); err != nil {
-		return err
-	}
-
-	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-draft-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
