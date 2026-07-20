@@ -30,8 +30,9 @@ type DataFetchActivities struct {
 }
 
 // archiveRoutingCutoff returns the age boundary for routing already-old data
-// straight to archive at ingest time instead of cloud — see syncOneLeague
-// and syncOneLeagueDrafts. Reuses SCAVENGER_RETENTION_DAYS (T6): "too old
+// straight to archive at ingest time instead of cloud — see
+// SyncOneLeagueTransactions and syncOneLeagueDrafts. Reuses
+// SCAVENGER_RETENTION_DAYS (T6): "too old
 // for cloud to keep" and "too old to bother writing to cloud in the first
 // place" are the same threshold.
 func archiveRoutingCutoff() time.Time {
@@ -379,12 +380,14 @@ func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, p
 	return states, nil
 }
 
-// maxLegForLeague returns the highest transaction leg worth fetching. Past
+// MaxLegForLeague returns the highest transaction leg worth fetching. Past
 // seasons get the full 1..18 sweep; the current season is capped at the
 // current NFL week (offseason week 0 still fetches leg 1, where offseason
 // moves land). A nil state (state endpoint down) falls back to 18 rather than
-// stalling the batch.
-func maxLegForLeague(season string, state *sleeper.NFLState) int {
+// stalling the batch. Exported so internal/transactioncron (the cron-driven
+// path replacing SyncLeagueTransactionsBatch's Temporal batching) can reuse
+// the exact same cap logic.
+func MaxLegForLeague(season string, state *sleeper.NFLState) int {
 	if state == nil || season < state.Season {
 		return 18
 	}
@@ -441,7 +444,7 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
-			results <- leagueResult{leagueID: lg.LeagueID, err: a.syncOneLeague(ctx, lg, maxLegForLeague(lg.Season, state))}
+			results <- leagueResult{leagueID: lg.LeagueID, err: a.SyncOneLeagueTransactions(ctx, lg, MaxLegForLeague(lg.Season, state))}
 		})
 	}
 	go func() { wg.Wait(); close(results) }()
@@ -462,10 +465,13 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 	return res, nil
 }
 
-// syncOneLeague fetches transactions for one league from its leg cursor up to
-// maxLeg, upserts them, and stamps completion (clearing the claim) in a single
-// update. Per-leg 404s mean "no transactions for that leg" and are skipped.
-func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
+// SyncOneLeagueTransactions fetches transactions for one league from its leg
+// cursor up to maxLeg, upserts them, and stamps completion (clearing the
+// claim) in a single update. Per-leg 404s mean "no transactions for that
+// leg" and are skipped. Exported so internal/transactioncron can call it
+// directly per-item, instead of through SyncLeagueTransactionsBatch's
+// Temporal-batch wrapper.
+func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
 	startLeg := 1
 	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
 		startLeg = *lg.LastLegFetched - 1
@@ -569,7 +575,7 @@ func isEmptyJSONArray(raw json.RawMessage) bool {
 }
 
 // upsertArchiveTransactions writes rows directly to the archive DB, skipping
-// cloud — see syncOneLeague's age-based routing.
+// cloud — see SyncOneLeagueTransactions's age-based routing.
 func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, rows []models.SleeperTransaction) error {
 	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
 	for i, r := range rows {

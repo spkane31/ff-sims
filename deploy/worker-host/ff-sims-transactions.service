@@ -1,0 +1,17 @@
+[Unit]
+Description=ff-sims transaction-sync cron job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{SERVICE_USER}}
+WorkingDirectory={{REPO_DIR}}/backend
+EnvironmentFile=/etc/ff-sims-worker.env
+# Type=oneshot services default to DefaultTimeoutStartSec (commonly 90s)
+# before systemd kills them for "taking too long to start". This job runs up
+# to -max-duration=8m below (see ff-sims-transactions.timer for why 8m),
+# so the override must clear that comfortably or every run gets SIGTERM'd
+# well before its own deadline fires. Mirrors ff-sims-discovery's pattern.
+TimeoutStartSec=15min
+ExecStart={{REPO_DIR}}/backend/cron -job=transactions -max-duration=8m

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"backend/internal/activities"
+	"backend/internal/cronpool"
 	"backend/internal/helpers"
 )
 
@@ -75,12 +76,12 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 		"leaguePoolSize", cfg.LeaguePoolSize, "leagueRefillBatch", cfg.LeagueRefillBatch)
 	start := time.Now()
 
-	var userResult, leagueResult PoolResult
+	var userResult, leagueResult cronpool.PoolResult
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		userResult = RunPool(ctx,
-			PoolConfig{Size: cfg.UserPoolSize, RefillBatch: cfg.UserRefillBatch, PollInterval: pollInterval},
+		userResult = cronpool.RunPool(ctx,
+			cronpool.PoolConfig{Size: cfg.UserPoolSize, RefillBatch: cfg.UserRefillBatch, PollInterval: pollInterval},
 			func(ctx context.Context, n int) ([]string, error) {
 				return da.ClaimStaleUsers(ctx, activities.ClaimStaleUsersParams{BatchSize: n})
 			},
@@ -94,8 +95,8 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 	})
 
 	wg.Go(func() {
-		leagueResult = RunPool(ctx,
-			PoolConfig{Size: cfg.LeaguePoolSize, RefillBatch: cfg.LeagueRefillBatch, PollInterval: pollInterval},
+		leagueResult = cronpool.RunPool(ctx,
+			cronpool.PoolConfig{Size: cfg.LeaguePoolSize, RefillBatch: cfg.LeagueRefillBatch, PollInterval: pollInterval},
 			func(ctx context.Context, n int) ([]string, error) {
 				return ClaimStaleLeagues(ctx, da.DB, n)
 			},

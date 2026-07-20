@@ -1,4 +1,4 @@
-package discoverycron_test
+package cronpool_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/discoverycron"
+	"backend/internal/cronpool"
 )
 
 // fakeQueue is a simple in-memory claimable queue for testing RunPool
@@ -50,7 +50,7 @@ func TestRunPool_ProcessesAllItemsAndReportsCounts(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	res := discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 5 * time.Millisecond},
+	res := cronpool.RunPool(ctx, cronpool.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 5 * time.Millisecond},
 		q.claimFn, process, func(string, error, time.Duration) {})
 
 	if res.Processed != 10 || res.Failed != 0 {
@@ -74,9 +74,9 @@ func TestRunPool_RefillOnlyTriggersAtThreshold(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan discoverycron.PoolResult, 1)
+	done := make(chan cronpool.PoolResult, 1)
 	go func() {
-		done <- discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 4, RefillBatch: 4, PollInterval: 5 * time.Millisecond},
+		done <- cronpool.RunPool(ctx, cronpool.PoolConfig{Size: 4, RefillBatch: 4, PollInterval: 5 * time.Millisecond},
 			q.claimFn, process, func(string, error, time.Duration) {})
 	}()
 
@@ -102,7 +102,7 @@ func TestRunPool_EmptyClaimDoesNotBusyLoop(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	res := discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
+	res := cronpool.RunPool(ctx, cronpool.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
 		q.claimFn, process, func(string, error, time.Duration) {})
 
 	// 100ms / 20ms poll interval should yield roughly 5 claim attempts, not
@@ -130,7 +130,7 @@ func TestRunPool_ClaimErrorIncrementsClaimErrorsAndDoesNotBusyLoop(t *testing.T)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	res := discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
+	res := cronpool.RunPool(ctx, cronpool.PoolConfig{Size: 3, RefillBatch: 1, PollInterval: 20 * time.Millisecond},
 		claim, process, func(string, error, time.Duration) {})
 
 	if res.ClaimErrors == 0 {
@@ -161,9 +161,9 @@ func TestRunPool_DrainsInFlightWorkOnDeadline(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan discoverycron.PoolResult, 1)
+	done := make(chan cronpool.PoolResult, 1)
 	go func() {
-		done <- discoverycron.RunPool(ctx, discoverycron.PoolConfig{Size: 2, RefillBatch: 1, PollInterval: 5 * time.Millisecond},
+		done <- cronpool.RunPool(ctx, cronpool.PoolConfig{Size: 2, RefillBatch: 1, PollInterval: 5 * time.Millisecond},
 			q.claimFn, process, func(string, error, time.Duration) {})
 	}()
 
