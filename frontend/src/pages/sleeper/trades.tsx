@@ -41,20 +41,36 @@ function winningSide(trade: SleeperTrade): number | null {
   return a > b ? 0 : 1;
 }
 
+// Defaults match the user's own league (10-team, PPR, superflex) so the page
+// opens pre-filtered to the trades most relevant to them.
+const DEFAULT_FILTERS: SleeperLeagueFilters = {
+  league_size: "10",
+  scoring_format: "ppr",
+  superflex: "true",
+};
+
+// "any" is an explicit marker written to the URL when the user clears a
+// defaulted filter back to "Any" — distinct from the param being absent
+// entirely, which means "not yet touched, use the default".
+function resolveDefaulted(v: string | string[] | undefined, fallback: string | undefined): string | undefined {
+  if (typeof v !== "string") return fallback;
+  return v === "any" ? undefined : v;
+}
+
 function filtersFromQuery(query: Record<string, string | string[] | undefined>): SleeperLeagueFilters {
   return {
-    league_size: typeof query.league_size === "string" ? query.league_size : undefined,
-    scoring_format: typeof query.scoring_format === "string" ? query.scoring_format : undefined,
+    league_size: resolveDefaulted(query.league_size, DEFAULT_FILTERS.league_size),
+    scoring_format: resolveDefaulted(query.scoring_format, DEFAULT_FILTERS.scoring_format),
     draft_type: typeof query.draft_type === "string" ? query.draft_type : undefined,
     league_type: typeof query.league_type === "string" ? query.league_type : undefined,
-    exclude_picks: typeof query.exclude_picks === "string" ? query.exclude_picks : undefined,
+    superflex: resolveDefaulted(query.superflex, DEFAULT_FILTERS.superflex),
   };
 }
 
 export default function SleeperTradesPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState<SleeperLeagueFilters>({});
+  const [filters, setFilters] = useState<SleeperLeagueFilters>(DEFAULT_FILTERS);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -75,11 +91,11 @@ export default function SleeperTradesPage() {
     setFilters(next);
     setPage(1);
     const q: Record<string, string> = { page: "1" };
-    if (next.league_size) q.league_size = next.league_size;
-    if (next.scoring_format) q.scoring_format = next.scoring_format;
+    q.league_size = next.league_size ?? "any";
+    q.scoring_format = next.scoring_format ?? "any";
+    q.superflex = next.superflex ?? "any";
     if (next.draft_type) q.draft_type = next.draft_type;
     if (next.league_type) q.league_type = next.league_type;
-    if (next.exclude_picks) q.exclude_picks = next.exclude_picks;
     router.push({ pathname: router.pathname, query: q }, undefined, { shallow: true });
   }
 
@@ -105,7 +121,7 @@ export default function SleeperTradesPage() {
           </p>
         </div>
 
-        <LeagueFilterBar filters={filters} onChange={applyFilters} showPicksFilter />
+        <LeagueFilterBar filters={filters} onChange={applyFilters} showSuperflexFilter />
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">

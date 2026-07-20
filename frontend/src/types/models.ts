@@ -318,7 +318,7 @@ export interface SleeperLeagueFilters {
   scoring_format?: string;
   draft_type?: string;
   league_type?: string;
-  exclude_picks?: string;
+  superflex?: string;
 }
 
 export interface SleeperADPFilters {
