@@ -87,18 +87,9 @@ func main() {
 	log.Printf("worker deployment: name=%s build_id=%s", deploymentName, buildID)
 
 	sc := sleeper.New()
-	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
 	dfa := &activities.DataFetchActivities{DB: database.DB, Archive: database.Archive, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
-
-	// Discovery worker: DiscoveryBatchDispatcher (claim-drain batch model)
-	dw := worker.New(c, workflows.TaskQueueDiscovery, worker.Options{
-		DeploymentOptions: deploymentOpts,
-		SysInfoProvider:   sysinfo.SysInfoProvider(),
-	})
-	dw.RegisterWorkflow(workflows.DiscoveryBatchDispatcher)
-	dw.RegisterActivity(da)
 
 	// The sync queues (drafts, transactions) are I/O-bound, and Temporal task
 	// distribution is pull-based: the fleet with more free activity slots and
@@ -147,7 +138,7 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	workers := []worker.Worker{dw, draftsw, transactionsw, psw, wsw}
+	workers := []worker.Worker{draftsw, transactionsw, psw, wsw}
 	if cfg.ArchiveDB.Enabled() {
 		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
 		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
