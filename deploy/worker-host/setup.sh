@@ -97,7 +97,7 @@ first_build() {
 
 install_units() {
   echo "Installing systemd units"
-  for unit in ff-sims-worker.service ff-sims-deploy.service ff-sims-deploy.timer ff-sims-discovery.service ff-sims-discovery.timer ff-sims-lifetime-counts.service ff-sims-lifetime-counts.timer; do
+  for unit in ff-sims-worker.service ff-sims-deploy.service ff-sims-deploy.timer ff-sims-discovery.service ff-sims-discovery.timer ff-sims-lifetime-counts.service ff-sims-lifetime-counts.timer ff-sims-transactions.service ff-sims-transactions.timer; do
     sed "s#{{REPO_DIR}}#${REPO_DIR}#g; s#{{SERVICE_USER}}#${SERVICE_USER}#g" \
       "$SCRIPT_DIR/$unit" > "$SYSTEMD_DIR/$unit"
   done
@@ -116,10 +116,11 @@ Worker host public IP: ${ip}
      in the DigitalOcean dashboard if you haven't already.
 
 Logs:
-  journalctl -u ff-sims-worker -f      # Temporal worker logs (drafts, transactions, etc.)
+  journalctl -u ff-sims-worker -f      # Temporal worker logs (drafts, etc. — transactions also still polls here)
   journalctl -u ff-sims-deploy         # deploy-check history
   journalctl -u ff-sims-discovery -f   # discovery cron job logs (runs hourly)
   journalctl -u ff-sims-lifetime-counts -f   # lifetime-counts snapshot job logs (runs hourly)
+  journalctl -u ff-sims-transactions -f      # transaction-sync cron job logs (runs every ~10min)
 EOF
 }
 
@@ -131,8 +132,8 @@ main() {
   install_units
 
   if ensure_env_file; then
-    systemctl enable ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
-    systemctl start ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer
+    systemctl enable ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer ff-sims-transactions.timer
+    systemctl start ff-sims-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer ff-sims-transactions.timer
   else
     echo "Skipping service start until $ENV_FILE is filled in."
   fi

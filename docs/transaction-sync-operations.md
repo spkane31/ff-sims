@@ -6,6 +6,18 @@ User/league discovery moved off Temporal to a `cmd/cron`-driven job — see
 its tuning knobs (`CRON_DISCOVERY_*`), which are unrelated to the
 dispatcher-based knobs below.
 
+**Update (2026-07-20):** Transaction-sync has a second, `cmd/cron`-driven
+path now too (`internal/transactioncron`, job name `transactions`), running
+alongside `TransactionSyncDispatcher` — mirroring discovery's own migration.
+Both claim through the exact same `sleeper_leagues.claimed_at` column via
+`FOR UPDATE SKIP LOCKED`, so running them concurrently is safe by
+construction; the cron path was added because the Temporal worker depends on
+`ff-sims-worker.service` staying up on the worker host, and that's a single
+point of failure this table's staleness has already hit once. See "How it
+works" below for the cron path's tuning knobs (`CRON_TXN_*`) and cadence.
+Draft-sync remains Temporal-only for now — this migration covers
+transactions specifically, not the whole `cmd/worker` sync surface.
+
 ## Tuning knobs (env, per worker process)
 
 The Sleeper client has no rate/concurrency-limiting env knob. It's a
@@ -76,6 +88,32 @@ Every 10 minutes `TransactionSyncDispatcher` claims batches of stale leagues
 go. Only the worker host runs `cmd/worker` and polls this queue (DigitalOcean
 serves the API and the Python ESPN worker only). The per-league leg loop is
 capped at the current NFL week (past seasons still sweep legs 1–18).
+
+### Cron path (`internal/transactioncron`)
+
+`ff-sims-transactions.timer` runs `cron -job=transactions -max-duration=8m`
+every 10 minutes (`OnUnitActiveSec=10min`, next run scheduled 10 minutes
+after the previous one *finishes* — with an 8-minute deadline, overlap is
+impossible by construction, same reasoning as `ff-sims-discovery.timer`).
+`RunTransactionSync` runs a single claim-batch/process/refill pool (see
+`internal/cronpool`, extracted from discoverycron's identical pool runner)
+against `ClaimLeaguesForTransactions`/`SyncOneLeagueTransactions` — the exact
+same activity code the Temporal dispatcher calls, just invoked per-item
+instead of via `SyncLeagueTransactionsBatch`'s batch wrapper. Tuning knobs:
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `CRON_TXN_POOL_SIZE` | 8 | Max concurrent league-sync goroutines in one cron run. |
+| `CRON_TXN_REFILL_BATCH` | 4 | Free pool slots required before claiming more. |
+
+Logs: `journalctl -u ff-sims-transactions -f`. Unlike the Temporal path, a
+crashed or killed cron run has nothing to restart — the next timer tick picks
+up wherever claims expired, same as every other `cmd/cron` job.
+
+Whether to eventually retire `TransactionSyncDispatcher` (as discovery's
+Temporal path was, once its cron replacement proved reliable — see the
+"Update (2026-07-19)" note in the discovery cron migration design doc) is a
+follow-up decision, not part of this change.
 
 ## Rollout / verification
 
