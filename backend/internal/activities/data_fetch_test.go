@@ -512,6 +512,41 @@ func TestSyncBatch_ArchiveExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T)
 	}
 }
 
+func TestSyncBatch_CloudExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	claimedLeague(t, cloud, "lg1")
+
+	recentMs := time.Now().UTC().Add(-1 * time.Hour).UnixMilli()
+	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+		"lg1/2": {
+			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs},
+			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: recentMs,
+				DraftPicks: []interface{}{map[string]interface{}{"season": "2027", "round": float64(1)}}},
+			{TransactionID: "tx-faab", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs,
+				WaiverBudget: []interface{}{map[string]interface{}{"amount": float64(10)}}},
+		},
+	}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
+		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
+		Concurrency: 1,
+	})
+
+	var cloudIDs []string
+	cloud.Model(&models.SleeperTransaction{}).Pluck("sleeper_transaction_id", &cloudIDs)
+	if len(cloudIDs) != 1 || cloudIDs[0] != "tx-clean" {
+		t.Errorf("expected only tx-clean in cloud, got %v", cloudIDs)
+	}
+	var archiveCount int64
+	archive.Model(&models.ArchiveSleeperTransaction{}).Count(&archiveCount)
+	if archiveCount != 0 {
+		t.Errorf("expected no rows in archive (all recent), got %d", archiveCount)
+	}
+}
+
 func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 	cloud := newTestDB(t)
 	claimedLeague(t, cloud, "lg1")
@@ -532,6 +567,33 @@ func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
 	cloud.Model(&models.SleeperTransaction{}).Count(&count)
 	if count != 1 {
 		t.Errorf("expected the old txn to fall back to cloud when Archive is nil, got %d rows", count)
+	}
+}
+
+func TestSyncBatch_ExcludesDraftPicksWhenArchiveNil(t *testing.T) {
+	cloud := newTestDB(t)
+	claimedLeague(t, cloud, "lg1")
+
+	recentMs := time.Now().UTC().Add(-1 * time.Hour).UnixMilli()
+	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+		"lg1/2": {
+			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs},
+			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: recentMs,
+				DraftPicks: []interface{}{map[string]interface{}{"season": "2027", "round": float64(1)}}},
+		},
+	}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
+	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
+		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
+		Concurrency: 1,
+	})
+
+	var ids []string
+	cloud.Model(&models.SleeperTransaction{}).Pluck("sleeper_transaction_id", &ids)
+	if len(ids) != 1 || ids[0] != "tx-clean" {
+		t.Errorf("expected only tx-clean in cloud (no archive configured), got %v", ids)
 	}
 }
 

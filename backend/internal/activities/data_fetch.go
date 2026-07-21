@@ -490,13 +490,19 @@ func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg 
 		if len(txns) == 0 {
 			continue
 		}
-		rows := make([]models.SleeperTransaction, len(txns))
-		for i, t := range txns {
+		var rows []models.SleeperTransaction
+		for _, t := range txns {
 			addsJSON, _ := json.Marshal(t.Adds)
 			dropsJSON, _ := json.Marshal(t.Drops)
 			picksJSON, _ := json.Marshal(t.DraftPicks)
 			waiverJSON, _ := json.Marshal(t.WaiverBudget)
-			rows[i] = models.SleeperTransaction{
+			// Picks/FAAB trades are never valued by the valuation model (see
+			// isPlayerOnlyTransaction) and aren't useful trade history either,
+			// so they're dropped at ingest time rather than written anywhere.
+			if !isPlayerOnlyTransaction(picksJSON, waiverJSON) {
+				continue
+			}
+			rows = append(rows, models.SleeperTransaction{
 				SleeperTransactionID: t.TransactionID,
 				SleeperLeagueID:      lg.LeagueID,
 				Type:                 t.Type,
@@ -507,7 +513,7 @@ func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg 
 				Drops:                dropsJSON,
 				DraftPicks:           picksJSON,
 				WaiverBudget:         waiverJSON,
-			}
+			})
 		}
 		cloudRows := rows
 		if a.Archive != nil {
@@ -515,11 +521,8 @@ func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg 
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					// Old rows route straight to archive; skipping here means the
-					// row is dropped entirely, not sent to cloud instead.
-					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
-						oldRows = append(oldRows, r)
-					}
+					// Old rows route straight to archive, not cloud.
+					oldRows = append(oldRows, r)
 				} else {
 					newRows = append(newRows, r)
 				}
@@ -558,7 +561,7 @@ func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg 
 
 // isPlayerOnlyTransaction mirrors the valuation model's query-time filter
 // (analysis/src/parsing.py parse_trade) at write time, so this data never
-// reaches the archive DB at all.
+// reaches cloud or the archive DB at all.
 func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
 	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
 }
