@@ -86,8 +86,8 @@ Every 10 minutes `TransactionSyncDispatcher` claims batches of stale leagues
 (`claimed_at` + `FOR UPDATE SKIP LOCKED`, 20-minute claim TTL) and runs
 `SyncLeagueTransactionsBatch` activities that stamp each league done as they
 go. Only the worker host runs `cmd/worker` and polls this queue (DigitalOcean
-serves the API and the Python ESPN worker only). The per-league leg loop is
-capped at the current NFL week (past seasons still sweep legs 1–18).
+serves the API only). The per-league leg loop is capped at the current NFL
+week (past seasons still sweep legs 1–18).
 
 ### Cron path (`internal/transactioncron`)
 
