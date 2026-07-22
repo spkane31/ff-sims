@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"backend/internal/discoverycron"
+	"backend/internal/transactioncron"
 )
 
 func TestResolveJob_KnownJobReturnsItsFunc(t *testing.T) {
@@ -69,6 +70,34 @@ func TestJobFailed_RealProgressIsNotFailureEvenWithClaimErrors(t *testing.T) {
 func TestJobFailed_OnlyFailedCountsStillCountAsProgress(t *testing.T) {
 	report := discoverycron.Report{LeaguesFailed: 1, LeagueClaimErrors: 1}
 	if err := jobFailed(report); err != nil {
+		t.Errorf("expected a run with real (even if failed) processing activity to not be treated as total failure, got %v", err)
+	}
+}
+
+func TestTxnJobFailed_ZeroProgressWithClaimErrorsIsFailure(t *testing.T) {
+	report := transactioncron.Report{ClaimErrors: 1}
+	if err := txnJobFailed(report); err == nil {
+		t.Error("expected an error when the run made zero progress and saw a claim error")
+	}
+}
+
+func TestTxnJobFailed_ZeroProgressWithNoClaimErrorsIsNotFailure(t *testing.T) {
+	report := transactioncron.Report{}
+	if err := txnJobFailed(report); err != nil {
+		t.Errorf("expected a genuinely-empty queue (no claim errors) to not be a failure, got %v", err)
+	}
+}
+
+func TestTxnJobFailed_RealProgressIsNotFailureEvenWithClaimErrors(t *testing.T) {
+	report := transactioncron.Report{LeaguesProcessed: 1, ClaimErrors: 5}
+	if err := txnJobFailed(report); err != nil {
+		t.Errorf("expected real progress alongside claim errors to not be a failure, got %v", err)
+	}
+}
+
+func TestTxnJobFailed_OnlyFailedCountsStillCountAsProgress(t *testing.T) {
+	report := transactioncron.Report{LeaguesFailed: 1, ClaimErrors: 1}
+	if err := txnJobFailed(report); err != nil {
 		t.Errorf("expected a run with real (even if failed) processing activity to not be treated as total failure, got %v", err)
 	}
 }

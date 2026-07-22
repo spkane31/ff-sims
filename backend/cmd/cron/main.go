@@ -2,8 +2,8 @@
 // max-duration, runs the matching job under a deadline context, and exits.
 // It's the replacement entrypoint for pipelines migrated off Temporal — see
 // docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md.
-// Registers "discovery" and "lifetime-counts"; adding another (draft-sync,
-// transaction-sync, etc., when their turn comes) is a matter of registering
+// Registers "discovery", "lifetime-counts", and "transactions"; adding
+// another (draft-sync, etc., when its turn comes) is a matter of registering
 // another function in the registry built in main(), not restructuring this
 // file.
 package main
@@ -21,6 +21,7 @@ import (
 	"backend/internal/discoverycron"
 	"backend/internal/sleeper"
 	"backend/internal/statscron"
+	"backend/internal/transactioncron"
 )
 
 // buildID identifies the commit this binary was built from. Set via
@@ -59,6 +60,18 @@ func jobFailed(report discoverycron.Report) error {
 	return nil
 }
 
+// txnJobFailed is transactionCronFailed's analog for transactioncron.Report
+// — see jobFailed's doc comment for the reasoning (zero progress plus a
+// nonzero claim-error count means the run couldn't talk to the database at
+// all, not that the backlog was genuinely empty).
+func txnJobFailed(report transactioncron.Report) error {
+	totalProgress := report.LeaguesProcessed + report.LeaguesFailed
+	if totalProgress == 0 && report.ClaimErrors > 0 {
+		return fmt.Errorf("transaction sync made no progress and saw %d claim error(s): treating as failure", report.ClaimErrors)
+	}
+	return nil
+}
+
 func main() {
 	jobName := flag.String("job", "", "job to run (see registry in main.go)")
 	maxDuration := flag.Duration("max-duration", 0, "hard deadline for the job, e.g. 50m")
@@ -92,6 +105,7 @@ func main() {
 
 	sc := sleeper.New()
 	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
+	dfa := &activities.DataFetchActivities{DB: database.DB, Archive: database.Archive, Sleeper: sc}
 
 	registry := map[string]func(context.Context) error{
 		"discovery": func(ctx context.Context) error {
@@ -104,6 +118,13 @@ func main() {
 		"lifetime-counts": func(ctx context.Context) error {
 			_, err := statscron.RunSnapshot(ctx, database.DB, database.Archive)
 			return err
+		},
+		"transactions": func(ctx context.Context) error {
+			report, err := transactioncron.RunTransactionSync(ctx, dfa, transactioncron.LoadConfig())
+			if err != nil {
+				return err
+			}
+			return txnJobFailed(report)
 		},
 	}
 

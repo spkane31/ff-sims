@@ -6,25 +6,6 @@ type ClaimStaleUsersParams struct {
 	BatchSize int
 }
 
-// DiscoveryConfig is read from env by GetDiscoveryConfig so the dispatcher
-// workflow (which cannot read env deterministically) can be tuned without a
-// redeploy of workflow code. Discovery batches are smaller than the sync
-// paths because each user fans out into per-league member/detail fetches.
-type DiscoveryConfig struct {
-	ParallelBatches    int // DISCOVERY_PARALLEL_BATCHES, default 1
-	BatchSize          int // DISCOVERY_BATCH_SIZE, default 20
-	Concurrency        int // DISCOVERY_USER_CONCURRENCY, default 4
-	UserTimeoutSeconds int // DISCOVERY_USER_TIMEOUT_SECONDS, default 90
-	LeagueConcurrency  int // DISCOVERY_LEAGUE_CONCURRENCY, default 10
-}
-
-type DiscoverUsersBatchParams struct {
-	UserIDs            []string
-	Concurrency        int
-	UserTimeoutSeconds int
-	LeagueConcurrency  int
-}
-
 type FetchUserLeaguesParams struct {
 	UserID string
 }

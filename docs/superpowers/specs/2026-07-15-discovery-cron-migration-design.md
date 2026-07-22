@@ -3,6 +3,13 @@
 **Date:** 2026-07-15
 **Status:** Approved
 
+**Update (2026-07-19):** The Temporal discovery path (`DiscoveryBatchDispatcher`,
+`DiscoverUsersBatch`, the `sleeper-discovery-schedule` Temporal Schedule, and the
+`sleeper-discovery` task queue worker) has since been deleted now that the
+`cmd/cron` path below has proven reliable. Everywhere this doc says the Temporal
+path "remains running unchanged" no longer applies — this package is now the
+sole discovery pipeline.
+
 ## Problem
 
 `DiscoveryBatchDispatcher` (Temporal workflow) and `DiscoverUsersBatch` (Temporal

@@ -11,12 +11,6 @@ type SegmentSeasonADPParams struct {
 	Season  string
 }
 
-// DiscoveryReport summarizes one DiscoveryBatchDispatcher run.
-type DiscoveryReport struct {
-	UsersProcessed int
-	UsersFailed    int
-}
-
 // DraftSyncReport summarizes one DraftSyncDispatcher run.
 type DraftSyncReport struct {
 	LeaguesProcessed int

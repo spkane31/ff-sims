@@ -1,13 +1,31 @@
-# Sleeper Sync Operations (discovery + transactions + drafts)
+# Sleeper Sync Operations (transactions + drafts)
+
+User/league discovery moved off Temporal to a `cmd/cron`-driven job — see
+`internal/discoverycron` and
+`docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md` for
+its tuning knobs (`CRON_DISCOVERY_*`), which are unrelated to the
+dispatcher-based knobs below.
+
+**Update (2026-07-20):** Transaction-sync has a second, `cmd/cron`-driven
+path now too (`internal/transactioncron`, job name `transactions`), running
+alongside `TransactionSyncDispatcher` — mirroring discovery's own migration.
+Both claim through the exact same `sleeper_leagues.claimed_at` column via
+`FOR UPDATE SKIP LOCKED`, so running them concurrently is safe by
+construction; the cron path was added because the Temporal worker depends on
+`ff-sims-worker.service` staying up on the worker host, and that's a single
+point of failure this table's staleness has already hit once. See "How it
+works" below for the cron path's tuning knobs (`CRON_TXN_*`) and cadence.
+Draft-sync remains Temporal-only for now — this migration covers
+transactions specifically, not the whole `cmd/worker` sync surface.
 
 ## Tuning knobs (env, per worker process)
 
 The Sleeper client has no rate/concurrency-limiting env knob. It's a
-process-wide singleton shared by discovery, draft-sync, and
-transaction-sync; an RPM-based token bucket and, briefly, a concurrency
-semaphore were both tried and both let the much higher-volume sync
-pipelines starve discovery's smaller, latency-sensitive traffic out of its
-share. Throughput is governed reactively instead — every 429 is logged
+process-wide singleton shared by draft-sync and transaction-sync (and, in a
+separate process, the discovery cron job); an RPM-based token bucket and,
+briefly, a concurrency semaphore were both tried and both let the
+higher-volume sync pipelines starve other traffic out of its share.
+Throughput is governed reactively instead — every 429 is logged
 (`sleeper: 429 rate limited`), so a real problem surfaces in the worker
 logs rather than needing a pre-guessed budget.
 
@@ -19,15 +37,12 @@ logs rather than needing a pre-guessed budget.
 | `DRAFT_SYNC_PARALLEL_BATCHES` | 4 | Draft claim→batch pipelines per dispatcher iteration. |
 | `DRAFT_SYNC_BATCH_SIZE` | 250 | Leagues claimed per draft batch activity. |
 | `DRAFT_SYNC_LEAGUE_CONCURRENCY` | 12 | Goroutines syncing leagues inside one draft batch activity. |
-| `DISCOVERY_PARALLEL_BATCHES` | 2 | Discovery claim→batch pipelines per dispatcher iteration. |
-| `DISCOVERY_BATCH_SIZE` | 50 | Users claimed per discovery batch activity (smaller — each user fans out into per-league fetches). |
-| `DISCOVERY_USER_CONCURRENCY` | 8 | Goroutines discovering users inside one discovery batch activity. |
 | `WORKER_ACTIVITY_SLOTS` | 100 | Max concurrent activities on each sync queue (drafts, transactions) for this process. |
 | `WORKER_ACTIVITY_POLLERS` | SDK default | Activity task pollers on each sync queue for this process; raise to win a larger share of queue tasks. |
 
 Changing dispatcher knobs needs only a worker restart (they're read by the
-`GetTransactionSyncConfig` / `GetDraftSyncConfig` / `GetDiscoveryConfig`
-activities each run, not baked into workflow code).
+`GetTransactionSyncConfig` / `GetDraftSyncConfig` activities each run, not
+baked into workflow code).
 
 Draft sync mirrors the transaction design on a separate claim column
 (`drafts_claimed_at`), so the two paths never contend. Draft-specific
@@ -35,11 +50,6 @@ behavior: picks are fetch-once (completed drafts are immutable), and leagues
 whose drafting is finished (`in_season`/`complete` with drafts fetched) leave
 the claim pool entirely; `pre_draft`/`drafting` leagues recheck on cadence
 until their drafts complete.
-
-User discovery uses the same claim model on `sleeper_users.claimed_at`.
-Because dispatcher ticks *claim* users instead of re-selecting the stalest
-ones and deduping on child-workflow IDs, a slow or stuck cohort can never
-head-of-line-block discovery of the users behind it.
 
 ### Per-fleet vs global knobs
 
@@ -78,6 +88,32 @@ Every 10 minutes `TransactionSyncDispatcher` claims batches of stale leagues
 go. Only the worker host runs `cmd/worker` and polls this queue (DigitalOcean
 serves the API only). The per-league leg loop is capped at the current NFL
 week (past seasons still sweep legs 1–18).
+
+### Cron path (`internal/transactioncron`)
+
+`ff-sims-transactions.timer` runs `cron -job=transactions -max-duration=8m`
+every 10 minutes (`OnUnitActiveSec=10min`, next run scheduled 10 minutes
+after the previous one *finishes* — with an 8-minute deadline, overlap is
+impossible by construction, same reasoning as `ff-sims-discovery.timer`).
+`RunTransactionSync` runs a single claim-batch/process/refill pool (see
+`internal/cronpool`, extracted from discoverycron's identical pool runner)
+against `ClaimLeaguesForTransactions`/`SyncOneLeagueTransactions` — the exact
+same activity code the Temporal dispatcher calls, just invoked per-item
+instead of via `SyncLeagueTransactionsBatch`'s batch wrapper. Tuning knobs:
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `CRON_TXN_POOL_SIZE` | 8 | Max concurrent league-sync goroutines in one cron run. |
+| `CRON_TXN_REFILL_BATCH` | 4 | Free pool slots required before claiming more. |
+
+Logs: `journalctl -u ff-sims-transactions -f`. Unlike the Temporal path, a
+crashed or killed cron run has nothing to restart — the next timer tick picks
+up wherever claims expired, same as every other `cmd/cron` job.
+
+Whether to eventually retire `TransactionSyncDispatcher` (as discovery's
+Temporal path was, once its cron replacement proved reliable — see the
+"Update (2026-07-19)" note in the discovery cron migration design doc) is a
+follow-up decision, not part of this change.
 
 ## Rollout / verification
 

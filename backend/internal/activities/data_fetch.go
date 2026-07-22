@@ -30,8 +30,9 @@ type DataFetchActivities struct {
 }
 
 // archiveRoutingCutoff returns the age boundary for routing already-old data
-// straight to archive at ingest time instead of cloud — see syncOneLeague
-// and syncOneLeagueDrafts. Reuses SCAVENGER_RETENTION_DAYS (T6): "too old
+// straight to archive at ingest time instead of cloud — see
+// SyncOneLeagueTransactions and syncOneLeagueDrafts. Reuses
+// SCAVENGER_RETENTION_DAYS (T6): "too old
 // for cloud to keep" and "too old to bother writing to cloud in the first
 // place" are the same threshold.
 func archiveRoutingCutoff() time.Time {
@@ -379,12 +380,14 @@ func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, p
 	return states, nil
 }
 
-// maxLegForLeague returns the highest transaction leg worth fetching. Past
+// MaxLegForLeague returns the highest transaction leg worth fetching. Past
 // seasons get the full 1..18 sweep; the current season is capped at the
 // current NFL week (offseason week 0 still fetches leg 1, where offseason
 // moves land). A nil state (state endpoint down) falls back to 18 rather than
-// stalling the batch.
-func maxLegForLeague(season string, state *sleeper.NFLState) int {
+// stalling the batch. Exported so internal/transactioncron (the cron-driven
+// path replacing SyncLeagueTransactionsBatch's Temporal batching) can reuse
+// the exact same cap logic.
+func MaxLegForLeague(season string, state *sleeper.NFLState) int {
 	if state == nil || season < state.Season {
 		return 18
 	}
@@ -441,7 +444,7 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
-			results <- leagueResult{leagueID: lg.LeagueID, err: a.syncOneLeague(ctx, lg, maxLegForLeague(lg.Season, state))}
+			results <- leagueResult{leagueID: lg.LeagueID, err: a.SyncOneLeagueTransactions(ctx, lg, MaxLegForLeague(lg.Season, state))}
 		})
 	}
 	go func() { wg.Wait(); close(results) }()
@@ -462,10 +465,13 @@ func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, p
 	return res, nil
 }
 
-// syncOneLeague fetches transactions for one league from its leg cursor up to
-// maxLeg, upserts them, and stamps completion (clearing the claim) in a single
-// update. Per-leg 404s mean "no transactions for that leg" and are skipped.
-func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
+// SyncOneLeagueTransactions fetches transactions for one league from its leg
+// cursor up to maxLeg, upserts them, and stamps completion (clearing the
+// claim) in a single update. Per-leg 404s mean "no transactions for that
+// leg" and are skipped. Exported so internal/transactioncron can call it
+// directly per-item, instead of through SyncLeagueTransactionsBatch's
+// Temporal-batch wrapper.
+func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
 	startLeg := 1
 	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
 		startLeg = *lg.LastLegFetched - 1
@@ -484,13 +490,19 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 		if len(txns) == 0 {
 			continue
 		}
-		rows := make([]models.SleeperTransaction, len(txns))
-		for i, t := range txns {
+		var rows []models.SleeperTransaction
+		for _, t := range txns {
 			addsJSON, _ := json.Marshal(t.Adds)
 			dropsJSON, _ := json.Marshal(t.Drops)
 			picksJSON, _ := json.Marshal(t.DraftPicks)
 			waiverJSON, _ := json.Marshal(t.WaiverBudget)
-			rows[i] = models.SleeperTransaction{
+			// Picks/FAAB trades are never valued by the valuation model (see
+			// isPlayerOnlyTransaction) and aren't useful trade history either,
+			// so they're dropped at ingest time rather than written anywhere.
+			if !isPlayerOnlyTransaction(picksJSON, waiverJSON) {
+				continue
+			}
+			rows = append(rows, models.SleeperTransaction{
 				SleeperTransactionID: t.TransactionID,
 				SleeperLeagueID:      lg.LeagueID,
 				Type:                 t.Type,
@@ -501,7 +513,7 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 				Drops:                dropsJSON,
 				DraftPicks:           picksJSON,
 				WaiverBudget:         waiverJSON,
-			}
+			})
 		}
 		cloudRows := rows
 		if a.Archive != nil {
@@ -509,11 +521,8 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 			var newRows, oldRows []models.SleeperTransaction
 			for _, r := range rows {
 				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					// Old rows route straight to archive; skipping here means the
-					// row is dropped entirely, not sent to cloud instead.
-					if isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
-						oldRows = append(oldRows, r)
-					}
+					// Old rows route straight to archive, not cloud.
+					oldRows = append(oldRows, r)
 				} else {
 					newRows = append(newRows, r)
 				}
@@ -552,7 +561,7 @@ func (a *DataFetchActivities) syncOneLeague(ctx context.Context, lg LeagueTransa
 
 // isPlayerOnlyTransaction mirrors the valuation model's query-time filter
 // (analysis/src/parsing.py parse_trade) at write time, so this data never
-// reaches the archive DB at all.
+// reaches cloud or the archive DB at all.
 func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
 	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
 }
@@ -569,7 +578,7 @@ func isEmptyJSONArray(raw json.RawMessage) bool {
 }
 
 // upsertArchiveTransactions writes rows directly to the archive DB, skipping
-// cloud — see syncOneLeague's age-based routing.
+// cloud — see SyncOneLeagueTransactions's age-based routing.
 func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, rows []models.SleeperTransaction) error {
 	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
 	for i, r := range rows {

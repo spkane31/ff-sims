@@ -1,0 +1,17 @@
+[Unit]
+Description=Run ff-sims-transactions every 10 minutes
+
+[Timer]
+# OnUnitActiveSec (not OnCalendar) so the next run is scheduled 10 minutes
+# after the previous one *finishes*, not on a wall-clock grid — with the
+# service's own -max-duration=8m ceiling below that, overlap is impossible by
+# construction, same reasoning as ff-sims-discovery.timer's hourly/50m pair.
+# Persistent=true is intentionally omitted for the same reason as the other
+# worker-host timers: setup.sh's disable_sleep step already keeps the host
+# from sleeping through a missed tick.
+OnBootSec=1min
+OnUnitActiveSec=10min
+Unit=ff-sims-transactions.service
+
+[Install]
+WantedBy=timers.target

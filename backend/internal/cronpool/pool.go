@@ -1,4 +1,9 @@
-package discoverycron
+// Package cronpool provides a generic claim/process/refill worker pool used
+// by the cmd/cron jobs that replace Temporal dispatchers (see
+// internal/discoverycron and internal/transactioncron). Originally written
+// for discoverycron, extracted here once transactioncron needed the exact
+// same claim-batch/process/refill-at-threshold loop.
+package cronpool
 
 import (
 	"context"

@@ -2,20 +2,17 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/spf13/cobra"
-	"go.temporal.io/sdk/client"
 	"gorm.io/gorm/clause"
 
 	"backend/internal/config"
 	"backend/internal/database"
 	"backend/internal/models"
 	"backend/internal/sleeper"
-	"backend/internal/workflows"
 )
 
 func main() {
@@ -63,54 +60,9 @@ func run(ctx context.Context, username string) error {
 		return fmt.Errorf("insert user: %w", err)
 	}
 
-	c, err := client.Dial(temporalClientOptions())
-	if err != nil {
-		return fmt.Errorf("temporal dial: %w", err)
-	}
-	defer c.Close()
-
-	// The seeded user has last_fetched_at NULL, so the claim query picks it up
-	// first; running the dispatcher immediately discovers it (and drains any
-	// other stale users) without waiting for the schedule.
-	wfRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        "seed-" + user.UserID,
-		TaskQueue: workflows.TaskQueueDiscovery,
-	}, workflows.DiscoveryBatchDispatcher)
-	if err != nil {
-		return fmt.Errorf("start workflow: %w", err)
-	}
-	log.Printf("started workflow: %s / %s", wfRun.GetID(), wfRun.GetRunID())
-
-	if err := wfRun.Get(ctx, nil); err != nil {
-		return fmt.Errorf("workflow failed: %w", err)
-	}
-	log.Printf("seed complete — scheduler will take over from here")
+	// The seeded user has last_fetched_at NULL, so the cron discovery job's
+	// claim query (internal/discoverycron) picks it up first on its next run —
+	// no need to trigger discovery here, just make sure the job is running.
+	log.Printf("seed complete — the discovery cron job will pick up %s on its next run", user.UserID)
 	return nil
-}
-
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func temporalClientOptions() client.Options {
-	if endpoint := os.Getenv("TEMPORAL_NAMESPACE_ENDPOINT"); endpoint != "" {
-		opts := client.Options{
-			HostPort:  endpoint,
-			Namespace: os.Getenv("TEMPORAL_NAMESPACE"),
-			ConnectionOptions: client.ConnectionOptions{
-				TLS: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Temporal Cloud uses self-signed cert on tmprl-test.cloud
-			},
-		}
-		if apiKey := os.Getenv("TEMPORAL_API_KEY"); apiKey != "" {
-			opts.Credentials = client.NewAPIKeyStaticCredentials(apiKey)
-		}
-		return opts
-	}
-	return client.Options{
-		HostPort:  getEnv("TEMPORAL_HOST", "localhost:7233"),
-		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
-	}
 }
