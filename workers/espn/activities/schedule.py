@@ -11,16 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 def _upsert_player(cur, espn_id: int, name: str, position: str) -> int:
-    cur.execute("SELECT id FROM players WHERE espn_id = %s", (espn_id,))
-    row = cur.fetchone()
-    if row is None:
-        cur.execute(
-            "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
-            "VALUES (%s, %s, %s, 'active', NOW(), NOW()) RETURNING id",
-            (espn_id, name, position),
-        )
-        return cur.fetchone()[0]
-    return row[0]
+    # Atomic INSERT .. ON CONFLICT instead of SELECT-then-INSERT: with many
+    # concurrent workflows (e.g. a multi-year/multi-league backfill) racing to
+    # insert new espn_id rows into the same players table, the old
+    # check-then-act pattern hit a real `DeadlockDetected` on
+    # idx_players_espn_id. The no-op `DO UPDATE SET espn_id = players.espn_id`
+    # exists only so RETURNING still fires on a conflict — it preserves the
+    # original first-writer-wins behavior (never overwrites name/position on
+    # an existing row) rather than introducing a data-overwrite policy change.
+    cur.execute(
+        "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
+        "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
+        "ON CONFLICT (espn_id) DO UPDATE SET espn_id = players.espn_id "
+        "RETURNING id",
+        (espn_id, name, position),
+    )
+    return cur.fetchone()[0]
 
 
 @activity.defn
@@ -51,7 +57,13 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
                     "Processing schedule week %d/%d for league %s year %d",
                     week, min(17, league.current_week), params.espn_league_id, params.year,
                 )
-                entries = league.box_scores(week=week)
+                # box_scores() (player-level lineups + projections) only works
+                # 2019+ — it raises outright on older seasons. scoreboard()
+                # covers every year but only has team-level final scores: bs
+                # won't have home_projected/away_projected/home_lineup/
+                # away_lineup at all, which the getattr/hasattr checks below
+                # already treat as "not available" rather than requiring.
+                entries = league.scoreboard(week=week) if league.year < 2019 else league.box_scores(week=week)
 
                 for bs in entries:
                     if not hasattr(bs, "home_team") or not hasattr(bs, "away_team"):

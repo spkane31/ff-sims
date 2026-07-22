@@ -44,17 +44,18 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
                             if team_db_id is None:
                                 continue
 
-                            cur.execute("SELECT id FROM players WHERE espn_id = %s", (player.playerId,))
-                            row = cur.fetchone()
-                            if row is None:
-                                cur.execute(
-                                    "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
-                                    "VALUES (%s, %s, %s, 'active', NOW(), NOW()) RETURNING id",
-                                    (player.playerId, player.name, player.position),
-                                )
-                                player_db_id = cur.fetchone()[0]
-                            else:
-                                player_db_id = row[0]
+                            # Atomic upsert (not SELECT-then-INSERT) — see the
+                            # comment on activities/schedule.py's
+                            # _upsert_player for why: concurrent writers here
+                            # deadlocked on idx_players_espn_id.
+                            cur.execute(
+                                "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
+                                "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
+                                "ON CONFLICT (espn_id) DO UPDATE SET espn_id = players.espn_id "
+                                "RETURNING id",
+                                (player.playerId, player.name, player.position),
+                            )
+                            player_db_id = cur.fetchone()[0]
 
                             cur.execute(
                                 "SELECT id FROM transactions "
