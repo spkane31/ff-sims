@@ -9,9 +9,22 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
 import { SleeperStats } from "../types/models";
+
+// Theme-aware chart colors, defined in globals.css as CSS variables that flip
+// with prefers-color-scheme — avoids recharts' default gray (#666) tick/legend
+// text, which is hard to read against the dark-mode card background.
+const AXIS_TICK_STYLE = { fontSize: 11, fill: "var(--chart-axis-text)" };
+const LEGEND_STYLE = { fontSize: 12, color: "var(--chart-legend-text)" };
+const TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "var(--chart-tooltip-bg)",
+  borderColor: "var(--chart-tooltip-border)",
+  color: "var(--chart-tooltip-text)",
+};
+const TOOLTIP_LABEL_STYLE = { color: "var(--chart-tooltip-text)" };
 
 interface ChartPoint {
   snapshotAt: string;
@@ -107,11 +120,11 @@ export function UsersDiscoveryChart({ snapshots }: GrowthChartProps) {
       ) : (
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={40} />
-            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+            <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+            <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+            <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+            <Legend wrapperStyle={LEGEND_STYLE} />
             <Area
               type="monotone"
               dataKey="usersExpanded"
@@ -168,11 +181,11 @@ export function LeaguesDiscoveryChart({ snapshots }: GrowthChartProps) {
       ) : (
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={40} />
-            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+            <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+            <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+            <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+            <Legend wrapperStyle={LEGEND_STYLE} />
             <Area
               type="monotone"
               dataKey="leaguesExpanded"
@@ -235,11 +248,11 @@ export function ArchiveGrowthChart({ snapshots }: GrowthChartProps) {
         <>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" opacity={0.3} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={40} />
-              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+              <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+              <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+              <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+              <Legend wrapperStyle={LEGEND_STYLE} />
               {hasTransactionsData && (
                 <Line
                   type="monotone"
@@ -263,6 +276,234 @@ export function ArchiveGrowthChart({ snapshots }: GrowthChartProps) {
                 type="monotone"
                 dataKey="draftCount"
                 name="Drafts"
+                stroke="#8B5CF6"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          {!hasTransactionsData && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Transaction totals aren&apos;t shown for this window because no archive database was
+              configured for those snapshots.
+            </p>
+          )}
+        </>
+      )}
+    </ChartCard>
+  );
+}
+
+interface RatePoint {
+  label: string;
+  usersTotalDelta: number;
+  usersExpandedDelta: number;
+  usersPendingDelta: number;
+  usersSkippedDelta: number;
+  leaguesTotalDelta: number;
+  leaguesExpandedDelta: number;
+  leaguesPendingDelta: number;
+  leaguesSkippedDelta: number;
+  transactionsTotalDelta?: number;
+  tradeCountDelta: number;
+  draftCountDelta: number;
+}
+
+// prepareRateData turns consecutive hourly snapshots into per-snapshot deltas,
+// i.e. the rate of change, so growth vs. plateau is visible at a glance.
+function prepareRateData(data: ChartPoint[]): RatePoint[] {
+  const rates: RatePoint[] = [];
+  for (let i = 1; i < data.length; i++) {
+    const prev = data[i - 1];
+    const curr = data[i];
+    rates.push({
+      label: curr.label,
+      usersTotalDelta: curr.usersTotal - prev.usersTotal,
+      usersExpandedDelta: curr.usersExpanded - prev.usersExpanded,
+      usersPendingDelta: curr.usersPending - prev.usersPending,
+      usersSkippedDelta: curr.usersSkipped - prev.usersSkipped,
+      leaguesTotalDelta: curr.leaguesTotal - prev.leaguesTotal,
+      leaguesExpandedDelta: curr.leaguesExpanded - prev.leaguesExpanded,
+      leaguesPendingDelta: curr.leaguesPending - prev.leaguesPending,
+      leaguesSkippedDelta: curr.leaguesSkipped - prev.leaguesSkipped,
+      transactionsTotalDelta:
+        curr.transactionsTotal !== undefined && prev.transactionsTotal !== undefined
+          ? curr.transactionsTotal - prev.transactionsTotal
+          : undefined,
+      tradeCountDelta: curr.tradeCount - prev.tradeCount,
+      draftCountDelta: curr.draftCount - prev.draftCount,
+    });
+  }
+  return rates;
+}
+
+export function UsersDiscoveryRateChart({ snapshots }: GrowthChartProps) {
+  const data = useMemo(() => prepareRateData(prepareChartData(snapshots)), [snapshots]);
+
+  return (
+    <ChartCard
+      title="Users Discovery Rate"
+      description="Change since the previous hourly snapshot for each users series above — a flat line near zero means that count has plateaued."
+    >
+      {data.length === 0 ? (
+        <EmptyChartState />
+      ) : (
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+            <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+            <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+            <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+            <Legend wrapperStyle={LEGEND_STYLE} />
+            <ReferenceLine y={0} stroke="var(--chart-zero-line)" />
+            <Line
+              type="monotone"
+              dataKey="usersExpandedDelta"
+              name="Expanded Δ"
+              stroke="#059669"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="usersPendingDelta"
+              name="Pending Δ"
+              stroke="#F59E0B"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="usersSkippedDelta"
+              name="Skipped Δ"
+              stroke="#9CA3AF"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="usersTotalDelta"
+              name="Total Δ"
+              stroke="#3B82F6"
+              strokeDasharray="6 3"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </ChartCard>
+  );
+}
+
+export function LeaguesDiscoveryRateChart({ snapshots }: GrowthChartProps) {
+  const data = useMemo(() => prepareRateData(prepareChartData(snapshots)), [snapshots]);
+
+  return (
+    <ChartCard
+      title="Leagues Discovery Rate"
+      description="Change since the previous hourly snapshot for each leagues series above — a flat line near zero means that count has plateaued."
+    >
+      {data.length === 0 ? (
+        <EmptyChartState />
+      ) : (
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+            <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+            <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+            <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+            <Legend wrapperStyle={LEGEND_STYLE} />
+            <ReferenceLine y={0} stroke="var(--chart-zero-line)" />
+            <Line
+              type="monotone"
+              dataKey="leaguesExpandedDelta"
+              name="Expanded Δ"
+              stroke="#059669"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="leaguesPendingDelta"
+              name="Pending Δ"
+              stroke="#F59E0B"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="leaguesSkippedDelta"
+              name="Skipped Δ"
+              stroke="#9CA3AF"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="leaguesTotalDelta"
+              name="Total Δ"
+              stroke="#3B82F6"
+              strokeDasharray="6 3"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </ChartCard>
+  );
+}
+
+export function ArchiveGrowthRateChart({ snapshots }: GrowthChartProps) {
+  const chartData = useMemo(() => prepareChartData(snapshots), [snapshots]);
+  const data = useMemo(() => prepareRateData(chartData), [chartData]);
+  const hasTransactionsData = useMemo(
+    () => data.some((d) => d.transactionsTotalDelta !== undefined && d.transactionsTotalDelta !== null),
+    [data]
+  );
+
+  return (
+    <ChartCard
+      className="md:col-span-2"
+      title="Archive Growth Rate"
+      description="Change since the previous hourly snapshot in transaction and completed trade/draft counts — useful for spotting when archive replication stalls."
+    >
+      {data.length === 0 ? (
+        <EmptyChartState />
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+              <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+              <YAxis tick={AXIS_TICK_STYLE} allowDecimals={false} />
+              <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+              <Legend wrapperStyle={LEGEND_STYLE} />
+              <ReferenceLine y={0} stroke="var(--chart-zero-line)" />
+              {hasTransactionsData && (
+                <Line
+                  type="monotone"
+                  dataKey="transactionsTotalDelta"
+                  name="Transactions Δ"
+                  stroke="#3B82F6"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+              )}
+              <Line
+                type="monotone"
+                dataKey="tradeCountDelta"
+                name="Trades Δ"
+                stroke="#059669"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="draftCountDelta"
+                name="Drafts Δ"
                 stroke="#8B5CF6"
                 strokeWidth={2}
                 dot={false}
