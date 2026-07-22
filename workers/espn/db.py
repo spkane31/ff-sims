@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 import psycopg
 from dotenv import load_dotenv
 
@@ -14,12 +16,26 @@ else:
     load_dotenv(override=False)
 
 
+# pgx (the Go worker's driver) understands this param for routing through
+# DigitalOcean's pgbouncer pool (see docs/transaction-sync-operations.md), but
+# libpq/psycopg doesn't recognize it and aborts the connection entirely with
+# "invalid URI query parameter" — even though both workers share the same
+# DATABASE_URL from /etc/ff-sims-worker.env.
+_PGX_ONLY_PARAMS = {"default_query_exec_mode"}
+
+
+def _strip_pgx_only_params(url: str) -> str:
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in _PGX_ONLY_PARAMS]
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def get_connection() -> psycopg.Connection:
     # TEST_DATABASE_URL takes precedence so tests can never fall through to
     # production even if only DATABASE_URL is set in the environment —
     # matches tests/conftest.py's db_conn fixture precedence.
     url = os.environ.get("TEST_DATABASE_URL", os.environ["DATABASE_URL"])
-    return psycopg.connect(url)
+    return psycopg.connect(_strip_pgx_only_params(url))
 
 
 def resolve_league_id(conn: psycopg.Connection, espn_league_id: str) -> int:
