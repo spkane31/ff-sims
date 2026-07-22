@@ -4,6 +4,28 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --chart-axis-text: #374151;
+  --chart-grid: #d1d5db;
+  --chart-legend-text: #374151;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: #111827;
+  --chart-tooltip-border: #e5e7eb;
+  --chart-zero-line: #9ca3af;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-axis-text: #e5e7eb;
+    --chart-grid: #4b5563;
+    --chart-legend-text: #e5e7eb;
+    --chart-tooltip-bg: #1f2937;
+    --chart-tooltip-text: #f3f4f6;
+    --chart-tooltip-border: #4b5563;
+    --chart-zero-line: #6b7280;
+  }
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;

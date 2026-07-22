@@ -9,6 +9,9 @@ import {
   UsersDiscoveryChart,
   LeaguesDiscoveryChart,
   ArchiveGrowthChart,
+  UsersDiscoveryRateChart,
+  LeaguesDiscoveryRateChart,
+  ArchiveGrowthRateChart,
 } from "../../components/SleeperGrowthCharts";
 
 function formatRelativeTime(iso: string): string {
@@ -431,6 +434,9 @@ function LifetimeGrowth() {
           <UsersDiscoveryChart snapshots={snapshots} />
           <LeaguesDiscoveryChart snapshots={snapshots} />
           <ArchiveGrowthChart snapshots={snapshots} />
+          <UsersDiscoveryRateChart snapshots={snapshots} />
+          <LeaguesDiscoveryRateChart snapshots={snapshots} />
+          <ArchiveGrowthRateChart snapshots={snapshots} />
         </div>
       )}
     </section>
