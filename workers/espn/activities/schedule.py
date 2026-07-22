@@ -11,14 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _upsert_player(cur, espn_id: int, name: str, position: str) -> int:
-    # Atomic INSERT .. ON CONFLICT instead of SELECT-then-INSERT: with many
-    # concurrent workflows (e.g. a multi-year/multi-league backfill) racing to
-    # insert new espn_id rows into the same players table, the old
-    # check-then-act pattern hit a real `DeadlockDetected` on
-    # idx_players_espn_id. The no-op `DO UPDATE SET espn_id = players.espn_id`
-    # exists only so RETURNING still fires on a conflict — it preserves the
-    # original first-writer-wins behavior (never overwrites name/position on
-    # an existing row) rather than introducing a data-overwrite policy change.
+    # Atomic upsert (not SELECT-then-INSERT) to avoid a concurrent-insert deadlock; no-op DO UPDATE keeps first-writer-wins semantics.
     cur.execute(
         "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
         "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
@@ -57,12 +50,7 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
                     "Processing schedule week %d/%d for league %s year %d",
                     week, min(17, league.current_week), params.espn_league_id, params.year,
                 )
-                # box_scores() (player-level lineups + projections) only works
-                # 2019+ — it raises outright on older seasons. scoreboard()
-                # covers every year but only has team-level final scores: bs
-                # won't have home_projected/away_projected/home_lineup/
-                # away_lineup at all, which the getattr/hasattr checks below
-                # already treat as "not available" rather than requiring.
+                # box_scores() raises outright before 2019; scoreboard() covers every year but lacks projections/lineups.
                 entries = league.scoreboard(week=week) if league.year < 2019 else league.box_scores(week=week)
 
                 for bs in entries:
@@ -138,7 +126,9 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
                                     (matchup_id, player_db_id, team_db_id, player.slot_position,
                                      player.points, player.projected_points, started),
                                 )
-        conn.commit()
+
+                # Commit per week, not once per season — shorter transactions avoid cross-league deadlocks on shared players.
+                conn.commit()
 
 
 @activity.defn

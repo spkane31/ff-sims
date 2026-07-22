@@ -44,10 +44,7 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
                             if team_db_id is None:
                                 continue
 
-                            # Atomic upsert (not SELECT-then-INSERT) — see the
-                            # comment on activities/schedule.py's
-                            # _upsert_player for why: concurrent writers here
-                            # deadlocked on idx_players_espn_id.
+                            # Atomic upsert — see activities/schedule.py's _upsert_player comment.
                             cur.execute(
                                 "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
                                 "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
@@ -73,10 +70,11 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
                                      int(bid_amount), tx_date, league.year, league_id),
                                 )
                     offset += 25
+                    # Commit per page, not once per league — see schedule.py's per-week commit comment.
+                    conn.commit()
                 except Exception as exc:
                     logger.error("Transaction fetch error at offset %d: %s", offset, exc)
                     break
-        conn.commit()
 
 
 @activity.defn

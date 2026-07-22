@@ -34,9 +34,7 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
                     logger.warning("player_info failed for %s: %s", pick.playerName, exc)
                     position = "Unknown"
 
-                # Atomic upsert (not SELECT-then-INSERT) — see the comment on
-                # activities/schedule.py's _upsert_player for why: concurrent
-                # writers here deadlocked on idx_players_espn_id.
+                # Atomic upsert — see activities/schedule.py's _upsert_player comment.
                 cur.execute(
                     "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
                     "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
@@ -65,7 +63,8 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
                          team_db_id, pick.round_num, pick.round_pick, league.year, league_id),
                     )
 
-        conn.commit()
+                # Commit per pick, not once per draft — see schedule.py's per-week commit comment.
+                conn.commit()
 
 
 @activity.defn
