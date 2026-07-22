@@ -7,7 +7,15 @@ Wants=network-online.target
 Type=simple
 User={{SERVICE_USER}}
 WorkingDirectory={{REPO_DIR}}/workers/espn
+# {{SERVICE_USER}} is a --no-create-home system user, so $HOME resolves to a
+# nonexistent /home/{{SERVICE_USER}} — uv needs a writable cache dir even with
+# --no-sync (e.g. for interpreter discovery), and fails to start entirely
+# without one. StateDirectory has systemd create+chown /var/lib/ff-sims-espn-worker
+# for this unit's User/Group before every start, so this is self-healing across
+# reinstalls without any setup.sh bookkeeping.
+StateDirectory=ff-sims-espn-worker
 Environment=PYTHONUNBUFFERED=1
+Environment=UV_CACHE_DIR=/var/lib/ff-sims-espn-worker/uv-cache
 EnvironmentFile=/etc/ff-sims-worker.env
 # --no-sync: deploy.sh/setup.sh run `uv sync` explicitly when workers/espn
 # changes; this just runs the already-synced venv without uv touching the
