@@ -32,11 +32,12 @@ const Header = () => {
         { name: "Simulations", path: `/league/${lid}/simulations` },
         { name: "Schedule", path: `/league/${lid}/schedule` },
         { name: "Teams", path: `/league/${lid}/teams` },
-        { name: "Players", path: `/league/${lid}/players` },
+        { name: "Players", path: "/players" },
         { name: "Transactions", path: `/league/${lid}/transactions` },
       ]
     : [
         { name: "Home", path: "/" },
+        { name: "Players", path: "/players" },
         { name: "Trade Data", path: "/sleeper/trades" },
         { name: "Draft Data", path: "/sleeper/drafts" },
       ];
