@@ -110,8 +110,26 @@ func (a *PlayerSyncActivities) SyncPlayerIdentities(ctx context.Context) (Player
 	return result, nil
 }
 
+// syncIdentityBatch runs the whole batch's writes in a single DB
+// transaction instead of letting each row auto-commit individually — a
+// production run doing ~12k individual commits (each with its own
+// round-trip and fsync) took over 30 minutes and still didn't finish; one
+// commit per batch of up to playerIdentitySyncBatchSize rows is dramatically
+// cheaper. The one write that can legitimately fail mid-batch (create, on a
+// duplicate espn_id) is wrapped in its own savepoint so that conflict rolls
+// back just that attempt instead of aborting the whole transaction and
+// losing every other row's work in the batch.
 func (a *PlayerSyncActivities) syncIdentityBatch(ctx context.Context, batch []models.SleeperPlayer, result *PlayerIdentitySyncResult) ([]identityConflict, error) {
-	db := a.DB.WithContext(ctx)
+	var conflicts []identityConflict
+	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		conflicts, txErr = a.syncIdentityBatchTx(ctx, tx, batch, result)
+		return txErr
+	})
+	return conflicts, err
+}
+
+func (a *PlayerSyncActivities) syncIdentityBatchTx(ctx context.Context, db *gorm.DB, batch []models.SleeperPlayer, result *PlayerIdentitySyncResult) ([]identityConflict, error) {
 	var conflicts []identityConflict
 
 	processed := 0
@@ -267,8 +285,20 @@ func (a *PlayerSyncActivities) linkOrCreateSkillPlayer(db *gorm.DB, sp models.Sl
 		Position:  sp.Position,
 		Team:      sp.NflTeam,
 	}
+	// db is a shared per-batch transaction (see syncIdentityBatch) — a
+	// uniqueness conflict here would otherwise abort every other row's work
+	// already done in this batch, so the create attempt is wrapped in its
+	// own savepoint and rolled back to on conflict instead of aborting the
+	// whole transaction.
+	const createSavepoint = "player_identity_create_attempt"
+	if err := db.SavePoint(createSavepoint).Error; err != nil {
+		return 0, nil, fmt.Errorf("savepoint before create for sleeper_id %s: %w", sp.SleeperPlayerID, err)
+	}
 	if err := db.Create(&newPlayer).Error; err != nil {
 		if IsUniqueViolation(err) {
+			if rbErr := db.RollbackTo(createSavepoint).Error; rbErr != nil {
+				return 0, nil, fmt.Errorf("rollback to savepoint after create conflict for sleeper_id %s: %w", sp.SleeperPlayerID, rbErr)
+			}
 			return 0, &identityConflict{
 				SleeperPlayerID: sp.SleeperPlayerID,
 				Reason: fmt.Sprintf(

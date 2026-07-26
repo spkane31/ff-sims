@@ -91,6 +91,43 @@ func TestSyncPlayerIdentities_HeartbeatsAcrossMultipleIntervalsWithinOneBatch(t 
 	}
 }
 
+// syncIdentityBatch now runs each batch's writes in a single DB transaction
+// (see its doc comment) instead of letting each row auto-commit
+// individually. This exercises all three write paths — skill create, skill
+// link, DEF link — together in one batch/transaction to catch any spot that
+// missed threading the shared tx through (e.g. a stray a.DB call bypassing
+// it), which unit tests written before the refactor wouldn't have caught
+// since they each only exercised one path per batch.
+func TestSyncPlayerIdentities_MixedBatchAllPathsCommitTogether(t *testing.T) {
+	db := newTestDB(t)
+	seedPlayer(t, db, 555, "", "ESPN Linked WR", "RB", "DAL")
+	seedPlayer(t, db, 0, "", "Chiefs", "DEF", "KC")
+	seedSleeperPlayer(t, db, "create-me", "9999", "New Guy", "WR", "SF")
+	seedSleeperPlayer(t, db, "link-me", "555", "ESPN Linked WR", "RB", "DAL")
+	seedSleeperPlayer(t, db, "KC", "", "Chiefs", "DEF", "KC")
+
+	a := &activities.PlayerSyncActivities{DB: db}
+	result, err := runSyncPlayerIdentities(t, a)
+	if err != nil {
+		t.Fatalf("SyncPlayerIdentities error: %v", err)
+	}
+	if result.Created != 1 || result.Linked != 2 {
+		t.Errorf("expected 1 created + 2 linked (skill + DEF), got %+v", result)
+	}
+
+	var count int64
+	db.Model(&models.Player{}).Count(&count)
+	if count != 3 {
+		t.Errorf("expected 3 players rows total, got %d", count)
+	}
+	for _, id := range []string{"create-me", "link-me", "KC"} {
+		var p models.Player
+		if err := db.Where("sleeper_id = ?", id).First(&p).Error; err != nil {
+			t.Errorf("expected sleeper_id %s to be linked/created: %v", id, err)
+		}
+	}
+}
+
 func TestSyncPlayerIdentities_CreatesRowForUnmatchedEspnID(t *testing.T) {
 	db := newTestDB(t)
 	seedSleeperPlayer(t, db, "sp1", "9999", "New Guy", "WR", "SF")
