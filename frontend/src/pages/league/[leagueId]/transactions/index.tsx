@@ -282,7 +282,7 @@ export default function Transactions() {
                           </td>
                           <td className="py-3 px-4">
                             <Link
-                              href={`/league/${leagueId}/players/${pick.player_id}`}
+                              href={`/players/${pick.player_id}`}
                               className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 font-medium underline decoration-transparent hover:decoration-current transition-colors"
                             >
                               {pick.player}

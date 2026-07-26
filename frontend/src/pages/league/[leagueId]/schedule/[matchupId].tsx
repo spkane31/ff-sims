@@ -286,7 +286,7 @@ export default function MatchupDetail() {
                               {player.slotPosition || player.playerPosition}
                             </span>
                             <Link
-                              href={`/league/${leagueIdNum}/players/${player.id}`}
+                              href={`/players/${player.id}`}
                               className="hover:text-blue-600 transition-colors"
                             >
                               {player.playerName}
@@ -391,7 +391,7 @@ export default function MatchupDetail() {
                               {player.slotPosition || player.playerPosition}
                             </span>
                             <Link
-                              href={`/league/${leagueIdNum}/players/${player.id}`}
+                              href={`/players/${player.id}`}
                               className="hover:text-blue-600 transition-colors"
                             >
                               {player.playerName}
@@ -479,7 +479,7 @@ export default function MatchupDetail() {
                       <div>
                         <div className="font-medium">
                           <Link
-                            href={`/league/${leagueIdNum}/players/${player.id}`}
+                            href={`/players/${player.id}`}
                             className="hover:text-blue-600 transition-colors"
                           >
                             {player.playerName}
@@ -527,7 +527,7 @@ export default function MatchupDetail() {
                         <div>
                           <div className="font-medium">
                             <Link
-                              href={`/league/${leagueIdNum}/players/${player.id}`}
+                              href={`/players/${player.id}`}
                               className="hover:text-blue-600 transition-colors"
                             >
                               {player.playerName}
@@ -601,7 +601,7 @@ export default function MatchupDetail() {
                           <div>
                             <span className="font-medium">
                               <Link
-                                href={`/league/${leagueIdNum}/players/${player.id}`}
+                                href={`/players/${player.id}`}
                                 className="hover:text-blue-600 transition-colors"
                               >
                                 {player.playerName}
@@ -665,7 +665,7 @@ export default function MatchupDetail() {
                           <div>
                             <span className="font-medium">
                               <Link
-                                href={`/league/${leagueIdNum}/players/${player.id}`}
+                                href={`/players/${player.id}`}
                                 className="hover:text-blue-600 transition-colors"
                               >
                                 {player.playerName}
@@ -735,7 +735,7 @@ export default function MatchupDetail() {
                               <div className="text-sm font-medium">
                                 Start{" "}
                                 <Link
-                                  href={`/league/${leagueIdNum}/players/${decision.benchPlayer.id}`}
+                                  href={`/players/${decision.benchPlayer.id}`}
                                   className="text-green-600 font-semibold hover:text-green-700 transition-colors"
                                 >
                                   {decision.benchPlayer.playerName}
@@ -745,7 +745,7 @@ export default function MatchupDetail() {
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
                                 <Link
-                                  href={`/league/${leagueIdNum}/players/${decision.starterPlayer.id}`}
+                                  href={`/players/${decision.starterPlayer.id}`}
                                   className="text-red-600 font-semibold hover:text-red-700 transition-colors"
                                 >
                                   {decision.starterPlayer.playerName}
@@ -815,7 +815,7 @@ export default function MatchupDetail() {
                               <div className="text-sm font-medium">
                                 Start{" "}
                                 <Link
-                                  href={`/league/${leagueIdNum}/players/${decision.benchPlayer.id}`}
+                                  href={`/players/${decision.benchPlayer.id}`}
                                   className="text-green-600 font-semibold hover:text-green-700 transition-colors"
                                 >
                                   {decision.benchPlayer.playerName}
@@ -825,7 +825,7 @@ export default function MatchupDetail() {
                               <div className="text-sm text-gray-600 dark:text-gray-400">
                                 Instead of{" "}
                                 <Link
-                                  href={`/league/${leagueIdNum}/players/${decision.starterPlayer.id}`}
+                                  href={`/players/${decision.starterPlayer.id}`}
                                   className="text-red-600 font-semibold hover:text-red-700 transition-colors"
                                 >
                                   {decision.starterPlayer.playerName}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"sort"
@@ -56,12 +57,16 @@ const (
 
 // TradeSidePlayer is a single player in one side of a trade. Value is the
 // model's valuation as of the trade date (nil when the model has no snapshot
-// for the player by then).
+// for the player by then). PlayerID is the internal players.id (as a string,
+// matching the other ID fields) for linking to /players/:id; nil when the
+// Sleeper player has no espn_id or that ESPN ID has no matching row in
+// players (e.g. never rostered in an ESPN league we've imported).
 type TradeSidePlayer struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
 	Position string   `json:"position"`
 	Value    *float64 `json:"value,omitempty"`
+	PlayerID *string  `json:"player_id,omitempty"`
 }
 
 // TradeSide groups the assets received by one roster in a trade. TotalValue
@@ -432,7 +437,9 @@ func GetSleeperTrades(c *gin.Context) {
 		}
 	}
 
-	// Batch-fetch player names for all players on this page.
+	// Batch-fetch player names for all players on this page, then resolve
+	// each Sleeper player's ESPN ID to an internal players.id so trade rows
+	// can link to /players/:id.
 	playerLookup := map[string]TradeSidePlayer{}
 	if len(playerIDSet) > 0 {
 		ids := make([]string, 0, len(playerIDSet))
@@ -441,12 +448,32 @@ func GetSleeperTrades(c *gin.Context) {
 		}
 		var players []models.SleeperPlayer
 		database.DB.Where("sleeper_player_id IN ?", ids).Find(&players)
+
+		espnIDs := make([]int64, 0, len(players))
 		for _, p := range players {
-			playerLookup[p.SleeperPlayerID] = TradeSidePlayer{
+			if espnID, err := strconv.ParseInt(p.EspnID, 10, 64); err == nil {
+				espnIDs = append(espnIDs, espnID)
+			}
+		}
+		espnPlayers, err := models.GetPlayersByESPNIDs(database.DB, espnIDs)
+		if err != nil {
+			slog.Error("Failed to resolve ESPN players for trade sides", "error", err)
+			espnPlayers = map[int64]models.Player{}
+		}
+
+		for _, p := range players {
+			item := TradeSidePlayer{
 				ID:       p.SleeperPlayerID,
 				Name:     p.FullName,
 				Position: p.Position,
 			}
+			if espnID, err := strconv.ParseInt(p.EspnID, 10, 64); err == nil {
+				if player, ok := espnPlayers[espnID]; ok {
+					playerID := strconv.FormatUint(uint64(player.ID), 10)
+					item.PlayerID = &playerID
+				}
+			}
+			playerLookup[p.SleeperPlayerID] = item
 		}
 	}
 

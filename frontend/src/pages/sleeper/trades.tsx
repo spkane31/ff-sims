@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import Layout from "../../components/Layout";
 import LeagueFilterBar from "../../components/LeagueFilterBar";
 import { useSleeperTrades } from "../../hooks/useSleeperData";
-import { SleeperLeagueFilters, SleeperTrade } from "../../types/models";
+import { SleeperLeagueFilters, SleeperTrade, TradeSidePlayer } from "../../types/models";
 
 const LIMIT = 25;
 
@@ -19,11 +20,27 @@ function formatDate(unixMs: number): string {
   });
 }
 
-function sideParts(side: SleeperTrade["sides"][number] | undefined): string[] {
+// Renders a trade-side player as a link to its /players/:id page when the
+// Sleeper player could be resolved to an internal (ESPN-sourced) player;
+// otherwise falls back to plain text.
+function SidePlayer({ player }: { player: TradeSidePlayer }) {
+  const label = player.position ? `${player.name} (${player.position})` : player.name;
+  if (!player.player_id) return <>{label}</>;
+  return (
+    <Link
+      href={`/players/${player.player_id}`}
+      className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function sideItems(side: SleeperTrade["sides"][number] | undefined): ReactNode[] {
   if (!side) return [];
   return [
-    ...(side.players ?? []).map((p) => (p.position ? `${p.name} (${p.position})` : p.name)),
-    ...(side.picks ?? []),
+    ...(side.players ?? []).map((p, i) => <SidePlayer key={`player-${i}`} player={p} />),
+    ...(side.picks ?? []).map((pick, i) => <span key={`pick-${i}`}>{pick}</span>),
   ];
 }
 
@@ -180,10 +197,10 @@ export default function SleeperTradesPage() {
                       <td
                         className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
                       >
-                        {sideParts(trade.sides?.[0]).length > 0 ? (
+                        {sideItems(trade.sides?.[0]).length > 0 ? (
                           <ul className="space-y-0.5">
-                            {sideParts(trade.sides?.[0]).map((part, i) => (
-                              <li key={i}>{part}</li>
+                            {sideItems(trade.sides?.[0]).map((item, i) => (
+                              <li key={i}>{item}</li>
                             ))}
                           </ul>
                         ) : (
@@ -202,10 +219,10 @@ export default function SleeperTradesPage() {
                       <td
                         className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 1 ? winClass : ""}`}
                       >
-                        {sideParts(trade.sides?.[1]).length > 0 ? (
+                        {sideItems(trade.sides?.[1]).length > 0 ? (
                           <ul className="space-y-0.5">
-                            {sideParts(trade.sides?.[1]).map((part, i) => (
-                              <li key={i}>{part}</li>
+                            {sideItems(trade.sides?.[1]).map((item, i) => (
+                              <li key={i}>{item}</li>
                             ))}
                           </ul>
                         ) : (

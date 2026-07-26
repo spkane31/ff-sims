@@ -92,8 +92,7 @@ function getRelevantStats(stats: PlayerStats, position: string) {
 
 export default function PlayerDetailPage() {
   const router = useRouter();
-  const { playerId, leagueId } = router.query;
-  const leagueIdNum = Number(leagueId);
+  const { playerId } = router.query;
 
   const [isLoading, setIsLoading] = useState(true);
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
@@ -154,7 +153,7 @@ export default function PlayerDetailPage() {
               "We could not find a player with the requested ID. Please check the URL and try again."}
           </p>
           <Link
-            href={`/league/${leagueIdNum}/players`}
+            href="/players"
             className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
           >
             ← Back to Players
@@ -190,7 +189,7 @@ export default function PlayerDetailPage() {
 
             <div className="mt-4 md:mt-0">
               <Link
-                href={`/league/${leagueIdNum}/players`}
+                href="/players"
                 className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
               >
                 ← Back to Players
