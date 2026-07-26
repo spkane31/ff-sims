@@ -95,8 +95,6 @@ func main() {
 	// pull-based: the fleet with more free activity slots and pollers takes a
 	// larger share of the queue. These are env-tunable so the worker host
 	// (idles well under 10% CPU on this workload) can be scaled up as needed.
-	// (Transaction sync used to share this queue via its own Temporal worker,
-	// retired in favor of internal/transactioncron's cron-driven fdb pipeline.)
 	//
 	//	WORKER_ACTIVITY_SLOTS    max concurrent activities for the drafts queue (default 100)
 	//	WORKER_ACTIVITY_POLLERS  activity task pollers for the drafts queue (0 = SDK default)

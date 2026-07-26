@@ -1,6 +1,9 @@
 package helpers
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestGetEnv_Int(t *testing.T) {
 	t.Setenv("X_INT", "42")
@@ -50,5 +53,20 @@ func TestGetEnv_Int64(t *testing.T) {
 	t.Setenv("X_I64", "9000000000")
 	if got := GetEnv("X_I64", int64(1)); got != 9000000000 {
 		t.Errorf("got %v, want 9000000000", got)
+	}
+}
+
+func TestGetEnv_Duration(t *testing.T) {
+	t.Setenv("X_DUR", "90s")
+	if got := GetEnv("X_DUR", time.Second); got != 90*time.Second {
+		t.Errorf("got %v, want 90s", got)
+	}
+	t.Setenv("X_DUR", "notaduration")
+	if got := GetEnv("X_DUR", time.Second); got != time.Second {
+		t.Errorf("unparseable: got %v, want default 1s", got)
+	}
+	t.Setenv("X_DUR", "")
+	if got := GetEnv("X_DUR", time.Second); got != time.Second {
+		t.Errorf("empty: got %v, want default 1s", got)
 	}
 }

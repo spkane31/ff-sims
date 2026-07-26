@@ -29,21 +29,30 @@ type DataFetchActivities struct {
 	Sleeper *sleeper.Client
 }
 
-// archiveRoutingCutoff returns the age boundary for routing already-old data
-// straight to archive at ingest time instead of cloud — see
-// FetchLeagueTransactions and syncOneLeagueDrafts. Reuses
-// SCAVENGER_RETENTION_DAYS (T6): "too old
-// for cloud to keep" and "too old to bother writing to cloud in the first
-// place" are the same threshold.
-func archiveRoutingCutoff() time.Time {
-	days := max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1)
-	return time.Now().UTC().AddDate(0, 0, -days)
-}
-
 // currentSleeperSeason anchors "current" the same way Seasons() does
 // (discovery.go) — the calendar year, not NFL-state week boundaries.
 func currentSleeperSeason() string {
 	return strconv.Itoa(time.Now().Year())
+}
+
+// IsPlayerOnlyTransaction mirrors the valuation model's query-time filter
+// (analysis/src/parsing.py parse_trade) at write time, so this data never
+// reaches cloud or the archive DB at all. Shared by ScavengerActivities'
+// transaction replication and internal/transactioncron's ingest-time
+// filtering.
+func IsPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
+	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
+}
+
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true // SQL NULL / zero value
+	}
+	var v []json.RawMessage
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	return len(v) == 0
 }
 
 // GetDraftSyncConfig returns the draft dispatcher tuning knobs from env,
@@ -326,229 +335,4 @@ func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftI
 		Model(&models.ArchiveSleeperDraft{}).
 		Where("sleeper_draft_id = ?", draftID).
 		Update("last_fetched_at", time.Now().UTC()).Error
-}
-
-// claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
-// leagues for transaction syncing. FOR UPDATE SKIP LOCKED lets concurrent
-// claimers (two fleets, K parallel pipelines) partition the backlog without
-// blocking or double-claiming; the 20-minute expiry window re-queues leagues
-// claimed by a worker that died mid-batch. Ordering matches the partial index
-// idx_sleeper_leagues_txn_stale (never-fetched first, then oldest).
-const claimLeaguesForTransactionsSQL = `
-UPDATE sleeper_leagues SET claimed_at = now()
-WHERE sleeper_league_id IN (
-    SELECT sleeper_league_id FROM sleeper_leagues
-    WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
-      AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)
-      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
-    ORDER BY last_transactions_fetched_at ASC NULLS FIRST
-    LIMIT ?
-    FOR UPDATE SKIP LOCKED
-)
-RETURNING sleeper_league_id, season, last_transaction_leg_fetched`
-
-// ClaimLeaguesForTransactions claims up to BatchSize leagues with stale
-// transaction data and returns their sync state. Postgres-only (SKIP LOCKED).
-// Takes db explicitly so internal/fdb.RunPool can hand it the single db
-// instance it owns for a given run — see internal/transactioncron.
-func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, db *gorm.DB, params ClaimLeaguesForTransactionsParams) ([]LeagueTransactionState, error) {
-	var rows []struct {
-		SleeperLeagueID           string
-		Season                    string
-		LastTransactionLegFetched *int
-	}
-	if err := db.WithContext(ctx).Raw(claimLeaguesForTransactionsSQL, params.BatchSize).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	states := make([]LeagueTransactionState, len(rows))
-	for i, r := range rows {
-		states[i] = LeagueTransactionState{
-			LeagueID:       r.SleeperLeagueID,
-			Season:         r.Season,
-			LastLegFetched: r.LastTransactionLegFetched,
-		}
-	}
-	return states, nil
-}
-
-// MaxLegForLeague returns the highest transaction leg worth fetching. Past
-// seasons get the full 1..18 sweep; the current season is capped at the
-// current NFL week (offseason week 0 still fetches leg 1, where offseason
-// moves land). A nil state (state endpoint down) falls back to 18 rather than
-// stalling the batch.
-func MaxLegForLeague(season string, state *sleeper.NFLState) int {
-	if state == nil || season < state.Season {
-		return 18
-	}
-	if state.Week < 1 {
-		return 1
-	}
-	return min(state.Week, 18)
-}
-
-// FetchLeagueTransactions is internal/fdb's fetch function for one claimed
-// league (see internal/transactioncron): walks its leg cursor up to maxLeg,
-// splitting each leg's rows into cloud-bound and archive-bound sets by age
-// (see archiveRoutingCutoff), and returns them without writing anything —
-// FlushLeagueTransactions is the batch-write counterpart, called once per
-// accumulated batch of these results. db is accepted for signature symmetry
-// with fdb's fetch contract; this fetch path has no read-before-fetch gate
-// today (nothing analogous to discoverycron's leagueFullySynced).
-func (a *DataFetchActivities) FetchLeagueTransactions(ctx context.Context, db *gorm.DB, lg LeagueTransactionState, maxLeg int) (LeagueTransactionFetchResult, error) {
-	startLeg := 1
-	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
-		startLeg = *lg.LastLegFetched - 1
-	}
-
-	res := LeagueTransactionFetchResult{LeagueID: lg.LeagueID}
-	for leg := startLeg; leg <= maxLeg; leg++ {
-		txns, err := a.Sleeper.GetTransactions(ctx, lg.LeagueID, leg)
-		if err != nil {
-			var nfe *sleeper.NotFoundError
-			if errors.As(err, &nfe) {
-				continue
-			}
-			return LeagueTransactionFetchResult{}, fmt.Errorf("leg %d: %w", leg, err)
-		}
-		if len(txns) == 0 {
-			continue
-		}
-		var rows []models.SleeperTransaction
-		for _, t := range txns {
-			addsJSON, _ := json.Marshal(t.Adds)
-			dropsJSON, _ := json.Marshal(t.Drops)
-			picksJSON, _ := json.Marshal(t.DraftPicks)
-			waiverJSON, _ := json.Marshal(t.WaiverBudget)
-			// Picks/FAAB trades are never valued by the valuation model (see
-			// isPlayerOnlyTransaction) and aren't useful trade history either,
-			// so they're dropped at ingest time rather than written anywhere.
-			if !isPlayerOnlyTransaction(picksJSON, waiverJSON) {
-				continue
-			}
-			rows = append(rows, models.SleeperTransaction{
-				SleeperTransactionID: t.TransactionID,
-				SleeperLeagueID:      lg.LeagueID,
-				Type:                 t.Type,
-				Status:               t.Status,
-				CreatedAtSleeper:     t.Created,
-				Leg:                  t.Leg,
-				Adds:                 addsJSON,
-				Drops:                dropsJSON,
-				DraftPicks:           picksJSON,
-				WaiverBudget:         waiverJSON,
-			})
-		}
-		if a.Archive != nil {
-			cutoff := archiveRoutingCutoff()
-			for _, r := range rows {
-				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					// Old rows route straight to archive, not cloud. Filtering
-					// out picks/FAAB rows already happened unconditionally above
-					// (before the cloud/archive split), so no re-check here.
-					res.ArchiveRows = append(res.ArchiveRows, r)
-				} else {
-					res.CloudRows = append(res.CloudRows, r)
-				}
-			}
-		} else {
-			res.CloudRows = append(res.CloudRows, rows...)
-		}
-		if leg > res.MaxLegSeen {
-			res.MaxLegSeen = leg
-		}
-	}
-	return res, nil
-}
-
-// FlushLeagueTransactions is internal/fdb's batch-write function for
-// FetchLeagueTransactions's results: one bulk insert for all of the batch's
-// cloud rows (against tx, the transaction RunPool already opened for this
-// batch), one for archive rows (against a.Archive directly — a second,
-// distinct database fdb's transaction doesn't span; skipped when there are
-// none, same as the old per-league guard), one bulk claim-clearing update
-// covering every league in the batch, then a per-league leg-cursor update
-// only where MaxLegSeen > 0 (that value genuinely varies per league, unlike
-// the claim-clear). The archive write's error is not swallowed: if it fails,
-// this whole batch's flush fails, so fdb rolls tx back and drops the batch
-// for retry rather than committing a claim-clear whose archive copy never
-// landed.
-func (a *DataFetchActivities) FlushLeagueTransactions(ctx context.Context, tx *gorm.DB, batch []LeagueTransactionFetchResult) error {
-	var cloudRows, archiveRows []models.SleeperTransaction
-	leagueIDs := make([]string, len(batch))
-	for i, r := range batch {
-		leagueIDs[i] = r.LeagueID
-		cloudRows = append(cloudRows, r.CloudRows...)
-		archiveRows = append(archiveRows, r.ArchiveRows...)
-	}
-
-	if len(cloudRows) > 0 {
-		if err := tx.WithContext(ctx).
-			Clauses(clause.OnConflict{DoNothing: true}).
-			CreateInBatches(cloudRows, 500).Error; err != nil {
-			return fmt.Errorf("cloud upsert: %w", err)
-		}
-	}
-	if a.Archive != nil && len(archiveRows) > 0 {
-		if err := a.upsertArchiveTransactions(ctx, archiveRows); err != nil {
-			return fmt.Errorf("archive upsert: %w", err)
-		}
-	}
-
-	if err := tx.WithContext(ctx).
-		Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id IN ?", leagueIDs).
-		Updates(map[string]interface{}{
-			"last_transactions_fetched_at": time.Now().UTC(),
-			"claimed_at":                   nil,
-		}).Error; err != nil {
-		return fmt.Errorf("claim-clear update: %w", err)
-	}
-
-	for _, r := range batch {
-		if r.MaxLegSeen == 0 {
-			continue
-		}
-		if err := tx.WithContext(ctx).
-			Model(&models.SleeperLeague{}).
-			Where("sleeper_league_id = ?", r.LeagueID).
-			Update("last_transaction_leg_fetched", r.MaxLegSeen).Error; err != nil {
-			return fmt.Errorf("leg cursor update for %s: %w", r.LeagueID, err)
-		}
-	}
-	return nil
-}
-
-// isPlayerOnlyTransaction mirrors the valuation model's query-time filter
-// (analysis/src/parsing.py parse_trade) at write time, so this data never
-// reaches cloud or the archive DB at all.
-func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
-	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
-}
-
-func isEmptyJSONArray(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return true // SQL NULL / zero value
-	}
-	var v []json.RawMessage
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return false
-	}
-	return len(v) == 0
-}
-
-// upsertArchiveTransactions writes rows directly to the archive DB, skipping
-// cloud — see FetchLeagueTransactions's age-based routing.
-func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, rows []models.SleeperTransaction) error {
-	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
-	for i, r := range rows {
-		archiveRows[i] = models.ArchiveSleeperTransaction{
-			SleeperTransactionID: r.SleeperTransactionID, SleeperLeagueID: r.SleeperLeagueID,
-			Type: r.Type, Status: r.Status, CreatedAtSleeper: r.CreatedAtSleeper, Leg: r.Leg,
-			Adds: r.Adds, Drops: r.Drops, DraftPicks: r.DraftPicks, WaiverBudget: r.WaiverBudget,
-			CreatedAt: time.Now().UTC(),
-		}
-	}
-	return a.Archive.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		CreateInBatches(archiveRows, 500).Error
 }
