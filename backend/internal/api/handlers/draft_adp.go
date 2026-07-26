@@ -15,8 +15,8 @@ import (
 
 // SleeperADPItem is a single player's ADP row in the ranked list. PlayerID is
 // the internal players.id (as a string, matching other ID fields) for
-// linking to /players/:id; nil when the Sleeper player has no espn_id or
-// that ESPN ID has no matching row in players.
+// linking to /players/:id; nil when this Sleeper player hasn't been synced
+// into players yet (see PlayerDatabaseSyncWorkflow's identity-sync step).
 type SleeperADPItem struct {
 	SleeperPlayerID string  `json:"sleeper_player_id"`
 	Name            string  `json:"name"`
@@ -69,7 +69,6 @@ type adpItemRow struct {
 	Name            string  `gorm:"column:full_name"`
 	Position        string  `gorm:"column:position"`
 	NflTeam         string  `gorm:"column:nfl_team"`
-	EspnID          string  `gorm:"column:espn_id"`
 	AvgPickNo       float64 `gorm:"column:avg_pick_no"`
 	PickCount       int     `gorm:"column:pick_count"`
 	MinPickNo       int     `gorm:"column:min_pick_no"`
@@ -114,25 +113,24 @@ func GetSleeperADP(c *gin.Context) {
 
 	var rows []adpItemRow
 	database.DB.Table("draft_adp a").
-		Select("a.sleeper_player_id, p.full_name, p.position, p.nfl_team, p.espn_id, a.avg_pick_no, a.pick_count, a.min_pick_no, a.max_pick_no, a.ci_low_pick_no, a.ci_high_pick_no").
+		Select("a.sleeper_player_id, p.full_name, p.position, p.nfl_team, a.avg_pick_no, a.pick_count, a.min_pick_no, a.max_pick_no, a.ci_low_pick_no, a.ci_high_pick_no").
 		Joins("JOIN sleeper_players p ON p.sleeper_player_id = a.sleeper_player_id").
 		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts).
 		Order("a.avg_pick_no ASC").
 		Limit(limit).Offset(offset).
 		Scan(&rows)
 
-	// Resolve each row's ESPN ID to an internal players.id so the list can
-	// link to /players/:id.
-	espnIDs := make([]int64, 0, len(rows))
+	// Resolve each row's Sleeper player ID to an internal players.id (kept in
+	// sync by PlayerDatabaseSyncWorkflow's identity-sync step) so the list
+	// can link to /players/:id.
+	sleeperIDs := make([]string, 0, len(rows))
 	for _, r := range rows {
-		if espnID, err := strconv.ParseInt(r.EspnID, 10, 64); err == nil {
-			espnIDs = append(espnIDs, espnID)
-		}
+		sleeperIDs = append(sleeperIDs, r.SleeperPlayerID)
 	}
-	espnPlayers, err := models.GetPlayersByESPNIDs(database.DB, espnIDs)
+	sleeperMatches, err := models.GetPlayersBySleeperIDs(database.DB, sleeperIDs)
 	if err != nil {
-		slog.Error("Failed to resolve ESPN players for ADP list", "error", err)
-		espnPlayers = map[int64]models.Player{}
+		slog.Error("Failed to resolve players for ADP list", "error", err)
+		sleeperMatches = map[string]models.Player{}
 	}
 
 	items := make([]SleeperADPItem, len(rows))
@@ -149,11 +147,9 @@ func GetSleeperADP(c *gin.Context) {
 			CILowPickNo:     r.CILowPickNo,
 			CIHighPickNo:    r.CIHighPickNo,
 		}
-		if espnID, err := strconv.ParseInt(r.EspnID, 10, 64); err == nil {
-			if player, ok := espnPlayers[espnID]; ok {
-				playerID := strconv.FormatUint(uint64(player.ID), 10)
-				items[i].PlayerID = &playerID
-			}
+		if player, ok := sleeperMatches[r.SleeperPlayerID]; ok {
+			playerID := strconv.FormatUint(uint64(player.ID), 10)
+			items[i].PlayerID = &playerID
 		}
 	}
 

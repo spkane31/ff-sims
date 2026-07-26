@@ -2,6 +2,7 @@ package workflows_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -101,6 +102,8 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 
 	psa := &activities.PlayerSyncActivities{}
 	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
+	env.OnActivity(psa.SyncPlayerIdentities, mock.Anything).
+		Return(activities.PlayerIdentitySyncResult{Scanned: 10, Linked: 3, Created: 7}, nil)
 
 	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 
@@ -108,8 +111,38 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	var report workflows.PlayerSyncReport
 	require.NoError(t, env.GetWorkflowResult(&report))
-	require.Equal(t, workflows.PlayerSyncReport{PlayersUpserted: 42}, report)
+	require.Equal(t, workflows.PlayerSyncReport{
+		PlayersUpserted:   42,
+		IdentitiesScanned: 10,
+		IdentitiesLinked:  3,
+		IdentitiesCreated: 7,
+	}, report)
 	env.AssertExpectations(t)
+}
+
+// SyncPlayerIdentities reports conflicts as an activity error (see its doc
+// comment), which — after exhausting the workflow's RetryPolicy — must fail
+// the whole workflow run rather than being silently absorbed, so it shows up
+// as an actionable Temporal failure. Retries redo idempotent work but don't
+// resolve a genuine data conflict, so all 3 attempts are expected to fail
+// identically before the workflow itself fails.
+func TestPlayerSync_IdentityConflictsFailWorkflow(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	psa := &activities.PlayerSyncActivities{}
+	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
+	env.OnActivity(psa.SyncPlayerIdentities, mock.Anything).
+		Return(activities.PlayerIdentitySyncResult{Scanned: 10, Linked: 3, Created: 6, Conflicts: 1},
+			errors.New("player identity sync: 1 conflict(s) need manual review:\n  sleeper_player_id=abc: espn_id=1 players.id=2 already linked to a different sleeper_id=\"xyz\""))
+
+	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "conflict(s) need manual review")
+	require.Contains(t, err.Error(), "sleeper_player_id=abc")
 }
 
 // ---- SyncWeekStats ----

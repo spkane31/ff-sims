@@ -12,7 +12,8 @@ type Player struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	ESPNID        int64   `json:"espn_id" gorm:"index:idx_players_espn_id,unique"`
+	ESPNID        int64   `json:"espn_id"`
+	SleeperID     string  `json:"sleeper_id,omitempty"`
 	Name          string  `json:"name"`
 	Position      string  `json:"position"` // QB, RB, WR, TE, K, DEF
 	Team          string  `json:"team"`     // NFL team abbreviation
@@ -40,28 +41,53 @@ type PlayerStats struct {
 	ExtraPoints    float64 `json:"extra_points" gorm:"default:0"`
 }
 
-// GetPlayerByESPNID retrieves a player by their ESPN ID
-func GetPlayerByESPNID(db *gorm.DB, espnID int64) (*Player, error) {
-	var player Player
-	err := db.Where("espn_id = ?", espnID).First(&player).Error
-	return &player, err
-}
-
 // GetPlayersByESPNIDs batch-resolves ESPN IDs to internal players, returning
 // a map keyed by ESPN ID. IDs with no matching player are simply absent from
-// the map rather than erroring, since callers (e.g. Sleeper player lookups)
-// expect partial matches.
+// the map rather than erroring, since callers (e.g. the Sleeper identity
+// sync) expect partial matches. Zero is espn_id's "unset" sentinel and is
+// never a real match, so it's silently ignored if passed in.
 func GetPlayersByESPNIDs(db *gorm.DB, espnIDs []int64) (map[int64]Player, error) {
 	result := make(map[int64]Player, len(espnIDs))
-	if len(espnIDs) == 0 {
+	ids := make([]int64, 0, len(espnIDs))
+	for _, id := range espnIDs {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
 		return result, nil
 	}
 	var players []Player
-	if err := db.Where("espn_id IN ?", espnIDs).Find(&players).Error; err != nil {
+	if err := db.Where("espn_id IN ?", ids).Find(&players).Error; err != nil {
 		return nil, err
 	}
 	for _, p := range players {
 		result[p.ESPNID] = p
+	}
+	return result, nil
+}
+
+// GetPlayersBySleeperIDs batch-resolves Sleeper player IDs to internal
+// players, returning a map keyed by sleeper_id. IDs with no matching player
+// are simply absent from the map. Empty string is sleeper_id's "unset"
+// sentinel and is never a real match, so it's silently ignored if passed in.
+func GetPlayersBySleeperIDs(db *gorm.DB, sleeperIDs []string) (map[string]Player, error) {
+	result := make(map[string]Player, len(sleeperIDs))
+	ids := make([]string, 0, len(sleeperIDs))
+	for _, id := range sleeperIDs {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var players []Player
+	if err := db.Where("sleeper_id IN ?", ids).Find(&players).Error; err != nil {
+		return nil, err
+	}
+	for _, p := range players {
+		result[p.SleeperID] = p
 	}
 	return result, nil
 }

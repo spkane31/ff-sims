@@ -17,9 +17,17 @@ type DraftSyncReport struct {
 	LeaguesFailed    int
 }
 
-// PlayerSyncReport summarizes one PlayerDatabaseSyncWorkflow run.
+// PlayerSyncReport summarizes one PlayerDatabaseSyncWorkflow run. Identity
+// counts are only populated on success — SyncPlayerIdentities' conflicts (if
+// any) make the whole workflow return an error instead (see
+// PlayerDatabaseSyncWorkflow), so there's no "conflicts" field here to keep
+// stale-looking at zero on the happy path.
 type PlayerSyncReport struct {
 	PlayersUpserted int
+
+	IdentitiesScanned int
+	IdentitiesLinked  int
+	IdentitiesCreated int
 }
 
 // WeekStatsReport summarizes a SyncWeekStats (or WeekStatsSyncDispatcher) run.

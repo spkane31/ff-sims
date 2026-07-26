@@ -438,8 +438,9 @@ func GetSleeperTrades(c *gin.Context) {
 	}
 
 	// Batch-fetch player names for all players on this page, then resolve
-	// each Sleeper player's ESPN ID to an internal players.id so trade rows
-	// can link to /players/:id.
+	// each Sleeper player ID to an internal players.id (kept in sync by
+	// PlayerDatabaseSyncWorkflow's identity-sync step) so trade rows can
+	// link to /players/:id.
 	playerLookup := map[string]TradeSidePlayer{}
 	if len(playerIDSet) > 0 {
 		ids := make([]string, 0, len(playerIDSet))
@@ -449,16 +450,10 @@ func GetSleeperTrades(c *gin.Context) {
 		var players []models.SleeperPlayer
 		database.DB.Where("sleeper_player_id IN ?", ids).Find(&players)
 
-		espnIDs := make([]int64, 0, len(players))
-		for _, p := range players {
-			if espnID, err := strconv.ParseInt(p.EspnID, 10, 64); err == nil {
-				espnIDs = append(espnIDs, espnID)
-			}
-		}
-		espnPlayers, err := models.GetPlayersByESPNIDs(database.DB, espnIDs)
+		sleeperMatches, err := models.GetPlayersBySleeperIDs(database.DB, ids)
 		if err != nil {
-			slog.Error("Failed to resolve ESPN players for trade sides", "error", err)
-			espnPlayers = map[int64]models.Player{}
+			slog.Error("Failed to resolve players for trade sides", "error", err)
+			sleeperMatches = map[string]models.Player{}
 		}
 
 		for _, p := range players {
@@ -467,11 +462,9 @@ func GetSleeperTrades(c *gin.Context) {
 				Name:     p.FullName,
 				Position: p.Position,
 			}
-			if espnID, err := strconv.ParseInt(p.EspnID, 10, 64); err == nil {
-				if player, ok := espnPlayers[espnID]; ok {
-					playerID := strconv.FormatUint(uint64(player.ID), 10)
-					item.PlayerID = &playerID
-				}
+			if player, ok := sleeperMatches[p.SleeperPlayerID]; ok {
+				playerID := strconv.FormatUint(uint64(player.ID), 10)
+				item.PlayerID = &playerID
 			}
 			playerLookup[p.SleeperPlayerID] = item
 		}

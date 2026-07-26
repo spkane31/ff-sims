@@ -118,6 +118,17 @@ type PlayerSyncResult struct {
 	PlayersUpserted int
 }
 
+// PlayerIdentitySyncResult reports SyncPlayerIdentities' outcome. Conflicts
+// counts sleeper_players rows it declined to resolve automatically; their
+// details are in the error SyncPlayerIdentities returns alongside this
+// result, not here — this is just a summary count for logging.
+type PlayerIdentitySyncResult struct {
+	Scanned   int
+	Linked    int
+	Created   int
+	Conflicts int
+}
+
 // WeekStatsResult reports how many player rows FetchWeekStats upserted for one
 // week, and whether Sleeper considers that week finalized.
 type WeekStatsResult struct {
