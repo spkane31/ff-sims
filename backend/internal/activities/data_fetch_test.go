@@ -1,6 +1,7 @@
 package activities_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -245,17 +246,16 @@ func TestSyncDraftsBatch_RetrySkipsAlreadyStampedLeagues(t *testing.T) {
 	}
 }
 
-// batchTestServer fakes /v1/state/nfl plus per-league transaction legs.
+// batchTestServer fakes per-league transaction legs (/v1/league/{id}/transactions/{leg}).
 // legs maps "leagueID/leg" -> transactions; missing keys 404 (empty leg).
-func batchTestServer(t *testing.T, week int, legs map[string][]sleeper.Transaction, calls *atomic.Int64) *httptest.Server {
+// FetchLeagueTransactions never calls /v1/state/nfl itself (that's
+// transactioncron's job, once per run, to compute maxLeg via
+// MaxLegForLeague) so this fake doesn't need to serve it.
+func batchTestServer(t *testing.T, legs map[string][]sleeper.Transaction, calls *atomic.Int64) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls != nil {
 			calls.Add(1)
-		}
-		if strings.HasSuffix(r.URL.Path, "/state/nfl") {
-			json.NewEncoder(w).Encode(sleeper.NFLState{Season: "2026", SeasonType: "regular", Week: week})
-			return
 		}
 		// path: /v1/league/{id}/transactions/{leg}
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -269,22 +269,6 @@ func batchTestServer(t *testing.T, week int, legs map[string][]sleeper.Transacti
 	}))
 }
 
-func runBatch(t *testing.T, dfa *activities.DataFetchActivities, params activities.SyncLeagueTransactionsBatchParams) activities.SyncBatchResult {
-	t.Helper()
-	ts := testsuite.WorkflowTestSuite{}
-	env := ts.NewTestActivityEnvironment()
-	env.RegisterActivity(dfa.SyncLeagueTransactionsBatch)
-	val, err := env.ExecuteActivity(dfa.SyncLeagueTransactionsBatch, params)
-	if err != nil {
-		t.Fatalf("batch activity: %v", err)
-	}
-	var res activities.SyncBatchResult
-	if err := val.Get(&res); err != nil {
-		t.Fatalf("decode result: %v", err)
-	}
-	return res
-}
-
 func claimedLeague(t *testing.T, db *gorm.DB, id string) models.SleeperLeague {
 	t.Helper()
 	now := time.Now().UTC()
@@ -295,161 +279,103 @@ func claimedLeague(t *testing.T, db *gorm.DB, id string) models.SleeperLeague {
 	return l
 }
 
-func TestSyncBatch_StampsAndClearsClaims(t *testing.T) {
-	db := newTestDB(t)
-	claimedLeague(t, db, "lg1")
-	claimedLeague(t, db, "lg2")
+func TestMaxLegForLeague(t *testing.T) {
+	tests := []struct {
+		name   string
+		season string
+		state  *sleeper.NFLState
+		want   int
+	}{
+		{"nil state falls back to full sweep", "2026", nil, 18},
+		{"past season gets full sweep", "2025", &sleeper.NFLState{Season: "2026", Week: 3}, 18},
+		{"current season capped at current week", "2026", &sleeper.NFLState{Season: "2026", Week: 5}, 5},
+		{"current season week beyond 18 clamps to 18", "2026", &sleeper.NFLState{Season: "2026", Week: 20}, 18},
+		{"offseason week 0 still fetches leg 1", "2026", &sleeper.NFLState{Season: "2026", Week: 0}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activities.MaxLegForLeague(tt.season, tt.state); got != tt.want {
+				t.Errorf("MaxLegForLeague(%q, %+v) = %d, want %d", tt.season, tt.state, got, tt.want)
+			}
+		})
+	}
+}
 
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+func TestFetchLeagueTransactions_FetchesLegsUpToMaxLeg(t *testing.T) {
+	db := newTestDB(t)
+	var calls atomic.Int64
+	srv := batchTestServer(t, nil, &calls) // all legs 404
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	if _, err := dfa.FetchLeagueTransactions(context.Background(), db, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3); err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("expected exactly 3 HTTP calls (legs 1..3), got %d", got)
+	}
+}
+
+func TestFetchLeagueTransactions_ResumesFromLastLegFetched(t *testing.T) {
+	db := newTestDB(t)
+	var calls atomic.Int64
+	srv := batchTestServer(t, nil, &calls) // all legs 404
+	defer srv.Close()
+
+	lastLeg := 5
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	if _, err := dfa.FetchLeagueTransactions(context.Background(), db,
+		activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &lastLeg}, 7); err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	// Resumes at lastLeg-1 (4) through maxLeg (7): legs 4,5,6,7 = 4 calls.
+	if got := calls.Load(); got != 4 {
+		t.Errorf("expected 4 HTTP calls (legs 4..7), got %d", got)
+	}
+}
+
+func TestFetchLeagueTransactions_ReturnsRowsAndMaxLegSeen(t *testing.T) {
+	db := newTestDB(t)
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {{TransactionID: "tx1", Type: "waiver", Status: "complete", Leg: 2}},
 	}, nil)
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res := runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues: []activities.LeagueTransactionState{
-			{LeagueID: "lg1", Season: "2026"},
-			{LeagueID: "lg2", Season: "2026"},
-		},
-		Concurrency: 2,
-	})
-	if res.Processed != 2 || res.Failed != 0 {
-		t.Fatalf("expected 2 processed / 0 failed, got %+v", res)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), db, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
-
-	var lg1 models.SleeperLeague
-	db.First(&lg1, "sleeper_league_id = ?", "lg1")
-	if lg1.LastTransactionsFetchedAt == nil || lg1.ClaimedAt != nil {
-		t.Errorf("lg1 not stamped/unclaimed: %+v", lg1)
+	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx1" {
+		t.Fatalf("expected tx1 in CloudRows, got %+v", res.CloudRows)
 	}
-	if lg1.LastTransactionLegFetched == nil || *lg1.LastTransactionLegFetched != 2 {
-		t.Errorf("lg1 leg cursor = %v, want 2", lg1.LastTransactionLegFetched)
-	}
-	var txCount int64
-	db.Model(&models.SleeperTransaction{}).Count(&txCount)
-	if txCount != 1 {
-		t.Errorf("expected 1 transaction row, got %d", txCount)
+	if res.MaxLegSeen != 2 {
+		t.Errorf("expected MaxLegSeen == 2, got %d", res.MaxLegSeen)
 	}
 }
 
-func TestSyncBatch_LegLoopCappedAtCurrentWeek(t *testing.T) {
+func TestFetchLeagueTransactions_PropagatesNonNotFoundLegErrors(t *testing.T) {
 	db := newTestDB(t)
-	claimedLeague(t, db, "lg1")
-
-	var calls atomic.Int64
-	srv := batchTestServer(t, 3, nil, &calls) // all legs 404
-	defer srv.Close()
-
-	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-	// 1 state call + legs 1..3 = 4 total.
-	if got := calls.Load(); got != 4 {
-		t.Errorf("expected 4 HTTP calls (state + 3 legs), got %d", got)
-	}
-}
-
-func TestSyncBatch_PastSeasonFetchesAllLegs(t *testing.T) {
-	db := newTestDB(t)
-	now := time.Now().UTC()
-	l := models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2025", LastFetchedAt: &now, ClaimedAt: &now}
-	db.Create(&l)
-
-	var calls atomic.Int64
-	srv := batchTestServer(t, 3, nil, &calls)
-	defer srv.Close()
-
-	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2025"}},
-		Concurrency: 1,
-	})
-	// 2025 < state season 2026: full historical sweep, legs 1..18 + state = 19.
-	if got := calls.Load(); got != 19 {
-		t.Errorf("expected 19 HTTP calls, got %d", got)
-	}
-}
-
-func TestSyncBatch_PerLeagueFailureDoesNotFailBatch(t *testing.T) {
-	db := newTestDB(t)
-	claimedLeague(t, db, "bad")
-	claimedLeague(t, db, "good")
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/state/nfl") {
-			json.NewEncoder(w).Encode(sleeper.NFLState{Season: "2026", Week: 1})
-			return
-		}
-		if strings.Contains(r.URL.Path, "/league/bad/") {
-			w.WriteHeader(http.StatusBadRequest) // non-retryable, non-404
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusBadRequest) // non-retryable, non-404
 	}))
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res := runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues: []activities.LeagueTransactionState{
-			{LeagueID: "bad", Season: "2026"},
-			{LeagueID: "good", Season: "2026"},
-		},
-		Concurrency: 2,
-	})
-	if res.Processed != 1 || res.Failed != 1 {
-		t.Fatalf("expected 1/1, got %+v", res)
-	}
-	var bad, good models.SleeperLeague
-	db.First(&bad, "sleeper_league_id = ?", "bad")
-	db.First(&good, "sleeper_league_id = ?", "good")
-	if bad.ClaimedAt == nil || bad.LastTransactionsFetchedAt != nil {
-		t.Errorf("failed league must stay claimed and unstamped: %+v", bad)
-	}
-	if good.ClaimedAt != nil || good.LastTransactionsFetchedAt == nil {
-		t.Errorf("good league must be stamped and unclaimed: %+v", good)
+	if _, err := dfa.FetchLeagueTransactions(context.Background(), db, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3); err == nil {
+		t.Fatal("expected a non-404 leg error to propagate")
 	}
 }
 
-func TestSyncBatch_RetrySkipsAlreadyStampedLeagues(t *testing.T) {
-	db := newTestDB(t)
-	// lg1 was stamped by a previous attempt (claim cleared); lg2 still claimed.
-	now := time.Now().UTC()
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg1", Season: "2026", LastFetchedAt: &now, LastTransactionsFetchedAt: &now})
-	claimedLeague(t, db, "lg2")
-
-	var calls atomic.Int64
-	srv := batchTestServer(t, 1, nil, &calls)
-	defer srv.Close()
-
-	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res := runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues: []activities.LeagueTransactionState{
-			{LeagueID: "lg1", Season: "2026"},
-			{LeagueID: "lg2", Season: "2026"},
-		},
-		Concurrency: 1,
-	})
-	if res.Processed != 1 {
-		t.Fatalf("expected only still-claimed lg2 processed, got %+v", res)
-	}
-	// state + leg 1 for lg2 only
-	if got := calls.Load(); got != 2 {
-		t.Errorf("expected 2 HTTP calls, got %d", got)
-	}
-}
-
-func TestSyncBatch_RoutesOldTransactionsToArchiveOnly(t *testing.T) {
+func TestFetchLeagueTransactions_SplitsOldRowsToArchiveByAge(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
-	claimedLeague(t, cloud, "lg1")
 
 	now := time.Now().UTC()
 	recentMs := now.Add(-1 * time.Hour).UnixMilli()
 	oldMs := now.AddDate(0, 0, -60).UnixMilli() // 60 days ago, past the 30-day default retention
 
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {
 			{TransactionID: "tx-recent", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs},
 			{TransactionID: "tx-old", Type: "waiver", Status: "complete", Leg: 2, Created: oldMs},
@@ -458,32 +384,24 @@ func TestSyncBatch_RoutesOldTransactionsToArchiveOnly(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res := runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-	if res.Processed != 1 || res.Failed != 0 {
-		t.Fatalf("expected 1 processed / 0 failed, got %+v", res)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), cloud, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
-
-	var cloudIDs, archiveIDs []string
-	cloud.Model(&models.SleeperTransaction{}).Pluck("sleeper_transaction_id", &cloudIDs)
-	archive.Model(&models.ArchiveSleeperTransaction{}).Pluck("sleeper_transaction_id", &archiveIDs)
-	if len(cloudIDs) != 1 || cloudIDs[0] != "tx-recent" {
-		t.Errorf("expected only tx-recent in cloud, got %v", cloudIDs)
+	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx-recent" {
+		t.Errorf("expected only tx-recent in CloudRows, got %+v", res.CloudRows)
 	}
-	if len(archiveIDs) != 1 || archiveIDs[0] != "tx-old" {
-		t.Errorf("expected only tx-old in archive, got %v", archiveIDs)
+	if len(res.ArchiveRows) != 1 || res.ArchiveRows[0].SleeperTransactionID != "tx-old" {
+		t.Errorf("expected only tx-old in ArchiveRows, got %+v", res.ArchiveRows)
 	}
 }
 
-func TestSyncBatch_ArchiveExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
+func TestFetchLeagueTransactions_ArchiveExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
-	claimedLeague(t, cloud, "lg1")
 
 	oldMs := time.Now().UTC().AddDate(0, 0, -60).UnixMilli() // past the 30-day default retention
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {
 			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: oldMs},
 			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: oldMs,
@@ -495,30 +413,29 @@ func TestSyncBatch_ArchiveExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T)
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-
-	var archiveIDs []string
-	archive.Model(&models.ArchiveSleeperTransaction{}).Pluck("sleeper_transaction_id", &archiveIDs)
-	if len(archiveIDs) != 1 || archiveIDs[0] != "tx-clean" {
-		t.Errorf("expected only tx-clean in archive, got %v", archiveIDs)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), cloud, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
-	var cloudCount int64
-	cloud.Model(&models.SleeperTransaction{}).Count(&cloudCount)
-	if cloudCount != 0 {
-		t.Errorf("expected no rows in cloud (all old), got %d", cloudCount)
+	if len(res.ArchiveRows) != 1 || res.ArchiveRows[0].SleeperTransactionID != "tx-clean" {
+		t.Errorf("expected only tx-clean in ArchiveRows, got %+v", res.ArchiveRows)
+	}
+	if len(res.CloudRows) != 0 {
+		t.Errorf("expected no CloudRows (all old), got %+v", res.CloudRows)
 	}
 }
 
-func TestSyncBatch_CloudExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
+// TestFetchLeagueTransactions_ExcludesDraftPicksOrFAABEvenWhenCloudBound
+// guards the fix from #191: isPlayerOnlyTransaction must apply
+// unconditionally to every fetched row, not only the ones old enough to
+// route to archive — otherwise picks/FAAB trades leak into the live
+// sleeper_transactions table via CloudRows.
+func TestFetchLeagueTransactions_ExcludesDraftPicksOrFAABEvenWhenCloudBound(t *testing.T) {
 	cloud := newTestDB(t)
 	archive := newArchiveTestDB(t)
-	claimedLeague(t, cloud, "lg1")
 
 	recentMs := time.Now().UTC().Add(-1 * time.Hour).UnixMilli()
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {
 			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs},
 			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: recentMs,
@@ -530,52 +447,113 @@ func TestSyncBatch_CloudExcludesTransactionsWithDraftPicksOrFAAB(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-
-	var cloudIDs []string
-	cloud.Model(&models.SleeperTransaction{}).Pluck("sleeper_transaction_id", &cloudIDs)
-	if len(cloudIDs) != 1 || cloudIDs[0] != "tx-clean" {
-		t.Errorf("expected only tx-clean in cloud, got %v", cloudIDs)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), cloud, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
-	var archiveCount int64
-	archive.Model(&models.ArchiveSleeperTransaction{}).Count(&archiveCount)
-	if archiveCount != 0 {
-		t.Errorf("expected no rows in archive (all recent), got %d", archiveCount)
+	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx-clean" {
+		t.Errorf("expected only tx-clean in CloudRows, got %+v", res.CloudRows)
+	}
+	if len(res.ArchiveRows) != 0 {
+		t.Errorf("expected no ArchiveRows (all recent), got %+v", res.ArchiveRows)
 	}
 }
 
-func TestSyncBatch_AllTransactionsToCloudWhenArchiveNil(t *testing.T) {
+func TestFetchLeagueTransactions_AllRowsToCloudWhenArchiveNil(t *testing.T) {
 	cloud := newTestDB(t)
-	claimedLeague(t, cloud, "lg1")
-
 	oldMs := time.Now().UTC().AddDate(0, 0, -60).UnixMilli()
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {{TransactionID: "tx-old", Type: "waiver", Status: "complete", Leg: 2, Created: oldMs}},
 	}, nil)
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-
-	var count int64
-	cloud.Model(&models.SleeperTransaction{}).Count(&count)
-	if count != 1 {
-		t.Errorf("expected the old txn to fall back to cloud when Archive is nil, got %d rows", count)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), cloud, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	if len(res.CloudRows) != 1 {
+		t.Errorf("expected the old txn to fall back to CloudRows when Archive is nil, got %+v", res.CloudRows)
+	}
+	if len(res.ArchiveRows) != 0 {
+		t.Errorf("expected no ArchiveRows when Archive is nil, got %+v", res.ArchiveRows)
 	}
 }
 
-func TestSyncBatch_ExcludesDraftPicksWhenArchiveNil(t *testing.T) {
+func TestFlushLeagueTransactions_StampsClearsClaimsAndWritesRows(t *testing.T) {
+	db := newTestDB(t)
+	claimedLeague(t, db, "lg1")
+	claimedLeague(t, db, "lg2")
+
+	batch := []activities.LeagueTransactionFetchResult{
+		{
+			LeagueID:   "lg1",
+			CloudRows:  []models.SleeperTransaction{{SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
+			MaxLegSeen: 2,
+		},
+		{LeagueID: "lg2"}, // nothing new this run — MaxLegSeen 0
+	}
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := dfa.FlushLeagueTransactions(context.Background(), db, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var lg1, lg2 models.SleeperLeague
+	db.First(&lg1, "sleeper_league_id = ?", "lg1")
+	db.First(&lg2, "sleeper_league_id = ?", "lg2")
+	if lg1.LastTransactionsFetchedAt == nil || lg1.ClaimedAt != nil {
+		t.Errorf("lg1 not stamped/unclaimed: %+v", lg1)
+	}
+	if lg1.LastTransactionLegFetched == nil || *lg1.LastTransactionLegFetched != 2 {
+		t.Errorf("lg1 leg cursor = %v, want 2", lg1.LastTransactionLegFetched)
+	}
+	if lg2.LastTransactionsFetchedAt == nil || lg2.ClaimedAt != nil {
+		t.Errorf("lg2 not stamped/unclaimed: %+v", lg2)
+	}
+	if lg2.LastTransactionLegFetched != nil {
+		t.Errorf("expected lg2's leg cursor untouched (MaxLegSeen 0), got %v", lg2.LastTransactionLegFetched)
+	}
+	var txCount int64
+	db.Model(&models.SleeperTransaction{}).Count(&txCount)
+	if txCount != 1 {
+		t.Errorf("expected 1 transaction row, got %d", txCount)
+	}
+}
+
+func TestFlushLeagueTransactions_WritesArchiveRowsToArchiveDB(t *testing.T) {
 	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
 	claimedLeague(t, cloud, "lg1")
 
+	batch := []activities.LeagueTransactionFetchResult{
+		{
+			LeagueID:    "lg1",
+			ArchiveRows: []models.SleeperTransaction{{SleeperTransactionID: "tx-old", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
+			MaxLegSeen:  2,
+		},
+	}
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive}
+	if err := dfa.FlushLeagueTransactions(context.Background(), cloud, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var archiveIDs []string
+	archive.Model(&models.ArchiveSleeperTransaction{}).Pluck("sleeper_transaction_id", &archiveIDs)
+	if len(archiveIDs) != 1 || archiveIDs[0] != "tx-old" {
+		t.Errorf("expected tx-old written to archive, got %v", archiveIDs)
+	}
+	var cloudCount int64
+	cloud.Model(&models.SleeperTransaction{}).Count(&cloudCount)
+	if cloudCount != 0 {
+		t.Errorf("expected no cloud rows (batch had only ArchiveRows), got %d", cloudCount)
+	}
+}
+
+func TestFetchLeagueTransactions_ExcludesDraftPicksWhenArchiveNil(t *testing.T) {
+	cloud := newTestDB(t)
+
 	recentMs := time.Now().UTC().Add(-1 * time.Hour).UnixMilli()
-	srv := batchTestServer(t, 3, map[string][]sleeper.Transaction{
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {
 			{TransactionID: "tx-clean", Type: "waiver", Status: "complete", Leg: 2, Created: recentMs},
 			{TransactionID: "tx-picks", Type: "trade", Status: "complete", Leg: 2, Created: recentMs,
@@ -585,15 +563,12 @@ func TestSyncBatch_ExcludesDraftPicksWhenArchiveNil(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
-	runBatch(t, dfa, activities.SyncLeagueTransactionsBatchParams{
-		Leagues:     []activities.LeagueTransactionState{{LeagueID: "lg1", Season: "2026"}},
-		Concurrency: 1,
-	})
-
-	var ids []string
-	cloud.Model(&models.SleeperTransaction{}).Pluck("sleeper_transaction_id", &ids)
-	if len(ids) != 1 || ids[0] != "tx-clean" {
-		t.Errorf("expected only tx-clean in cloud (no archive configured), got %v", ids)
+	res, err := dfa.FetchLeagueTransactions(context.Background(), cloud, activities.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx-clean" {
+		t.Errorf("expected only tx-clean in CloudRows (no archive configured), got %+v", res.CloudRows)
 	}
 }
 

@@ -7,7 +7,10 @@ import (
 )
 
 // DraftSyncDispatcher drains the stale-drafts backlog by fanning out
-// claim→batch pipelines, mirroring TransactionSyncDispatcher. Each iteration
+// claim→batch pipelines (transaction syncing used to mirror this shape via
+// TransactionSyncDispatcher, since replaced by internal/transactioncron's
+// cron-driven fdb pipeline — see internal/transactioncron for that
+// migration). Each iteration
 // claims up to ParallelBatches batches of leagues (atomically, via FOR UPDATE
 // SKIP LOCKED on drafts_claimed_at) and runs a SyncLeagueDraftsBatch activity
 // per claim in parallel. A short or empty claim means the backlog is drained

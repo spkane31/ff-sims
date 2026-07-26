@@ -55,7 +55,7 @@ func TestClaimLeagues_OrderingLimitAndStamp(t *testing.T) {
 	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "recent", LastFetchedAt: &now, LastTransactionsFetchedAt: &recent})
 
 	a := &activities.DataFetchActivities{DB: db}
-	got, err := a.ClaimLeaguesForTransactions(context.Background(), activities.ClaimLeaguesForTransactionsParams{BatchSize: 2})
+	got, err := a.ClaimLeaguesForTransactions(context.Background(), db, activities.ClaimLeaguesForTransactionsParams{BatchSize: 2})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestClaimLeagues_ExcludesIneligible(t *testing.T) {
 	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "complete-unsynced", Status: "complete", LastFetchedAt: &now})
 
 	a := &activities.DataFetchActivities{DB: db}
-	got, err := a.ClaimLeaguesForTransactions(context.Background(), activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
+	got, err := a.ClaimLeaguesForTransactions(context.Background(), db, activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestClaimLeagues_RespectsAndExpiresClaims(t *testing.T) {
 	seedLeague(t, db, models.SleeperLeague{SleeperLeagueID: "expired-claim", LastFetchedAt: &now, ClaimedAt: &stale})
 
 	a := &activities.DataFetchActivities{DB: db}
-	got, err := a.ClaimLeaguesForTransactions(context.Background(), activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
+	got, err := a.ClaimLeaguesForTransactions(context.Background(), db, activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestClaimLeagues_ConcurrentClaimsAreDisjoint(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got, err := a.ClaimLeaguesForTransactions(context.Background(), activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
+			got, err := a.ClaimLeaguesForTransactions(context.Background(), db, activities.ClaimLeaguesForTransactionsParams{BatchSize: 10})
 			if err != nil {
 				t.Errorf("claim: %v", err)
 				return

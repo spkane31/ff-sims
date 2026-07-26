@@ -63,9 +63,14 @@ func jobFailed(report discoverycron.Report) error {
 // txnJobFailed is transactionCronFailed's analog for transactioncron.Report
 // — see jobFailed's doc comment for the reasoning (zero progress plus a
 // nonzero claim-error count means the run couldn't talk to the database at
-// all, not that the backlog was genuinely empty).
+// all, not that the backlog was genuinely empty). LeaguesDropped counts
+// toward totalProgress too: a league whose fetch succeeded but whose batch's
+// flush failed isn't the same "genuinely nothing to do" case an empty queue
+// is — treating it as zero progress would let a run where every claim errors
+// and every flush also fails get reported as a clean no-op instead of the
+// failure it actually is.
 func txnJobFailed(report transactioncron.Report) error {
-	totalProgress := report.LeaguesProcessed + report.LeaguesFailed
+	totalProgress := report.LeaguesProcessed + report.LeaguesFailed + report.LeaguesDropped
 	if totalProgress == 0 && report.ClaimErrors > 0 {
 		return fmt.Errorf("transaction sync made no progress and saw %d claim error(s): treating as failure", report.ClaimErrors)
 	}

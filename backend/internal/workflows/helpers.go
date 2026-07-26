@@ -8,12 +8,11 @@ import (
 )
 
 const (
-	TaskQueueDrafts       = "sleeper-drafts"
-	TaskQueueTransactions = "sleeper-transactions"
-	TaskQueuePlayerSync   = "sleeper-player-sync"
-	TaskQueueWeekStats    = "sleeper-week-stats"
-	TaskQueueADP          = "sleeper-adp"
-	TaskQueueArchive      = "archive-maintenance"
+	TaskQueueDrafts     = "sleeper-drafts"
+	TaskQueuePlayerSync = "sleeper-player-sync"
+	TaskQueueWeekStats  = "sleeper-week-stats"
+	TaskQueueADP        = "sleeper-adp"
+	TaskQueueArchive    = "archive-maintenance"
 
 	// MaxDispatchIterations bounds a sync dispatcher's claim loop so one run's
 	// event history stays small; the schedule picks up any remainder.

@@ -40,15 +40,6 @@ type ClaimLeaguesForTransactionsParams struct {
 	BatchSize int
 }
 
-// TransactionSyncConfig is read from env by GetTransactionSyncConfig so the
-// dispatcher workflow (which cannot read env deterministically) can be tuned
-// without a redeploy of workflow code.
-type TransactionSyncConfig struct {
-	ParallelBatches int // TXN_SYNC_PARALLEL_BATCHES, default 2
-	BatchSize       int // TXN_SYNC_BATCH_SIZE, default 100
-	Concurrency     int // TXN_SYNC_LEAGUE_CONCURRENCY, default 8
-}
-
 // LeagueTransactionState carries the league ID, season, and leg cursor for one
 // claimed league, as returned by ClaimLeaguesForTransactions.
 type LeagueTransactionState struct {
@@ -57,9 +48,16 @@ type LeagueTransactionState struct {
 	LastLegFetched *int
 }
 
-type SyncLeagueTransactionsBatchParams struct {
-	Leagues     []LeagueTransactionState
-	Concurrency int
+// LeagueTransactionFetchResult is internal/fdb's fetch result for one
+// claimed league's transaction sync — see FetchLeagueTransactions. Rows are
+// split cloud/archive at fetch time (age-based routing, same rule
+// FetchLeagueTransactions always applied); FlushLeagueTransactions is the
+// batch-write counterpart that persists them.
+type LeagueTransactionFetchResult struct {
+	LeagueID    string
+	CloudRows   []models.SleeperTransaction
+	ArchiveRows []models.SleeperTransaction
+	MaxLegSeen  int // 0 if no new legs were found this run
 }
 
 // SyncBatchResult summarizes one batch activity execution. Failed leagues keep

@@ -35,23 +35,6 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 	}
 
 	if err := upsert(ctx, c, client.ScheduleOptions{
-		ID: "sleeper-transaction-sync-schedule",
-		Spec: client.ScheduleSpec{
-			Intervals: []client.ScheduleIntervalSpec{
-				{Every: 10 * time.Minute},
-			},
-		},
-		Action: &client.ScheduleWorkflowAction{
-			Workflow:                 workflows.TransactionSyncDispatcher,
-			TaskQueue:                workflows.TaskQueueTransactions,
-			WorkflowExecutionTimeout: 60 * time.Minute,
-		},
-		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
-	}); err != nil {
-		return err
-	}
-
-	if err := upsert(ctx, c, client.ScheduleOptions{
 		ID: "sleeper-player-sync-schedule",
 		Spec: client.ScheduleSpec{
 			Calendars: []client.ScheduleCalendarSpec{
