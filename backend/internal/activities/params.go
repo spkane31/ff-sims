@@ -2,22 +2,6 @@ package activities
 
 import "backend/internal/models"
 
-type ClaimStaleUsersParams struct {
-	BatchSize int
-}
-
-type FetchUserLeaguesParams struct {
-	UserID string
-}
-
-type FetchLeagueMembersParams struct {
-	LeagueID string
-}
-
-type FetchLeagueDetailsParams struct {
-	LeagueID string
-}
-
 type ClaimLeaguesForDraftsParams struct {
 	BatchSize int
 }

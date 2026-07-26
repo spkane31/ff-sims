@@ -5,56 +5,85 @@ import (
 	"sync"
 	"time"
 
-	"backend/internal/activities"
-	"backend/internal/cronpool"
+	"gorm.io/gorm"
+
+	"backend/internal/fdb"
 	"backend/internal/helpers"
+	"backend/internal/sleeper"
 )
 
-// pollInterval is deliberately short (not defaultPollInterval's 2s) so a
-// production run notices newly-claimable work quickly, and so this
-// package's own tests (which run against tiny in-memory fixtures) finish in
-// well under a second instead of waiting out a multi-second poll cadence.
+// pollInterval is deliberately short (not fdb's 2s default) so a production
+// run notices newly-claimable work quickly, and so this package's own tests
+// (which run against tiny in-memory fixtures) finish in well under a second
+// instead of waiting out a multi-second poll cadence.
 const pollInterval = 200 * time.Millisecond
 
-// Config holds the discovery cron job's tuning knobs, read from env. Uses a
-// CRON_DISCOVERY_ prefix (distinct from the Temporal path's DISCOVERY_*
-// vars, which remain in effect for workflows.DiscoveryBatchDispatcher) so
-// the two paths can be tuned independently while both run.
+// discoveryLogTag is stamped on every discovery-related log line as a "tag"
+// field, so a single grep on the shared worker-host journal — which also
+// carries transaction-sync and ESPN worker log lines — pulls out exactly
+// this pipeline's output:
 //
-// UserPoolSize and LeaguePoolSize are advertised as "scale up via env, no
-// code change needed" — but keep UserPoolSize + LeaguePoolSize comfortably
-// under DB_MAX_OPEN_CONNS (the process-wide DB connection pool ceiling,
-// shared with everything else the process does). ProcessLeague (process.go)
-// wraps FetchLeagueMembers + FetchLeagueDetails — each a Sleeper HTTP fetch
-// (up to 30s, times retries) plus a DB write — inside a single
-// db.Transaction, which holds a pooled connection (and row locks on the
-// leagues/users being upserted) for the full duration of both HTTP calls,
-// not just the writes. Pushing these pool sizes up toward or past
-// DB_MAX_OPEN_CONNS causes connection-acquisition starvation and stalls,
-// not more throughput.
+//	journalctl -u ff-sims-discovery | grep discovery_trace
+const discoveryLogTag = "discovery_trace"
+
+// Config holds the discovery cron job's tuning knobs, read from env.
+//
+// Pool sizes are advertised as "scale up via env, no code change needed."
+// Unlike before this package moved onto internal/fdb, a fetch goroutine no
+// longer holds a DB connection across its Sleeper HTTP call(s) — only a
+// batch's flush does, briefly, once per BatchSize/BatchFlushInterval — so
+// the binding constraint on pool size is Sleeper API concurrency, not
+// DB_MAX_OPEN_CONNS.
 type Config struct {
-	UserPoolSize      int // CRON_DISCOVERY_USER_POOL_SIZE, default 8
+	UserPoolSize      int // CRON_DISCOVERY_USER_POOL_SIZE, default 10
 	UserRefillBatch   int // CRON_DISCOVERY_USER_REFILL_BATCH, default 2
-	LeaguePoolSize    int // CRON_DISCOVERY_LEAGUE_POOL_SIZE, default 2
+	LeaguePoolSize    int // CRON_DISCOVERY_LEAGUE_POOL_SIZE, default 4
 	LeagueRefillBatch int // CRON_DISCOVERY_LEAGUE_REFILL_BATCH, default 2
+	// UserBatchSize/LeagueBatchSize flush each pool's accumulated results
+	// once this many have been fetched.
+	UserBatchSize   int // CRON_DISCOVERY_USER_BATCH_SIZE, default 10
+	LeagueBatchSize int // CRON_DISCOVERY_LEAGUE_BATCH_SIZE, default 5
+	// UserBatchFlushInterval/LeagueBatchFlushInterval flush accumulated
+	// results at least this often, even short of the batch size, so results
+	// don't sit indefinitely.
+	UserBatchFlushInterval   time.Duration // CRON_DISCOVERY_USER_BATCH_FLUSH_INTERVAL_DURATION, default 5s
+	LeagueBatchFlushInterval time.Duration // CRON_DISCOVERY_LEAGUE_BATCH_FLUSH_INTERVAL_DURATION, default 5s
 }
 
-// LoadConfig reads Config from env, clamped to at least 1.
+// LoadConfig reads Config from env, clamped to at least 1 (durations to at
+// least 1s).
 func LoadConfig() Config {
 	return Config{
-		UserPoolSize:      max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 10), 1),
-		UserRefillBatch:   max(helpers.GetEnv("CRON_DISCOVERY_USER_REFILL_BATCH", 2), 1),
-		LeaguePoolSize:    max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_POOL_SIZE", 4), 1),
-		LeagueRefillBatch: max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_REFILL_BATCH", 2), 1),
+		UserPoolSize:             max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 10), 1),
+		UserRefillBatch:          max(helpers.GetEnv("CRON_DISCOVERY_USER_REFILL_BATCH", 2), 1),
+		LeaguePoolSize:           max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_POOL_SIZE", 4), 1),
+		LeagueRefillBatch:        max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_REFILL_BATCH", 2), 1),
+		UserBatchSize:            max(helpers.GetEnv("CRON_DISCOVERY_USER_BATCH_SIZE", 10), 1),
+		LeagueBatchSize:          max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_BATCH_SIZE", 5), 1),
+		UserBatchFlushInterval:   max(helpers.GetEnv("CRON_DISCOVERY_USER_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
+		LeagueBatchFlushInterval: max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
 	}
 }
 
 // Report summarizes one RunDiscovery call.
 type Report struct {
-	UsersProcessed   int
-	UsersFailed      int
+	UsersProcessed int
+	UsersFailed    int
+	// UsersDropped counts users whose fetch succeeded but whose batch's
+	// flush failed — their claim stays in place and they're retried once it
+	// expires. See fdb.Result.FlushDropped.
+	UsersDropped int
+	// UserFlushErrors counts how many user-pool flush calls failed
+	// (batch-level, not per-user).
+	UserFlushErrors int
+
 	LeaguesProcessed int
 	LeaguesFailed    int
+	// LeaguesDropped is UsersDropped's analog for the league pool.
+	LeaguesDropped int
+	// LeagueFlushErrors is UserFlushErrors's analog for the league pool.
+	LeagueFlushErrors int
+
 	// UserClaimErrors and LeagueClaimErrors count how many times each pool's
 	// claim call returned a non-nil error (e.g. Postgres unreachable) rather
 	// than a legitimately empty queue. A run with zero processed/failed items
@@ -67,44 +96,59 @@ type Report struct {
 
 // RunDiscovery runs the user pool and league pool concurrently until ctx is
 // done (the caller — cmd/cron — sets ctx's deadline to -max-duration), then
-// returns a summary. Each pool claims and processes items independently;
-// see RunPool for the claim/process/refill loop shared by both.
-func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg Config) (Report, error) {
+// returns a summary. Each pool claims, fetches, and batch-flushes
+// independently — see internal/fdb.RunPool for the claim/dispatch/batch
+// loop shared by both.
+func RunDiscovery(ctx context.Context, db *gorm.DB, sleeperClient *sleeper.Client, cfg Config) (Report, error) {
 	logger := newStdLogger()
-	logger.Info("discovery cron starting", "tag", activities.DiscoveryLogTag,
+	logger.Info("discovery cron starting", "tag", discoveryLogTag,
 		"userPoolSize", cfg.UserPoolSize, "userRefillBatch", cfg.UserRefillBatch,
 		"leaguePoolSize", cfg.LeaguePoolSize, "leagueRefillBatch", cfg.LeagueRefillBatch)
 	start := time.Now()
 
-	var userResult, leagueResult cronpool.PoolResult
+	var userResult, leagueResult fdb.Result
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		userResult = cronpool.RunPool(ctx,
-			cronpool.PoolConfig{Size: cfg.UserPoolSize, RefillBatch: cfg.UserRefillBatch, PollInterval: pollInterval},
-			func(ctx context.Context, n int) ([]string, error) {
-				return da.ClaimStaleUsers(ctx, activities.ClaimStaleUsersParams{BatchSize: n})
+		userResult = fdb.RunPool(ctx, db,
+			fdb.Config{
+				Size:               cfg.UserPoolSize,
+				RefillBatch:        cfg.UserRefillBatch,
+				PollInterval:       pollInterval,
+				BatchSize:          cfg.UserBatchSize,
+				BatchFlushInterval: cfg.UserBatchFlushInterval,
 			},
-			func(ctx context.Context, id string) error {
-				return ProcessUser(ctx, da, id)
+			func(ctx context.Context, db *gorm.DB, n int) ([]string, error) {
+				return ClaimStaleUsers(ctx, db, n)
 			},
-			func(id string, err error, duration time.Duration) {
-				logResult(logger, "user", id, err, duration)
+			func(ctx context.Context, db *gorm.DB, userID string) (UserDiscoveryResult, error) {
+				return FetchUserLeagues(ctx, sleeperClient, userID)
+			},
+			FlushUserDiscovery,
+			func(userID string, err error, duration time.Duration) {
+				logResult(logger, "user", userID, err, duration)
 			},
 		)
 	})
 
 	wg.Go(func() {
-		leagueResult = cronpool.RunPool(ctx,
-			cronpool.PoolConfig{Size: cfg.LeaguePoolSize, RefillBatch: cfg.LeagueRefillBatch, PollInterval: pollInterval},
-			func(ctx context.Context, n int) ([]string, error) {
-				return ClaimStaleLeagues(ctx, da.DB, n)
+		leagueResult = fdb.RunPool(ctx, db,
+			fdb.Config{
+				Size:               cfg.LeaguePoolSize,
+				RefillBatch:        cfg.LeagueRefillBatch,
+				PollInterval:       pollInterval,
+				BatchSize:          cfg.LeagueBatchSize,
+				BatchFlushInterval: cfg.LeagueBatchFlushInterval,
 			},
-			func(ctx context.Context, id string) error {
-				return ProcessLeague(ctx, da, id)
+			func(ctx context.Context, db *gorm.DB, n int) ([]string, error) {
+				return ClaimStaleLeagues(ctx, db, n)
 			},
-			func(id string, err error, duration time.Duration) {
-				logResult(logger, "league", id, err, duration)
+			func(ctx context.Context, db *gorm.DB, leagueID string) (LeagueDiscoveryResult, error) {
+				return FetchLeague(ctx, db, sleeperClient, leagueID)
+			},
+			FlushLeagueDiscovery,
+			func(leagueID string, err error, duration time.Duration) {
+				logResult(logger, "league", leagueID, err, duration)
 			},
 		)
 	})
@@ -114,22 +158,26 @@ func RunDiscovery(ctx context.Context, da *activities.DiscoveryActivities, cfg C
 	report := Report{
 		UsersProcessed:    userResult.Processed,
 		UsersFailed:       userResult.Failed,
+		UsersDropped:      userResult.FlushDropped,
+		UserFlushErrors:   userResult.FlushErrors,
 		LeaguesProcessed:  leagueResult.Processed,
 		LeaguesFailed:     leagueResult.Failed,
+		LeaguesDropped:    leagueResult.FlushDropped,
+		LeagueFlushErrors: leagueResult.FlushErrors,
 		UserClaimErrors:   userResult.ClaimErrors,
 		LeagueClaimErrors: leagueResult.ClaimErrors,
 	}
-	logger.Info("discovery cron finished", "tag", activities.DiscoveryLogTag,
+	logger.Info("discovery cron finished", "tag", discoveryLogTag,
 		"duration", time.Since(start),
-		"usersProcessed", report.UsersProcessed, "usersFailed", report.UsersFailed,
-		"leaguesProcessed", report.LeaguesProcessed, "leaguesFailed", report.LeaguesFailed)
+		"usersProcessed", report.UsersProcessed, "usersFailed", report.UsersFailed, "usersDropped", report.UsersDropped,
+		"leaguesProcessed", report.LeaguesProcessed, "leaguesFailed", report.LeaguesFailed, "leaguesDropped", report.LeaguesDropped)
 	return report, nil
 }
 
 func logResult(logger *stdLogger, kind, id string, err error, duration time.Duration) {
 	if err != nil {
-		logger.Warn(kind+" failed", "tag", activities.DiscoveryLogTag, "id", id, "error", err, "duration", duration)
+		logger.Warn(kind+" failed", "tag", discoveryLogTag, "id", id, "error", err, "duration", duration)
 		return
 	}
-	logger.Info(kind+" completed", "tag", activities.DiscoveryLogTag, "id", id, "duration", duration)
+	logger.Info(kind+" completed", "tag", discoveryLogTag, "id", id, "duration", duration)
 }

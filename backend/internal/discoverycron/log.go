@@ -7,10 +7,8 @@ import (
 )
 
 // stdLogger is a minimal key-value logger over the standard library's log
-// package, matching the shape (message + alternating key/value pairs) that
-// activities.DiscoveryActivities' Temporal-based logging already uses, so
-// discovery_trace-tagged log lines look the same regardless of which path
-// produced them.
+// package, mirroring internal/transactioncron's stdLogger so discovery- and
+// transaction-cron log lines have the same shape in journald.
 type stdLogger struct{}
 
 func newStdLogger() *stdLogger { return &stdLogger{} }

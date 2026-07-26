@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/activities"
 	"backend/internal/discoverycron"
 	"backend/internal/models"
 	"backend/internal/sleeper"
@@ -18,8 +17,8 @@ import (
 )
 
 // TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion needs real Postgres,
-// not the package's usual SQLite fixture (newSQLiteDB, from process_test.go):
-// RunDiscovery's two pools claim through activities.ClaimStaleUsers and
+// not the package's usual SQLite fixture (newSQLiteDB, from fetch_test.go):
+// RunDiscovery's two pools claim through ClaimStaleUsers and
 // ClaimStaleLeagues, both of which use `now()`, `interval`, and `FOR UPDATE
 // SKIP LOCKED` — syntax SQLite's parser rejects outright ("syntax error near
 // '120 minutes'"), not just semantics it happens to get wrong. Every other
@@ -40,8 +39,8 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 
 	db.Create(&models.SleeperUser{SleeperUserID: "user1"})
 	// Season must be >= "2025" (claimStaleLeaguesSQL's eligibility filter,
-	// matching activities.firstScannedSeason) for ClaimStaleLeagues to pick
-	// this row up at all.
+	// matching firstScannedSeason) for ClaimStaleLeagues to pick this row up
+	// at all.
 	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-existing", Season: "2026"})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,31 +56,38 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	cfg := discoverycron.Config{UserPoolSize: 2, UserRefillBatch: 1, LeaguePoolSize: 2, LeagueRefillBatch: 1}
+	sleeperClient := sleeper.NewWithBaseURL(srv.URL)
+	// Small batch size and a short flush interval — not huge values forcing
+	// only the shutdown-time flush (see fdb's own tests for that guarantee
+	// in isolation): this test's whole point is that lg-new, discovered
+	// mid-run by the user pool, must actually land in sleeper_leagues in
+	// time for the league pool to claim and process it inside the same
+	// 600ms run, so the user pool's flush needs to happen promptly.
+	cfg := discoverycron.Config{
+		UserPoolSize: 2, UserRefillBatch: 1, LeaguePoolSize: 2, LeagueRefillBatch: 1,
+		UserBatchSize: 1, LeagueBatchSize: 1,
+		UserBatchFlushInterval: 50 * time.Millisecond, LeagueBatchFlushInterval: 50 * time.Millisecond,
+	}
 
-	// The job's own deadline stands in for cmd/cron's -max-duration. RunPool
-	// (Task 4) has no early-exit-on-empty-queue behavior by design — it
-	// keeps polling until ctx is done, matching production (a cron run uses
-	// any leftover time to keep checking for newly-claimable work). So this
-	// test genuinely runs for close to its full deadline, not less; keep
-	// that deadline short so the suite stays fast.
+	// The job's own deadline stands in for cmd/cron's -max-duration. fdb.RunPool
+	// has no early-exit-on-empty-queue behavior by design — it keeps polling
+	// until ctx is done, matching production (a cron run uses any leftover
+	// time to keep checking for newly-claimable work). So this test genuinely
+	// runs for close to its full deadline, not less; keep that deadline short
+	// so the suite stays fast.
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
 	defer cancel()
-	report, err := discoverycron.RunDiscovery(ctx, da, cfg)
+	report, err := discoverycron.RunDiscovery(ctx, db, sleeperClient, cfg)
 	if err != nil {
 		t.Fatalf("RunDiscovery error: %v", err)
 	}
 	// >= 1, not == 1: ClaimStaleUsers has no "already synced this run" guard
-	// beyond the 120-minute claimed_at TTL — the instant ProcessUser clears
+	// beyond the 120-minute claimed_at TTL — the instant a flush clears
 	// claimed_at, user1's row is claimable again. With pollInterval this
-	// short, RunPool's poll-until-ctx-done loop (see RunPool's doc comment)
-	// reliably reclaims and reprocesses it more than once inside 600ms; a
-	// strict == 1 fails deterministically, not flakily. UsersFailed is not
-	// asserted at all here for the same reason: a reclaim can legitimately
-	// race the ctx deadline and fail with "rate: Wait(n=1) would exceed
-	// context deadline" — expected per RunPool's contract that process
-	// respects ctx itself, not a bug in ProcessUser.
+	// short, fdb's poll-until-ctx-done loop reliably reclaims and reprocesses
+	// it more than once inside 600ms; a strict == 1 fails deterministically,
+	// not flakily. UsersFailed/UsersDropped are not asserted at all here for
+	// the same reason: a reclaim can legitimately race the ctx deadline.
 	if report.UsersProcessed < 1 {
 		t.Errorf("expected at least 1 user processed, got %+v", report)
 	}
@@ -108,12 +114,15 @@ func TestRunDiscovery_ProcessesUsersAndLeaguesToCompletion(t *testing.T) {
 func TestRunDiscovery_AggregatesClaimErrorsFromBothPools(t *testing.T) {
 	db := newSQLiteDB(t)
 
-	da := &activities.DiscoveryActivities{DB: db, Sleeper: sleeper.New()}
-	cfg := discoverycron.Config{UserPoolSize: 1, UserRefillBatch: 1, LeaguePoolSize: 1, LeagueRefillBatch: 1}
+	cfg := discoverycron.Config{
+		UserPoolSize: 1, UserRefillBatch: 1, LeaguePoolSize: 1, LeagueRefillBatch: 1,
+		UserBatchSize: 10, LeagueBatchSize: 10,
+		UserBatchFlushInterval: time.Hour, LeagueBatchFlushInterval: time.Hour,
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	report, err := discoverycron.RunDiscovery(ctx, da, cfg)
+	report, err := discoverycron.RunDiscovery(ctx, db, sleeper.New(), cfg)
 	if err != nil {
 		t.Fatalf("RunDiscovery error: %v", err)
 	}
