@@ -19,6 +19,15 @@ import (
 // either way.
 const playerIdentitySyncBatchSize = 500
 
+// playerIdentityHeartbeatInterval controls how often SyncPlayerIdentities
+// heartbeats *within* a batch, not just once per completed batch. Each row
+// is its own DB round-trip (no bulk upsert — see linkOrCreateSkillPlayer),
+// so a full 500-row batch against the real production DB can take well
+// longer than a single heartbeat timeout even though the activity is still
+// actively working; heartbeating every 25 rows keeps well inside that
+// window regardless of batch size or per-row latency.
+const playerIdentityHeartbeatInterval = 25
+
 // sleeperDefPosition/espnDefPositions are the position labels Sleeper
 // ("DEF") and ESPN ("DEF" or legacy "D/ST") use for team defenses, kept
 // distinct from real players throughout this file because team-defense
@@ -105,6 +114,14 @@ func (a *PlayerSyncActivities) syncIdentityBatch(ctx context.Context, batch []mo
 	db := a.DB.WithContext(ctx)
 	var conflicts []identityConflict
 
+	processed := 0
+	heartbeat := func() {
+		processed++
+		if processed%playerIdentityHeartbeatInterval == 0 {
+			activity.RecordHeartbeat(ctx, result.Scanned+processed)
+		}
+	}
+
 	var defRows, skillRows []models.SleeperPlayer
 	for _, sp := range batch {
 		if sp.Position == sleeperDefPosition {
@@ -137,6 +154,7 @@ func (a *PlayerSyncActivities) syncIdentityBatch(ctx context.Context, batch []mo
 			return nil, fmt.Errorf("look up players by espn_id: %w", err)
 		}
 		for _, sp := range skillRows {
+			heartbeat()
 			if _, ok := alreadyLinked[sp.SleeperPlayerID]; ok {
 				continue
 			}
@@ -171,6 +189,7 @@ func (a *PlayerSyncActivities) syncIdentityBatch(ctx context.Context, batch []mo
 			defsByTeam[p.Team] = append(defsByTeam[p.Team], p)
 		}
 		for _, sp := range defRows {
+			heartbeat()
 			if _, ok := alreadyLinked[sp.SleeperPlayerID]; ok {
 				continue
 			}
