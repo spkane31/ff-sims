@@ -1,28 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
-import { adminService, AdminDiscoveryFrontierResponse } from "../services/adminService";
+import {
+  adminService,
+  AdminDiscoveryFrontierResponse,
+} from "../services/adminService";
+import { useAsyncQuery } from "./useAsyncQuery";
 
 export function useAdminDiscoveryFrontier() {
-  const [frontier, setFrontier] = useState<AdminDiscoveryFrontierResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchFrontier = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await adminService.getDiscoveryFrontier();
-      setFrontier(data);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch admin discovery frontier"));
-      setFrontier(null);
-    } finally {
-      setIsLoading(false);
+  const {
+    data: frontier,
+    isLoading,
+    error,
+  } = useAsyncQuery<AdminDiscoveryFrontierResponse | null>(
+    adminService.getDiscoveryFrontier,
+    {
+      initialData: null,
+      errorMessage: "Failed to fetch admin discovery frontier",
     }
-  }, []);
-
-  useEffect(() => {
-    fetchFrontier();
-  }, [fetchFrontier]);
+  );
 
   return { frontier, isLoading, error };
 }
