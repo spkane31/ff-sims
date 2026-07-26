@@ -58,6 +58,39 @@ func seedPlayer(t *testing.T, db *gorm.DB, espnID int64, sleeperID, name, positi
 	return p
 }
 
+// A production run once failed with a Temporal heartbeat timeout because
+// the activity only heartbeated once per up-to-500-row batch, and each row
+// is its own DB round-trip. This seeds more rows than one heartbeat
+// interval to exercise that inner-loop heartbeat path (see
+// playerIdentityHeartbeatInterval) and confirm it doesn't affect
+// correctness — a true regression test for the timeout itself would need a
+// live heartbeat-timeout clock, which isn't practical here (the SDK's test
+// harness documents that its heartbeat listener is internally throttled and
+// won't reflect every call).
+func TestSyncPlayerIdentities_HeartbeatsAcrossMultipleIntervalsWithinOneBatch(t *testing.T) {
+	db := newTestDB(t)
+	const rowCount = 60 // > 2x playerIdentityHeartbeatInterval (25), still one batch (< 500)
+	for i := 0; i < rowCount; i++ {
+		id := "hb" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		seedSleeperPlayer(t, db, id, "", "Player "+id, "WR", "SF")
+	}
+
+	a := &activities.PlayerSyncActivities{DB: db}
+	result, err := runSyncPlayerIdentities(t, a)
+	if err != nil {
+		t.Fatalf("SyncPlayerIdentities error: %v", err)
+	}
+	if result.Created != rowCount {
+		t.Errorf("expected all %d rows created, got %+v", rowCount, result)
+	}
+
+	var count int64
+	db.Model(&models.Player{}).Count(&count)
+	if count != rowCount {
+		t.Errorf("expected %d players rows, got %d", rowCount, count)
+	}
+}
+
 func TestSyncPlayerIdentities_CreatesRowForUnmatchedEspnID(t *testing.T) {
 	db := newTestDB(t)
 	seedSleeperPlayer(t, db, "sp1", "9999", "New Guy", "WR", "SF")
