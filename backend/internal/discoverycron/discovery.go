@@ -42,9 +42,9 @@ type Config struct {
 // LoadConfig reads Config from env, clamped to at least 1.
 func LoadConfig() Config {
 	return Config{
-		UserPoolSize:      max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 8), 1),
+		UserPoolSize:      max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 10), 1),
 		UserRefillBatch:   max(helpers.GetEnv("CRON_DISCOVERY_USER_REFILL_BATCH", 2), 1),
-		LeaguePoolSize:    max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_POOL_SIZE", 2), 1),
+		LeaguePoolSize:    max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_POOL_SIZE", 4), 1),
 		LeagueRefillBatch: max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_REFILL_BATCH", 2), 1),
 	}
 }

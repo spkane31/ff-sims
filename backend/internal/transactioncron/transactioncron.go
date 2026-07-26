@@ -33,7 +33,7 @@ type Config struct {
 	BatchSize int // CRON_TXN_BATCH_SIZE, default 20
 	// BatchFlushInterval flushes accumulated results at least this often,
 	// even short of BatchSize, so results don't sit indefinitely.
-	BatchFlushInterval time.Duration // CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION, default 5s
+	BatchFlushInterval time.Duration // CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION, default 5s, minimum 1s
 }
 
 // LoadConfig reads Config from env, clamped to at least 1.
@@ -42,7 +42,7 @@ func LoadConfig() Config {
 		PoolSize:           max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 10), 1),
 		RefillBatch:        max(helpers.GetEnv("CRON_TXN_REFILL_BATCH", 4), 1),
 		BatchSize:          max(helpers.GetEnv("CRON_TXN_BATCH_SIZE", 20), 1),
-		BatchFlushInterval: helpers.GetEnv("CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second),
+		BatchFlushInterval: max(helpers.GetEnv("CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
 	}
 }
 
