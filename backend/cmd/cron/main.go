@@ -44,14 +44,18 @@ func resolveJob(registry map[string]func(context.Context) error, name string) (f
 
 // jobFailed decides whether a discovery Report represents a silent total
 // failure that should make the process exit non-zero, rather than a
-// legitimate no-op. RunDiscovery/RunPool never return a Go error for "the
-// queue was empty" or "the DB was unreachable" — both look identical at the
-// Report level unless we check ClaimErrors: zero processed/failed items is
-// expected when there's genuinely nothing to claim, but zero processed/
-// failed items *and* at least one claim error means every attempt to talk
+// legitimate no-op. RunDiscovery/fdb.RunPool never return a Go error for
+// "the queue was empty" or "the DB was unreachable" — both look identical at
+// the Report level unless we check ClaimErrors: zero processed/failed/
+// dropped items is expected when there's genuinely nothing to claim, but
+// zero of those *and* at least one claim error means every attempt to talk
 // to the database failed for the whole run, which must not exit clean.
+// Dropped counts toward progress too: a user/league whose fetch succeeded
+// but whose batch's flush failed isn't the same "genuinely nothing to do"
+// case an empty queue is.
 func jobFailed(report discoverycron.Report) error {
-	totalProgress := report.UsersProcessed + report.UsersFailed + report.LeaguesProcessed + report.LeaguesFailed
+	totalProgress := report.UsersProcessed + report.UsersFailed + report.UsersDropped +
+		report.LeaguesProcessed + report.LeaguesFailed + report.LeaguesDropped
 	claimErrors := report.UserClaimErrors + report.LeagueClaimErrors
 	if totalProgress == 0 && claimErrors > 0 {
 		return fmt.Errorf("discovery made no progress and saw %d claim error(s) (userClaimErrors=%d, leagueClaimErrors=%d): treating as failure",
@@ -109,12 +113,11 @@ func main() {
 	}
 
 	sc := sleeper.New()
-	da := &activities.DiscoveryActivities{DB: database.DB, Sleeper: sc}
 	dfa := &activities.DataFetchActivities{DB: database.DB, Archive: database.Archive, Sleeper: sc}
 
 	registry := map[string]func(context.Context) error{
 		"discovery": func(ctx context.Context) error {
-			report, err := discoverycron.RunDiscovery(ctx, da, discoverycron.LoadConfig())
+			report, err := discoverycron.RunDiscovery(ctx, database.DB, sc, discoverycron.LoadConfig())
 			if err != nil {
 				return err
 			}

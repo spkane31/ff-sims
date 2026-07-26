@@ -19,6 +19,40 @@ import (
 	"backend/internal/sleeper"
 )
 
+func newTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	// Each pooled connection to sqlite ":memory:" gets its own empty database;
+	// pin the pool to one connection so concurrent test code (e.g. the batch
+	// sync activity's goroutines) sees the migrated schema.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("unwrap sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(
+		&models.SleeperUser{},
+		&models.SleeperLeague{},
+		&models.SleeperLeagueUser{},
+		&models.SleeperDraft{},
+		&models.SleeperDraftPick{},
+		&models.SleeperTransaction{},
+		&models.SleeperPlayer{},
+		&models.SleeperPlayerWeekStat{},
+		&models.SleeperWeekStatFetch{},
+		&models.DraftADP{},
+		&models.Player{},
+	); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	return db
+}
+
 // newArchiveTestDB opens an in-memory SQLite DB migrated with the archive
 // models — a lightweight stand-in for the archive DB in tests that need to
 // prove routing actually lands rows in a *different* database than cloud.

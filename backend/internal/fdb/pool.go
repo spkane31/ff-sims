@@ -1,6 +1,6 @@
-// Package fdb ("fetch, dispatch, batch") generalizes internal/cronpool's
-// claim/dispatch worker loop by splitting per-item work into two stages: a
-// concurrent fetch stage that talks to an external source (e.g. Sleeper) and
+// Package fdb ("fetch, dispatch, batch") is a claim/dispatch worker loop that
+// splits per-item work into two stages: a concurrent fetch stage that talks
+// to an external source (e.g. Sleeper) and
 // produces an in-memory result, and a batch stage that accumulates those
 // results and flushes them via one bulk DB write instead of one write per
 // item. fdb owns the single *gorm.DB instance used by a RunPool call and
@@ -25,8 +25,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// defaultPollInterval mirrors cronpool's: how often RunPool re-checks when
-// below its refill threshold or the last claim came back empty.
+// defaultPollInterval is used when Config.PollInterval is unset: how often
+// RunPool re-checks when below its refill threshold or the last claim came
+// back empty.
 const defaultPollInterval = 2 * time.Second
 
 // defaultBatchFlushInterval is used when Config.BatchFlushInterval is unset.
@@ -45,7 +46,8 @@ type Config struct {
 	// Size is the maximum number of items fetched concurrently.
 	Size int
 	// RefillBatch is how many fetch slots must be free before RunPool claims
-	// more work. See cronpool.PoolConfig.RefillBatch for the same rationale.
+	// more work. Claiming in batches (rather than one-for-one as each slot
+	// frees) keeps the number of claim queries bounded as Size scales up.
 	RefillBatch int
 	// PollInterval is how long RunPool waits before re-checking when it's
 	// below RefillBatch free slots or the last claim was empty. Defaults to
@@ -114,8 +116,8 @@ type pendingItem[C any, R any] struct {
 // as FlushDropped. onResult is called once per item that leaves RunPool's
 // bookkeeping, whether via Failed, a successful flush, or a failed flush.
 //
-// No per-item timeout is imposed here, matching cronpool.RunPool — fetch is
-// expected to respect ctx itself.
+// No per-item timeout is imposed here — fetch is expected to respect ctx
+// itself.
 func RunPool[C any, R any](
 	ctx context.Context,
 	db *gorm.DB,
