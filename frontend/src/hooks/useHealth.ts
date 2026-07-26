@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { healthService, HealthStatus, HealthServiceError } from '../services/healthService';
+import { useState, useEffect, useCallback } from "react";
+import {
+  healthService,
+  HealthStatus,
+  HealthServiceError,
+} from "../services/healthService";
 
 interface UseHealthReturn {
   healthStatus: HealthStatus | null;
@@ -10,7 +14,10 @@ interface UseHealthReturn {
   lastChecked: string | null;
 }
 
-export function useHealth(autoCheck: boolean = false, interval: number = 30000): UseHealthReturn {
+export function useHealth(
+  autoCheck: boolean = false,
+  interval: number = 30000
+): UseHealthReturn {
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<HealthServiceError | null>(null);
@@ -27,9 +34,9 @@ export function useHealth(autoCheck: boolean = false, interval: number = 30000):
       const healthError = err as HealthServiceError;
       setError(healthError);
       setHealthStatus({
-        GitSHA: 'unknown',
-        BuildTime: 'unknown',
-        status: 'unhealthy',
+        GitSHA: "unknown",
+        BuildTime: "unknown",
+        status: "unhealthy",
         timestamp: new Date().toISOString(),
       });
     } finally {
@@ -50,7 +57,7 @@ export function useHealth(autoCheck: boolean = false, interval: number = 30000):
     }
   }, [autoCheck, interval, checkHealth]);
 
-  const isHealthy = healthStatus?.status === 'healthy' && !error;
+  const isHealthy = healthStatus?.status === "healthy" && !error;
 
   return {
     healthStatus,
