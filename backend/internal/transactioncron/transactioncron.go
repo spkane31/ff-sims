@@ -33,14 +33,14 @@ const pollInterval = 200 * time.Millisecond
 // connection for the duration of its Sleeper HTTP calls plus its writes, not
 // just the writes (same consideration as discoverycron's league pool).
 type Config struct {
-	PoolSize    int // CRON_TXN_POOL_SIZE, default 8
+	PoolSize    int // CRON_TXN_POOL_SIZE, default 10
 	RefillBatch int // CRON_TXN_REFILL_BATCH, default 4
 }
 
 // LoadConfig reads Config from env, clamped to at least 1.
 func LoadConfig() Config {
 	return Config{
-		PoolSize:    max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 8), 1),
+		PoolSize:    max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 10), 1),
 		RefillBatch: max(helpers.GetEnv("CRON_TXN_REFILL_BATCH", 4), 1),
 	}
 }
