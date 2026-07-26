@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import Layout from "../../components/Layout";
 import ADPFilterBar from "../../components/ADPFilterBar";
 import { useSleeperADPAll } from "../../hooks/useSleeperData";
@@ -131,7 +132,16 @@ export default function SleeperADPPage() {
                       {(page - 1) * LIMIT + i + 1}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                      {player.name}
+                      {player.player_id ? (
+                        <Link
+                          href={`/players/${player.player_id}`}
+                          className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
+                        >
+                          {player.name}
+                        </Link>
+                      ) : (
+                        player.name
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.position}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>

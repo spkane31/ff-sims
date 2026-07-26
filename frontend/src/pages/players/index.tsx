@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useRouter } from "next/router";
 import Link from "next/link";
 import Layout from "@/components/Layout";
 import {
@@ -28,8 +27,6 @@ function getPositionColor(position: string): string {
 }
 
 export default function PlayersIndex() {
-  const router = useRouter();
-  const leagueId = Number(router.query.leagueId);
   const [playersData, setPlayersData] = useState<GetPlayersResponse | null>(
     null
   );
@@ -285,7 +282,7 @@ export default function PlayersIndex() {
                       </td>
                       <td className="py-4 px-4 whitespace-nowrap">
                         <Link
-                          href={`/league/${leagueId}/players/${player.id}`}
+                          href={`/players/${player.id}`}
                           className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 font-medium transition-colors"
                         >
                           {player.name}
@@ -376,7 +373,7 @@ export default function PlayersIndex() {
 
         {/* Summary Stats */}
         <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-          <h2 className="text-lg font-semibold mb-4">League Summary</h2>
+          <h2 className="text-lg font-semibold mb-4">Summary</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">

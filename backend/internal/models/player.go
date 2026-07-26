@@ -47,6 +47,25 @@ func GetPlayerByESPNID(db *gorm.DB, espnID int64) (*Player, error) {
 	return &player, err
 }
 
+// GetPlayersByESPNIDs batch-resolves ESPN IDs to internal players, returning
+// a map keyed by ESPN ID. IDs with no matching player are simply absent from
+// the map rather than erroring, since callers (e.g. Sleeper player lookups)
+// expect partial matches.
+func GetPlayersByESPNIDs(db *gorm.DB, espnIDs []int64) (map[int64]Player, error) {
+	result := make(map[int64]Player, len(espnIDs))
+	if len(espnIDs) == 0 {
+		return result, nil
+	}
+	var players []Player
+	if err := db.Where("espn_id IN ?", espnIDs).Find(&players).Error; err != nil {
+		return nil, err
+	}
+	for _, p := range players {
+		result[p.ESPNID] = p
+	}
+	return result, nil
+}
+
 // GetPlayerBoxScores retrieves all box scores for a player in a specific season
 func GetPlayerBoxScores(db *gorm.DB, playerID uint, year uint) ([]BoxScore, error) {
 	var boxScores []BoxScore
