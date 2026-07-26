@@ -17,12 +17,6 @@ type DraftSyncReport struct {
 	LeaguesFailed    int
 }
 
-// TransactionSyncReport summarizes one TransactionSyncDispatcher run.
-type TransactionSyncReport struct {
-	LeaguesProcessed int
-	LeaguesFailed    int
-}
-
 // PlayerSyncReport summarizes one PlayerDatabaseSyncWorkflow run.
 type PlayerSyncReport struct {
 	PlayersUpserted int

@@ -338,12 +338,12 @@ func (a *ScavengerActivities) ReplicateTransactionsBatch(ctx context.Context, pa
 		return ReplicateBatchResult{Drained: true}, nil
 	}
 
-	// Rows filtered out by isPlayerOnlyTransaction still advance the cursor
+	// Rows filtered out by IsPlayerOnlyTransaction still advance the cursor
 	// below: cursor position tracks how far into cloud we've scanned, not
 	// what got written to archive.
 	var archiveRows []models.ArchiveSleeperTransaction
 	for _, r := range rows {
-		if !isPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
+		if !IsPlayerOnlyTransaction(r.DraftPicks, r.WaiverBudget) {
 			continue
 		}
 		archiveRows = append(archiveRows, models.ArchiveSleeperTransaction{

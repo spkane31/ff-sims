@@ -29,21 +29,30 @@ type DataFetchActivities struct {
 	Sleeper *sleeper.Client
 }
 
-// archiveRoutingCutoff returns the age boundary for routing already-old data
-// straight to archive at ingest time instead of cloud — see
-// SyncOneLeagueTransactions and syncOneLeagueDrafts. Reuses
-// SCAVENGER_RETENTION_DAYS (T6): "too old
-// for cloud to keep" and "too old to bother writing to cloud in the first
-// place" are the same threshold.
-func archiveRoutingCutoff() time.Time {
-	days := max(helpers.GetEnv("SCAVENGER_RETENTION_DAYS", 30), 1)
-	return time.Now().UTC().AddDate(0, 0, -days)
-}
-
 // currentSleeperSeason anchors "current" the same way Seasons() does
 // (discovery.go) — the calendar year, not NFL-state week boundaries.
 func currentSleeperSeason() string {
 	return strconv.Itoa(time.Now().Year())
+}
+
+// IsPlayerOnlyTransaction mirrors the valuation model's query-time filter
+// (analysis/src/parsing.py parse_trade) at write time, so this data never
+// reaches cloud or the archive DB at all. Shared by ScavengerActivities'
+// transaction replication and internal/transactioncron's ingest-time
+// filtering.
+func IsPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
+	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
+}
+
+func isEmptyJSONArray(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true // SQL NULL / zero value
+	}
+	var v []json.RawMessage
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	return len(v) == 0
 }
 
 // GetDraftSyncConfig returns the draft dispatcher tuning knobs from env,
@@ -326,270 +335,4 @@ func (a *DataFetchActivities) fetchArchiveDraftPicks(ctx context.Context, draftI
 		Model(&models.ArchiveSleeperDraft{}).
 		Where("sleeper_draft_id = ?", draftID).
 		Update("last_fetched_at", time.Now().UTC()).Error
-}
-
-// GetTransactionSyncConfig returns the dispatcher tuning knobs from env,
-// clamped to at least 1 so a bad value can't stall dispatch or break the
-// claim query's LIMIT.
-func (a *DataFetchActivities) GetTransactionSyncConfig(ctx context.Context) (TransactionSyncConfig, error) {
-	return TransactionSyncConfig{
-		ParallelBatches: max(helpers.GetEnv("TXN_SYNC_PARALLEL_BATCHES", 2), 1),
-		BatchSize:       max(helpers.GetEnv("TXN_SYNC_BATCH_SIZE", 100), 1),
-		Concurrency:     max(helpers.GetEnv("TXN_SYNC_LEAGUE_CONCURRENCY", 8), 1),
-	}, nil
-}
-
-// claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
-// leagues for transaction syncing. FOR UPDATE SKIP LOCKED lets concurrent
-// claimers (two fleets, K parallel pipelines) partition the backlog without
-// blocking or double-claiming; the 20-minute expiry window re-queues leagues
-// claimed by a worker that died mid-batch. Ordering matches the partial index
-// idx_sleeper_leagues_txn_stale (never-fetched first, then oldest).
-const claimLeaguesForTransactionsSQL = `
-UPDATE sleeper_leagues SET claimed_at = now()
-WHERE sleeper_league_id IN (
-    SELECT sleeper_league_id FROM sleeper_leagues
-    WHERE skipped_at IS NULL AND last_fetched_at IS NOT NULL AND season >= '2025'
-      AND NOT (status = 'complete' AND last_transactions_fetched_at IS NOT NULL)
-      AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')
-    ORDER BY last_transactions_fetched_at ASC NULLS FIRST
-    LIMIT ?
-    FOR UPDATE SKIP LOCKED
-)
-RETURNING sleeper_league_id, season, last_transaction_leg_fetched`
-
-// ClaimLeaguesForTransactions claims up to BatchSize leagues with stale
-// transaction data and returns their sync state. Postgres-only (SKIP LOCKED).
-func (a *DataFetchActivities) ClaimLeaguesForTransactions(ctx context.Context, params ClaimLeaguesForTransactionsParams) ([]LeagueTransactionState, error) {
-	var rows []struct {
-		SleeperLeagueID           string
-		Season                    string
-		LastTransactionLegFetched *int
-	}
-	if err := a.DB.WithContext(ctx).Raw(claimLeaguesForTransactionsSQL, params.BatchSize).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	states := make([]LeagueTransactionState, len(rows))
-	for i, r := range rows {
-		states[i] = LeagueTransactionState{
-			LeagueID:       r.SleeperLeagueID,
-			Season:         r.Season,
-			LastLegFetched: r.LastTransactionLegFetched,
-		}
-	}
-	return states, nil
-}
-
-// MaxLegForLeague returns the highest transaction leg worth fetching. Past
-// seasons get the full 1..18 sweep; the current season is capped at the
-// current NFL week (offseason week 0 still fetches leg 1, where offseason
-// moves land). A nil state (state endpoint down) falls back to 18 rather than
-// stalling the batch. Exported so internal/transactioncron (the cron-driven
-// path replacing SyncLeagueTransactionsBatch's Temporal batching) can reuse
-// the exact same cap logic.
-func MaxLegForLeague(season string, state *sleeper.NFLState) int {
-	if state == nil || season < state.Season {
-		return 18
-	}
-	if state.Week < 1 {
-		return 1
-	}
-	return min(state.Week, 18)
-}
-
-// SyncLeagueTransactionsBatch syncs transactions for a claimed batch of
-// leagues with bounded concurrency, stamping each league done as it completes.
-// Per-league failures are counted, not propagated: a failed league keeps its
-// claim and re-enters the queue when the claim expires. The activity heartbeats
-// as leagues complete so a dead worker is detected via HeartbeatTimeout.
-func (a *DataFetchActivities) SyncLeagueTransactionsBatch(ctx context.Context, params SyncLeagueTransactionsBatchParams) (SyncBatchResult, error) {
-	logger := activity.GetLogger(ctx)
-	res := SyncBatchResult{}
-
-	// Re-scope to leagues still claimed: on an activity retry, leagues stamped
-	// by the previous attempt have claimed_at cleared and must not re-sync.
-	ids := make([]string, len(params.Leagues))
-	byID := make(map[string]LeagueTransactionState, len(params.Leagues))
-	for i, lg := range params.Leagues {
-		ids[i] = lg.LeagueID
-		byID[lg.LeagueID] = lg
-	}
-	var stillClaimed []string
-	if err := a.DB.WithContext(ctx).Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id IN ? AND claimed_at IS NOT NULL", ids).
-		Pluck("sleeper_league_id", &stillClaimed).Error; err != nil {
-		return res, err
-	}
-	if len(stillClaimed) == 0 {
-		return res, nil
-	}
-
-	state, err := a.Sleeper.GetNFLState(ctx)
-	if err != nil {
-		logger.Warn("GetNFLState failed; falling back to full 18-leg sweep", "error", err)
-		state = nil
-	}
-
-	concurrency := max(1, params.Concurrency)
-
-	type leagueResult struct {
-		leagueID string
-		err      error
-	}
-	sem := make(chan struct{}, concurrency)
-	results := make(chan leagueResult, len(stillClaimed))
-	var wg sync.WaitGroup
-	for _, id := range stillClaimed {
-		lg := byID[id]
-		sem <- struct{}{}
-		wg.Go(func() {
-			defer func() { <-sem }()
-			results <- leagueResult{leagueID: lg.LeagueID, err: a.SyncOneLeagueTransactions(ctx, lg, MaxLegForLeague(lg.Season, state))}
-		})
-	}
-	go func() { wg.Wait(); close(results) }()
-
-	done := 0
-	for r := range results {
-		done++
-		if r.err != nil {
-			res.Failed++
-			logger.Warn("league transaction sync failed", "leagueID", r.leagueID, "error", r.err)
-		} else {
-			res.Processed++
-		}
-		if done%10 == 0 {
-			activity.RecordHeartbeat(ctx, done)
-		}
-	}
-	return res, nil
-}
-
-// SyncOneLeagueTransactions fetches transactions for one league from its leg
-// cursor up to maxLeg, upserts them, and stamps completion (clearing the
-// claim) in a single update. Per-leg 404s mean "no transactions for that
-// leg" and are skipped. Exported so internal/transactioncron can call it
-// directly per-item, instead of through SyncLeagueTransactionsBatch's
-// Temporal-batch wrapper.
-func (a *DataFetchActivities) SyncOneLeagueTransactions(ctx context.Context, lg LeagueTransactionState, maxLeg int) error {
-	startLeg := 1
-	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
-		startLeg = *lg.LastLegFetched - 1
-	}
-
-	maxSeen := 0
-	for leg := startLeg; leg <= maxLeg; leg++ {
-		txns, err := a.Sleeper.GetTransactions(ctx, lg.LeagueID, leg)
-		if err != nil {
-			var nfe *sleeper.NotFoundError
-			if errors.As(err, &nfe) {
-				continue
-			}
-			return fmt.Errorf("leg %d: %w", leg, err)
-		}
-		if len(txns) == 0 {
-			continue
-		}
-		var rows []models.SleeperTransaction
-		for _, t := range txns {
-			addsJSON, _ := json.Marshal(t.Adds)
-			dropsJSON, _ := json.Marshal(t.Drops)
-			picksJSON, _ := json.Marshal(t.DraftPicks)
-			waiverJSON, _ := json.Marshal(t.WaiverBudget)
-			// Picks/FAAB trades are never valued by the valuation model (see
-			// isPlayerOnlyTransaction) and aren't useful trade history either,
-			// so they're dropped at ingest time rather than written anywhere.
-			if !isPlayerOnlyTransaction(picksJSON, waiverJSON) {
-				continue
-			}
-			rows = append(rows, models.SleeperTransaction{
-				SleeperTransactionID: t.TransactionID,
-				SleeperLeagueID:      lg.LeagueID,
-				Type:                 t.Type,
-				Status:               t.Status,
-				CreatedAtSleeper:     t.Created,
-				Leg:                  t.Leg,
-				Adds:                 addsJSON,
-				Drops:                dropsJSON,
-				DraftPicks:           picksJSON,
-				WaiverBudget:         waiverJSON,
-			})
-		}
-		cloudRows := rows
-		if a.Archive != nil {
-			cutoff := archiveRoutingCutoff()
-			var newRows, oldRows []models.SleeperTransaction
-			for _, r := range rows {
-				if time.UnixMilli(r.CreatedAtSleeper).UTC().Before(cutoff) {
-					// Old rows route straight to archive, not cloud.
-					oldRows = append(oldRows, r)
-				} else {
-					newRows = append(newRows, r)
-				}
-			}
-			if len(oldRows) > 0 {
-				if err := a.upsertArchiveTransactions(ctx, oldRows); err != nil {
-					return fmt.Errorf("leg %d archive upsert: %w", leg, err)
-				}
-			}
-			cloudRows = newRows
-		}
-		if len(cloudRows) > 0 {
-			if err := a.DB.WithContext(ctx).
-				Clauses(clause.OnConflict{DoNothing: true}).
-				CreateInBatches(cloudRows, 500).Error; err != nil {
-				return fmt.Errorf("leg %d upsert: %w", leg, err)
-			}
-		}
-		if leg > maxSeen {
-			maxSeen = leg
-		}
-	}
-
-	updates := map[string]interface{}{
-		"last_transactions_fetched_at": time.Now().UTC(),
-		"claimed_at":                   nil,
-	}
-	if maxSeen > 0 {
-		updates["last_transaction_leg_fetched"] = maxSeen
-	}
-	return a.DB.WithContext(ctx).
-		Model(&models.SleeperLeague{}).
-		Where("sleeper_league_id = ?", lg.LeagueID).
-		Updates(updates).Error
-}
-
-// isPlayerOnlyTransaction mirrors the valuation model's query-time filter
-// (analysis/src/parsing.py parse_trade) at write time, so this data never
-// reaches cloud or the archive DB at all.
-func isPlayerOnlyTransaction(draftPicks, waiverBudget json.RawMessage) bool {
-	return isEmptyJSONArray(draftPicks) && isEmptyJSONArray(waiverBudget)
-}
-
-func isEmptyJSONArray(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return true // SQL NULL / zero value
-	}
-	var v []json.RawMessage
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return false
-	}
-	return len(v) == 0
-}
-
-// upsertArchiveTransactions writes rows directly to the archive DB, skipping
-// cloud — see SyncOneLeagueTransactions's age-based routing.
-func (a *DataFetchActivities) upsertArchiveTransactions(ctx context.Context, rows []models.SleeperTransaction) error {
-	archiveRows := make([]models.ArchiveSleeperTransaction, len(rows))
-	for i, r := range rows {
-		archiveRows[i] = models.ArchiveSleeperTransaction{
-			SleeperTransactionID: r.SleeperTransactionID, SleeperLeagueID: r.SleeperLeagueID,
-			Type: r.Type, Status: r.Status, CreatedAtSleeper: r.CreatedAtSleeper, Leg: r.Leg,
-			Adds: r.Adds, Drops: r.Drops, DraftPicks: r.DraftPicks, WaiverBudget: r.WaiverBudget,
-			CreatedAt: time.Now().UTC(),
-		}
-	}
-	return a.Archive.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		CreateInBatches(archiveRows, 500).Error
 }

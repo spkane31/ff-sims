@@ -3,12 +3,13 @@ package helpers
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // EnvValue is the set of types GetEnv knows how to parse from an environment
 // variable's string value.
 type EnvValue interface {
-	int | int64 | float64 | bool | string
+	int | int64 | float64 | bool | string | time.Duration
 }
 
 // GetEnv returns the environment variable key parsed as T, or def when the
@@ -46,6 +47,12 @@ func GetEnv[T EnvValue](key string, def T) T {
 		*p = b
 	case *string:
 		*p = raw
+	case *time.Duration:
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return def
+		}
+		*p = d
 	}
 	return out
 }

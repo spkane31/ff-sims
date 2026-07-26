@@ -48,7 +48,11 @@ func TestRunTransactionSync_ProcessesLeaguesToCompletion(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	cfg := transactioncron.Config{PoolSize: 2, RefillBatch: 1}
+	// BatchSize (5) is deliberately larger than the single seeded league, and
+	// BatchFlushInterval is long enough not to fire either — this forces
+	// the assertions below to depend on fdb.RunPool's guaranteed
+	// shutdown-time flush, not a size/interval trigger.
+	cfg := transactioncron.Config{PoolSize: 2, RefillBatch: 1, BatchSize: 5, BatchFlushInterval: 5 * time.Second}
 
 	// Short deadline: RunPool polls until ctx is done (no early-exit on an
 	// empty queue), so the test genuinely runs close to its full deadline —
@@ -98,7 +102,7 @@ func TestRunTransactionSync_AggregatesClaimErrors(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	cfg := transactioncron.Config{PoolSize: 1, RefillBatch: 1}
+	cfg := transactioncron.Config{PoolSize: 1, RefillBatch: 1, BatchSize: 5, BatchFlushInterval: 5 * time.Second}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

@@ -91,14 +91,13 @@ func main() {
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
 
-	// The sync queues (drafts, transactions) are I/O-bound, and Temporal task
-	// distribution is pull-based: the fleet with more free activity slots and
-	// pollers takes a larger share of the queue. These are env-tunable so the
-	// worker host (idles well under 10% CPU on this workload) can be scaled up
-	// as needed.
+	// The drafts sync queue is I/O-bound, and Temporal task distribution is
+	// pull-based: the fleet with more free activity slots and pollers takes a
+	// larger share of the queue. These are env-tunable so the worker host
+	// (idles well under 10% CPU on this workload) can be scaled up as needed.
 	//
-	//	WORKER_ACTIVITY_SLOTS    max concurrent activities per sync queue (default 100)
-	//	WORKER_ACTIVITY_POLLERS  activity task pollers per sync queue (0 = SDK default)
+	//	WORKER_ACTIVITY_SLOTS    max concurrent activities for the drafts queue (default 100)
+	//	WORKER_ACTIVITY_POLLERS  activity task pollers for the drafts queue (0 = SDK default)
 	syncWorkerOptions := worker.Options{
 		MaxConcurrentActivityExecutionSize: max(helpers.GetEnv("WORKER_ACTIVITY_SLOTS", 100), 1),
 		MaxConcurrentWorkflowTaskPollers:   10,
@@ -115,11 +114,6 @@ func main() {
 	draftsw := worker.New(c, workflows.TaskQueueDrafts, syncWorkerOptions)
 	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
 	draftsw.RegisterActivity(dfa)
-
-	// Transactions worker: TransactionSyncDispatcher (claim-drain batch model)
-	transactionsw := worker.New(c, workflows.TaskQueueTransactions, syncWorkerOptions)
-	transactionsw.RegisterWorkflow(workflows.TransactionSyncDispatcher)
-	transactionsw.RegisterActivity(dfa)
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow
 	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{
@@ -138,7 +132,7 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	workers := []worker.Worker{draftsw, transactionsw, psw, wsw}
+	workers := []worker.Worker{draftsw, psw, wsw}
 	if cfg.ArchiveDB.Enabled() {
 		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
 		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
