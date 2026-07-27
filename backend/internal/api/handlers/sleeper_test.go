@@ -80,6 +80,51 @@ func TestFormatLeagueSize(t *testing.T) {
 	}
 }
 
+func TestGetSleeperTrades_FiltersPlayerToRecentWindowAndPaginates(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+
+	now := time.Now().UTC()
+	ppr := 1.0
+	superflex := true
+	if err := db.Create(&models.SleeperLeague{
+		SleeperLeagueID: "league-1", Name: "Recent League", Season: "2026",
+		PPR: &ppr, IsSuperflex: &superflex, TotalRosters: 12,
+	}).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+	trades := []models.SleeperTransaction{
+		{SleeperTransactionID: "recent-1", SleeperLeagueID: "league-1", Type: "trade", Status: "complete", CreatedAtSleeper: now.Add(-time.Hour).UnixMilli(), Adds: json.RawMessage(`{"player-1": 1}`)},
+		{SleeperTransactionID: "recent-2", SleeperLeagueID: "league-1", Type: "trade", Status: "complete", CreatedAtSleeper: now.Add(-2 * time.Hour).UnixMilli(), Adds: json.RawMessage(`{"player-1": 2}`)},
+		{SleeperTransactionID: "old", SleeperLeagueID: "league-1", Type: "trade", Status: "complete", CreatedAtSleeper: now.Add(-31 * 24 * time.Hour).UnixMilli(), Adds: json.RawMessage(`{"player-1": 1}`)},
+		{SleeperTransactionID: "other-player", SleeperLeagueID: "league-1", Type: "trade", Status: "complete", CreatedAtSleeper: now.Add(-time.Hour).UnixMilli(), Adds: json.RawMessage(`{"player-2": 1}`)},
+	}
+	if err := db.Create(&trades).Error; err != nil {
+		t.Fatalf("seed trades: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/sleeper/trades", GetSleeperTrades)
+	req := httptest.NewRequest(http.MethodGet, "/sleeper/trades?sleeper_player_id=player-1&days=30&limit=1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response SleeperTradesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if response.Total != 2 || response.TotalPages != 2 {
+		t.Errorf("expected two recent player trades across two pages, got total=%d pages=%d", response.Total, response.TotalPages)
+	}
+	if len(response.Trades) != 1 || response.Trades[0].ID != "recent-1" {
+		t.Errorf("expected the most recent matching trade, got %+v", response.Trades)
+	}
+}
+
 func TestValueAsOf(t *testing.T) {
 	d := func(day int) time.Time { return time.Date(2025, 9, day, 0, 0, 0, 0, time.UTC) }
 	snaps := []valuationSnap{

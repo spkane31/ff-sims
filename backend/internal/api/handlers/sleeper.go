@@ -373,9 +373,30 @@ func hasLeagueFilters(c *gin.Context) bool {
 		c.Query("superflex") != ""
 }
 
+// applyTradeFilters adds the player and age-window constraints used by the
+// player market view. Sleeper stores transaction adds as JSONB in Postgres;
+// SQLite uses the equivalent JSON1 expression so handler tests exercise the
+// same behavior.
+func applyTradeFilters(db *gorm.DB, c *gin.Context) (*gorm.DB, bool) {
+	filtered := false
+	if playerID := c.Query("sleeper_player_id"); playerID != "" {
+		if database.DB.Dialector.Name() == "postgres" {
+			db = db.Where("jsonb_exists(t.adds, ?)", playerID)
+		} else {
+			db = db.Where("json_type(t.adds, '$.' || ?) IS NOT NULL", playerID)
+		}
+		filtered = true
+	}
+	if days, err := strconv.Atoi(c.Query("days")); err == nil && days > 0 {
+		db = db.Where("t.created_at_sleeper >= ?", time.Now().Add(-time.Duration(days)*24*time.Hour).UnixMilli())
+		filtered = true
+	}
+	return db, filtered
+}
+
 // GetSleeperTrades returns a paginated list of Sleeper trades ordered by recency,
 // with each trade's adds grouped by roster into named sides.
-// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty), superflex (bool), exclude_picks (bool).
+// Supports query filters: league_size (int), scoring_format (standard|half_ppr|ppr), draft_type (snake|auction|linear), league_type (redraft|keeper|dynasty), superflex (bool), exclude_picks (bool), sleeper_player_id, days.
 func GetSleeperTrades(c *gin.Context) {
 	page, limit := parsePagination(c)
 	offset := (page - 1) * limit
@@ -404,6 +425,8 @@ func GetSleeperTrades(c *gin.Context) {
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
 		Where("t.type = ? AND t.status = ?", "trade", "complete")
 	db = applyLeagueFilters(db, c, "l")
+	var hasTradeFilters bool
+	db, hasTradeFilters = applyTradeFilters(db, c)
 	if excludePicks {
 		db = db.Where("t.draft_picks IS NULL OR jsonb_array_length(t.draft_picks) = 0")
 	}
@@ -411,7 +434,7 @@ func GetSleeperTrades(c *gin.Context) {
 	// When no league-level filters are active, count directly on sleeper_transactions
 	// to avoid a full join across 10M+ rows. The partial index
 	// idx_sleeper_transactions_trade_complete makes this an index-only scan.
-	if hasLeagueFilters(c) {
+	if hasLeagueFilters(c) || hasTradeFilters {
 		db.Count(&total)
 	} else {
 		countDB := database.DB.Model(&models.SleeperTransaction{}).

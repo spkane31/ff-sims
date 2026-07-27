@@ -48,6 +48,7 @@ export interface AnnualStatsEntry {
 export interface PlayerDetail {
   id: string;
   espnId: string;
+  sleeperId: string;
   name: string;
   position: string;
   team: string;
