@@ -107,15 +107,22 @@ func GetSleeperADP(c *gin.Context) {
 	}
 
 	var total int64
-	database.DB.Table("draft_adp a").
-		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts).
-		Count(&total)
+	countQuery := database.DB.Table("draft_adp a").
+		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts)
+	if playerID := c.Query("sleeper_player_id"); playerID != "" {
+		countQuery = countQuery.Where("a.sleeper_player_id = ?", playerID)
+	}
+	countQuery.Count(&total)
 
 	var rows []adpItemRow
-	database.DB.Table("draft_adp a").
+	itemsQuery := database.DB.Table("draft_adp a").
 		Select("a.sleeper_player_id, p.full_name, p.position, p.nfl_team, a.avg_pick_no, a.pick_count, a.min_pick_no, a.max_pick_no, a.ci_low_pick_no, a.ci_high_pick_no").
 		Joins("JOIN sleeper_players p ON p.sleeper_player_id = a.sleeper_player_id").
-		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts).
+		Where("a.segment = ? AND a.season = ? AND a.pick_count >= ?", segment, season, minDrafts)
+	if playerID := c.Query("sleeper_player_id"); playerID != "" {
+		itemsQuery = itemsQuery.Where("a.sleeper_player_id = ?", playerID)
+	}
+	itemsQuery.
 		Order("a.avg_pick_no ASC").
 		Limit(limit).Offset(offset).
 		Scan(&rows)

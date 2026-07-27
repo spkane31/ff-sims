@@ -20,7 +20,7 @@ func newDraftADPTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.DraftADP{}, &models.SleeperPlayer{}); err != nil {
+	if err := db.AutoMigrate(&models.DraftADP{}, &models.SleeperPlayer{}, &models.Player{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db

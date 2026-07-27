@@ -323,6 +323,8 @@ export interface SleeperLeagueFilters {
   draft_type?: string;
   league_type?: string;
   superflex?: string;
+  sleeper_player_id?: string;
+  days?: number;
 }
 
 export interface SleeperADPFilters {
@@ -330,4 +332,5 @@ export interface SleeperADPFilters {
   scoring_format?: string;
   superflex?: string;
   season?: string;
+  sleeper_player_id?: string;
 }
