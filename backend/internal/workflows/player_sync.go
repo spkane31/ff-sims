@@ -49,24 +49,22 @@ func PlayerDatabaseSyncWorkflow(ctx workflow.Context) (PlayerSyncReport, error) 
 		},
 	})
 	var identityRes activities.PlayerIdentitySyncResult
+	// A non-nil error here is a genuine unexpected failure (DB connectivity,
+	// etc.) — SyncPlayerIdentities reports its own conflicts as data in
+	// identityRes, not as an error, specifically so this workflow can still
+	// succeed and carry them in its own result below (see
+	// PlayerSyncReport.IdentityConflictDetails) rather than failing every
+	// day forever over a handful of permanently-ambiguous Sleeper rows.
 	if err := workflow.ExecuteActivity(identityCtx, psa.SyncPlayerIdentities).Get(ctx, &identityRes); err != nil {
-		// err here is a genuine-conflict report (see SyncPlayerIdentities'
-		// doc comment), not a transient failure — surface it rather than
-		// swallowing it, so it shows up as an actionable Temporal workflow
-		// failure for manual follow-up. The per-batch writes it made before
-		// hitting the conflicts already committed regardless of this
-		// workflow-level failure, and its own partial counts are visible on
-		// the SyncPlayerIdentities activity's own completed-with-error event
-		// in Temporal's history even though the workflow result below is
-		// discarded, matching how FetchAndUpsertAllPlayers' failure is
-		// handled above.
 		return PlayerSyncReport{}, err
 	}
 
 	return PlayerSyncReport{
-		PlayersUpserted:   res.PlayersUpserted,
-		IdentitiesScanned: identityRes.Scanned,
-		IdentitiesLinked:  identityRes.Linked,
-		IdentitiesCreated: identityRes.Created,
+		PlayersUpserted:         res.PlayersUpserted,
+		IdentitiesScanned:       identityRes.Scanned,
+		IdentitiesLinked:        identityRes.Linked,
+		IdentitiesCreated:       identityRes.Created,
+		IdentitiesConflicts:     identityRes.Conflicts,
+		IdentityConflictDetails: identityRes.ConflictDetails,
 	}, nil
 }

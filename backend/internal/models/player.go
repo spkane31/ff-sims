@@ -45,12 +45,13 @@ type PlayerStats struct {
 // a map keyed by ESPN ID. IDs with no matching player are simply absent from
 // the map rather than erroring, since callers (e.g. the Sleeper identity
 // sync) expect partial matches. Zero is espn_id's "unset" sentinel and is
-// never a real match, so it's silently ignored if passed in.
+// never a real match, so it's silently ignored if passed in — negative IDs
+// (ESPN's convention for team defenses, e.g. -16025) are valid and kept.
 func GetPlayersByESPNIDs(db *gorm.DB, espnIDs []int64) (map[int64]Player, error) {
 	result := make(map[int64]Player, len(espnIDs))
 	ids := make([]int64, 0, len(espnIDs))
 	for _, id := range espnIDs {
-		if id > 0 {
+		if id != 0 {
 			ids = append(ids, id)
 		}
 	}

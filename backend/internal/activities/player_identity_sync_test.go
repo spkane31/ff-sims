@@ -16,10 +16,11 @@ import (
 // runSyncPlayerIdentities runs SyncPlayerIdentities through Temporal's
 // activity test harness rather than calling it directly with
 // context.Background() — the activity calls activity.RecordHeartbeat, which
-// panics outside a real activity context. On error, the result is the
-// zero value (Temporal doesn't surface a value alongside an activity
-// error), so conflict-path tests must assert on the error message, not on
-// counts in the returned result.
+// panics outside a real activity context. Conflicts are reported as data in
+// the returned result (Conflicts/ConflictDetails), not as an error — a
+// non-nil error here means a genuine unexpected failure, so on error the
+// result is the zero value (Temporal doesn't surface a value alongside an
+// activity error).
 func runSyncPlayerIdentities(t *testing.T, a *activities.PlayerSyncActivities) (activities.PlayerIdentitySyncResult, error) {
 	t.Helper()
 	ts := testsuite.WorkflowTestSuite{}
@@ -93,18 +94,20 @@ func TestSyncPlayerIdentities_HeartbeatsAcrossMultipleIntervalsWithinOneBatch(t 
 
 // syncIdentityBatch now runs each batch's writes in a single DB transaction
 // (see its doc comment) instead of letting each row auto-commit
-// individually. This exercises all three write paths — skill create, skill
-// link, DEF link — together in one batch/transaction to catch any spot that
-// missed threading the shared tx through (e.g. a stray a.DB call bypassing
-// it), which unit tests written before the refactor wouldn't have caught
-// since they each only exercised one path per batch.
+// individually. This exercises all three write paths — create, link, and a
+// DEF link (which, like everything else, now matches by espn_id — team
+// defenses use small stable negative ESPN IDs) — together in one
+// batch/transaction to catch any spot that missed threading the shared tx
+// through (e.g. a stray a.DB call bypassing it), which unit tests written
+// before the refactor wouldn't have caught since they each only exercised
+// one path per batch.
 func TestSyncPlayerIdentities_MixedBatchAllPathsCommitTogether(t *testing.T) {
 	db := newTestDB(t)
 	seedPlayer(t, db, 555, "", "ESPN Linked WR", "RB", "DAL")
-	seedPlayer(t, db, 0, "", "Chiefs", "DEF", "KC")
+	seedPlayer(t, db, -16012, "", "Chiefs", "DEF", "")
 	seedSleeperPlayer(t, db, "create-me", "9999", "New Guy", "WR", "SF")
 	seedSleeperPlayer(t, db, "link-me", "555", "ESPN Linked WR", "RB", "DAL")
-	seedSleeperPlayer(t, db, "KC", "", "Chiefs", "DEF", "KC")
+	seedSleeperPlayer(t, db, "KC", "-16012", "Chiefs", "DEF", "KC")
 
 	a := &activities.PlayerSyncActivities{DB: db}
 	result, err := runSyncPlayerIdentities(t, a)
@@ -228,18 +231,27 @@ func TestSyncPlayerIdentities_EmptyOrZeroEspnIDTreatedAsUnset(t *testing.T) {
 	}
 }
 
+// Conflicts are reported in the result, not as an activity/workflow error —
+// see SyncPlayerIdentities' doc comment for why (a handful of these can be
+// permanently unresolvable Sleeper duplicate-ID rows, so failing every run
+// forever isn't useful; PlayerDatabaseSyncWorkflow carries them into
+// PlayerSyncReport.IdentityConflictDetails specifically so they're easy to
+// find without digging through activity failure history).
 func TestSyncPlayerIdentities_ConflictWhenEspnMatchAlreadyClaimedByAnotherSleeperID(t *testing.T) {
 	db := newTestDB(t)
 	seedPlayer(t, db, 42, "already-linked", "Existing", "WR", "GB")
 	seedSleeperPlayer(t, db, "different-sleeper-id", "42", "Existing", "WR", "GB")
 
 	a := &activities.PlayerSyncActivities{DB: db}
-	_, err := runSyncPlayerIdentities(t, a)
-	if err == nil {
-		t.Fatal("expected a conflict error")
+	result, err := runSyncPlayerIdentities(t, a)
+	if err != nil {
+		t.Fatalf("SyncPlayerIdentities error: %v", err)
 	}
-	if !containsAll(err.Error(), "different-sleeper-id", "espn_id=42", "already linked to a different sleeper_id") {
-		t.Errorf("error message not itemized as expected: %v", err)
+	if result.Conflicts != 1 || len(result.ConflictDetails) != 1 {
+		t.Fatalf("expected 1 conflict reported in the result, got %+v", result)
+	}
+	if !containsAll(result.ConflictDetails[0], "different-sleeper-id", "espn_id=42", "already linked to a different sleeper_id") {
+		t.Errorf("conflict detail not itemized as expected: %v", result.ConflictDetails[0])
 	}
 
 	// The claim must not have been overwritten by the conflicting attempt.
@@ -250,10 +262,13 @@ func TestSyncPlayerIdentities_ConflictWhenEspnMatchAlreadyClaimedByAnotherSleepe
 	}
 }
 
-func TestSyncPlayerIdentities_DEF_LinksByTeamAbbreviation(t *testing.T) {
+// Team defenses use small stable negative ESPN "player" IDs (e.g. -16025
+// for the 49ers) — a production run confirmed real data has these — so they
+// match by espn_id exactly like every other position, no special-casing.
+func TestSyncPlayerIdentities_DEF_LinksExistingRowByNegativeEspnID(t *testing.T) {
 	db := newTestDB(t)
-	seedPlayer(t, db, 0, "", "San Francisco", "D/ST", "SF")
-	seedSleeperPlayer(t, db, "SF", "", "49ers", "DEF", "SF")
+	seedPlayer(t, db, -16025, "", "49ers D/ST", "D/ST", "")
+	seedSleeperPlayer(t, db, "SF", "-16025", "49ers", "DEF", "SF")
 
 	a := &activities.PlayerSyncActivities{DB: db}
 	result, err := runSyncPlayerIdentities(t, a)
@@ -261,11 +276,11 @@ func TestSyncPlayerIdentities_DEF_LinksByTeamAbbreviation(t *testing.T) {
 		t.Fatalf("SyncPlayerIdentities error: %v", err)
 	}
 	if result.Linked != 1 {
-		t.Errorf("expected the DEF row to link by team abbreviation, got %+v", result)
+		t.Errorf("expected the DEF row to link by espn_id, got %+v", result)
 	}
 
 	var p models.Player
-	if err := db.Where("team = ? AND position = ?", "SF", "D/ST").First(&p).Error; err != nil {
+	if err := db.Where("espn_id = ?", -16025).First(&p).Error; err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
 	if p.SleeperID != "SF" {
@@ -273,34 +288,65 @@ func TestSyncPlayerIdentities_DEF_LinksByTeamAbbreviation(t *testing.T) {
 	}
 }
 
-func TestSyncPlayerIdentities_DEF_ConflictWhenNoTeamMatch(t *testing.T) {
+func TestSyncPlayerIdentities_DEF_CreatesRowForUnmatchedNegativeEspnID(t *testing.T) {
 	db := newTestDB(t)
-	// No existing "KC" D/ST row in players at all.
-	seedSleeperPlayer(t, db, "KC", "", "Chiefs", "DEF", "KC")
+	// No existing players row for this DEF at all.
+	seedSleeperPlayer(t, db, "KC", "-16012", "Chiefs", "DEF", "KC")
 
 	a := &activities.PlayerSyncActivities{DB: db}
-	_, err := runSyncPlayerIdentities(t, a)
-	if err == nil {
-		t.Fatal("expected a conflict error for an unresolvable DEF team")
+	result, err := runSyncPlayerIdentities(t, a)
+	if err != nil {
+		t.Fatalf("SyncPlayerIdentities error: %v", err)
 	}
-	if !containsAll(err.Error(), `team="KC"`, "resolved to 0 players rows") {
-		t.Errorf("error message not itemized as expected: %v", err)
+	if result.Created != 1 {
+		t.Errorf("expected the DEF row to be created, got %+v", result)
+	}
+
+	var p models.Player
+	if err := db.Where("sleeper_id = ?", "KC").First(&p).Error; err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if p.ESPNID != -16012 {
+		t.Errorf("expected the negative espn_id to be preserved on create, got %d", p.ESPNID)
 	}
 }
 
-func TestSyncPlayerIdentities_DEF_ConflictOnDuplicateTeamRows(t *testing.T) {
+// Sleeper labels stale duplicate entries with the literal name "Duplicate
+// Player" — a production run found several, sometimes with the junk entry's
+// sleeper_player_id sorting before the real player's (ascending-ID batch
+// order), wrongly winning the espn_id claim and permanently blocking the
+// real player from ever linking. These rows must be skipped entirely: never
+// matched against, never used to create a players row.
+func TestSyncPlayerIdentities_ExcludesDuplicatePlayerMarker(t *testing.T) {
 	db := newTestDB(t)
-	seedPlayer(t, db, 100, "", "Dup A", "DEF", "NE")
-	seedPlayer(t, db, 101, "", "Dup B", "D/ST", "NE")
-	seedSleeperPlayer(t, db, "NE", "", "Patriots", "DEF", "NE")
+	// "junk" sorts before "real" alphabetically/ascending, matching the
+	// production case where the placeholder processed first.
+	seedSleeperPlayer(t, db, "junk", "777", "Duplicate Player", "CB", "")
+	seedSleeperPlayer(t, db, "real", "777", "Jayrone Elliott", "LB", "")
 
 	a := &activities.PlayerSyncActivities{DB: db}
-	_, err := runSyncPlayerIdentities(t, a)
-	if err == nil {
-		t.Fatal("expected a conflict error for a team resolving to more than one players row")
+	result, err := runSyncPlayerIdentities(t, a)
+	if err != nil {
+		t.Fatalf("SyncPlayerIdentities error: %v", err)
 	}
-	if !containsAll(err.Error(), `team="NE"`, "resolved to 2 players rows") {
-		t.Errorf("error message not itemized as expected: %v", err)
+	if result.Conflicts != 0 {
+		t.Errorf("expected no conflict — the placeholder row should never have competed for espn_id=777, got %+v", result)
+	}
+	if result.Created != 1 {
+		t.Errorf("expected exactly 1 row created (the real player), got %+v", result)
+	}
+
+	var count int64
+	db.Model(&models.Player{}).Where("sleeper_id = ?", "junk").Count(&count)
+	if count != 0 {
+		t.Error("the Duplicate Player row must never create a players row")
+	}
+	var p models.Player
+	if err := db.Where("sleeper_id = ?", "real").First(&p).Error; err != nil {
+		t.Fatalf("expected the real player to link/create successfully: %v", err)
+	}
+	if p.ESPNID != 777 {
+		t.Errorf("expected espn_id 777, got %d", p.ESPNID)
 	}
 }
 

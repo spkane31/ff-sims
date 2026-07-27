@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.temporal.io/sdk/activity"
@@ -21,26 +20,31 @@ const playerIdentitySyncBatchSize = 500
 
 // playerIdentityHeartbeatInterval controls how often SyncPlayerIdentities
 // heartbeats *within* a batch, not just once per completed batch. Each row
-// is its own DB round-trip (no bulk upsert — see linkOrCreateSkillPlayer),
-// so a full 500-row batch against the real production DB can take well
-// longer than a single heartbeat timeout even though the activity is still
+// is its own DB round-trip (no bulk upsert — see linkOrCreatePlayer), so a
+// full 500-row batch against the real production DB can take well longer
+// than a single heartbeat timeout even though the activity is still
 // actively working; heartbeating every 25 rows keeps well inside that
 // window regardless of batch size or per-row latency.
 const playerIdentityHeartbeatInterval = 25
 
-// sleeperDefPosition/espnDefPositions are the position labels Sleeper
-// ("DEF") and ESPN ("DEF" or legacy "D/ST") use for team defenses, kept
-// distinct from real players throughout this file because team-defense
-// "player IDs" are known to be inconsistent across platforms — see
-// identityConflict reasons below.
-const sleeperDefPosition = "DEF"
-
-var espnDefPositions = []string{"DEF", "D/ST"}
+// duplicatePlayerFullName is Sleeper's own placeholder label for a stale
+// duplicate player entry. A production run found several: Sleeper had
+// issued a corrected/replacement sleeper_player_id for the same real
+// athlete without deprecating the old one, and either ID can carry the same
+// espn_id — sometimes with the placeholder-labeled one processed first
+// (ascending sleeper_player_id order) and wrongly winning the espn_id claim
+// ahead of the real player's row. These rows are excluded from the sync
+// entirely — never matched against, never used to create a players row —
+// since Sleeper itself is telling us not to trust them.
+const duplicatePlayerFullName = "Duplicate Player"
 
 // identityConflict is a case SyncPlayerIdentities declined to resolve
-// automatically — surfaced in the returned error rather than silently
-// skipped, so a human can look at the specific players involved and fix it
-// by hand.
+// automatically. Unlike duplicatePlayerFullName rows (a known, confidently
+// excludable pattern), these are genuinely ambiguous — e.g. two distinct,
+// real-looking sleeper_players rows with the same name and different
+// age/experience both claiming the same espn_id, with no Sleeper-provided
+// signal for which is current — so they're reported in the result for a
+// human to look at rather than guessed at automatically.
 type identityConflict struct {
 	SleeperPlayerID string
 	Reason          string
@@ -48,21 +52,21 @@ type identityConflict struct {
 
 // SyncPlayerIdentities mirrors sleeper_players into players' sleeper_id
 // column so /players/:id can be resolved from a Sleeper player ID, not just
-// an ESPN one. It matches skill positions by espn_id (players is otherwise
-// scoped to whichever ESPN league(s) this app has ETL'd, so most Sleeper
-// players won't have an existing row and get a new identity-only one) and
-// team defenses by team abbreviation instead, since defense "player IDs"
-// aren't reliably comparable across Sleeper and ESPN. Existing ESPN-sourced
-// Name/Position/Team are never overwritten — ESPN stays authoritative there.
+// an ESPN one. Every position — including team defenses, whose ESPN IDs are
+// small stable negative numbers (e.g. -16025 for the 49ers), not something
+// that needs separate handling — matches by espn_id the same way. Existing
+// ESPN-sourced Name/Position/Team are never overwritten on a match — ESPN
+// stays authoritative there.
 //
 // Benign non-matches (no espn_id, or a valid espn_id with no existing
 // players row) are handled inline by creating a new row. Genuine conflicts
 // (an espn_id match whose players row already carries a *different*
-// sleeper_id, or a DEF row that resolves to zero or multiple players rows by
-// team) are collected instead of silently skipped; if any are found, the
-// activity returns an itemized error after all other rows in the run have
-// already committed, so it shows up as a clear, actionable Temporal failure
-// for manual follow-up rather than an easy-to-miss counter.
+// sleeper_id) are collected and reported via PlayerIdentitySyncResult's
+// Conflicts/ConflictDetails rather than failing the activity — a handful of
+// permanently-ambiguous Sleeper duplicate-ID rows would otherwise fail this
+// workflow every single day forever with no code-level fix available, which
+// is worse than surfacing them plainly in the result for a human to check
+// periodically.
 func (a *PlayerSyncActivities) SyncPlayerIdentities(ctx context.Context) (PlayerIdentitySyncResult, error) {
 	var result PlayerIdentitySyncResult
 	var conflicts []identityConflict
@@ -98,14 +102,10 @@ func (a *PlayerSyncActivities) SyncPlayerIdentities(ctx context.Context) (Player
 
 	if len(conflicts) > 0 {
 		result.Conflicts = len(conflicts)
-		lines := make([]string, len(conflicts))
+		result.ConflictDetails = make([]string, len(conflicts))
 		for i, c := range conflicts {
-			lines[i] = fmt.Sprintf("  sleeper_player_id=%s: %s", c.SleeperPlayerID, c.Reason)
+			result.ConflictDetails[i] = fmt.Sprintf("sleeper_player_id=%s: %s", c.SleeperPlayerID, c.Reason)
 		}
-		return result, fmt.Errorf(
-			"player identity sync: %d conflict(s) need manual review:\n%s",
-			len(conflicts), strings.Join(lines, "\n"),
-		)
 	}
 	return result, nil
 }
@@ -140,19 +140,18 @@ func (a *PlayerSyncActivities) syncIdentityBatchTx(ctx context.Context, db *gorm
 		}
 	}
 
-	var defRows, skillRows []models.SleeperPlayer
+	rows := make([]models.SleeperPlayer, 0, len(batch))
 	for _, sp := range batch {
-		if sp.Position == sleeperDefPosition {
-			defRows = append(defRows, sp)
-		} else {
-			skillRows = append(skillRows, sp)
+		if sp.FullName == duplicatePlayerFullName {
+			continue
 		}
+		rows = append(rows, sp)
 	}
 
-	// Already-linked sleeper players are a no-op — check the whole batch up
-	// front so a re-run doesn't re-touch rows a previous run already synced.
-	sleeperIDs := make([]string, 0, len(batch))
-	for _, sp := range batch {
+	// Already-linked sleeper players are a no-op — check up front so a
+	// re-run doesn't re-touch rows a previous run already synced.
+	sleeperIDs := make([]string, 0, len(rows))
+	for _, sp := range rows {
 		sleeperIDs = append(sleeperIDs, sp.SleeperPlayerID)
 	}
 	alreadyLinked, err := models.GetPlayersBySleeperIDs(db, sleeperIDs)
@@ -160,84 +159,35 @@ func (a *PlayerSyncActivities) syncIdentityBatchTx(ctx context.Context, db *gorm
 		return nil, fmt.Errorf("look up already-linked players: %w", err)
 	}
 
-	if len(skillRows) > 0 {
-		espnIDs := make([]int64, 0, len(skillRows))
-		for _, sp := range skillRows {
-			if id, err := strconv.ParseInt(sp.EspnID, 10, 64); err == nil && id > 0 {
-				espnIDs = append(espnIDs, id)
-			}
-		}
-		espnMatches, err := models.GetPlayersByESPNIDs(db, espnIDs)
-		if err != nil {
-			return nil, fmt.Errorf("look up players by espn_id: %w", err)
-		}
-		for _, sp := range skillRows {
-			heartbeat()
-			if _, ok := alreadyLinked[sp.SleeperPlayerID]; ok {
-				continue
-			}
-			espnID, _ := strconv.ParseInt(sp.EspnID, 10, 64)
-			outcome, c, err := a.linkOrCreateSkillPlayer(db, sp, espnID, espnMatches)
-			if err != nil {
-				return nil, err
-			}
-			if c != nil {
-				conflicts = append(conflicts, *c)
-				continue
-			}
-			if outcome == outcomeLinked {
-				result.Linked++
-			} else {
-				result.Created++
-			}
+	espnIDs := make([]int64, 0, len(rows))
+	for _, sp := range rows {
+		if id, err := strconv.ParseInt(sp.EspnID, 10, 64); err == nil && id != 0 {
+			espnIDs = append(espnIDs, id)
 		}
 	}
+	espnMatches, err := models.GetPlayersByESPNIDs(db, espnIDs)
+	if err != nil {
+		return nil, fmt.Errorf("look up players by espn_id: %w", err)
+	}
 
-	if len(defRows) > 0 {
-		teams := make([]string, 0, len(defRows))
-		for _, sp := range defRows {
-			teams = append(teams, sp.NflTeam)
+	for _, sp := range rows {
+		heartbeat()
+		if _, ok := alreadyLinked[sp.SleeperPlayerID]; ok {
+			continue
 		}
-		var existingDefs []models.Player
-		if err := db.Where("position IN ? AND team IN ?", espnDefPositions, teams).Find(&existingDefs).Error; err != nil {
-			return nil, fmt.Errorf("look up defenses by team: %w", err)
+		espnID, _ := strconv.ParseInt(sp.EspnID, 10, 64)
+		outcome, c, err := a.linkOrCreatePlayer(db, sp, espnID, espnMatches)
+		if err != nil {
+			return nil, err
 		}
-		defsByTeam := map[string][]models.Player{}
-		for _, p := range existingDefs {
-			defsByTeam[p.Team] = append(defsByTeam[p.Team], p)
+		if c != nil {
+			conflicts = append(conflicts, *c)
+			continue
 		}
-		for _, sp := range defRows {
-			heartbeat()
-			if _, ok := alreadyLinked[sp.SleeperPlayerID]; ok {
-				continue
-			}
-			matches := defsByTeam[sp.NflTeam]
-			if len(matches) != 1 {
-				conflicts = append(conflicts, identityConflict{
-					SleeperPlayerID: sp.SleeperPlayerID,
-					Reason: fmt.Sprintf(
-						"DEF team=%q resolved to %d players rows (expected exactly 1); team-abbreviation mismatch between Sleeper and ESPN, or a duplicate defense row",
-						sp.NflTeam, len(matches),
-					),
-				})
-				continue
-			}
-			existing := matches[0]
-			if existing.SleeperID != "" && existing.SleeperID != sp.SleeperPlayerID {
-				conflicts = append(conflicts, identityConflict{
-					SleeperPlayerID: sp.SleeperPlayerID,
-					Reason: fmt.Sprintf(
-						"DEF team=%q players.id=%d already linked to a different sleeper_id=%q",
-						sp.NflTeam, existing.ID, existing.SleeperID,
-					),
-				})
-				continue
-			}
-			if err := db.Model(&models.Player{}).Where("id = ?", existing.ID).
-				Update("sleeper_id", sp.SleeperPlayerID).Error; err != nil {
-				return nil, fmt.Errorf("link defense %s to player %d: %w", sp.SleeperPlayerID, existing.ID, err)
-			}
+		if outcome == outcomeLinked {
 			result.Linked++
+		} else {
+			result.Created++
 		}
 	}
 
@@ -254,12 +204,14 @@ const (
 	outcomeLinked
 )
 
-// linkOrCreateSkillPlayer resolves one non-DEF Sleeper player against the
-// (already batch-fetched) espnMatches map. It returns a non-nil conflict
-// instead of writing when the matched players row is already claimed by a
-// different Sleeper player; otherwise it links or creates and reports which.
-func (a *PlayerSyncActivities) linkOrCreateSkillPlayer(db *gorm.DB, sp models.SleeperPlayer, espnID int64, espnMatches map[int64]models.Player) (skillOutcome, *identityConflict, error) {
-	if espnID > 0 {
+// linkOrCreatePlayer resolves one Sleeper player against the (already
+// batch-fetched) espnMatches map. It returns a non-nil conflict instead of
+// writing when the matched players row is already claimed by a different
+// Sleeper player; otherwise it links or creates and reports which. espnID
+// may be negative (team defenses) or 0 (no known ESPN mapping) — only 0 is
+// treated as "no match," matching espn_id's "unset" sentinel convention.
+func (a *PlayerSyncActivities) linkOrCreatePlayer(db *gorm.DB, sp models.SleeperPlayer, espnID int64, espnMatches map[int64]models.Player) (skillOutcome, *identityConflict, error) {
+	if espnID != 0 {
 		if existing, ok := espnMatches[espnID]; ok {
 			if existing.SleeperID != "" && existing.SleeperID != sp.SleeperPlayerID {
 				return 0, &identityConflict{
