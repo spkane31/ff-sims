@@ -120,29 +120,63 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
-// SyncPlayerIdentities reports conflicts as an activity error (see its doc
-// comment), which — after exhausting the workflow's RetryPolicy — must fail
-// the whole workflow run rather than being silently absorbed, so it shows up
-// as an actionable Temporal failure. Retries redo idempotent work but don't
-// resolve a genuine data conflict, so all 3 attempts are expected to fail
-// identically before the workflow itself fails.
-func TestPlayerSync_IdentityConflictsFailWorkflow(t *testing.T) {
+// SyncPlayerIdentities reports conflicts as data in its result, not as an
+// activity error (see its doc comment) — a handful of these can be
+// permanently-ambiguous Sleeper duplicate-ID rows with no code-level fix
+// available, so failing this workflow every single day forever over them
+// isn't useful. The workflow must still succeed and carry the details
+// through into its own result, so they're easy to find directly rather than
+// requiring a dig through activity failure history.
+func TestPlayerSync_IdentityConflictsSurfacedInReportNotAsFailure(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	conflictDetail := `sleeper_player_id=abc: espn_id=1 players.id=2 already linked to a different sleeper_id="xyz"`
+	psa := &activities.PlayerSyncActivities{}
+	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
+	env.OnActivity(psa.SyncPlayerIdentities, mock.Anything).
+		Return(activities.PlayerIdentitySyncResult{
+			Scanned: 10, Linked: 3, Created: 6,
+			Conflicts:       1,
+			ConflictDetails: []string{conflictDetail},
+		}, nil)
+
+	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var report workflows.PlayerSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, workflows.PlayerSyncReport{
+		PlayersUpserted:         42,
+		IdentitiesScanned:       10,
+		IdentitiesLinked:        3,
+		IdentitiesCreated:       6,
+		IdentitiesConflicts:     1,
+		IdentityConflictDetails: []string{conflictDetail},
+	}, report)
+	env.AssertExpectations(t)
+}
+
+// A genuine unexpected activity failure (DB connectivity, etc. — not a data
+// conflict, which SyncPlayerIdentities never returns as an error) must still
+// fail the workflow, matching how FetchAndUpsertAllPlayers' failure is
+// handled.
+func TestPlayerSync_GenuineActivityErrorStillFailsWorkflow(t *testing.T) {
 	ts := testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 
 	psa := &activities.PlayerSyncActivities{}
 	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).Return(activities.PlayerSyncResult{PlayersUpserted: 42}, nil)
 	env.OnActivity(psa.SyncPlayerIdentities, mock.Anything).
-		Return(activities.PlayerIdentitySyncResult{Scanned: 10, Linked: 3, Created: 6, Conflicts: 1},
-			errors.New("player identity sync: 1 conflict(s) need manual review:\n  sleeper_player_id=abc: espn_id=1 players.id=2 already linked to a different sleeper_id=\"xyz\""))
+		Return(activities.PlayerIdentitySyncResult{}, errors.New("player identity sync: fetch sleeper_players after \"\": connection refused"))
 
 	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
 
 	require.True(t, env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "conflict(s) need manual review")
-	require.Contains(t, err.Error(), "sleeper_player_id=abc")
+	require.Contains(t, err.Error(), "connection refused")
 }
 
 // ---- SyncWeekStats ----

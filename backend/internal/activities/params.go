@@ -103,14 +103,19 @@ type PlayerSyncResult struct {
 }
 
 // PlayerIdentitySyncResult reports SyncPlayerIdentities' outcome. Conflicts
-// counts sleeper_players rows it declined to resolve automatically; their
-// details are in the error SyncPlayerIdentities returns alongside this
-// result, not here — this is just a summary count for logging.
+// counts sleeper_players rows it declined to resolve automatically —
+// genuinely ambiguous cases (not explained by Sleeper's own
+// duplicatePlayerFullName marker) with no code-level fix available.
+// ConflictDetails is one human-readable line per conflict, carried all the
+// way up into PlayerSyncReport so they're visible directly in the
+// workflow's own result rather than requiring someone to dig through
+// activity failure history.
 type PlayerIdentitySyncResult struct {
-	Scanned   int
-	Linked    int
-	Created   int
-	Conflicts int
+	Scanned         int
+	Linked          int
+	Created         int
+	Conflicts       int
+	ConflictDetails []string
 }
 
 // WeekStatsResult reports how many player rows FetchWeekStats upserted for one

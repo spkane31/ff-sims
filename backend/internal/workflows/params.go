@@ -17,17 +17,20 @@ type DraftSyncReport struct {
 	LeaguesFailed    int
 }
 
-// PlayerSyncReport summarizes one PlayerDatabaseSyncWorkflow run. Identity
-// counts are only populated on success — SyncPlayerIdentities' conflicts (if
-// any) make the whole workflow return an error instead (see
-// PlayerDatabaseSyncWorkflow), so there's no "conflicts" field here to keep
-// stale-looking at zero on the happy path.
+// PlayerSyncReport summarizes one PlayerDatabaseSyncWorkflow run.
+// IdentityConflictDetails is one line per sleeper_players row
+// SyncPlayerIdentities couldn't resolve automatically (see its doc
+// comment) — carried all the way into this successful result specifically
+// so they're easy to find directly in the workflow's own output, rather
+// than requiring a dig through activity failure history.
 type PlayerSyncReport struct {
 	PlayersUpserted int
 
-	IdentitiesScanned int
-	IdentitiesLinked  int
-	IdentitiesCreated int
+	IdentitiesScanned       int
+	IdentitiesLinked        int
+	IdentitiesCreated       int
+	IdentitiesConflicts     int
+	IdentityConflictDetails []string
 }
 
 // WeekStatsReport summarizes a SyncWeekStats (or WeekStatsSyncDispatcher) run.
