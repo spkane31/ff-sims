@@ -1,12 +1,10 @@
 import { useState, useRef, useId, type KeyboardEvent } from 'react';
 import { ChevronDownIcon } from './icons';
+import { FOCUS_RING } from './focus-ring';
 
 interface LeagueSwitcherProps {
   leagueName: string;
 }
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
 
 /**
  * League context/switcher trigger for the top bar.
@@ -39,7 +37,7 @@ export default function LeagueSwitcher({ leagueName }: LeagueSwitcherProps) {
       <button
         ref={triggerRef}
         type="button"
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
@@ -59,7 +57,6 @@ export default function LeagueSwitcher({ leagueName }: LeagueSwitcherProps) {
       {open && (
         <div
           id={menuId}
-          role="menu"
           aria-label="League switcher (prototype only, non-functional)"
           className="absolute left-0 z-20 mt-1 w-56 rounded-md border p-1 shadow-lg"
           style={{
@@ -68,7 +65,6 @@ export default function LeagueSwitcher({ leagueName }: LeagueSwitcherProps) {
           }}
         >
           <div
-            role="menuitem"
             aria-disabled="true"
             className="rounded px-3 py-2 text-sm font-medium"
             style={{ color: 'var(--text-primary)' }}

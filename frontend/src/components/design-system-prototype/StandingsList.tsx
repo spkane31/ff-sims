@@ -1,11 +1,9 @@
 import type { StandingsRowFixture } from './league-overview-fixtures';
+import { FOCUS_RING } from './focus-ring';
 
 interface StandingsListProps {
   standings: StandingsRowFixture[];
 }
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
 
 function formatPointsFor(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });

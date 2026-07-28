@@ -103,14 +103,20 @@ level — those are marked explicitly rather than given an invented number.
 - [ ] Every UI-component boundary needed to identify it — input borders,
       outline-style button borders, checkbox/radio boundaries, data-table
       dividers that carry structural meaning — meets 3:1 against
-      adjacent color(s). `--border-strong` is the token to reach for
-      over `--border-subtle` when a divider needs to clear this bar, but
-      treat that as an **assumed, not verified**, pass: Task 1's
-      inventory explicitly did not compute contrast ratios for either
-      border token ("Not flagged 'must pass' — no computed ratios
-      required by the brief"), so confirm the actual rendered ratio
-      before shipping a component that relies on `--border-strong` alone
-      to meet 3:1. (SC 1.4.11 Non-text Contrast)
+      adjacent color(s). **Measured against `--surface-raised`, neither
+      border token clears this bar:** `--border-subtle` is 1.35:1 light /
+      1.30:1 dark, and `--border-strong` is 1.74:1 light / 1.95:1 dark —
+      both well short of the 3:1 minimum. Neither token can be relied on
+      alone to satisfy SC 1.4.11 today. A new, higher-contrast border
+      token (something like `--border-focus` or `--border-interactive`,
+      needing roughly `L ≈ 0.62` in light mode to hit 3:1 against
+      `--surface-raised`) would need to be added before any Phase 2
+      component leans on a border color alone to meet this criterion —
+      that token does not exist yet. Until then, any divider/boundary
+      that must convey structure accessibly should pair the border with
+      a non-border cue (e.g. background-color contrast, an icon, or
+      spacing) rather than relying on border color alone. (SC 1.4.11
+      Non-text Contrast)
 - [ ] Graphical objects required to understand content — chart axis
       lines, chart data marks/points, status icons — meet 3:1 against
       their background, unless the graphic is purely decorative or is a
@@ -209,6 +215,9 @@ level — those are marked explicitly rather than given an invented number.
   Task 1's verified `--text-primary` ratios exactly as tabulated in
   token-inventory.md (14.64:1–16.44:1, not the earlier misquoted
   15.53:1–16.44:1). Non-text/UI contrast (Section 5) cites the 3:1
-  minimum (SC 1.4.11) but flags the `--border-strong` recommendation as
-  assumed, not verified, since token-inventory.md never computed a
-  ratio for either border token.
+  minimum (SC 1.4.11) and now states measured ratios for both border
+  tokens against `--surface-raised` (`--border-subtle` 1.35:1 light /
+  1.30:1 dark; `--border-strong` 1.74:1 light / 1.95:1 dark) — both fail
+  3:1, so neither token is recommended as a stand-alone way to satisfy
+  this criterion, and a new higher-contrast border token is noted as
+  needed but not yet added.

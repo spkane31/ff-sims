@@ -1,9 +1,7 @@
 import Link from 'next/link';
 import Head from 'next/head';
 import AppShell from '@/components/design-system-prototype/AppShell';
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
+import { FOCUS_RING } from '@/components/design-system-prototype/focus-ring';
 
 /**
  * Landing page for the isolated `/design-system` prototype tree (Phase 1,

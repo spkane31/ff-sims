@@ -1,23 +1,6 @@
 import Link from 'next/link';
-import { SHELL_NAV_ITEMS, type ShellNavId } from './nav-items';
-import {
-  OverviewIcon,
-  ScheduleIcon,
-  PlayersIcon,
-  TeamsIcon,
-  MoreIcon,
-} from './icons';
-
-const NAV_ICONS: Record<ShellNavId, typeof OverviewIcon> = {
-  overview: OverviewIcon,
-  schedule: ScheduleIcon,
-  players: PlayersIcon,
-  teams: TeamsIcon,
-  more: MoreIcon,
-};
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
+import { SHELL_NAV_ITEMS, NAV_ICONS, type ShellNavId } from './nav-items';
+import { FOCUS_RING } from './focus-ring';
 
 interface BottomNavProps {
   activeNavId: ShellNavId;

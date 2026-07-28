@@ -74,7 +74,7 @@ export default function FeaturedMatchupCard({ matchup }: FeaturedMatchupCardProp
               >
                 {team.name}
               </dt>
-              <dd className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <dd className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
                 <span>{team.record}</span>
                 {leading && (
                   <span className="font-semibold" style={{ color: 'var(--action-primary)' }}>
