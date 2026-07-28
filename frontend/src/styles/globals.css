@@ -4,6 +4,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* manual overrides take precedence over the OS-preference media query */
+.light {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
 :root {
   --chart-axis-text: #374151;
   --chart-grid: #d1d5db;
@@ -12,6 +20,50 @@
   --chart-tooltip-text: #111827;
   --chart-tooltip-border: #e5e7eb;
   --chart-zero-line: #9ca3af;
+
+  /* surfaces */
+  --surface-canvas: oklch(0.98 0.004 250);
+  --surface-raised: oklch(1 0 0);
+  --surface-sunken: oklch(0.965 0.004 250);
+  --border-subtle: oklch(0.90 0.006 250);
+  --border-strong: oklch(0.82 0.008 250);
+
+  /* text */
+  --text-primary: oklch(0.24 0.02 255);
+  --text-secondary: oklch(0.38 0.015 255);
+  --text-muted: oklch(0.55 0.012 255);
+  --text-inverse: oklch(0.98 0.004 250);
+
+  /* action accent */
+  --action-primary: oklch(0.53 0.18 250);
+  --action-primary-hover: oklch(0.50 0.19 250);
+  --action-primary-active: oklch(0.45 0.19 250);
+  --action-on-primary: oklch(0.98 0.01 250);
+
+  /* focus */
+  --focus-ring: oklch(0.55 0.18 250);
+
+  /* status */
+  --status-success-fg: oklch(0.35 0.12 145);
+  --status-success-bg: oklch(0.95 0.05 145);
+  --status-warning-fg: oklch(0.35 0.13 80);
+  --status-warning-bg: oklch(0.95 0.06 80);
+  --status-danger-fg: oklch(0.40 0.18 25);
+  --status-danger-bg: oklch(0.95 0.05 25);
+  --status-info-fg: oklch(0.38 0.12 250);
+  --status-info-bg: oklch(0.95 0.04 250);
+
+  /* chart series (colorblind-safe qualitative palette, Okabe-Ito inspired) */
+  --chart-series-1: oklch(0.60 0.15 250);
+  --chart-series-2: oklch(0.70 0.15 70);
+  --chart-series-3: oklch(0.65 0.15 150);
+  --chart-series-4: oklch(0.55 0.20 320);
+  --chart-series-5: oklch(0.75 0.15 100);
+  --chart-series-6: oklch(0.50 0.05 250);
+
+  /* chart data-meaning encodings (distinct from --status-*) */
+  --chart-positive: oklch(0.55 0.15 145);
+  --chart-negative: oklch(0.55 0.18 25);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,7 +75,132 @@
     --chart-tooltip-text: #f3f4f6;
     --chart-tooltip-border: #4b5563;
     --chart-zero-line: #6b7280;
+
+    /* surfaces */
+    --surface-canvas: oklch(0.19 0.01 255);
+    --surface-raised: oklch(0.24 0.012 255);
+    --surface-sunken: oklch(0.16 0.01 255);
+    --border-subtle: oklch(0.32 0.012 255);
+    --border-strong: oklch(0.42 0.014 255);
+
+    /* text */
+    --text-primary: oklch(0.96 0.004 255);
+    --text-secondary: oklch(0.85 0.008 255);
+    --text-muted: oklch(0.65 0.012 255);
+    --text-inverse: oklch(0.20 0.02 255);
+
+    /* action accent */
+    --action-primary: oklch(0.68 0.17 250);
+    --action-primary-hover: oklch(0.73 0.16 250);
+    --action-primary-active: oklch(0.78 0.15 250);
+    --action-on-primary: oklch(0.15 0.02 250);
+
+    /* focus */
+    --focus-ring: oklch(0.75 0.18 250);
+
+    /* status (fg/bg roles swapped: lighten fg, darken bg) */
+    --status-success-fg: oklch(0.85 0.12 145);
+    --status-success-bg: oklch(0.20 0.05 145);
+    --status-warning-fg: oklch(0.85 0.13 80);
+    --status-warning-bg: oklch(0.20 0.06 80);
+    --status-danger-fg: oklch(0.80 0.18 25);
+    --status-danger-bg: oklch(0.20 0.05 25);
+    --status-info-fg: oklch(0.83 0.12 250);
+    --status-info-bg: oklch(0.20 0.04 250);
+
+    /* chart series */
+    --chart-series-1: oklch(0.72 0.15 250);
+    --chart-series-2: oklch(0.82 0.15 70);
+    --chart-series-3: oklch(0.77 0.15 150);
+    --chart-series-4: oklch(0.67 0.20 320);
+    --chart-series-5: oklch(0.87 0.15 100);
+    --chart-series-6: oklch(0.62 0.05 250);
+
+    /* chart data-meaning encodings */
+    --chart-positive: oklch(0.67 0.15 145);
+    --chart-negative: oklch(0.67 0.18 25);
   }
+}
+
+/* Manual theme override values — mirror the :root / dark-media tokens above
+   so a `dark`/`light` class on <html> wins over the OS-preference media
+   query regardless of source order (equal specificity, later in cascade). */
+.light {
+  --surface-canvas: oklch(0.98 0.004 250);
+  --surface-raised: oklch(1 0 0);
+  --surface-sunken: oklch(0.965 0.004 250);
+  --border-subtle: oklch(0.90 0.006 250);
+  --border-strong: oklch(0.82 0.008 250);
+
+  --text-primary: oklch(0.24 0.02 255);
+  --text-secondary: oklch(0.38 0.015 255);
+  --text-muted: oklch(0.55 0.012 255);
+  --text-inverse: oklch(0.98 0.004 250);
+
+  --action-primary: oklch(0.53 0.18 250);
+  --action-primary-hover: oklch(0.50 0.19 250);
+  --action-primary-active: oklch(0.45 0.19 250);
+  --action-on-primary: oklch(0.98 0.01 250);
+
+  --focus-ring: oklch(0.55 0.18 250);
+
+  --status-success-fg: oklch(0.35 0.12 145);
+  --status-success-bg: oklch(0.95 0.05 145);
+  --status-warning-fg: oklch(0.35 0.13 80);
+  --status-warning-bg: oklch(0.95 0.06 80);
+  --status-danger-fg: oklch(0.40 0.18 25);
+  --status-danger-bg: oklch(0.95 0.05 25);
+  --status-info-fg: oklch(0.38 0.12 250);
+  --status-info-bg: oklch(0.95 0.04 250);
+
+  --chart-series-1: oklch(0.60 0.15 250);
+  --chart-series-2: oklch(0.70 0.15 70);
+  --chart-series-3: oklch(0.65 0.15 150);
+  --chart-series-4: oklch(0.55 0.20 320);
+  --chart-series-5: oklch(0.75 0.15 100);
+  --chart-series-6: oklch(0.50 0.05 250);
+
+  --chart-positive: oklch(0.55 0.15 145);
+  --chart-negative: oklch(0.55 0.18 25);
+}
+
+.dark {
+  --surface-canvas: oklch(0.19 0.01 255);
+  --surface-raised: oklch(0.24 0.012 255);
+  --surface-sunken: oklch(0.16 0.01 255);
+  --border-subtle: oklch(0.32 0.012 255);
+  --border-strong: oklch(0.42 0.014 255);
+
+  --text-primary: oklch(0.96 0.004 255);
+  --text-secondary: oklch(0.85 0.008 255);
+  --text-muted: oklch(0.65 0.012 255);
+  --text-inverse: oklch(0.20 0.02 255);
+
+  --action-primary: oklch(0.68 0.17 250);
+  --action-primary-hover: oklch(0.73 0.16 250);
+  --action-primary-active: oklch(0.78 0.15 250);
+  --action-on-primary: oklch(0.15 0.02 250);
+
+  --focus-ring: oklch(0.75 0.18 250);
+
+  --status-success-fg: oklch(0.85 0.12 145);
+  --status-success-bg: oklch(0.20 0.05 145);
+  --status-warning-fg: oklch(0.85 0.13 80);
+  --status-warning-bg: oklch(0.20 0.06 80);
+  --status-danger-fg: oklch(0.80 0.18 25);
+  --status-danger-bg: oklch(0.20 0.05 25);
+  --status-info-fg: oklch(0.83 0.12 250);
+  --status-info-bg: oklch(0.20 0.04 250);
+
+  --chart-series-1: oklch(0.72 0.15 250);
+  --chart-series-2: oklch(0.82 0.15 70);
+  --chart-series-3: oklch(0.77 0.15 150);
+  --chart-series-4: oklch(0.67 0.20 320);
+  --chart-series-5: oklch(0.87 0.15 100);
+  --chart-series-6: oklch(0.62 0.05 250);
+
+  --chart-positive: oklch(0.67 0.15 145);
+  --chart-negative: oklch(0.67 0.18 25);
 }
 
 @layer utilities {
