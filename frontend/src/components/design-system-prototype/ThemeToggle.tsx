@@ -46,7 +46,8 @@ export default function ThemeToggle({
       type="button"
       onClick={() => onChange(NEXT_MODE[mode])}
       aria-pressed={mode !== 'system'}
-      className={`inline-flex min-h-11 min-w-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors ${FOCUS_RING} ${className}`}
+      aria-label={`Theme: ${label}. Activate to switch to ${MODE_META[NEXT_MODE[mode]].label.toLowerCase()}.`}
+      className={`inline-flex min-h-11 min-w-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${FOCUS_RING} ${className}`}
       style={{
         borderColor: 'var(--border-subtle)',
         color: 'var(--text-secondary)',

@@ -20,6 +20,7 @@ export default function FilterEntryPoint() {
     <button
       type="button"
       aria-pressed={active}
+      aria-label="Filters"
       onClick={() => setActive((value) => !value)}
       className={`inline-flex min-h-11 min-w-11 items-center gap-2 rounded-md border px-3 text-sm font-medium ${FOCUS_RING}`}
       style={{
