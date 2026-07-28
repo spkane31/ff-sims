@@ -26,24 +26,21 @@ const pollInterval = 200 * time.Millisecond
 // per batch), so the binding limit on PoolSize is Sleeper API concurrency,
 // not DB connection starvation.
 type Config struct {
-	PoolSize    int // CRON_TXN_POOL_SIZE, default 10
-	RefillBatch int // CRON_TXN_REFILL_BATCH, default 4
+	PoolSize    int `env:"CRON_TXN_POOL_SIZE,default=40,min=1"`
+	RefillBatch int `env:"CRON_TXN_REFILL_BATCH,default=50,min=1"`
 	// BatchSize flushes accumulated league results once this many have been
 	// fetched.
-	BatchSize int // CRON_TXN_BATCH_SIZE, default 20
+	BatchSize int `env:"CRON_TXN_BATCH_SIZE,default=200,min=1"`
 	// BatchFlushInterval flushes accumulated results at least this often,
 	// even short of BatchSize, so results don't sit indefinitely.
-	BatchFlushInterval time.Duration // CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION, default 5s, minimum 1s
+	BatchFlushInterval time.Duration `env:"CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION,default=5s,min=1s"`
 }
 
-// LoadConfig reads Config from env, clamped to at least 1.
+// LoadConfig reads Config from env.
 func LoadConfig() Config {
-	return Config{
-		PoolSize:           max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 40), 1),
-		RefillBatch:        max(helpers.GetEnv("CRON_TXN_REFILL_BATCH", 50), 1),
-		BatchSize:          max(helpers.GetEnv("CRON_TXN_BATCH_SIZE", 200), 1),
-		BatchFlushInterval: max(helpers.GetEnv("CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
-	}
+	var cfg Config
+	helpers.LoadEnvStruct(&cfg)
+	return cfg
 }
 
 // Report summarizes one RunTransactionSync call.
