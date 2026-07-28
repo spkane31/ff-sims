@@ -122,10 +122,19 @@
   }
 }
 
-/* Manual theme override values — mirror the :root / dark-media tokens above
-   so a `dark`/`light` class on <html> wins over the OS-preference media
-   query regardless of source order (equal specificity, later in cascade). */
+/* Manual theme override values — mirror the :root / dark-media tokens above,
+   including the pre-existing --chart-* tokens, so a `dark`/`light` class on
+   <html> wins over the OS-preference media query regardless of source order
+   (equal specificity, later in cascade). */
 .light {
+  --chart-axis-text: #374151;
+  --chart-grid: #d1d5db;
+  --chart-legend-text: #374151;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: #111827;
+  --chart-tooltip-border: #e5e7eb;
+  --chart-zero-line: #9ca3af;
+
   --surface-canvas: oklch(0.98 0.004 250);
   --surface-raised: oklch(1 0 0);
   --surface-sunken: oklch(0.965 0.004 250);
@@ -165,6 +174,14 @@
 }
 
 .dark {
+  --chart-axis-text: #e5e7eb;
+  --chart-grid: #4b5563;
+  --chart-legend-text: #e5e7eb;
+  --chart-tooltip-bg: #1f2937;
+  --chart-tooltip-text: #f3f4f6;
+  --chart-tooltip-border: #4b5563;
+  --chart-zero-line: #6b7280;
+
   --surface-canvas: oklch(0.19 0.01 255);
   --surface-raised: oklch(0.24 0.012 255);
   --surface-sunken: oklch(0.16 0.01 255);
