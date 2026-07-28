@@ -84,7 +84,7 @@ level — those are marked explicitly rather than given an invented number.
 
 - [ ] Normal-size body/UI text meets at least 4.5:1 contrast against its
       background. Reuse Task 1's verified `--text-primary` pairs against
-      `--surface-canvas`/`--surface-raised` (15.53:1–16.44:1 across both
+      `--surface-canvas`/`--surface-raised` (14.64:1–16.44:1 across both
       modes) rather than introducing a new text color. (SC 1.4.3
       Contrast (Minimum))
 - [ ] Large-scale text (≥24px regular weight, or ≥18.66px/14pt bold —
@@ -103,9 +103,14 @@ level — those are marked explicitly rather than given an invented number.
 - [ ] Every UI-component boundary needed to identify it — input borders,
       outline-style button borders, checkbox/radio boundaries, data-table
       dividers that carry structural meaning — meets 3:1 against
-      adjacent color(s). Reuse `--border-strong` (not `--border-subtle`,
-      which Task 1's inventory does not flag as must-pass) wherever a
-      divider needs to clear this bar. (SC 1.4.11 Non-text Contrast)
+      adjacent color(s). `--border-strong` is the token to reach for
+      over `--border-subtle` when a divider needs to clear this bar, but
+      treat that as an **assumed, not verified**, pass: Task 1's
+      inventory explicitly did not compute contrast ratios for either
+      border token ("Not flagged 'must pass' — no computed ratios
+      required by the brief"), so confirm the actual rendered ratio
+      before shipping a component that relies on `--border-strong` alone
+      to meet 3:1. (SC 1.4.11 Non-text Contrast)
 - [ ] Graphical objects required to understand content — chart axis
       lines, chart data marks/points, status icons — meet 3:1 against
       their background, unless the graphic is purely decorative or is a
@@ -200,6 +205,10 @@ level — those are marked explicitly rather than given an invented number.
 - Focus-ring item (Section 2) references `--focus-ring` and its verified
   contrast ratios from Task 1's token-inventory.md rather than
   redefining focus-ring behavior or re-deriving new ratios.
-- Text contrast (Section 4) and non-text/UI contrast (Section 5) items
-  cite the 4.5:1 (SC 1.4.3) and 3:1 (SC 1.4.11) minimums respectively,
-  matching Task 1's token-inventory.md must-pass thresholds.
+- Text contrast (Section 4) cites the 4.5:1 minimum (SC 1.4.3) and quotes
+  Task 1's verified `--text-primary` ratios exactly as tabulated in
+  token-inventory.md (14.64:1–16.44:1, not the earlier misquoted
+  15.53:1–16.44:1). Non-text/UI contrast (Section 5) cites the 3:1
+  minimum (SC 1.4.11) but flags the `--border-strong` recommendation as
+  assumed, not verified, since token-inventory.md never computed a
+  ratio for either border token.
