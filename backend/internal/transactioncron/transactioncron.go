@@ -39,9 +39,9 @@ type Config struct {
 // LoadConfig reads Config from env, clamped to at least 1.
 func LoadConfig() Config {
 	return Config{
-		PoolSize:           max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 25), 1),
-		RefillBatch:        max(helpers.GetEnv("CRON_TXN_REFILL_BATCH", 8), 1),
-		BatchSize:          max(helpers.GetEnv("CRON_TXN_BATCH_SIZE", 40), 1),
+		PoolSize:           max(helpers.GetEnv("CRON_TXN_POOL_SIZE", 40), 1),
+		RefillBatch:        max(helpers.GetEnv("CRON_TXN_REFILL_BATCH", 50), 1),
+		BatchSize:          max(helpers.GetEnv("CRON_TXN_BATCH_SIZE", 200), 1),
 		BatchFlushInterval: max(helpers.GetEnv("CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
 	}
 }
