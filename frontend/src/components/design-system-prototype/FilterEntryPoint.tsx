@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { FilterIcon } from './icons';
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
+import { FOCUS_RING } from './focus-ring';
 
 /**
  * Filter entry-point affordance for the top bar.

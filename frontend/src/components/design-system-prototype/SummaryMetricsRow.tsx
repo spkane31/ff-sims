@@ -1,4 +1,5 @@
 import type { SummaryMetricFixture } from './league-overview-fixtures';
+import { FOCUS_RING } from './focus-ring';
 
 export type MetricsViewState = 'default' | 'loading' | 'empty' | 'error';
 
@@ -7,9 +8,6 @@ interface SummaryMetricsRowProps {
   viewState: MetricsViewState;
   onRetry: () => void;
 }
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
 
 const TILE_STYLE = {
   backgroundColor: 'var(--surface-raised)',

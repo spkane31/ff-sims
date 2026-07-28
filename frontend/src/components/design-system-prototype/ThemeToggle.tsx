@@ -1,4 +1,5 @@
 import { SunIcon, MoonIcon, SystemThemeIcon } from './icons';
+import { FOCUS_RING } from './focus-ring';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -22,9 +23,6 @@ const MODE_META: Record<
   light: { label: 'Light', Icon: SunIcon },
   dark: { label: 'Dark', Icon: MoonIcon },
 };
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
 
 /**
  * Three-state theme control: system -> light -> dark -> system.

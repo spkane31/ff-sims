@@ -1,3 +1,13 @@
+import type { ComponentType } from 'react';
+import {
+  type IconProps,
+  OverviewIcon,
+  ScheduleIcon,
+  PlayersIcon,
+  TeamsIcon,
+  MoreIcon,
+} from './icons';
+
 /**
  * Shared nav destination list for the design-system shell prototype.
  *
@@ -6,9 +16,10 @@
  * the top bar's primary nav (`lg` and up) — see responsive-rules.md
  * Section 2, which specifies a single shell breakpoint governing both.
  *
- * Only `/design-system/league-overview` (Task 6) is expected to exist as a
- * real route right now; the other hrefs are placeholders for future
- * prototype pages and will 404 until built.
+ * Only `/design-system/league-overview` (Task 6) is a real route today.
+ * Schedule/Players/Teams/More all point at it too for now — they'll get
+ * their own prototype pages in a later phase; pointing them at their
+ * "real" (but nonexistent) paths would 404.
  */
 
 export type ShellNavId = 'overview' | 'schedule' | 'players' | 'teams' | 'more';
@@ -21,8 +32,21 @@ export interface ShellNavItem {
 
 export const SHELL_NAV_ITEMS: ShellNavItem[] = [
   { id: 'overview', label: 'Overview', href: '/design-system/league-overview' },
-  { id: 'schedule', label: 'Schedule', href: '/design-system/schedule' },
-  { id: 'players', label: 'Players', href: '/design-system/players' },
-  { id: 'teams', label: 'Teams', href: '/design-system/teams' },
-  { id: 'more', label: 'More', href: '/design-system/more' },
+  { id: 'schedule', label: 'Schedule', href: '/design-system/league-overview' },
+  { id: 'players', label: 'Players', href: '/design-system/league-overview' },
+  { id: 'teams', label: 'Teams', href: '/design-system/league-overview' },
+  { id: 'more', label: 'More', href: '/design-system/league-overview' },
 ];
+
+/**
+ * Nav icon components, keyed by nav id, shared between TopBar (desktop
+ * primary nav) and BottomNav (mobile primary nav) — previously duplicated
+ * byte-for-byte in both files.
+ */
+export const NAV_ICONS: Record<ShellNavId, ComponentType<IconProps>> = {
+  overview: OverviewIcon,
+  schedule: ScheduleIcon,
+  players: PlayersIcon,
+  teams: TeamsIcon,
+  more: MoreIcon,
+};

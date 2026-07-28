@@ -13,9 +13,7 @@ import {
   WEEKLY_MARGIN,
   STANDINGS,
 } from '@/components/design-system-prototype/league-overview-fixtures';
-
-const FOCUS_RING =
-  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]';
+import { FOCUS_RING } from '@/components/design-system-prototype/focus-ring';
 
 const VIEW_STATE_OPTIONS: { id: MetricsViewState; label: string }[] = [
   { id: 'default', label: 'Default' },
