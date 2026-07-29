@@ -156,6 +156,12 @@ class Valuator:
             b.var = min(MAX_VAR, b.var + self._drift(b.position) * dt_days)
         self.last_ts = now
 
+    def age_to(self, now: datetime) -> None:
+        """Advance the model clock with no evidence: uncertainty grows, values
+        do not move. A fixed-step replay calls this at every batch boundary so
+        a quiet day's snapshot still shows drift."""
+        self._age(now)
+
     # -- 2. UPDATE from a trade (additive constraint across several players) ------
     def apply_trade(self, side_a: list[str], side_b: list[str]) -> None:
         a = [self._ensure(p) for p in side_a]

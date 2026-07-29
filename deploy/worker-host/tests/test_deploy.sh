@@ -16,8 +16,10 @@ git -C "$REPO" checkout -q -b main
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name test
 
-mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/workers/espn" "$REPO/deploy/worker-host"
+mkdir -p "$REPO/backend/cmd/worker" "$REPO/backend/cmd/cron" "$REPO/workers/espn" "$REPO/analysis" "$REPO/deploy/worker-host"
 cp "$SCRIPT_DIR/../deploy.sh" "$REPO/deploy/worker-host/deploy.sh"
+cp "$SCRIPT_DIR/../ff-sims-player-valuations.service" "$REPO/deploy/worker-host/"
+cp "$SCRIPT_DIR/../ff-sims-player-valuations.timer" "$REPO/deploy/worker-host/"
 chmod +x "$REPO/deploy/worker-host/deploy.sh"
 
 cat > "$REPO/backend/go.mod" <<'EOF'
@@ -36,6 +38,7 @@ package main
 func main() {}
 EOF
 echo "v1" > "$REPO/workers/espn/worker.py"
+echo "v1" > "$REPO/analysis/main.py"
 
 git -C "$REPO" add -A
 git -C "$REPO" commit -q -m "initial"
@@ -54,16 +57,23 @@ EOF
 chmod +x "$BIN/systemctl"
 export PATH="$BIN:$PATH"
 export REPO_DIR="$REPO"
+SYSTEMD_DIR="$WORK/systemd"
+ENV_FILE="$WORK/ff-sims-worker.env"
+mkdir -p "$SYSTEMD_DIR"
+printf 'ARCHIVE_DATABASE_URL=postgres://ffsims@localhost:5432/ff_sims_archive\n' > "$ENV_FILE"
+export SYSTEMD_DIR ENV_FILE
 
-# --- stub uv so ESPN-worker deploy assertions don't depend on real network
-# access / dependency resolution — same idea as the systemctl stub above.
+# --- stub uv so the Python deploy assertions (ESPN worker, player-valuation
+# model) don't depend on real network access / dependency resolution — same
+# idea as the systemctl stub above. Each call logs its working directory too,
+# since two separate environments are synced by the same binary.
 # UV_FAIL_FLAG lets a scenario simulate a sync failure on demand.
 UV_CALLS="$WORK/uv_calls"
 UV_FAIL_FLAG="$WORK/uv_should_fail"
 : > "$UV_CALLS"
 cat > "$BIN/uv" <<EOF
 #!/usr/bin/env bash
-echo "\$@" >> "$UV_CALLS"
+echo "\$(basename "\$PWD") \$@" >> "$UV_CALLS"
 [[ -f "$UV_FAIL_FLAG" ]] && exit 1
 exit 0
 EOF
@@ -91,9 +101,11 @@ bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
 [[ -x "$REPO/backend/cron" ]] || fail "expected a cron binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
-grep -q "sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the ESPN worker on first deploy"
+grep -q "espn sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the ESPN worker on first deploy"
+grep -q "analysis sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the player-valuation model on first deploy"
 grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected systemctl restart to be called for the ESPN worker"
 [[ -f "$REPO/workers/espn/.espn-deployed-sha" ]] || fail "expected ESPN sha file to be written after first deploy"
+[[ -f "$REPO/analysis/.analysis-deployed-sha" ]] || fail "expected analysis sha file to be written after first deploy"
 
 # --- scenario 3: a new commit that fails to compile -> old binary + service left alone ---
 old_hash="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
@@ -188,6 +200,7 @@ deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
 echo "$deploy_output" | grep -q "worker: up to date, no worker-relevant changes" || fail "expected a clear skip reason for the worker, got: $deploy_output"
 echo "$deploy_output" | grep -q "cron: up to date, no cron-relevant changes" || fail "expected a clear skip reason for cron, got: $deploy_output"
 echo "$deploy_output" | grep -q "espn-worker: up to date, no changes" || fail "expected a clear skip reason for the ESPN worker, got: $deploy_output"
+echo "$deploy_output" | grep -q "player-valuations: up to date, no changes" || fail "expected a clear skip reason for the player-valuation model, got: $deploy_output"
 
 [[ "$(git -C "$REPO" rev-parse HEAD)" == "$(git -C "$REPO" rev-parse origin/main)" ]] \
   || fail "local checkout should still advance to origin/main even when the build is skipped"
@@ -334,7 +347,68 @@ git -C "$CLONE" add NOTES.md
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -qm "docs: trigger retry"
 git -C "$CLONE" push -q origin main
 bash "$REPO/deploy/worker-host/deploy.sh"
-grep -q "sync --frozen --no-dev" "$UV_CALLS" || fail "expected the ESPN sync to be retried once uv succeeds again"
+grep -q "espn sync --frozen --no-dev" "$UV_CALLS" || fail "expected the ESPN sync to be retried once uv succeeds again"
 grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected the ESPN worker service to be restarted once the retried sync succeeds"
+
+# --- scenario 10: an analysis-only change resyncs the player-valuation venv
+# and nothing else. Unlike every other component here, there is deliberately
+# NO systemctl restart: ff-sims-player-valuations is a Type=oneshot timer job,
+# so restarting it would launch an unscheduled full-season replay instead of
+# just picking up new code on the next 00:00 UTC tick. ---
+worker_hash_before="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_before="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+: > "$CALLS"
+: > "$UV_CALLS"
+echo "v2" > "$CLONE/analysis/main.py"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "valuation model v2"
+git -C "$CLONE" push -q origin main
+
+deploy_output="$(bash "$REPO/deploy/worker-host/deploy.sh" 2>&1)"
+grep -q "analysis sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync for an analysis-only change"
+grep -q "espn sync" "$UV_CALLS" && fail "the ESPN worker should not resync for an analysis-only change"
+echo "$deploy_output" | grep -q "deployed player-valuations" || fail "expected the player-valuation deploy to be logged, got: $deploy_output"
+grep -q '^restart ' "$CALLS" && fail "no service should be restarted for an analysis-only change (the timer picks up the new checkout itself), got: $(cat "$CALLS")"
+grep -qF "WorkingDirectory=$REPO/analysis" "$SYSTEMD_DIR/ff-sims-player-valuations.service" \
+  || fail "expected the player-valuation service to be installed during deploy"
+cmp "$REPO/deploy/worker-host/ff-sims-player-valuations.timer" "$SYSTEMD_DIR/ff-sims-player-valuations.timer" \
+  || fail "expected the player-valuation timer to be installed during deploy"
+grep -q '^daemon-reload$' "$CALLS" || fail "expected systemd to reload after installing player-valuation units"
+grep -q '^enable ff-sims-player-valuations.timer$' "$CALLS" || fail "expected player-valuation timer to be enabled when archive URL is configured"
+grep -q '^start ff-sims-player-valuations.timer$' "$CALLS" || fail "expected player-valuation timer to be armed when archive URL is configured"
+grep -q '^start ff-sims-player-valuations.service$' "$CALLS" && fail "deploy must not start an unscheduled player-valuation replay"
+worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
+cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
+[[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for an analysis-only change"
+[[ "$cron_hash_before" == "$cron_hash_after" ]] || fail "cron binary should not rebuild for an analysis-only change"
+
+# A unit-template-only change must still reinstall and reload the units. The
+# analysis environment is already current, so it must not run uv sync again.
+: > "$CALLS"
+: > "$UV_CALLS"
+sed 's/00:00:00 UTC/01:00:00 UTC/' "$CLONE/deploy/worker-host/ff-sims-player-valuations.timer" > "$CLONE/deploy/worker-host/ff-sims-player-valuations.timer.new"
+mv "$CLONE/deploy/worker-host/ff-sims-player-valuations.timer.new" "$CLONE/deploy/worker-host/ff-sims-player-valuations.timer"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -am "tune valuation timer schedule"
+git -C "$CLONE" push -q origin main
+
+bash "$REPO/deploy/worker-host/deploy.sh"
+[[ ! -s "$UV_CALLS" ]] || fail "template-only changes must not resync analysis dependencies"
+grep -q '^daemon-reload$' "$CALLS" || fail "expected systemd reload after a player-valuation unit-template change"
+grep -q '^OnCalendar=\*-\*-\* 01:00:00 UTC$' "$SYSTEMD_DIR/ff-sims-player-valuations.timer" \
+  || fail "expected the changed player-valuation timer template to be installed"
+
+# a failed analysis sync must not record the sha, so it is retried later
+: > "$UV_CALLS"
+touch "$UV_FAIL_FLAG"
+analysis_sha_before="$(<"$REPO/analysis/.analysis-deployed-sha")"
+echo "v3" > "$CLONE/analysis/main.py"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit -aqm "valuation model v3 (uv will fail)"
+git -C "$CLONE" push -q origin main
+
+if bash "$REPO/deploy/worker-host/deploy.sh"; then
+  fail "deploy.sh should exit non-zero when the analysis uv sync fails"
+fi
+[[ "$(<"$REPO/analysis/.analysis-deployed-sha")" == "$analysis_sha_before" ]] \
+  || fail "a failed analysis sync must not advance the deployed sha"
+rm -f "$UV_FAIL_FLAG"
 
 echo "PASS: deploy.sh integration tests"

@@ -1,0 +1,16 @@
+[Unit]
+Description=Run the ff-sims player valuation replay daily at 00:00 UTC
+
+[Timer]
+# Midnight UTC. --end defaults to the current UTC date and is exclusive, so a
+# run firing here ends on a snapshot dated today covering every event through
+# the end of yesterday — the newest state that is fully observed at 00:00.
+OnCalendar=*-*-* 00:00:00 UTC
+# No OnBootSec and no Persistent=true, deliberately: enabling or starting this
+# timer must not kick off a full replay. The first production run is invoked
+# explicitly (systemctl start ff-sims-player-valuations.service) so it can be
+# watched. setup.sh's disable_sleep already keeps the host awake for the tick.
+Unit=ff-sims-player-valuations.service
+
+[Install]
+WantedBy=timers.target

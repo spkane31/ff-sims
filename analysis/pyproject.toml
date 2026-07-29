@@ -8,6 +8,8 @@ dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.3.3",
     "psycopg[binary]>=3.2",
+    # staged Parquet run artifacts (src/staging.py)
+    "pyarrow>=18.0",
     "python-dotenv>=1.0",
 ]
 
