@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log/slog"
 	"os"
 	"strconv"
 
@@ -73,10 +72,8 @@ func Load() (*Config, error) {
 // Helper functions for reading environment variables
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
-		slog.Debug("Using environment variable", "key", key, "value", value)
 		return value
 	}
-	slog.Info("Using default value for environment variable", "key", key, "defaultValue", defaultValue)
 	return defaultValue
 }
 
