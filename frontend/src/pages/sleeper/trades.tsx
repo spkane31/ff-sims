@@ -1,7 +1,6 @@
 import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
 import LeagueFilterBar from "../../components/LeagueFilterBar";
 import { useSleeperTrades } from "../../hooks/useSleeperData";
 import { SleeperLeagueFilters, SleeperTrade, TradeSidePlayer } from "../../types/models";
@@ -123,151 +122,149 @@ export default function SleeperTradesPage() {
   }
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-blue-600">Sleeper Trades</h1>
-          <p className="text-gray-600 dark:text-gray-300 mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Values are the model&apos;s player valuations as of the trade date, using the valuation
-            segment matching the trade&apos;s league format (full-PPR superflex redraft, 8/10/12-team);
-            trades from other formats show &quot;—&quot;. The highlighted side is the one the model
-            favored. Draft picks are not valued.
-          </p>
-        </div>
-
-        <LeagueFilterBar filters={filters} onChange={applyFilters} showSuperflexFilter />
-
-        {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-            Failed to load trades: {error.message}
-          </div>
-        )}
-
-        <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date &amp; Time</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">PPR</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">SuperFlex</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League Size</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value A</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value B</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    <div className="flex justify-center items-center space-x-2">
-                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Loading trades…</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No trades found.
-                  </td>
-                </tr>
-              ) : (
-                items.map((trade) => {
-                  const winner = winningSide(trade);
-                  const winClass = "bg-green-50 dark:bg-green-900/20";
-                  return (
-                    <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                        {formatDate(trade.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                        {trade.scoring}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                        {trade.superflex ? "Yes" : "No"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                        {trade.league_size}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
-                      >
-                        {sideItems(trade.sides?.[0]).length > 0 ? (
-                          <ul className="space-y-0.5">
-                            {sideItems(trade.sides?.[0]).map((item, i) => (
-                              <li key={i}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
-                          winner === 0
-                            ? `${winClass} font-semibold text-green-700 dark:text-green-400`
-                            : "text-gray-600 dark:text-gray-300"
-                        }`}
-                      >
-                        {formatValue(trade.sides?.[0]?.total_value)}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 1 ? winClass : ""}`}
-                      >
-                        {sideItems(trade.sides?.[1]).length > 0 ? (
-                          <ul className="space-y-0.5">
-                            {sideItems(trade.sides?.[1]).map((item, i) => (
-                              <li key={i}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
-                          winner === 1
-                            ? `${winClass} font-semibold text-green-700 dark:text-green-400`
-                            : "text-gray-600 dark:text-gray-300"
-                        }`}
-                      >
-                        {formatValue(trade.sides?.[1]?.total_value)}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <button
-              className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || isLoading}
-            >
-              Previous
-            </button>
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= totalPages || isLoading}
-            >
-              Next
-            </button>
-          </div>
-        )}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-blue-600">Sleeper Trades</h1>
+        <p className="text-gray-600 dark:text-gray-300 mt-1">
+          {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Values are the model&apos;s player valuations as of the trade date, using the valuation
+          segment matching the trade&apos;s league format (full-PPR superflex redraft, 8/10/12-team);
+          trades from other formats show &quot;—&quot;. The highlighted side is the one the model
+          favored. Draft picks are not valued.
+        </p>
       </div>
-    </Layout>
+
+      <LeagueFilterBar filters={filters} onChange={applyFilters} showSuperflexFilter />
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+          Failed to load trades: {error.message}
+        </div>
+      )}
+
+      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+        <table className="w-full">
+          <thead className="bg-gray-50 dark:bg-gray-700">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date &amp; Time</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">PPR</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">SuperFlex</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League Size</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value A</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value B</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+            {isLoading ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <div className="flex justify-center items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Loading trades…</span>
+                  </div>
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  No trades found.
+                </td>
+              </tr>
+            ) : (
+              items.map((trade) => {
+                const winner = winningSide(trade);
+                const winClass = "bg-green-50 dark:bg-green-900/20";
+                return (
+                  <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {formatDate(trade.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {trade.scoring}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {trade.superflex ? "Yes" : "No"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {trade.league_size}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
+                    >
+                      {sideItems(trade.sides?.[0]).length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {sideItems(trade.sides?.[0]).map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
+                        winner === 0
+                          ? `${winClass} font-semibold text-green-700 dark:text-green-400`
+                          : "text-gray-600 dark:text-gray-300"
+                      }`}
+                    >
+                      {formatValue(trade.sides?.[0]?.total_value)}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 1 ? winClass : ""}`}
+                    >
+                      {sideItems(trade.sides?.[1]).length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {sideItems(trade.sides?.[1]).map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
+                        winner === 1
+                          ? `${winClass} font-semibold text-green-700 dark:text-green-400`
+                          : "text-gray-600 dark:text-gray-300"
+                      }`}
+                    >
+                      {formatValue(trade.sides?.[1]?.total_value)}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <button
+            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1 || isLoading}
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-600 dark:text-gray-300">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages || isLoading}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "../../components/Layout";
 import ADPFilterBar from "../../components/ADPFilterBar";
 import { useSleeperADPAll } from "../../hooks/useSleeperData";
 import { SleeperADPFilters } from "../../types/models";
@@ -73,116 +72,114 @@ export default function SleeperADPPage() {
   }
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-blue-600">Average Draft Position</h1>
-          <p className="text-gray-600 dark:text-gray-300 mt-1">
-            {isLoading ? "Loading…" : `${total.toLocaleString()} players${season ? ` — ${season} season` : ""}`}
-          </p>
-        </div>
-
-        <ADPFilterBar
-          filters={filters}
-          onChange={applyFilters}
-          availableSeasons={availableSeasons}
-          position={position}
-          onPositionChange={applyPosition}
-        />
-
-        {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-            Failed to load ADP: {error.message}
-          </div>
-        )}
-
-        <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Rank</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Player</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Pos</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Team</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Avg Pick</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">95% CI</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Drafts</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    <div className="flex justify-center items-center space-x-2">
-                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Loading ADP…</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No players found for this filter combination.
-                  </td>
-                </tr>
-              ) : (
-                items.map((player, i) => (
-                  <tr key={player.sleeper_player_id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                      {(page - 1) * LIMIT + i + 1}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                      {player.player_id ? (
-                        <Link
-                          href={`/players/${player.player_id}`}
-                          className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
-                        >
-                          {player.name}
-                        </Link>
-                      ) : (
-                        player.name
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.position}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                      {player.avg_pick_no.toFixed(1)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                      {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                      {player.pick_count}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <button
-              className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || isLoading}
-            >
-              Previous
-            </button>
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= totalPages || isLoading}
-            >
-              Next
-            </button>
-          </div>
-        )}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-blue-600">Average Draft Position</h1>
+        <p className="text-gray-600 dark:text-gray-300 mt-1">
+          {isLoading ? "Loading…" : `${total.toLocaleString()} players${season ? ` — ${season} season` : ""}`}
+        </p>
       </div>
-    </Layout>
+
+      <ADPFilterBar
+        filters={filters}
+        onChange={applyFilters}
+        availableSeasons={availableSeasons}
+        position={position}
+        onPositionChange={applyPosition}
+      />
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+          Failed to load ADP: {error.message}
+        </div>
+      )}
+
+      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+        <table className="w-full">
+          <thead className="bg-gray-50 dark:bg-gray-700">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Rank</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Player</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Pos</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Team</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Avg Pick</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">95% CI</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Drafts</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <div className="flex justify-center items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Loading ADP…</span>
+                  </div>
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  No players found for this filter combination.
+                </td>
+              </tr>
+            ) : (
+              items.map((player, i) => (
+                <tr key={player.sleeper_player_id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                    {(page - 1) * LIMIT + i + 1}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
+                    {player.player_id ? (
+                      <Link
+                        href={`/players/${player.player_id}`}
+                        className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
+                      >
+                        {player.name}
+                      </Link>
+                    ) : (
+                      player.name
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.position}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>
+                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                    {player.avg_pick_no.toFixed(1)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                    {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
+                    {player.pick_count}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <button
+            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1 || isLoading}
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-600 dark:text-gray-300">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages || isLoading}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
