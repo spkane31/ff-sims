@@ -35,13 +35,13 @@ const discoveryLogTag = "discovery_trace"
 // the binding constraint on pool size is Sleeper API concurrency, not
 // DB_MAX_OPEN_CONNS.
 type Config struct {
-	UserPoolSize      int `env:"CRON_DISCOVERY_USER_POOL_SIZE,default=25,min=1"`
-	UserRefillBatch   int `env:"CRON_DISCOVERY_USER_REFILL_BATCH,default=6,min=1"`
+	UserPoolSize      int `env:"CRON_DISCOVERY_USER_POOL_SIZE,default=30,min=1"`
+	UserRefillBatch   int `env:"CRON_DISCOVERY_USER_REFILL_BATCH,default=10,min=1"`
 	LeaguePoolSize    int `env:"CRON_DISCOVERY_LEAGUE_POOL_SIZE,default=12,min=1"`
-	LeagueRefillBatch int `env:"CRON_DISCOVERY_LEAGUE_REFILL_BATCH,default=4,min=1"`
+	LeagueRefillBatch int `env:"CRON_DISCOVERY_LEAGUE_REFILL_BATCH,default=10,min=1"`
 	// UserBatchSize/LeagueBatchSize flush each pool's accumulated results
 	// once this many have been fetched.
-	UserBatchSize   int `env:"CRON_DISCOVERY_USER_BATCH_SIZE,default=25,min=1"`
+	UserBatchSize   int `env:"CRON_DISCOVERY_USER_BATCH_SIZE,default=30,min=1"`
 	LeagueBatchSize int `env:"CRON_DISCOVERY_LEAGUE_BATCH_SIZE,default=12,min=1"`
 	// UserBatchFlushInterval/LeagueBatchFlushInterval flush accumulated
 	// results at least this often, even short of the batch size, so results
