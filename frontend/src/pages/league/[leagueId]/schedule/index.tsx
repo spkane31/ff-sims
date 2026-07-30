@@ -4,6 +4,21 @@ import { useSchedule } from "@/hooks/useSchedule";
 import { useStrengthOfSchedule, TeamStrength } from "@/hooks/useStrengthOfSchedule";
 import { Matchup } from "@/types/models";
 import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import ErrorState from "@/components/design-system/ErrorState";
+import EmptyState from "@/components/design-system/EmptyState";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
 
 export default function Schedule() {
   const router = useRouter();
@@ -101,330 +116,383 @@ export default function Schedule() {
   ): string => {
     switch (difficulty) {
       case "Hard":
-        return "bg-red-500";
+        return "var(--status-danger-fg)";
       case "Med":
-        return "bg-yellow-500";
+        return "var(--status-warning-fg)";
       case "Easy":
-        return "bg-green-500";
+        return "var(--status-success-fg)";
       default:
-        return "bg-gray-500";
+        return "var(--text-muted)";
     }
   };
+
+  const scheduleColumns: DataTableColumn<Matchup>[] = [
+    {
+      id: "year",
+      header: "Year",
+      cell: (game) => game.year,
+    },
+    {
+      id: "week",
+      header: "Week",
+      cell: (game) =>
+        game.playoffGameType === "CHAMPIONSHIP"
+          ? "Championship"
+          : game.playoffGameType === "THIRD_PLACE"
+          ? "Third Place Game"
+          : game.playoffGameType === "PLAYOFF"
+          ? `Playoffs (Round ${
+              game.week - (playoffStartWeeks[game.year] - 1)
+            })`
+          : `Week ${game.week}`,
+    },
+    {
+      id: "matchup",
+      header: "Matchup",
+      cell: (game) => (
+        <div className="flex flex-col md:flex-row md:items-center">
+          <Link
+            href={`/league/${leagueId}/teams/${game.homeTeamESPNID}`}
+            className="font-medium hover:underline transition-colors duration-200"
+            style={{
+              color:
+                game.completed && game.homeScore > game.awayScore
+                  ? "var(--status-success-fg)"
+                  : "var(--text-primary)",
+            }}
+          >
+            {game.homeTeamName}
+          </Link>
+          <span className="hidden md:inline mx-2">vs</span>
+          <span className="md:hidden">@</span>
+
+          <Link
+            href={`/league/${leagueId}/teams/${game.awayTeamESPNID}`}
+            className="font-medium hover:underline transition-colors duration-200"
+            style={{
+              color:
+                game.completed && game.awayScore > game.homeScore
+                  ? "var(--status-success-fg)"
+                  : "var(--text-primary)",
+            }}
+          >
+            {game.awayTeamName}
+          </Link>
+        </div>
+      ),
+    },
+    {
+      id: "score",
+      header: "Score",
+      cell: (game) =>
+        game.completed ? (
+          <span>
+            {game.homeScore.toFixed(2)} - {game.awayScore.toFixed(2)}
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>Upcoming</span>
+        ),
+    },
+    {
+      id: "projectedScore",
+      header: "Projected Score",
+      cell: (game) =>
+        game.completed ? (
+          <span>
+            {game.homeProjectedScore === -1
+              ? "NA"
+              : game.homeProjectedScore.toFixed(2)}{" "}
+            -{" "}
+            {game.awayProjectedScore === -1
+              ? "NA"
+              : game.awayProjectedScore.toFixed(2)}
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>Upcoming</span>
+        ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      cell: (game) =>
+        game.completed ? (
+          <Badge
+            variant="outline"
+            className="rounded-full"
+            style={{
+              color: "var(--status-success-fg)",
+              borderColor: "var(--status-success-fg)",
+              backgroundColor: "var(--status-success-bg)",
+            }}
+          >
+            Final
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className="rounded-full"
+            style={{
+              color: "var(--status-info-fg)",
+              borderColor: "var(--status-info-fg)",
+              backgroundColor: "var(--status-info-bg)",
+            }}
+          >
+            Upcoming
+          </Badge>
+        ),
+    },
+    {
+      id: "details",
+      header: "Details",
+      cell: (game) => (
+        <Link
+          href={`/league/${leagueId}/schedule/${game.id}`}
+          className="hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          View Details
+        </Link>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-8">
       <section>
-        <h1 className="text-3xl md:text-4xl font-bold text-blue-600 mb-6">
+        <h1
+          className="text-3xl md:text-4xl font-bold mb-6"
+          style={{ color: "var(--text-primary)" }}
+        >
           League Schedule
         </h1>
-        <p className="text-lg text-gray-600 dark:text-gray-300 mb-8 max-w-3xl">
+        <p
+          className="text-lg mb-8 max-w-3xl"
+          style={{ color: "var(--text-muted)" }}
+        >
           View upcoming matchups and past results for all teams in your
           league.
         </p>
 
-        <div className="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg mb-8">
-          <h2 className="text-xl font-semibold mb-4">Strength of Schedule</h2>
-          {isLoading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <span className="ml-2">Loading schedule data...</span>
-            </div>
-          ) : overallStrength.length === 0 ? (
-            <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-              No strength of schedule data available for the selected year. Make sure future matchups are loaded.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-medium mb-3">Remaining</h3>
-                <div className="flex items-center mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
-                  <span className="w-40">Team</span>
-                  <span className="flex-1 ml-3">Schedule Difficulty</span>
-                  <span className="w-20 text-right ml-3">Opp Win %</span>
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <h2
+              className="text-xl font-semibold mb-4"
+              style={{ color: "var(--text-primary)" }}
+            >
+              Strength of Schedule
+            </h2>
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
                 </div>
                 <div className="space-y-3">
-                  {remainingStrength.map(
-                    ({ team, difficulty, strengthPercentage }) => (
-                      <div key={team} className="flex items-center">
-                        <span className="w-40 text-sm truncate">{team}</span>
-                        <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+              </div>
+            ) : overallStrength.length === 0 ? (
+              <EmptyState title="No strength of schedule data available for the selected year. Make sure future matchups are loaded." />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Remaining</h3>
+                  <div
+                    className="flex items-center mb-2 text-xs font-medium"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span className="w-40">Team</span>
+                    <span className="flex-1 ml-3">Schedule Difficulty</span>
+                    <span className="w-20 text-right ml-3">Opp Win %</span>
+                  </div>
+                  <div className="space-y-3">
+                    {remainingStrength.map(
+                      ({ team, difficulty, strengthPercentage }) => (
+                        <div key={team} className="flex items-center">
+                          <span className="w-40 text-sm truncate">{team}</span>
                           <div
-                            className={`h-full ${getDifficultyColor(difficulty)}`}
-                            style={{ width: `${strengthPercentage}%` }}
-                          ></div>
+                            className="flex-1 h-5 rounded-full overflow-hidden ml-3"
+                            style={{ backgroundColor: "var(--surface-sunken)" }}
+                          >
+                            <div
+                              className="h-full"
+                              style={{
+                                width: `${strengthPercentage}%`,
+                                backgroundColor: getDifficultyColor(difficulty),
+                              }}
+                            ></div>
+                          </div>
+                          <span className="w-20 text-right text-sm ml-3">
+                            {strengthPercentage}%
+                          </span>
                         </div>
-                        <span className="w-20 text-right text-sm ml-3">
-                          {strengthPercentage}%
-                        </span>
-                      </div>
-                    )
-                  )}
+                      )
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <h3 className="text-lg font-medium mb-3">Season Overall</h3>
-                <div className="flex items-center mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
-                  <span className="w-40">Team</span>
-                  <span className="flex-1 ml-3">Schedule Difficulty</span>
-                  <span className="w-20 text-right ml-3">Opp Win %</span>
-                </div>
-                <div className="space-y-3">
-                  {overallStrength.map(
-                    ({ team, difficulty, strengthPercentage }) => (
-                      <div key={team} className="flex items-center">
-                        <span className="w-40 text-sm truncate">{team}</span>
-                        <div className="flex-1 h-5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden ml-3">
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Season Overall</h3>
+                  <div
+                    className="flex items-center mb-2 text-xs font-medium"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span className="w-40">Team</span>
+                    <span className="flex-1 ml-3">Schedule Difficulty</span>
+                    <span className="w-20 text-right ml-3">Opp Win %</span>
+                  </div>
+                  <div className="space-y-3">
+                    {overallStrength.map(
+                      ({ team, difficulty, strengthPercentage }) => (
+                        <div key={team} className="flex items-center">
+                          <span className="w-40 text-sm truncate">{team}</span>
                           <div
-                            className={`h-full ${getDifficultyColor(difficulty)}`}
-                            style={{ width: `${strengthPercentage}%` }}
-                          ></div>
+                            className="flex-1 h-5 rounded-full overflow-hidden ml-3"
+                            style={{ backgroundColor: "var(--surface-sunken)" }}
+                          >
+                            <div
+                              className="h-full"
+                              style={{
+                                width: `${strengthPercentage}%`,
+                                backgroundColor: getDifficultyColor(difficulty),
+                              }}
+                            ></div>
+                          </div>
+                          <span className="w-20 text-right text-sm ml-3">
+                            {strengthPercentage}%
+                          </span>
                         </div>
-                        <span className="w-20 text-right text-sm ml-3">
-                          {strengthPercentage}%
-                        </span>
-                      </div>
-                    )
-                  )}
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+              <h2 className="text-xl font-semibold mb-3 md:mb-0" style={{ color: "var(--text-primary)" }}>
+                Matchups
+              </h2>
+
+              <div className="w-full md:w-auto flex flex-col md:flex-row gap-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="showFutureMatchups"
+                    checked={showFutureMatchups}
+                    onChange={(e) => setShowFutureMatchups(e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: "var(--action-primary)" }}
+                    disabled={isLoading}
+                  />
+                  <label
+                    htmlFor="showFutureMatchups"
+                    className="text-sm font-medium"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Show future matchups
+                  </label>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4">
+                  <label
+                    htmlFor="yearFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Year
+                  </label>
+                  <Select
+                    value={selectedYear}
+                    onValueChange={(v) => setSelectedYear(v)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger id="yearFilter" aria-label="Select Year" className="w-full md:w-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {years.map((year) => (
+                        <SelectItem key={year} value={String(year)}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label
+                    htmlFor="weekFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Week
+                  </label>
+                  <Select
+                    value={selectedWeek}
+                    onValueChange={(v) => setSelectedWeek(v)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger id="weekFilter" aria-label="Select Week" className="w-full md:w-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Weeks</SelectItem>
+                      {weeks.map((week) => (
+                        <SelectItem key={week} value={String(week)}>
+                          Week {week}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label
+                    htmlFor="gameTypeFilter"
+                    className="block text-sm font-medium mb-1 md:hidden"
+                  >
+                    Select Game Type
+                  </label>
+                  <Select
+                    value={selectedGameType}
+                    onValueChange={(v) => setSelectedGameType(v)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger id="gameTypeFilter" aria-label="Select Game Type" className="w-full md:w-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Games</SelectItem>
+                      <SelectItem value="regular">Regular Season</SelectItem>
+                      <SelectItem value="playoffs">Playoffs</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
-          )}
-        </div>
 
-        <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-            <h2 className="text-xl font-semibold mb-3 md:mb-0">Matchups</h2>
-
-            <div className="w-full md:w-auto flex flex-col md:flex-row gap-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="showFutureMatchups"
-                  checked={showFutureMatchups}
-                  onChange={(e) => setShowFutureMatchups(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                  disabled={isLoading}
-                />
-                <label
-                  htmlFor="showFutureMatchups"
-                  className="text-sm font-medium text-gray-900 dark:text-gray-300"
-                >
-                  Show future matchups
-                </label>
+            {isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
-
-              <div className="flex flex-col md:flex-row gap-4">
-                <label
-                  htmlFor="yearFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Year
-                </label>
-                <select
-                  id="yearFilter"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Years</option>
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  htmlFor="weekFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Week
-                </label>
-                <select
-                  id="weekFilter"
-                  value={selectedWeek}
-                  onChange={(e) => setSelectedWeek(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Weeks</option>
-                  {weeks.map((week) => (
-                    <option key={week} value={week}>
-                      Week {week}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  htmlFor="gameTypeFilter"
-                  className="block text-sm font-medium mb-1 md:hidden"
-                >
-                  Select Game Type
-                </label>
-                <select
-                  id="gameTypeFilter"
-                  value={selectedGameType}
-                  onChange={(e) => setSelectedGameType(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  disabled={isLoading}
-                >
-                  <option value="all">All Games</option>
-                  <option value="regular">Regular Season</option>
-                  <option value="playoffs">Playoffs</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <span className="ml-2">Loading schedule data...</span>
-            </div>
-          ) : error ? (
-            <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
-              <h3 className="text-lg font-semibold">
-                Error loading schedule
-              </h3>
-              <p>{error.message}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-800">
-                  <tr>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Year
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Week
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Matchup
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Score
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Projected Score
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Details
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredGames.map((game, i) => (
-                    <tr
-                      key={i}
-                      className={
-                        i % 2 === 0
-                          ? "bg-white dark:bg-gray-800"
-                          : "bg-gray-50 dark:bg-gray-700"
-                      }
-                    >
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.year}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.playoffGameType === "CHAMPIONSHIP"
-                          ? "Championship"
-                          : game.playoffGameType === "THIRD_PLACE"
-                          ? "Third Place Game"
-                          : game.playoffGameType === "PLAYOFF"
-                          ? `Playoffs (Round ${
-                              game.week - (playoffStartWeeks[game.year] - 1)
-                            })`
-                          : `Week ${game.week}`}
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex flex-col md:flex-row md:items-center">
-                          <Link
-                            href={`/league/${leagueId}/teams/${game.homeTeamESPNID}`}
-                            className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
-                              game.completed &&
-                              game.homeScore > game.awayScore
-                                ? "text-green-600"
-                                : ""
-                            }`}
-                          >
-                            {game.homeTeamName}
-                          </Link>
-                          <span className="hidden md:inline mx-2">vs</span>
-                          <span className="md:hidden">@</span>
-
-                          <Link
-                            href={`/league/${leagueId}/teams/${game.awayTeamESPNID}`}
-                            className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 ${
-                              game.completed &&
-                              game.awayScore > game.homeScore
-                                ? "text-green-600"
-                                : ""
-                            }`}
-                          >
-                            {game.awayTeamName}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.completed ? (
-                          <span>
-                            {game.homeScore.toFixed(2)} -{" "}
-                            {game.awayScore.toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">
-                            Upcoming
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.completed ? (
-                          <span>
-                            {game.homeProjectedScore === -1
-                              ? "NA"
-                              : game.homeProjectedScore.toFixed(2)}{" "}
-                            -{" "}
-                            {game.awayProjectedScore === -1
-                              ? "NA"
-                              : game.awayProjectedScore.toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">
-                            Upcoming
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {game.completed ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
-                            Final
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100">
-                            Upcoming
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        <Link
-                          href={`/league/${leagueId}/schedule/${game.id}`}
-                          className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
-                        >
-                          View Details
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+            ) : error ? (
+              <ErrorState message={error.message} />
+            ) : (
+              <DataTable
+                columns={scheduleColumns}
+                rows={filteredGames}
+                rowKey={(game) => String(game.id)}
+              />
+            )}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

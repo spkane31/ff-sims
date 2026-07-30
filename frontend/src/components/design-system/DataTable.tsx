@@ -9,6 +9,8 @@ export interface DataTableColumn<T> {
   cell: (row: T) => ReactNode;
   /** Omit for non-sortable columns. */
   sortable?: boolean;
+  /** Text alignment for both the header and every cell in this column. Defaults to "left". */
+  align?: "left" | "center" | "right";
 }
 
 export interface DataTableProps<T> {
@@ -18,6 +20,12 @@ export interface DataTableProps<T> {
   sortField?: string;
   sortDirection?: "asc" | "desc";
   onSort?: (fieldId: string) => void;
+}
+
+function alignClass(align: DataTableColumn<unknown>["align"]): string {
+  if (align === "center") return "text-center";
+  if (align === "right") return "text-right";
+  return "text-left";
 }
 
 export default function DataTable<T>({
@@ -37,7 +45,7 @@ export default function DataTable<T>({
               <th
                 key={col.id}
                 scope="col"
-                className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                className={`whitespace-nowrap px-4 py-3 text-xs font-medium uppercase tracking-wider ${alignClass(col.align)}`}
                 style={{ color: "var(--text-muted)" }}
               >
                 {col.sortable ? (
@@ -71,7 +79,10 @@ export default function DataTable<T>({
               }}
             >
               {columns.map((col) => (
-                <td key={col.id} className="whitespace-nowrap px-4 py-4">
+                <td
+                  key={col.id}
+                  className={`whitespace-nowrap px-4 py-4 ${alignClass(col.align)}`}
+                >
                   {col.cell(row)}
                 </td>
               ))}

@@ -4,6 +4,11 @@ import Link from "next/link";
 import LeagueFilterBar from "../../components/LeagueFilterBar";
 import { useSleeperTrades } from "../../hooks/useSleeperData";
 import { SleeperLeagueFilters, SleeperTrade, TradeSidePlayer } from "../../types/models";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import EmptyState from "@/components/design-system/EmptyState";
+import ErrorState from "@/components/design-system/ErrorState";
 
 const LIMIT = 25;
 
@@ -26,10 +31,7 @@ function SidePlayer({ player }: { player: TradeSidePlayer }) {
   const label = player.position ? `${player.name} (${player.position})` : player.name;
   if (!player.player_id) return <>{label}</>;
   return (
-    <Link
-      href={`/players/${player.player_id}`}
-      className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
-    >
+    <Link href={`/players/${player.player_id}`} className="hover:underline" style={{ color: "var(--action-primary)" }}>
       {label}
     </Link>
   );
@@ -124,11 +126,13 @@ export default function SleeperTradesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-blue-600">Sleeper Trades</h1>
-        <p className="text-gray-600 dark:text-gray-300 mt-1">
+        <h1 className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
+          Sleeper Trades
+        </h1>
+        <p className="mt-1" style={{ color: "var(--text-secondary)" }}>
           {isLoading ? "Loading…" : `${total.toLocaleString()} completed trades`}
         </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
           Values are the model&apos;s player valuations as of the trade date, using the valuation
           segment matching the trade&apos;s league format (full-PPR superflex redraft, 8/10/12-team);
           trades from other formats show &quot;—&quot;. The highlighted side is the one the model
@@ -138,131 +142,139 @@ export default function SleeperTradesPage() {
 
       <LeagueFilterBar filters={filters} onChange={applyFilters} showSuperflexFilter />
 
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-          Failed to load trades: {error.message}
-        </div>
-      )}
+      {error && <ErrorState message={`Failed to load trades: ${error.message}`} />}
 
-      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-        <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Date &amp; Time</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">PPR</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">SuperFlex</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">League Size</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side A</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value A</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Side B</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Value B</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-            {isLoading ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                  <div className="flex justify-center items-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Loading trades…</span>
-                  </div>
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                  No trades found.
-                </td>
-              </tr>
-            ) : (
-              items.map((trade) => {
-                const winner = winningSide(trade);
-                const winClass = "bg-green-50 dark:bg-green-900/20";
-                return (
-                  <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {formatDate(trade.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {trade.scoring}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {trade.superflex ? "Yes" : "No"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {trade.league_size}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 0 ? winClass : ""}`}
-                    >
-                      {sideItems(trade.sides?.[0]).length > 0 ? (
-                        <ul className="space-y-0.5">
-                          {sideItems(trade.sides?.[0]).map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
-                        winner === 0
-                          ? `${winClass} font-semibold text-green-700 dark:text-green-400`
-                          : "text-gray-600 dark:text-gray-300"
-                      }`}
-                    >
-                      {formatValue(trade.sides?.[0]?.total_value)}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-sm text-gray-600 dark:text-gray-300 align-top max-w-xs ${winner === 1 ? winClass : ""}`}
-                    >
-                      {sideItems(trade.sides?.[1]).length > 0 ? (
-                        <ul className="space-y-0.5">
-                          {sideItems(trade.sides?.[1]).map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-sm text-right align-top whitespace-nowrap ${
-                        winner === 1
-                          ? `${winClass} font-semibold text-green-700 dark:text-green-400`
-                          : "text-gray-600 dark:text-gray-300"
-                      }`}
-                    >
-                      {formatValue(trade.sides?.[1]?.total_value)}
-                    </td>
+      <Card>
+        <CardContent className="p-6">
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState title="No trades found." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Date &amp; Time</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>PPR</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>SuperFlex</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>League Size</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Side A</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium" style={{ color: "var(--text-muted)" }}>Value A</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Side B</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium" style={{ color: "var(--text-muted)" }}>Value B</th>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                </thead>
+                <tbody>
+                  {items.map((trade) => {
+                    const winner = winningSide(trade);
+                    return (
+                      <tr
+                        key={trade.id}
+                        className="hover:bg-[var(--surface-sunken)] transition-colors"
+                        style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                      >
+                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                          {formatDate(trade.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                          {trade.scoring}
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                          {trade.superflex ? "Yes" : "No"}
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                          {trade.league_size}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-sm align-top max-w-xs"
+                          style={{
+                            color: "var(--text-secondary)",
+                            backgroundColor: winner === 0 ? "var(--status-success-bg)" : undefined,
+                          }}
+                        >
+                          {sideItems(trade.sides?.[0]).length > 0 ? (
+                            <ul className="space-y-0.5">
+                              {sideItems(trade.sides?.[0]).map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-sm text-right align-top whitespace-nowrap"
+                          style={{
+                            color: winner === 0 ? "var(--status-success-fg)" : "var(--text-secondary)",
+                            backgroundColor: winner === 0 ? "var(--status-success-bg)" : undefined,
+                            fontWeight: winner === 0 ? 600 : undefined,
+                          }}
+                        >
+                          {formatValue(trade.sides?.[0]?.total_value)}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-sm align-top max-w-xs"
+                          style={{
+                            color: "var(--text-secondary)",
+                            backgroundColor: winner === 1 ? "var(--status-success-bg)" : undefined,
+                          }}
+                        >
+                          {sideItems(trade.sides?.[1]).length > 0 ? (
+                            <ul className="space-y-0.5">
+                              {sideItems(trade.sides?.[1]).map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-sm text-right align-top whitespace-nowrap"
+                          style={{
+                            color: winner === 1 ? "var(--status-success-fg)" : "var(--text-secondary)",
+                            backgroundColor: winner === 1 ? "var(--status-success-bg)" : undefined,
+                            fontWeight: winner === 1 ? 600 : undefined,
+                          }}
+                        >
+                          {formatValue(trade.sides?.[1]?.total_value)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <button
-            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+          <Button
+            variant="outline"
             onClick={() => goToPage(page - 1)}
             disabled={page <= 1 || isLoading}
           >
             Previous
-          </button>
-          <span className="text-sm text-gray-600 dark:text-gray-300">
+          </Button>
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
             Page {page} of {totalPages}
           </span>
-          <button
-            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+          <Button
+            variant="outline"
             onClick={() => goToPage(page + 1)}
             disabled={page >= totalPages || isLoading}
           >
             Next
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -21,13 +21,15 @@ export default function AppShell({ children }: AppShellProps) {
     >
       <TopBar />
 
-      <main className="flex-1 px-3 pb-20 pt-4 sm:px-4 lg:pb-6">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3 pb-20 pt-4 sm:px-4 lg:pb-6">
+        {children}
+      </main>
 
       <footer
         className="border-t px-4 py-8"
         style={{ borderColor: "var(--border-subtle)" }}
       >
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 text-center">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 text-center">
           <div>
             <h2 className="text-2xl font-bold md:text-3xl" style={{ color: "var(--action-primary)" }}>
               Powered by Male Friendship™

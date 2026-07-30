@@ -4,6 +4,11 @@ import Link from "next/link";
 import ADPFilterBar from "../../components/ADPFilterBar";
 import { useSleeperADPAll } from "../../hooks/useSleeperData";
 import { SleeperADPFilters } from "../../types/models";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import EmptyState from "@/components/design-system/EmptyState";
+import ErrorState from "@/components/design-system/ErrorState";
 
 const LIMIT = 25;
 
@@ -74,8 +79,10 @@ export default function SleeperADPPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-blue-600">Average Draft Position</h1>
-        <p className="text-gray-600 dark:text-gray-300 mt-1">
+        <h1 className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
+          Average Draft Position
+        </h1>
+        <p className="mt-1" style={{ color: "var(--text-secondary)" }}>
           {isLoading ? "Loading…" : `${total.toLocaleString()} players${season ? ` — ${season} season` : ""}`}
         </p>
       </div>
@@ -88,96 +95,96 @@ export default function SleeperADPPage() {
         onPositionChange={applyPosition}
       />
 
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
-          Failed to load ADP: {error.message}
-        </div>
-      )}
+      {error && <ErrorState message={`Failed to load ADP: ${error.message}`} />}
 
-      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-        <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Rank</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Player</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Pos</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Team</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Avg Pick</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">95% CI</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">Drafts</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-            {isLoading ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                  <div className="flex justify-center items-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Loading ADP…</span>
-                  </div>
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                  No players found for this filter combination.
-                </td>
-              </tr>
-            ) : (
-              items.map((player, i) => (
-                <tr key={player.sleeper_player_id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                    {(page - 1) * LIMIT + i + 1}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
-                    {player.player_id ? (
-                      <Link
-                        href={`/players/${player.player_id}`}
-                        className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 hover:underline"
-                      >
-                        {player.name}
-                      </Link>
-                    ) : (
-                      player.name
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.position}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{player.nfl_team}</td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {player.avg_pick_no.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {player.pick_count}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState title="No players found for this filter combination." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Rank</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Player</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Pos</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium" style={{ color: "var(--text-muted)" }}>Team</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium" style={{ color: "var(--text-muted)" }}>Avg Pick</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium" style={{ color: "var(--text-muted)" }}>95% CI</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium" style={{ color: "var(--text-muted)" }}>Drafts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((player, i) => (
+                    <tr
+                      key={player.sleeper_player_id}
+                      className="hover:bg-[var(--surface-sunken)] transition-colors"
+                      style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                    >
+                      <td className="px-4 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+                        {(page - 1) * LIMIT + i + 1}
+                      </td>
+                      <td className="px-4 py-3 text-sm max-w-xs truncate" style={{ color: "var(--text-primary)" }}>
+                        {player.player_id ? (
+                          <Link
+                            href={`/players/${player.player_id}`}
+                            className="hover:underline"
+                            style={{ color: "var(--action-primary)" }}
+                          >
+                            {player.name}
+                          </Link>
+                        ) : (
+                          player.name
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>{player.position}</td>
+                      <td className="px-4 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>{player.nfl_team}</td>
+                      <td className="px-4 py-3 text-sm text-center" style={{ color: "var(--text-secondary)" }}>
+                        {player.avg_pick_no.toFixed(1)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center" style={{ color: "var(--text-secondary)" }}>
+                        {player.ci_low_pick_no.toFixed(1)}–{player.ci_high_pick_no.toFixed(1)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center" style={{ color: "var(--text-secondary)" }}>
+                        {player.pick_count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <button
-            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+          <Button
+            variant="outline"
             onClick={() => goToPage(page - 1)}
             disabled={page <= 1 || isLoading}
           >
             Previous
-          </button>
-          <span className="text-sm text-gray-600 dark:text-gray-300">
+          </Button>
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
             Page {page} of {totalPages}
           </span>
-          <button
-            className="px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+          <Button
+            variant="outline"
             onClick={() => goToPage(page + 1)}
             disabled={page >= totalPages || isLoading}
           >
             Next
-          </button>
+          </Button>
         </div>
       )}
     </div>

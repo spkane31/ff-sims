@@ -2,6 +2,11 @@ import { useRouter } from "next/router";
 import { useMatchupDetail } from "@/hooks/useMatchupDetail";
 import Link from "next/link";
 import { Player } from "@/services/scheduleService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import ErrorState from "@/components/design-system/ErrorState";
 
 // Helper function to find better lineup decisions
 function findBetterLineupDecisions(players: Player[]) {
@@ -67,26 +72,45 @@ export default function MatchupDetail() {
 
   if (isLoading || matchup === null) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <span className="ml-2 text-lg">Loading matchup details...</span>
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-10 w-96 max-w-full" />
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <Skeleton className="h-32 w-full" />
+          </CardContent>
+        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <Card>
+            <CardContent className="space-y-2 p-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-2 p-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-100 dark:bg-red-900 p-6 rounded-lg text-red-700 dark:text-red-200 max-w-4xl mx-auto my-8">
-        <h2 className="text-xl font-semibold mb-2">
-          Error loading matchup details
-        </h2>
-        <p>{error.message}</p>
-        <Link
-          href={`/league/${leagueIdNum}/schedule`}
-          className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Return to Schedule
-        </Link>
+      <div className="space-y-4">
+        <ErrorState message={error.message} />
+        <Button asChild>
+          <Link href={`/league/${leagueIdNum}/schedule`}>
+            Return to Schedule
+          </Link>
+        </Button>
       </div>
     );
   }
@@ -109,11 +133,18 @@ export default function MatchupDetail() {
   const awayProjectedDiff = awayTeam.score - awayTeam.projectedScore;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="space-y-8">
       {/* Breadcrumbs and title */}
-      <div className="mb-6">
-        <div className="flex items-center text-gray-500 dark:text-gray-400 mb-2">
-          <Link href={`/league/${leagueIdNum}/schedule`} className="hover:text-blue-600">
+      <div>
+        <div
+          className="flex items-center mb-2"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Link
+            href={`/league/${leagueIdNum}/schedule`}
+            className="hover:underline"
+            style={{ color: "var(--text-muted)" }}
+          >
             Schedule
           </Link>
           <span className="mx-2">›</span>
@@ -121,738 +152,1026 @@ export default function MatchupDetail() {
             Year {year}, Week {week}
           </span>
         </div>
-        <h1 className="text-3xl md:text-4xl font-bold text-blue-600 mb-2">
+        <h1
+          className="text-3xl md:text-4xl font-bold mb-2"
+          style={{ color: "var(--text-primary)" }}
+        >
           {homeTeam.name} vs {awayTeam.name}
         </h1>
-        <div className="text-lg text-gray-600 dark:text-gray-400">
+        <div className="text-lg" style={{ color: "var(--text-muted)" }}>
           Week {week}, Year {year}
         </div>
       </div>
 
       {/* Matchup summary card */}
-      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-          {/* Home Team */}
-          <div
-            className={`text-center ${
-              homeWon ? "bg-green-50 dark:bg-green-900/20 p-4 rounded-lg" : ""
-            }`}
-          >
-            <div className="text-xl font-semibold mb-1">
-              <Link
-                href={`/league/${leagueIdNum}/teams/${homeTeamESPNID}`}
-                className="hover:text-blue-600 transition-colors"
-              >
-                {homeTeam.name}
-              </Link>
-            </div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+            {/* Home Team */}
             <div
-              className={`text-4xl font-bold mb-2 ${
-                homeWon ? "text-green-600 dark:text-green-400" : ""
-              }`}
+              className={`text-center ${homeWon ? "p-4 rounded-lg" : ""}`}
+              style={
+                homeWon
+                  ? { backgroundColor: "var(--status-success-bg)" }
+                  : undefined
+              }
             >
-              {homeTeam.score.toFixed(1)}
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Projected: {homeTeam.projectedScore.toFixed(1)}
-              {homeProjectedDiff !== 0 && (
-                <span
-                  className={`ml-2 ${
-                    homeProjectedDiff > 0 ? "text-green-600" : "text-red-600"
-                  }`}
+              <div className="text-xl font-semibold mb-1">
+                <Link
+                  href={`/league/${leagueIdNum}/teams/${homeTeamESPNID}`}
+                  className="hover:underline"
+                  style={{ color: "var(--text-primary)" }}
                 >
-                  ({homeProjectedDiff > 0 ? "+" : ""}
-                  {homeProjectedDiff.toFixed(1)})
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Matchup Status */}
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="text-lg mb-2">
-              {isCompleted ? (
-                <span className="px-3 py-1 bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-100 rounded-full text-sm font-medium">
-                  Final
-                </span>
-              ) : (
-                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 rounded-full text-sm font-medium">
-                  Upcoming
-                </span>
-              )}
-            </div>
-
-            <div className="text-2xl font-bold my-2">vs</div>
-
-            {isCompleted && (
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                Point Differential:{" "}
-                <span className="font-medium">
-                  {(homeTeam.score - awayTeam.score).toFixed(2)}
-                </span>
+                  {homeTeam.name}
+                </Link>
               </div>
-            )}
-          </div>
-
-          {/* Away Team */}
-          <div
-            className={`text-center ${
-              awayWon ? "bg-green-50 dark:bg-green-900/20 p-4 rounded-lg" : ""
-            }`}
-          >
-            <div className="text-xl font-semibold mb-1">
-              <Link
-                href={`/league/${leagueIdNum}/teams/${awayTeamESPNID}`}
-                className="hover:text-blue-600 transition-colors"
+              <div
+                className="text-4xl font-bold mb-2"
+                style={{
+                  color: homeWon
+                    ? "var(--status-success-fg)"
+                    : "var(--text-primary)",
+                }}
               >
-                {awayTeam.name}
-              </Link>
+                {homeTeam.score.toFixed(1)}
+              </div>
+              <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Projected: {homeTeam.projectedScore.toFixed(1)}
+                {homeProjectedDiff !== 0 && (
+                  <span
+                    className="ml-2"
+                    style={{
+                      color:
+                        homeProjectedDiff > 0
+                          ? "var(--status-success-fg)"
+                          : "var(--status-danger-fg)",
+                    }}
+                  >
+                    ({homeProjectedDiff > 0 ? "+" : ""}
+                    {homeProjectedDiff.toFixed(1)})
+                  </span>
+                )}
+              </div>
             </div>
-            <div
-              className={`text-4xl font-bold mb-2 ${
-                awayWon ? "text-green-600 dark:text-green-400" : ""
-              }`}
-            >
-              {awayTeam.score.toFixed(1)}
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Projected: {awayTeam.projectedScore.toFixed(1)}
-              {awayProjectedDiff !== 0 && (
-                <span
-                  className={`ml-2 ${
-                    awayProjectedDiff > 0 ? "text-green-600" : "text-red-600"
-                  }`}
+
+            {/* Matchup Status */}
+            <div className="flex flex-col items-center justify-center text-center">
+              <div className="text-lg mb-2">
+                {isCompleted ? (
+                  <Badge
+                    variant="outline"
+                    className="rounded-full"
+                    style={{
+                      color: "var(--status-success-fg)",
+                      borderColor: "var(--status-success-fg)",
+                      backgroundColor: "var(--status-success-bg)",
+                    }}
+                  >
+                    Final
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="rounded-full"
+                    style={{
+                      color: "var(--status-info-fg)",
+                      borderColor: "var(--status-info-fg)",
+                      backgroundColor: "var(--status-info-bg)",
+                    }}
+                  >
+                    Upcoming
+                  </Badge>
+                )}
+              </div>
+
+              <div
+                className="text-2xl font-bold my-2"
+                style={{ color: "var(--text-primary)" }}
+              >
+                vs
+              </div>
+
+              {isCompleted && (
+                <div
+                  className="text-sm mb-2"
+                  style={{ color: "var(--text-muted)" }}
                 >
-                  ({awayProjectedDiff > 0 ? "+" : ""}
-                  {awayProjectedDiff.toFixed(1)})
-                </span>
+                  Point Differential:{" "}
+                  <span className="font-medium">
+                    {(homeTeam.score - awayTeam.score).toFixed(2)}
+                  </span>
+                </div>
               )}
             </div>
+
+            {/* Away Team */}
+            <div
+              className={`text-center ${awayWon ? "p-4 rounded-lg" : ""}`}
+              style={
+                awayWon
+                  ? { backgroundColor: "var(--status-success-bg)" }
+                  : undefined
+              }
+            >
+              <div className="text-xl font-semibold mb-1">
+                <Link
+                  href={`/league/${leagueIdNum}/teams/${awayTeamESPNID}`}
+                  className="hover:underline"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {awayTeam.name}
+                </Link>
+              </div>
+              <div
+                className="text-4xl font-bold mb-2"
+                style={{
+                  color: awayWon
+                    ? "var(--status-success-fg)"
+                    : "var(--text-primary)",
+                }}
+              >
+                {awayTeam.score.toFixed(1)}
+              </div>
+              <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Projected: {awayTeam.projectedScore.toFixed(1)}
+                {awayProjectedDiff !== 0 && (
+                  <span
+                    className="ml-2"
+                    style={{
+                      color:
+                        awayProjectedDiff > 0
+                          ? "var(--status-success-fg)"
+                          : "var(--status-danger-fg)",
+                    }}
+                  >
+                    ({awayProjectedDiff > 0 ? "+" : ""}
+                    {awayProjectedDiff.toFixed(1)})
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Team Lineups */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Home Team Lineup */}
-        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">
-            {homeTeam.name} Lineup
-          </h2>
+        <Card>
+          <CardContent className="p-6">
+            <h2
+              className="text-xl font-semibold mb-4"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {homeTeam.name} Lineup
+            </h2>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Player
-                  </th>
-                  <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    NFL Pos
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Proj
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actual
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Diff
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {homeTeam.players.map((player) => {
-                  const diff = player.points - player.projectedPoints;
-                  return (
-                    <tr
-                      key={player.id}
-                      className={`${
-                        player.slotPosition === "BE" ||
-                        player.slotPosition === "IR"
-                          ? "text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50"
-                          : ""
-                      }`}
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th
+                      className="py-2 px-3 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
                     >
-                      <td className="py-2 px-3">
-                        <div className="flex items-center">
-                          <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
-                            {player.slotPosition || player.playerPosition}
-                          </span>
-                          <Link
-                            href={`/players/${player.id}`}
-                            className="hover:text-blue-600 transition-colors"
-                          >
-                            {player.playerName}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3">{player.playerPosition}</td>
-                      <td className="py-2 px-3 text-right">
-                        {player.projectedPoints.toFixed(1)}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {player.points.toFixed(1)}
-                      </td>
-                      <td
-                        className={`py-2 px-3 text-right ${
-                          diff > 0
-                            ? "text-green-600 dark:text-green-400"
-                            : diff < 0
-                            ? "text-red-600 dark:text-red-400"
-                            : ""
-                        }`}
+                      Player
+                    </th>
+                    <th
+                      className="py-2 px-3 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      NFL Pos
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Proj
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Actual
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Diff
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {homeTeam.players.map((player, playerIdx) => {
+                    const diff = player.points - player.projectedPoints;
+                    const isBench =
+                      player.slotPosition === "BE" ||
+                      player.slotPosition === "IR";
+                    const isLastRow =
+                      playerIdx === homeTeam.players.length - 1;
+                    return (
+                      <tr
+                        key={player.id}
+                        style={{
+                          borderBottom: isLastRow
+                            ? undefined
+                            : "1px solid var(--border-subtle)",
+                          color: isBench ? "var(--text-muted)" : undefined,
+                          backgroundColor: isBench
+                            ? "var(--surface-sunken)"
+                            : undefined,
+                        }}
                       >
-                        {diff > 0 && "+"}
-                        {diff.toFixed(1)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-gray-300 dark:border-gray-600 font-semibold">
-                  <td colSpan={2} className="py-2 px-3 text-left">
-                    Total
-                  </td>
-                  <td className="py-2 px-3 text-right">
-                    {homeTeam.projectedScore.toFixed(1)}
-                  </td>
-                  <td className="py-2 px-3 text-right">
-                    {homeTeam.score.toFixed(1)}
-                  </td>
-                  <td
-                    className={`py-2 px-3 text-right ${
-                      homeProjectedDiff > 0
-                        ? "text-green-600 dark:text-green-400"
-                        : homeProjectedDiff < 0
-                        ? "text-red-600 dark:text-red-400"
-                        : ""
-                    }`}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center">
+                            <span
+                              className="inline-block w-8 mr-2 text-xs font-medium"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {player.slotPosition || player.playerPosition}
+                            </span>
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:underline"
+                              style={{
+                                color: isBench
+                                  ? "var(--text-muted)"
+                                  : "var(--text-primary)",
+                              }}
+                            >
+                              {player.playerName}
+                            </Link>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">{player.playerPosition}</td>
+                        <td className="py-2 px-3 text-right">
+                          {player.projectedPoints.toFixed(1)}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          {player.points.toFixed(1)}
+                        </td>
+                        <td
+                          className="py-2 px-3 text-right"
+                          style={{
+                            color:
+                              diff > 0
+                                ? "var(--status-success-fg)"
+                                : diff < 0
+                                ? "var(--status-danger-fg)"
+                                : undefined,
+                          }}
+                        >
+                          {diff > 0 && "+"}
+                          {diff.toFixed(1)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr
+                    className="font-semibold"
+                    style={{ borderTop: "1px solid var(--border-strong)" }}
                   >
-                    {homeProjectedDiff > 0 && "+"}
-                    {homeProjectedDiff.toFixed(1)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+                    <td colSpan={2} className="py-2 px-3 text-left">
+                      Total
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {homeTeam.projectedScore.toFixed(1)}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {homeTeam.score.toFixed(1)}
+                    </td>
+                    <td
+                      className="py-2 px-3 text-right"
+                      style={{
+                        color:
+                          homeProjectedDiff > 0
+                            ? "var(--status-success-fg)"
+                            : homeProjectedDiff < 0
+                            ? "var(--status-danger-fg)"
+                            : undefined,
+                      }}
+                    >
+                      {homeProjectedDiff > 0 && "+"}
+                      {homeProjectedDiff.toFixed(1)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Away Team Lineup */}
-        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">
-            {awayTeam.name} Lineup
-          </h2>
+        <Card>
+          <CardContent className="p-6">
+            <h2
+              className="text-xl font-semibold mb-4"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {awayTeam.name} Lineup
+            </h2>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Player
-                  </th>
-                  <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    NFL Pos
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Proj
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actual
-                  </th>
-                  <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Diff
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {awayTeam.players.map((player) => {
-                  const diff = player.points - player.projectedPoints;
-                  return (
-                    <tr
-                      key={player.id}
-                      className={`${
-                        player.slotPosition === "BE" ||
-                        player.slotPosition === "IR"
-                          ? "text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50"
-                          : ""
-                      }`}
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th
+                      className="py-2 px-3 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
                     >
-                      <td className="py-2 px-3">
-                        <div className="flex items-center">
-                          <span className="inline-block w-8 mr-2 text-xs font-medium text-gray-500">
-                            {player.slotPosition || player.playerPosition}
-                          </span>
-                          <Link
-                            href={`/players/${player.id}`}
-                            className="hover:text-blue-600 transition-colors"
-                          >
-                            {player.playerName}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3">{player.playerPosition}</td>
-                      <td className="py-2 px-3 text-right">
-                        {player.projectedPoints.toFixed(1)}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {player.points.toFixed(1)}
-                      </td>
-                      <td
-                        className={`py-2 px-3 text-right ${
-                          diff > 0
-                            ? "text-green-600 dark:text-green-400"
-                            : diff < 0
-                            ? "text-red-600 dark:text-red-400"
-                            : ""
-                        }`}
+                      Player
+                    </th>
+                    <th
+                      className="py-2 px-3 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      NFL Pos
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Proj
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Actual
+                    </th>
+                    <th
+                      className="py-2 px-3 text-right text-xs font-medium uppercase tracking-wider"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Diff
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {awayTeam.players.map((player, playerIdx) => {
+                    const diff = player.points - player.projectedPoints;
+                    const isBench =
+                      player.slotPosition === "BE" ||
+                      player.slotPosition === "IR";
+                    const isLastRow =
+                      playerIdx === awayTeam.players.length - 1;
+                    return (
+                      <tr
+                        key={player.id}
+                        style={{
+                          borderBottom: isLastRow
+                            ? undefined
+                            : "1px solid var(--border-subtle)",
+                          color: isBench ? "var(--text-muted)" : undefined,
+                          backgroundColor: isBench
+                            ? "var(--surface-sunken)"
+                            : undefined,
+                        }}
                       >
-                        {diff > 0 && "+"}
-                        {diff.toFixed(1)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-gray-300 dark:border-gray-600 font-semibold">
-                  <td colSpan={2} className="py-2 px-3 text-left">
-                    Total
-                  </td>
-                  <td className="py-2 px-3 text-right">
-                    {awayTeam.projectedScore.toFixed(1)}
-                  </td>
-                  <td className="py-2 px-3 text-right">
-                    {awayTeam.score.toFixed(1)}
-                  </td>
-                  <td
-                    className={`py-2 px-3 text-right ${
-                      awayProjectedDiff > 0
-                        ? "text-green-600 dark:text-green-400"
-                        : awayProjectedDiff < 0
-                        ? "text-red-600 dark:text-red-400"
-                        : ""
-                    }`}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center">
+                            <span
+                              className="inline-block w-8 mr-2 text-xs font-medium"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {player.slotPosition || player.playerPosition}
+                            </span>
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:underline"
+                              style={{
+                                color: isBench
+                                  ? "var(--text-muted)"
+                                  : "var(--text-primary)",
+                              }}
+                            >
+                              {player.playerName}
+                            </Link>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">{player.playerPosition}</td>
+                        <td className="py-2 px-3 text-right">
+                          {player.projectedPoints.toFixed(1)}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          {player.points.toFixed(1)}
+                        </td>
+                        <td
+                          className="py-2 px-3 text-right"
+                          style={{
+                            color:
+                              diff > 0
+                                ? "var(--status-success-fg)"
+                                : diff < 0
+                                ? "var(--status-danger-fg)"
+                                : undefined,
+                          }}
+                        >
+                          {diff > 0 && "+"}
+                          {diff.toFixed(1)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr
+                    className="font-semibold"
+                    style={{ borderTop: "1px solid var(--border-strong)" }}
                   >
-                    {awayProjectedDiff > 0 && "+"}
-                    {awayProjectedDiff.toFixed(1)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+                    <td colSpan={2} className="py-2 px-3 text-left">
+                      Total
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {awayTeam.projectedScore.toFixed(1)}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {awayTeam.score.toFixed(1)}
+                    </td>
+                    <td
+                      className="py-2 px-3 text-right"
+                      style={{
+                        color:
+                          awayProjectedDiff > 0
+                            ? "var(--status-success-fg)"
+                            : awayProjectedDiff < 0
+                            ? "var(--status-danger-fg)"
+                            : undefined,
+                      }}
+                    >
+                      {awayProjectedDiff > 0 && "+"}
+                      {awayProjectedDiff.toFixed(1)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Key Performances */}
-      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
-          Key Performances
-        </h2>
+      <Card>
+        <CardContent className="p-6">
+          <h2
+            className="text-xl font-semibold mb-4 pb-2"
+            style={{
+              color: "var(--text-primary)",
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
+            Key Performances
+          </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Best Performers */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">Top Performers</h3>
-            <ul className="space-y-3">
-              {[...homeTeam.players, ...awayTeam.players]
-                .filter(
-                  (p) =>
-                    p.slotPosition !== "BE" &&
-                    p.slotPosition !== "IR" &&
-                    p.slotPosition !== ""
-                )
-                .sort((a, b) => b.points - a.points)
-                .slice(0, 3)
-                .map((player) => (
-                  <li
-                    key={player.id}
-                    className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg"
-                  >
-                    <div>
-                      <div className="font-medium">
-                        <Link
-                          href={`/players/${player.id}`}
-                          className="hover:text-blue-600 transition-colors"
-                        >
-                          {player.playerName}
-                        </Link>
-                      </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {player.playerPosition} · {player.team}
-                      </div>
-                    </div>
-                    <div className="text-xl font-semibold">
-                      {player.points.toFixed(1)}
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          </div>
-
-          {/* Underperformers */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">
-              Biggest Underperformers
-            </h3>
-            <ul className="space-y-3">
-              {[...homeTeam.players, ...awayTeam.players]
-                .filter(
-                  (p) =>
-                    p.slotPosition !== "BE" &&
-                    p.slotPosition !== "IR" &&
-                    p.slotPosition !== ""
-                )
-                .sort(
-                  (a, b) =>
-                    a.points -
-                    a.projectedPoints -
-                    (b.points - b.projectedPoints)
-                )
-                .slice(0, 3)
-                .map((player) => {
-                  const diff = player.points - player.projectedPoints;
-                  return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Best Performers */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Top Performers
+              </h3>
+              <ul className="space-y-3">
+                {[...homeTeam.players, ...awayTeam.players]
+                  .filter(
+                    (p) =>
+                      p.slotPosition !== "BE" &&
+                      p.slotPosition !== "IR" &&
+                      p.slotPosition !== ""
+                  )
+                  .sort((a, b) => b.points - a.points)
+                  .slice(0, 3)
+                  .map((player) => (
                     <li
                       key={player.id}
-                      className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-lg"
+                      className="flex items-center justify-between p-3 rounded-lg"
+                      style={{ backgroundColor: "var(--surface-sunken)" }}
                     >
                       <div>
                         <div className="font-medium">
                           <Link
                             href={`/players/${player.id}`}
-                            className="hover:text-blue-600 transition-colors"
+                            className="hover:underline"
+                            style={{ color: "var(--text-primary)" }}
                           >
                             {player.playerName}
                           </Link>
                         </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                        <div
+                          className="text-sm"
+                          style={{ color: "var(--text-muted)" }}
+                        >
                           {player.playerPosition} · {player.team}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xl font-semibold">
-                          {player.points.toFixed(1)}
-                        </div>
-                        <div className="text-sm text-red-600">
-                          {diff > 0 ? "+" : ""}
-                          {diff.toFixed(1)} vs proj
-                        </div>
+                      <div
+                        className="text-xl font-semibold"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {player.points.toFixed(1)}
                       </div>
                     </li>
-                  );
-                })}
-            </ul>
+                  ))}
+              </ul>
+            </div>
+
+            {/* Underperformers */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Biggest Underperformers
+              </h3>
+              <ul className="space-y-3">
+                {[...homeTeam.players, ...awayTeam.players]
+                  .filter(
+                    (p) =>
+                      p.slotPosition !== "BE" &&
+                      p.slotPosition !== "IR" &&
+                      p.slotPosition !== ""
+                  )
+                  .sort(
+                    (a, b) =>
+                      a.points -
+                      a.projectedPoints -
+                      (b.points - b.projectedPoints)
+                  )
+                  .slice(0, 3)
+                  .map((player) => {
+                    const diff = player.points - player.projectedPoints;
+                    return (
+                      <li
+                        key={player.id}
+                        className="flex items-center justify-between p-3 rounded-lg"
+                        style={{ backgroundColor: "var(--surface-sunken)" }}
+                      >
+                        <div>
+                          <div className="font-medium">
+                            <Link
+                              href={`/players/${player.id}`}
+                              className="hover:underline"
+                              style={{ color: "var(--text-primary)" }}
+                            >
+                              {player.playerName}
+                            </Link>
+                          </div>
+                          <div
+                            className="text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {player.playerPosition} · {player.team}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div
+                            className="text-xl font-semibold"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {player.points.toFixed(1)}
+                          </div>
+                          <div
+                            className="text-sm"
+                            style={{ color: "var(--status-danger-fg)" }}
+                          >
+                            {diff > 0 ? "+" : ""}
+                            {diff.toFixed(1)} vs proj
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Points Left on Bench */}
-      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
-          Bench Analysis
-        </h2>
+      <Card>
+        <CardContent className="p-6">
+          <h2
+            className="text-xl font-semibold mb-4 pb-2"
+            style={{
+              color: "var(--text-primary)",
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
+            Bench Analysis
+          </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Home Team Bench */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">
-              {homeTeam.name} Bench
-            </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Home Team Bench */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {homeTeam.name} Bench
+              </h3>
 
-            {homeTeam.players.filter(
-              (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
-            ).length > 0 ? (
-              <>
-                <div className="mb-4">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Bench Scoring
+              {homeTeam.players.filter(
+                (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
+              ).length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Bench Scoring
+                    </div>
+                    <div
+                      className="text-2xl font-semibold"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {homeTeam.players
+                        .filter(
+                          (p) =>
+                            p.slotPosition === "BE" || p.slotPosition === "IR"
+                        )
+                        .reduce((sum, p) => sum + p.points, 0)
+                        .toFixed(1)}
+                    </div>
                   </div>
-                  <div className="text-2xl font-semibold">
+
+                  <ul className="space-y-2">
                     {homeTeam.players
                       .filter(
                         (p) =>
                           p.slotPosition === "BE" || p.slotPosition === "IR"
                       )
-                      .reduce((sum, p) => sum + p.points, 0)
-                      .toFixed(1)}
-                  </div>
-                </div>
-
-                <ul className="space-y-2">
-                  {homeTeam.players
-                    .filter(
-                      (p) =>
-                        p.slotPosition === "BE" || p.slotPosition === "IR"
-                    )
-                    .sort((a, b) => b.points - a.points)
-                    .map((player) => (
-                      <li
-                        key={player.id}
-                        className="flex items-center justify-between"
-                      >
-                        <div>
-                          <span className="font-medium">
-                            <Link
-                              href={`/players/${player.id}`}
-                              className="hover:text-blue-600 transition-colors"
+                      .sort((a, b) => b.points - a.points)
+                      .map((player) => (
+                        <li
+                          key={player.id}
+                          className="flex items-center justify-between"
+                        >
+                          <div>
+                            <span className="font-medium">
+                              <Link
+                                href={`/players/${player.id}`}
+                                className="hover:underline"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {player.playerName}
+                              </Link>
+                            </span>
+                            <span
+                              className="text-sm ml-2"
+                              style={{ color: "var(--text-muted)" }}
                             >
-                              {player.playerName}
-                            </Link>
-                          </span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                            {player.playerPosition}
-                          </span>
-                        </div>
-                        <div className="font-medium">
-                          {player.points.toFixed(1)}
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              </>
-            ) : (
-              <div className="text-gray-500 dark:text-gray-400">
-                No bench players
-              </div>
-            )}
-          </div>
+                              {player.playerPosition}
+                            </span>
+                          </div>
+                          <div
+                            className="font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {player.points.toFixed(1)}
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              ) : (
+                <div style={{ color: "var(--text-muted)" }}>
+                  No bench players
+                </div>
+              )}
+            </div>
 
-          {/* Away Team Bench */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">
-              {awayTeam.name} Bench
-            </h3>
+            {/* Away Team Bench */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {awayTeam.name} Bench
+              </h3>
 
-            {awayTeam.players.filter(
-              (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
-            ).length > 0 ? (
-              <>
-                <div className="mb-4">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Bench Scoring
+              {awayTeam.players.filter(
+                (p) => p.slotPosition === "BE" || p.slotPosition === "IR"
+              ).length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Bench Scoring
+                    </div>
+                    <div
+                      className="text-2xl font-semibold"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {awayTeam.players
+                        .filter(
+                          (p) =>
+                            p.slotPosition === "BE" || p.slotPosition === "IR"
+                        )
+                        .reduce((sum, p) => sum + p.points, 0)
+                        .toFixed(1)}
+                    </div>
                   </div>
-                  <div className="text-2xl font-semibold">
+
+                  <ul className="space-y-2">
                     {awayTeam.players
                       .filter(
                         (p) =>
                           p.slotPosition === "BE" || p.slotPosition === "IR"
                       )
-                      .reduce((sum, p) => sum + p.points, 0)
-                      .toFixed(1)}
-                  </div>
-                </div>
-
-                <ul className="space-y-2">
-                  {awayTeam.players
-                    .filter(
-                      (p) =>
-                        p.slotPosition === "BE" || p.slotPosition === "IR"
-                    )
-                    .sort((a, b) => b.points - a.points)
-                    .map((player) => (
-                      <li
-                        key={player.id}
-                        className="flex items-center justify-between"
-                      >
-                        <div>
-                          <span className="font-medium">
-                            <Link
-                              href={`/players/${player.id}`}
-                              className="hover:text-blue-600 transition-colors"
+                      .sort((a, b) => b.points - a.points)
+                      .map((player) => (
+                        <li
+                          key={player.id}
+                          className="flex items-center justify-between"
+                        >
+                          <div>
+                            <span className="font-medium">
+                              <Link
+                                href={`/players/${player.id}`}
+                                className="hover:underline"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {player.playerName}
+                              </Link>
+                            </span>
+                            <span
+                              className="text-sm ml-2"
+                              style={{ color: "var(--text-muted)" }}
                             >
-                              {player.playerName}
-                            </Link>
-                          </span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                            {player.playerPosition}
-                          </span>
-                        </div>
-                        <div className="font-medium">
-                          {player.points.toFixed(1)}
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              </>
-            ) : (
-              <div className="text-gray-500 dark:text-gray-400">
-                No bench players
-              </div>
-            )}
+                              {player.playerPosition}
+                            </span>
+                          </div>
+                          <div
+                            className="font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {player.points.toFixed(1)}
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              ) : (
+                <div style={{ color: "var(--text-muted)" }}>
+                  No bench players
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Better Lineup Decisions */}
-      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
-          Better Lineup Decisions
-        </h2>
+      <Card>
+        <CardContent className="p-6">
+          <h2
+            className="text-xl font-semibold mb-4 pb-2"
+            style={{
+              color: "var(--text-primary)",
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
+            Better Lineup Decisions
+          </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Home Team Better Decisions */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">
-              {homeTeam.name} Missed Opportunities
-            </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Home Team Better Decisions */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {homeTeam.name} Missed Opportunities
+              </h3>
 
-            {(() => {
-              const betterDecisions = findBetterLineupDecisions(
-                homeTeam.players
-              );
-              return betterDecisions.length > 0 ? (
-                <>
-                  <div className="mb-4">
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Total Points Left on Table
-                    </div>
-                    <div className="text-2xl font-semibold text-red-600">
-                      {betterDecisions
-                        .reduce(
-                          (sum, decision) => sum + decision.pointsGained,
-                          0
-                        )
-                        .toFixed(1)}
-                    </div>
-                  </div>
-
-                  <ul className="space-y-3">
-                    {betterDecisions.map((decision) => (
-                      <li
-                        key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
-                        className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800"
+              {(() => {
+                const betterDecisions = findBetterLineupDecisions(
+                  homeTeam.players
+                );
+                return betterDecisions.length > 0 ? (
+                  <>
+                    <div className="mb-4">
+                      <div
+                        className="text-sm"
+                        style={{ color: "var(--text-muted)" }}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="text-sm font-medium">
-                              Start{" "}
-                              <Link
-                                href={`/players/${decision.benchPlayer.id}`}
-                                className="text-green-600 font-semibold hover:text-green-700 transition-colors"
-                              >
-                                {decision.benchPlayer.playerName}
-                              </Link>{" "}
-                              ({decision.benchPlayer.playerPosition})
-                            </div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                              Instead of{" "}
-                              <Link
-                                href={`/players/${decision.starterPlayer.id}`}
-                                className="text-red-600 font-semibold hover:text-red-700 transition-colors"
-                              >
-                                {decision.starterPlayer.playerName}
-                              </Link>{" "}
-                              ({decision.starterPlayer.slotPosition})
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {decision.benchPlayer.points.toFixed(1)} vs{" "}
-                              {decision.starterPlayer.points.toFixed(1)} pts
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-lg font-semibold text-green-600">
-                              +{decision.pointsGained.toFixed(1)}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              points
-                            </div>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <div className="text-gray-500 dark:text-gray-400 bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                  Perfect lineup! No better decisions available.
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Away Team Better Decisions */}
-          <div>
-            <h3 className="text-lg font-medium mb-3">
-              {awayTeam.name} Missed Opportunities
-            </h3>
-
-            {(() => {
-              const betterDecisions = findBetterLineupDecisions(
-                awayTeam.players
-              );
-              return betterDecisions.length > 0 ? (
-                <>
-                  <div className="mb-4">
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Total Points Left on Table
-                    </div>
-                    <div className="text-2xl font-semibold text-red-600">
-                      {betterDecisions
-                        .reduce(
-                          (sum, decision) => sum + decision.pointsGained,
-                          0
-                        )
-                        .toFixed(1)}
-                    </div>
-                  </div>
-
-                  <ul className="space-y-3">
-                    {betterDecisions.map((decision) => (
-                      <li
-                        key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
-                        className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800"
+                        Total Points Left on Table
+                      </div>
+                      <div
+                        className="text-2xl font-semibold"
+                        style={{ color: "var(--status-danger-fg)" }}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="text-sm font-medium">
-                              Start{" "}
-                              <Link
-                                href={`/players/${decision.benchPlayer.id}`}
-                                className="text-green-600 font-semibold hover:text-green-700 transition-colors"
+                        {betterDecisions
+                          .reduce(
+                            (sum, decision) => sum + decision.pointsGained,
+                            0
+                          )
+                          .toFixed(1)}
+                      </div>
+                    </div>
+
+                    <ul className="space-y-3">
+                      {betterDecisions.map((decision) => (
+                        <li
+                          key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
+                          className="p-3 rounded-lg border-l-4"
+                          style={{
+                            backgroundColor: "var(--surface-sunken)",
+                            borderLeftColor: "var(--status-danger-fg)",
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                Start{" "}
+                                <Link
+                                  href={`/players/${decision.benchPlayer.id}`}
+                                  className="font-semibold hover:underline"
+                                  style={{ color: "var(--status-success-fg)" }}
+                                >
+                                  {decision.benchPlayer.playerName}
+                                </Link>{" "}
+                                ({decision.benchPlayer.playerPosition})
+                              </div>
+                              <div
+                                className="text-sm"
+                                style={{ color: "var(--text-secondary)" }}
                               >
-                                {decision.benchPlayer.playerName}
-                              </Link>{" "}
-                              ({decision.benchPlayer.playerPosition})
-                            </div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                              Instead of{" "}
-                              <Link
-                                href={`/players/${decision.starterPlayer.id}`}
-                                className="text-red-600 font-semibold hover:text-red-700 transition-colors"
+                                Instead of{" "}
+                                <Link
+                                  href={`/players/${decision.starterPlayer.id}`}
+                                  className="font-semibold hover:underline"
+                                  style={{ color: "var(--status-danger-fg)" }}
+                                >
+                                  {decision.starterPlayer.playerName}
+                                </Link>{" "}
+                                ({decision.starterPlayer.slotPosition})
+                              </div>
+                              <div
+                                className="text-xs mt-1"
+                                style={{ color: "var(--text-muted)" }}
                               >
-                                {decision.starterPlayer.playerName}
-                              </Link>{" "}
-                              ({decision.starterPlayer.slotPosition})
+                                {decision.benchPlayer.points.toFixed(1)} vs{" "}
+                                {decision.starterPlayer.points.toFixed(1)} pts
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {decision.benchPlayer.points.toFixed(1)} vs{" "}
-                              {decision.starterPlayer.points.toFixed(1)} pts
+                            <div className="text-right">
+                              <div
+                                className="text-lg font-semibold"
+                                style={{ color: "var(--status-success-fg)" }}
+                              >
+                                +{decision.pointsGained.toFixed(1)}
+                              </div>
+                              <div
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                points
+                              </div>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-lg font-semibold text-green-600">
-                              +{decision.pointsGained.toFixed(1)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <div
+                    className="p-4 rounded-lg border-l-4"
+                    style={{
+                      color: "var(--text-muted)",
+                      backgroundColor: "var(--surface-sunken)",
+                      borderLeftColor: "var(--status-success-fg)",
+                    }}
+                  >
+                    Perfect lineup! No better decisions available.
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Away Team Better Decisions */}
+            <div>
+              <h3
+                className="text-lg font-medium mb-3"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {awayTeam.name} Missed Opportunities
+              </h3>
+
+              {(() => {
+                const betterDecisions = findBetterLineupDecisions(
+                  awayTeam.players
+                );
+                return betterDecisions.length > 0 ? (
+                  <>
+                    <div className="mb-4">
+                      <div
+                        className="text-sm"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Total Points Left on Table
+                      </div>
+                      <div
+                        className="text-2xl font-semibold"
+                        style={{ color: "var(--status-danger-fg)" }}
+                      >
+                        {betterDecisions
+                          .reduce(
+                            (sum, decision) => sum + decision.pointsGained,
+                            0
+                          )
+                          .toFixed(1)}
+                      </div>
+                    </div>
+
+                    <ul className="space-y-3">
+                      {betterDecisions.map((decision) => (
+                        <li
+                          key={`${decision.benchPlayer.id}-${decision.starterPlayer.id}`}
+                          className="p-3 rounded-lg border-l-4"
+                          style={{
+                            backgroundColor: "var(--surface-sunken)",
+                            borderLeftColor: "var(--status-danger-fg)",
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                Start{" "}
+                                <Link
+                                  href={`/players/${decision.benchPlayer.id}`}
+                                  className="font-semibold hover:underline"
+                                  style={{ color: "var(--status-success-fg)" }}
+                                >
+                                  {decision.benchPlayer.playerName}
+                                </Link>{" "}
+                                ({decision.benchPlayer.playerPosition})
+                              </div>
+                              <div
+                                className="text-sm"
+                                style={{ color: "var(--text-secondary)" }}
+                              >
+                                Instead of{" "}
+                                <Link
+                                  href={`/players/${decision.starterPlayer.id}`}
+                                  className="font-semibold hover:underline"
+                                  style={{ color: "var(--status-danger-fg)" }}
+                                >
+                                  {decision.starterPlayer.playerName}
+                                </Link>{" "}
+                                ({decision.starterPlayer.slotPosition})
+                              </div>
+                              <div
+                                className="text-xs mt-1"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                {decision.benchPlayer.points.toFixed(1)} vs{" "}
+                                {decision.starterPlayer.points.toFixed(1)} pts
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-500">
-                              points
+                            <div className="text-right">
+                              <div
+                                className="text-lg font-semibold"
+                                style={{ color: "var(--status-success-fg)" }}
+                              >
+                                +{decision.pointsGained.toFixed(1)}
+                              </div>
+                              <div
+                                className="text-xs"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                points
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <div className="text-gray-500 dark:text-gray-400 bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                  Perfect lineup! No better decisions available.
-                </div>
-              );
-            })()}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <div
+                    className="p-4 rounded-lg border-l-4"
+                    style={{
+                      color: "var(--text-muted)",
+                      backgroundColor: "var(--surface-sunken)",
+                      borderLeftColor: "var(--status-success-fg)",
+                    }}
+                  >
+                    Perfect lineup! No better decisions available.
+                  </div>
+                );
+              })()}
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
