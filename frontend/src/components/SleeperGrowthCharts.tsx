@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { SleeperStats } from "../types/models";
+import { AdminTransactionFetchAgeHistorySnapshot } from "../services/adminService";
 
 // Theme-aware chart colors, defined in globals.css as CSS variables that flip
 // with prefers-color-scheme — avoids recharts' default gray (#666) tick/legend
@@ -289,6 +290,124 @@ export function ArchiveGrowthChart({ snapshots }: GrowthChartProps) {
             </p>
           )}
         </>
+      )}
+    </ChartCard>
+  );
+}
+
+const FETCH_AGE_SERIES = [
+  { label: "Never fetched", key: "never_fetched", color: "#6B7280" },
+  { label: "0h-3h59m", key: "fetched_within_four_hours", color: "#059669" },
+  { label: "4h-7h59m", key: "fetched_four_to_eight_hours", color: "#0EA5E9" },
+  { label: "8h-11h59m", key: "fetched_eight_to_twelve_hours", color: "#3B82F6" },
+  { label: "12h-15h59m", key: "fetched_twelve_to_sixteen_hours", color: "#8B5CF6" },
+  { label: "16h-19h59m", key: "fetched_sixteen_to_twenty_hours", color: "#F59E0B" },
+  { label: "20h-23h59m", key: "fetched_twenty_to_twenty_four_hours", color: "#F97316" },
+  { label: "24h+", key: "fetched_twenty_four_or_more_hours", color: "#DC2626" },
+] as const;
+
+type FetchAgeSeriesKey = (typeof FETCH_AGE_SERIES)[number]["key"];
+
+type FetchAgeChartPoint = {
+  label: string;
+  total: number;
+  raw: Record<FetchAgeSeriesKey, number>;
+} & Record<FetchAgeSeriesKey, number>;
+
+function prepareTransactionFetchAgeData(
+  snapshots: AdminTransactionFetchAgeHistorySnapshot[]
+): FetchAgeChartPoint[] {
+  return snapshots
+    .slice()
+    .sort((a, b) => new Date(a.snapshot_at).getTime() - new Date(b.snapshot_at).getTime())
+    .map((snapshot) => {
+      const raw = Object.fromEntries(
+        FETCH_AGE_SERIES.map((series) => [series.key, snapshot[series.key]])
+      ) as Record<FetchAgeSeriesKey, number>;
+
+      return {
+        label: formatTick(snapshot.snapshot_at),
+        total: FETCH_AGE_SERIES.reduce((sum, series) => sum + raw[series.key], 0),
+        raw,
+        ...raw,
+      };
+    });
+}
+
+function TransactionFetchAgeTooltip({
+  active,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{ payload?: FetchAgeChartPoint }>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+
+  return (
+    <div style={TOOLTIP_CONTENT_STYLE} className="rounded border p-3 text-sm shadow-md">
+      <p className="mb-1 font-medium">{label}</p>
+      {FETCH_AGE_SERIES.map((series) => {
+        const count = point.raw[series.key];
+        const percentage = point.total > 0 ? (count / point.total) * 100 : 0;
+        return (
+          <p key={series.key} style={{ color: series.color }}>
+            {series.label}: {count.toLocaleString()} ({percentage.toFixed(1)}%)
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+export function TransactionFetchAgeChart({
+  season,
+  snapshots,
+}: {
+  season: string;
+  snapshots: AdminTransactionFetchAgeHistorySnapshot[];
+}) {
+  const data = useMemo(() => prepareTransactionFetchAgeData(snapshots), [snapshots]);
+
+  return (
+    <ChartCard
+      title={`Transaction Fetch Age (season ${season || "—"})`}
+      description="Hourly share of current-season, non-skipped leagues in each transaction-fetch age bucket. Each hour totals 100%, making changes in worker coverage easy to compare."
+    >
+      {data.length === 0 ? (
+        <EmptyChartState />
+      ) : (
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart
+            data={data}
+            stackOffset="expand"
+            margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+            <XAxis dataKey="label" tick={AXIS_TICK_STYLE} minTickGap={40} />
+            <YAxis
+              tick={AXIS_TICK_STYLE}
+              domain={[0, 1]}
+              tickFormatter={(value) => `${Math.round(Number(value) * 100)}%`}
+            />
+            <Tooltip content={<TransactionFetchAgeTooltip />} />
+            <Legend wrapperStyle={LEGEND_STYLE} />
+            {FETCH_AGE_SERIES.map((series) => (
+              <Area
+                key={series.key}
+                type="monotone"
+                dataKey={series.key}
+                name={series.label}
+                stackId="transaction-fetch-age"
+                stroke={series.color}
+                fill={series.color}
+                fillOpacity={0.7}
+              />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
       )}
     </ChartCard>
   );

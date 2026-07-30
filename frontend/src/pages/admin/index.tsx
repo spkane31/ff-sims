@@ -1,5 +1,6 @@
 import Layout from "../../components/Layout";
 import { useAdminBacklog } from "../../hooks/useAdminBacklog";
+import { useAdminTransactionFetchAgeHistory } from "../../hooks/useAdminTransactionFetchAgeHistory";
 import { useAdminSegments } from "../../hooks/useAdminSegments";
 import { useAdminDatabaseSize } from "../../hooks/useAdminDatabaseSize";
 import { useAdminDiscoveryFrontier } from "../../hooks/useAdminDiscoveryFrontier";
@@ -12,6 +13,7 @@ import {
   UsersDiscoveryRateChart,
   LeaguesDiscoveryRateChart,
   ArchiveGrowthRateChart,
+  TransactionFetchAgeChart,
 } from "../../components/SleeperGrowthCharts";
 
 function formatRelativeTime(iso: string): string {
@@ -233,6 +235,11 @@ function DatabaseSize() {
 
 function DiscoveryFrontier({ backlog }: { backlog: AdminBacklogResponse | null }) {
   const { frontier, isLoading, error } = useAdminDiscoveryFrontier();
+  const {
+    history: fetchAgeHistory,
+    isLoading: isFetchAgeHistoryLoading,
+    error: fetchAgeHistoryError,
+  } = useAdminTransactionFetchAgeHistory();
 
   return (
     <section>
@@ -354,53 +361,25 @@ function DiscoveryFrontier({ backlog }: { backlog: AdminBacklogResponse | null }
             count toward pending.
           </p>
 
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mt-8 mb-2">
-            Transaction Fetch Age (season {backlog?.season || "—"})
-          </h3>
+          <div className="mt-8">
+            {isFetchAgeHistoryLoading && (
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <p>Loading transaction fetch-age history...</p>
+              </div>
+            )}
 
-          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Bucket
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Leagues
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    % of Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                {backlog && backlog.total_leagues > 0 ? (
-                  backlog.buckets.map((row) => (
-                    <tr key={row.label}>
-                      <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.label}</td>
-                      <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                        {row.leagues.toLocaleString()}
-                      </td>
-                      <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                        {`${((row.leagues / backlog.total_leagues) * 100).toFixed(1)}%`}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
-                      No leagues yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            {fetchAgeHistoryError && (
+              <p className="text-red-600">Failed to load transaction fetch-age history.</p>
+            )}
+
+            {!isFetchAgeHistoryLoading && !fetchAgeHistoryError && (
+              <TransactionFetchAgeChart
+                season={fetchAgeHistory?.season || backlog?.season || ""}
+                snapshots={fetchAgeHistory?.snapshots || []}
+              />
+            )}
           </div>
-
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-            How stale each current-season league&apos;s transaction sync is, bucketed in 4-hour
-            increments, to help gauge how much to scale the Temporal workers.
-          </p>
         </>
       )}
     </section>

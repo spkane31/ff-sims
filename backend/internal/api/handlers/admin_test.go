@@ -21,7 +21,11 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperPlayer{}, &models.Player{}, &models.SleeperUser{}, &models.SleeperLifetimeCount{}, &models.SleeperDraft{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperPlayer{}, &models.Player{},
+		&models.SleeperUser{}, &models.SleeperLifetimeCount{}, &models.SleeperDraft{},
+		&models.SleeperTransactionFetchAgeSnapshot{},
+	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -49,6 +53,27 @@ func performGetAdminBacklog(t *testing.T) AdminBacklogResponse {
 	}
 
 	var resp AdminBacklogResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	return resp
+}
+
+func performGetAdminTransactionFetchAgeHistory(t *testing.T, query string) AdminTransactionFetchAgeHistoryResponse {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/admin/transaction-fetch-age-history", GetAdminTransactionFetchAgeHistory)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/transaction-fetch-age-history"+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp AdminTransactionFetchAgeHistoryResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
@@ -346,6 +371,42 @@ func TestGetAdminBacklog_BucketsExcludeOtherSeasonsAndSkipped(t *testing.T) {
 	}
 	if total != 1 {
 		t.Errorf("expected 1 league counted across buckets (excluding other season + skipped), got %d", total)
+	}
+}
+
+func TestGetAdminTransactionFetchAgeHistory_ReturnsCurrentSeasonInReverseChronologicalOrder(t *testing.T) {
+	db := newAdminTestDB(t)
+	withAdminTestDB(t, db)
+	if err := db.Create(&models.SleeperLeague{SleeperLeagueID: "current", Season: "2026"}).Error; err != nil {
+		t.Fatalf("create current season: %v", err)
+	}
+
+	older := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	rows := []models.SleeperTransactionFetchAgeSnapshot{
+		{SnapshotAt: older, Season: "2026", NeverFetched: 6},
+		{SnapshotAt: newer, Season: "2026", FetchedWithinFourHours: 4},
+		{SnapshotAt: newer.Add(-24 * time.Hour), Season: "2025", FetchedTwentyFourOrMoreHours: 99},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("create fetch-age snapshots: %v", err)
+	}
+
+	resp := performGetAdminTransactionFetchAgeHistory(t, "")
+	if resp.Season != "2026" {
+		t.Errorf("season = %q, want 2026", resp.Season)
+	}
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("snapshots = %d, want 2", len(resp.Snapshots))
+	}
+	if !resp.Snapshots[0].SnapshotAt.Equal(newer) || !resp.Snapshots[1].SnapshotAt.Equal(older) {
+		t.Errorf("snapshot order = %+v, want %s then %s", resp.Snapshots, newer, older)
+	}
+	if got := resp.Snapshots[0].FetchedWithinFourHours; got != 4 {
+		t.Errorf("newest fresh count = %d, want 4", got)
+	}
+	if got := resp.Snapshots[1].NeverFetched; got != 6 {
+		t.Errorf("oldest never-fetched count = %d, want 6", got)
 	}
 }
 

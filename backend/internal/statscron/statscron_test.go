@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"backend/internal/dbmigrate"
 	"backend/internal/models"
 	"backend/internal/statscron"
 	"backend/internal/testutil"
+	"backend/internal/to"
 	archivemigrations "backend/migrations/archive"
 )
 
@@ -31,6 +33,7 @@ func newStatscronTestDBs(t *testing.T) (cloud, archive *gorm.DB) {
 	if err := cloud.AutoMigrate(
 		&models.SleeperUser{}, &models.SleeperLeague{}, &models.SleeperTransaction{},
 		&models.SleeperDraft{}, &models.SleeperDraftPick{}, &models.SleeperLifetimeCount{},
+		&models.SleeperTransactionFetchAgeSnapshot{},
 	); err != nil {
 		t.Fatalf("automigrate cloud: %v", err)
 	}
@@ -42,6 +45,21 @@ func newStatscronTestDBs(t *testing.T) (cloud, archive *gorm.DB) {
 	archive = testutil.OpenGORM(t, archiveDSN)
 
 	return cloud, archive
+}
+
+func newStatscronSQLiteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:statscron?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.SleeperUser{}, &models.SleeperLeague{}, &models.SleeperLifetimeCount{},
+		&models.SleeperTransactionFetchAgeSnapshot{},
+	); err != nil {
+		t.Fatalf("automigrate sqlite: %v", err)
+	}
+	return db
 }
 
 func TestRunSnapshot_CountsDiscoveryStateFromCloud(t *testing.T) {
@@ -79,6 +97,96 @@ func TestRunSnapshot_CountsDiscoveryStateFromCloud(t *testing.T) {
 	}
 	if persisted.UsersTotal != 3 || persisted.LeaguesExpanded != 2 {
 		t.Errorf("persisted row = %+v, want it to match the returned row", persisted)
+	}
+}
+
+func TestRunSnapshot_WritesCurrentSeasonFetchAgeBuckets(t *testing.T) {
+	cloud := newStatscronSQLiteDB(t)
+	var archive *gorm.DB
+	now := time.Now().UTC()
+
+	ages := []struct {
+		id        string
+		fetchedAt *time.Time
+	}{
+		{id: "never"},
+		{id: "fresh", fetchedAt: to.Ptr(now.Add(-2 * time.Hour))},
+		{id: "four-hours", fetchedAt: to.Ptr(now.Add(-6 * time.Hour))},
+		{id: "eight-hours", fetchedAt: to.Ptr(now.Add(-10 * time.Hour))},
+		{id: "twelve-hours", fetchedAt: to.Ptr(now.Add(-14 * time.Hour))},
+		{id: "sixteen-hours", fetchedAt: to.Ptr(now.Add(-18 * time.Hour))},
+		{id: "twenty-hours", fetchedAt: to.Ptr(now.Add(-22 * time.Hour))},
+		{id: "stale", fetchedAt: to.Ptr(now.Add(-26 * time.Hour))},
+	}
+	for _, tc := range ages {
+		if err := cloud.Create(&models.SleeperLeague{
+			SleeperLeagueID: tc.id, Season: "2026", LastTransactionsFetchedAt: tc.fetchedAt,
+		}).Error; err != nil {
+			t.Fatalf("create current-season league %q: %v", tc.id, err)
+		}
+	}
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "skipped", Season: "2026", LastTransactionsFetchedAt: to.Ptr(now.Add(-26 * time.Hour)), SkippedAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("create skipped league: %v", err)
+	}
+	if err := cloud.Create(&models.SleeperLeague{
+		SleeperLeagueID: "previous-season", Season: "2025", LastTransactionsFetchedAt: to.Ptr(now.Add(-26 * time.Hour)),
+	}).Error; err != nil {
+		t.Fatalf("create previous-season league: %v", err)
+	}
+
+	first, err := statscron.RunSnapshot(context.Background(), cloud, archive)
+	if err != nil {
+		t.Fatalf("RunSnapshot: %v", err)
+	}
+
+	type snapshotRow struct {
+		SnapshotAt                     time.Time
+		Season                         string
+		NeverFetched                   int64
+		FetchedWithinFourHours         int64
+		FetchedFourToEightHours        int64
+		FetchedEightToTwelveHours      int64
+		FetchedTwelveToSixteenHours    int64
+		FetchedSixteenToTwentyHours    int64
+		FetchedTwentyToTwentyFourHours int64
+		FetchedTwentyFourOrMoreHours   int64
+	}
+	var snapshot snapshotRow
+	if err := cloud.Table("sleeper_transaction_fetch_age_snapshots").
+		Where("snapshot_at = ? AND season = ?", first.SnapshotAt, "2026").
+		Take(&snapshot).Error; err != nil {
+		t.Fatalf("read fetch-age snapshots: %v", err)
+	}
+	if snapshot.NeverFetched != 1 || snapshot.FetchedWithinFourHours != 1 ||
+		snapshot.FetchedFourToEightHours != 1 || snapshot.FetchedEightToTwelveHours != 1 ||
+		snapshot.FetchedTwelveToSixteenHours != 1 || snapshot.FetchedSixteenToTwentyHours != 1 ||
+		snapshot.FetchedTwentyToTwentyFourHours != 1 || snapshot.FetchedTwentyFourOrMoreHours != 1 {
+		t.Errorf("fetch-age snapshot = %+v, want each bucket to equal 1", snapshot)
+	}
+
+	if err := cloud.Model(&models.SleeperLeague{}).
+		Where("sleeper_league_id = ?", "never").
+		Update("last_transactions_fetched_at", now).Error; err != nil {
+		t.Fatalf("mark never-fetched league fresh: %v", err)
+	}
+	second, err := statscron.RunSnapshot(context.Background(), cloud, archive)
+	if err != nil {
+		t.Fatalf("retry RunSnapshot: %v", err)
+	}
+	if !second.SnapshotAt.Equal(first.SnapshotAt) {
+		t.Fatalf("retry snapshot hour = %s, want %s", second.SnapshotAt, first.SnapshotAt)
+	}
+
+	snapshot = snapshotRow{}
+	if err := cloud.Table("sleeper_transaction_fetch_age_snapshots").
+		Where("snapshot_at = ? AND season = ?", first.SnapshotAt, "2026").
+		Take(&snapshot).Error; err != nil {
+		t.Fatalf("read retried fetch-age snapshots: %v", err)
+	}
+	if snapshot.NeverFetched != 0 || snapshot.FetchedWithinFourHours != 2 {
+		t.Errorf("retried snapshot = %+v, want never=0 fresh=2", snapshot)
 	}
 }
 
