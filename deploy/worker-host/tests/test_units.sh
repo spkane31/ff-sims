@@ -76,6 +76,10 @@ substituted="${pv_exec//\{\{REPO_DIR\}\}/$REPO_DIR}"
   || fail "player-valuation ExecStart should run the analysis venv's python: $substituted"
 
 grep -q '^Environment=TZ=UTC' "$pv_service" || fail "player-valuation service must pin TZ=UTC"
+# Without this, Python block-buffers its pipe to journald and every progress
+# line lands at exit — no way to tell a slow replay from a stuck one.
+grep -q '^Environment=PYTHONUNBUFFERED=1' "$pv_service" \
+  || fail "player-valuation service must run Python unbuffered so progress reaches the journal"
 grep -q '^TimeoutStartSec=2h' "$pv_service" || fail "player-valuation service must allow a 2h full replay"
 grep -q '^OnCalendar=\*-\*-\* 00:00:00 UTC' "$pv_timer" || fail "player-valuation timer must fire at 00:00 UTC"
 grep -q '^Persistent=' "$pv_timer" && fail "player-valuation timer must not catch up missed runs with a full replay"

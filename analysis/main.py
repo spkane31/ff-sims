@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src import db, staging
+from src import db, progress, staging
 from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
 from src.runner import adp_frame, build_events, replay, validate_step
@@ -250,7 +250,10 @@ def run_from_bundle(
 
     v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players)
     events = build_events(inputs.trades, inputs.scores, SEASONS[season])
-    stats = replay(v, events, start, end, step, on_snapshot=lambda d, df: None)
+    reporter = progress.ProgressReporter(progress.total_batches(start, end, step))
+    stats = replay(
+        v, events, start, end, step, on_snapshot=lambda d, df: reporter.tick(d)
+    )
     print(f"  {stats.snapshots} snapshots, {stats.events_applied} events applied")
     _print_rankings(v, top, f"{segment_key} season {season} (staged bundle)")
 
@@ -286,9 +289,11 @@ def run_replay(
 
     started = time.monotonic()
 
+    total = progress.total_batches(start, end, step)
     print(
         f"[{segment.key}/{season}] full replay {start} -> {end} (exclusive),"
-        f" step {step}"
+        f" step {int(step.total_seconds() // 3600)}h, {total} snapshots",
+        flush=True,
     )
 
     # Prune before staging so a long-failing job can't fill the disk, and so
@@ -356,8 +361,11 @@ def run_replay(
             # snapshot land together or not at all.
             db.delete_snapshots(sources.cloud, segment.key, start, end)
 
+            reporter = progress.ProgressReporter(total)
+
             def on_snapshot(day: date, rankings: pd.DataFrame) -> None:
                 db.write_snapshot(sources.cloud, segment.key, day, rankings)
+                reporter.tick(day)
 
             stats = replay(v, events, start, end, step, on_snapshot)
 

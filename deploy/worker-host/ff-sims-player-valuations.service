@@ -13,6 +13,10 @@ WorkingDirectory={{REPO_DIR}}/analysis
 EnvironmentFile=/etc/ff-sims-worker.env
 # The replay is defined entirely in UTC days; leave nothing to host timezone.
 Environment=TZ=UTC
+# systemd hands the job a pipe, which Python block-buffers: without this the
+# progress lines would all land at exit, i.e. exactly when they stop being
+# useful for telling a slow run from a stuck one.
+Environment=PYTHONUNBUFFERED=1
 # This version rebuilds the whole season on every run rather than resuming from
 # a checkpoint, so the ceiling has to cover a full ~11-month replay, not an
 # incremental tick. If a run ever hits this, inspect the staged Parquet run

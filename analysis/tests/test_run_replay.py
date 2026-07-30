@@ -295,3 +295,20 @@ def test_the_staged_bundle_reproduces_trade_only_identities(monkeypatch, staging
     assert staged.players["w7"].name == "WR Seven"
     assert staged.players["w7"].position == "WR"
     assert "w7" not in {a.player_id for a in staged.adp}  # trade-only, as intended
+
+
+def test_the_replay_reports_progress_as_it_steps(monkeypatch, staging_dir, capsys):
+    """A full rebuild is hundreds of snapshots over many minutes; without this
+    the journal shows nothing between the input summary and the final table,
+    so a slow run is indistinguishable from a hung one."""
+    cloud = FakeConnection("cloud", _cloud_responder())
+    _install(monkeypatch, cloud)
+
+    main.run_replay(*ARGS)
+
+    out = capsys.readouterr().out
+    assert "3 snapshots" in out  # the header states the total up front
+    # ARGS spans three days, so only the final line clears the interval
+    assert "3/3 snapshots" in out
+    assert "2025-08-28" in out
+    assert "100%" in out
