@@ -72,18 +72,22 @@ after a full reinstall) — it picks up wherever it left off. Same for
 
 ### Rolling out a new or changed systemd unit
 
-**`deploy.sh` never installs unit files** — it only rebuilds binaries, re-syncs Python
-environments, and restarts services. Unit files reach `/etc/systemd/system` solely through
-`install_units()` in `setup.sh`. So when a commit adds a unit (or edits an existing one's
-`ExecStart`, timer schedule, or `TimeoutStartSec`), the 5-minute deploy timer will happily
-advance the checkout and leave the host running the *old* unit — or, for a brand-new unit,
-no unit at all.
+**`deploy.sh` installs only the two player-valuation units**, via
+`install_player_valuation_timer()`, and only when the checkout's copy of them changed (or
+the analysis environment did). Every other unit file reaches `/etc/systemd/system` solely
+through `install_units()` in `setup.sh`. So when a commit adds or edits any *other* unit —
+its `ExecStart`, timer schedule, or `TimeoutStartSec` — the 5-minute deploy timer will
+happily advance the checkout and leave the host running the *old* unit, or for a brand-new
+one, no unit at all.
 
-After merging any unit change, run this once on the host:
+After merging a change to any unit except those two, run this once on the host:
 
 ```bash
 make worker-host-setup   # idempotent: reinstalls units, daemon-reloads, enables + starts timers
 ```
+
+The player-valuation units are special-cased because they were added alongside the deploy
+path that installs them; the same treatment has not been extended to the rest.
 
 This applies to every unit here, not just the new player-valuation one; it is why
 `make worker-host-setup` is documented as safe to re-run at any time.
