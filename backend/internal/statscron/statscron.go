@@ -21,6 +21,7 @@ import (
 
 	"backend/internal/activities"
 	"backend/internal/models"
+	"backend/internal/transactionage"
 )
 
 // RunSnapshot syncs the archive DB (see archive_sync.go's syncArchive) and
@@ -44,7 +45,8 @@ import (
 // fields and its own error variable, so there's no shared mutable state
 // between them and no need for a mutex.
 func RunSnapshot(ctx context.Context, cloud, archive *gorm.DB) (models.SleeperLifetimeCount, error) {
-	row := models.SleeperLifetimeCount{SnapshotAt: time.Now().UTC().Truncate(time.Hour)}
+	capturedAt := time.Now().UTC()
+	row := models.SleeperLifetimeCount{SnapshotAt: capturedAt.Truncate(time.Hour)}
 
 	var usersErr, leaguesErr, archiveErr error
 	var wg sync.WaitGroup
@@ -128,9 +130,62 @@ func RunSnapshot(ctx context.Context, cloud, archive *gorm.DB) (models.SleeperLi
 	}).Create(&row).Error; err != nil {
 		return models.SleeperLifetimeCount{}, err
 	}
+	if err := writeTransactionFetchAgeSnapshot(ctx, cloud, row.SnapshotAt, capturedAt); err != nil {
+		return models.SleeperLifetimeCount{}, err
+	}
 
 	log.Printf("statscron: wrote snapshot_at=%s users=%d leagues=%d", row.SnapshotAt, row.UsersTotal, row.LeaguesTotal)
 	return row, nil
+}
+
+// writeTransactionFetchAgeSnapshot records the complete current-season
+// fetch-age distribution in one row for this hourly run. snapshotAt is the
+// idempotency key; capturedAt is the actual evaluation time used for the age
+// thresholds.
+func writeTransactionFetchAgeSnapshot(ctx context.Context, cloud *gorm.DB, snapshotAt, capturedAt time.Time) error {
+	season, err := transactionage.CurrentSeason(ctx, cloud)
+	if err != nil {
+		return err
+	}
+	if season == "" {
+		return nil
+	}
+
+	buckets, err := transactionage.Count(ctx, cloud, season, capturedAt)
+	if err != nil {
+		return err
+	}
+	row := models.SleeperTransactionFetchAgeSnapshot{SnapshotAt: snapshotAt, Season: season}
+	for _, bucket := range buckets {
+		switch bucket.Label {
+		case "Never fetched":
+			row.NeverFetched = bucket.Leagues
+		case "0h-3h59m":
+			row.FetchedWithinFourHours = bucket.Leagues
+		case "4h-7h59m":
+			row.FetchedFourToEightHours = bucket.Leagues
+		case "8h-11h59m":
+			row.FetchedEightToTwelveHours = bucket.Leagues
+		case "12h-15h59m":
+			row.FetchedTwelveToSixteenHours = bucket.Leagues
+		case "16h-19h59m":
+			row.FetchedSixteenToTwentyHours = bucket.Leagues
+		case "20h-23h59m":
+			row.FetchedTwentyToTwentyFourHours = bucket.Leagues
+		case "24h+":
+			row.FetchedTwentyFourOrMoreHours = bucket.Leagues
+		}
+	}
+
+	return cloud.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "snapshot_at"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"season", "never_fetched", "fetched_within_four_hours", "fetched_four_to_eight_hours",
+			"fetched_eight_to_twelve_hours", "fetched_twelve_to_sixteen_hours",
+			"fetched_sixteen_to_twenty_hours", "fetched_twenty_to_twenty_four_hours",
+			"fetched_twenty_four_or_more_hours",
+		}),
+	}).Create(&row).Error
 }
 
 // countDiscoveryState counts table's total/expanded/pending/skipped rows —

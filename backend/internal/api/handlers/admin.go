@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,7 @@ import (
 
 	"backend/internal/database"
 	"backend/internal/models"
+	"backend/internal/transactionage"
 )
 
 // AdminBacklogResponse reports the Sleeper transaction-sync backlog for the
@@ -29,28 +31,53 @@ type AdminBacklogBucketRow struct {
 	Leagues int64  `json:"leagues"`
 }
 
-// backlogBucketLabels is the fixed display order for AdminBacklogBucketRow,
-// from "never fetched" through "24h+".
-var backlogBucketLabels = []string{
-	"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
-	"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
-}
+// backlogBucketLabels remains package-visible for the legacy handler tests;
+// transactionage is the canonical owner of these labels.
+var backlogBucketLabels = transactionage.Labels()
 
 // fillBacklogBuckets reorders a sparse (possibly out-of-order) set of bucket
-// rows onto the fixed backlogBucketLabels sequence, zero-filling any label
+// rows onto transactionage's fixed label sequence, zero-filling any label
 // with no matching rows.
 func fillBacklogBuckets(rows []AdminBacklogBucketRow) []AdminBacklogBucketRow {
-	counts := make(map[string]int64, len(rows))
-	for _, r := range rows {
-		counts[r.Label] = r.Leagues
+	ageRows := make([]transactionage.Bucket, len(rows))
+	for i, row := range rows {
+		ageRows[i] = transactionage.Bucket{Label: row.Label, Leagues: row.Leagues}
 	}
 
-	filled := make([]AdminBacklogBucketRow, len(backlogBucketLabels))
-	for i, label := range backlogBucketLabels {
-		filled[i] = AdminBacklogBucketRow{Label: label, Leagues: counts[label]}
+	filledAgeRows := transactionage.Fill(ageRows)
+	filled := make([]AdminBacklogBucketRow, len(filledAgeRows))
+	for i, row := range filledAgeRows {
+		filled[i] = AdminBacklogBucketRow{Label: row.Label, Leagues: row.Leagues}
 	}
 	return filled
 }
+
+// AdminTransactionFetchAgeHistorySnapshot is one hourly current-season
+// transaction-fetch age distribution for the admin history chart. The age
+// ranges are mutually exclusive, so the values stack to the full distribution.
+type AdminTransactionFetchAgeHistorySnapshot struct {
+	SnapshotAt                     time.Time `json:"snapshot_at"`
+	NeverFetched                   int64     `json:"never_fetched"`
+	FetchedWithinFourHours         int64     `json:"fetched_within_four_hours"`
+	FetchedFourToEightHours        int64     `json:"fetched_four_to_eight_hours"`
+	FetchedEightToTwelveHours      int64     `json:"fetched_eight_to_twelve_hours"`
+	FetchedTwelveToSixteenHours    int64     `json:"fetched_twelve_to_sixteen_hours"`
+	FetchedSixteenToTwentyHours    int64     `json:"fetched_sixteen_to_twenty_hours"`
+	FetchedTwentyToTwentyFourHours int64     `json:"fetched_twenty_to_twenty_four_hours"`
+	FetchedTwentyFourOrMoreHours   int64     `json:"fetched_twenty_four_or_more_hours"`
+}
+
+// AdminTransactionFetchAgeHistoryResponse is the response for the admin's
+// hourly transaction-fetch age history chart.
+type AdminTransactionFetchAgeHistoryResponse struct {
+	Season    string                                    `json:"season"`
+	Snapshots []AdminTransactionFetchAgeHistorySnapshot `json:"snapshots"`
+}
+
+const (
+	defaultTransactionFetchAgeHistoryLimit = 168
+	maxTransactionFetchAgeHistoryLimit     = 1000
+)
 
 // AdminSegmentRow is one league-format bucket: scoring type x superflex x size.
 type AdminSegmentRow struct {
@@ -220,10 +247,8 @@ func GetAdminDiscoveryFrontier(c *gin.Context) {
 // value of sleeper_leagues.season) have never had transactions fetched, and
 // the oldest last_transactions_fetched_at among the ones that have.
 func GetAdminBacklog(c *gin.Context) {
-	var season string
-	if err := database.DB.Model(&models.SleeperLeague{}).
-		Select("COALESCE(MAX(season), '')").
-		Scan(&season).Error; err != nil {
+	season, err := transactionage.CurrentSeason(c.Request.Context(), database.DB)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -246,7 +271,7 @@ func GetAdminBacklog(c *gin.Context) {
 	}
 
 	var oldestLeague models.SleeperLeague
-	err := database.DB.
+	err = database.DB.
 		Where("season = ? AND skipped_at IS NULL AND last_transactions_fetched_at IS NOT NULL", season).
 		Order("last_transactions_fetched_at ASC").
 		Limit(1).
@@ -259,34 +284,73 @@ func GetAdminBacklog(c *gin.Context) {
 		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
 	}
 
-	now := time.Now().UTC()
-	const bucketQ = `
-		SELECT
-			CASE
-				WHEN last_transactions_fetched_at IS NULL THEN 'Never fetched'
-				WHEN last_transactions_fetched_at > ? THEN '0h-3h59m'
-				WHEN last_transactions_fetched_at > ? THEN '4h-7h59m'
-				WHEN last_transactions_fetched_at > ? THEN '8h-11h59m'
-				WHEN last_transactions_fetched_at > ? THEN '12h-15h59m'
-				WHEN last_transactions_fetched_at > ? THEN '16h-19h59m'
-				WHEN last_transactions_fetched_at > ? THEN '20h-23h59m'
-				ELSE '24h+'
-			END AS label,
-			COUNT(*) AS leagues
-		FROM sleeper_leagues
-		WHERE season = ? AND skipped_at IS NULL
-		GROUP BY label`
-
-	bucketRows := []AdminBacklogBucketRow{}
-	if err := database.DB.Raw(bucketQ,
-		now.Add(-4*time.Hour), now.Add(-8*time.Hour), now.Add(-12*time.Hour),
-		now.Add(-16*time.Hour), now.Add(-20*time.Hour), now.Add(-24*time.Hour),
-		season,
-	).Scan(&bucketRows).Error; err != nil {
+	buckets, err := transactionage.Count(c.Request.Context(), database.DB, season, time.Now().UTC())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	bucketRows := make([]AdminBacklogBucketRow, len(buckets))
+	for i, bucket := range buckets {
+		bucketRows[i] = AdminBacklogBucketRow{Label: bucket.Label, Leagues: bucket.Leagues}
+	}
 	resp.Buckets = fillBacklogBuckets(bucketRows)
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetAdminTransactionFetchAgeHistory returns recent hourly fetch-age bucket
+// snapshots for the current season, newest first. limit and skip operate on
+// snapshot hours rather than individual bucket rows.
+func GetAdminTransactionFetchAgeHistory(c *gin.Context) {
+	limit := defaultTransactionFetchAgeHistoryLimit
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
+		limit = min(v, maxTransactionFetchAgeHistoryLimit)
+	}
+	skip := 0
+	if v, err := strconv.Atoi(c.Query("skip")); err == nil && v >= 0 {
+		skip = v
+	}
+
+	season, err := transactionage.CurrentSeason(c.Request.Context(), database.DB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	resp := AdminTransactionFetchAgeHistoryResponse{Season: season, Snapshots: []AdminTransactionFetchAgeHistorySnapshot{}}
+	if season == "" {
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	var rows []models.SleeperTransactionFetchAgeSnapshot
+	if err := database.DB.WithContext(c.Request.Context()).
+		Where("season = ?", season).
+		Order("snapshot_at DESC").
+		Limit(limit).
+		Offset(skip).
+		Find(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(rows) == 0 {
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	resp.Snapshots = make([]AdminTransactionFetchAgeHistorySnapshot, len(rows))
+	for i, row := range rows {
+		resp.Snapshots[i] = AdminTransactionFetchAgeHistorySnapshot{
+			SnapshotAt:                     row.SnapshotAt,
+			NeverFetched:                   row.NeverFetched,
+			FetchedWithinFourHours:         row.FetchedWithinFourHours,
+			FetchedFourToEightHours:        row.FetchedFourToEightHours,
+			FetchedEightToTwelveHours:      row.FetchedEightToTwelveHours,
+			FetchedTwelveToSixteenHours:    row.FetchedTwelveToSixteenHours,
+			FetchedSixteenToTwentyHours:    row.FetchedSixteenToTwentyHours,
+			FetchedTwentyToTwentyFourHours: row.FetchedTwentyToTwentyFourHours,
+			FetchedTwentyFourOrMoreHours:   row.FetchedTwentyFourOrMoreHours,
+		}
+	}
 
 	c.JSON(http.StatusOK, resp)
 }
