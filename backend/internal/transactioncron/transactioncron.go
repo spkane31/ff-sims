@@ -26,11 +26,11 @@ const pollInterval = 200 * time.Millisecond
 // per batch), so the binding limit on PoolSize is Sleeper API concurrency,
 // not DB connection starvation.
 type Config struct {
-	PoolSize    int `env:"CRON_TXN_POOL_SIZE,default=40,min=1"`
+	PoolSize    int `env:"CRON_TXN_POOL_SIZE,default=60,min=1"`
 	RefillBatch int `env:"CRON_TXN_REFILL_BATCH,default=40,min=1"`
 	// BatchSize flushes accumulated league results once this many have been
 	// fetched.
-	BatchSize int `env:"CRON_TXN_BATCH_SIZE,default=80,min=1"`
+	BatchSize int `env:"CRON_TXN_BATCH_SIZE,default=120,min=1"`
 	// BatchFlushInterval flushes accumulated results at least this often,
 	// even short of BatchSize, so results don't sit indefinitely.
 	BatchFlushInterval time.Duration `env:"CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION,default=5s,min=1s"`
