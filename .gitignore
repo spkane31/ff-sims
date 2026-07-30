@@ -1,4 +1,5 @@
 # Worktrees
+.local/
 .worktrees/
 .claude/worktrees/
 

@@ -174,3 +174,23 @@ type SleeperLifetimeCount struct {
 }
 
 func (SleeperLifetimeCount) TableName() string { return "sleeper_lifetime_counts" }
+
+// SleeperTransactionFetchAgeSnapshot is one hourly, current-season
+// transaction-sync snapshot. Its ranges are mutually exclusive so their
+// counts form the complete fetch-age distribution for that hour.
+type SleeperTransactionFetchAgeSnapshot struct {
+	SnapshotAt                     time.Time `gorm:"primaryKey;column:snapshot_at"`
+	Season                         string    `gorm:"column:season"`
+	NeverFetched                   int64     `gorm:"column:never_fetched"`
+	FetchedWithinFourHours         int64     `gorm:"column:fetched_within_four_hours"`
+	FetchedFourToEightHours        int64     `gorm:"column:fetched_four_to_eight_hours"`
+	FetchedEightToTwelveHours      int64     `gorm:"column:fetched_eight_to_twelve_hours"`
+	FetchedTwelveToSixteenHours    int64     `gorm:"column:fetched_twelve_to_sixteen_hours"`
+	FetchedSixteenToTwentyHours    int64     `gorm:"column:fetched_sixteen_to_twenty_hours"`
+	FetchedTwentyToTwentyFourHours int64     `gorm:"column:fetched_twenty_to_twenty_four_hours"`
+	FetchedTwentyFourOrMoreHours   int64     `gorm:"column:fetched_twenty_four_or_more_hours"`
+}
+
+func (SleeperTransactionFetchAgeSnapshot) TableName() string {
+	return "sleeper_transaction_fetch_age_snapshots"
+}
