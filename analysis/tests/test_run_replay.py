@@ -231,3 +231,67 @@ def test_stale_run_directories_are_pruned_on_the_next_run(monkeypatch, staging_d
 
     assert not stale.exists()
     assert len(list(staging_dir.iterdir())) == 1
+
+
+# ------------------------------------------------- trade-only identities --
+
+# A trade between a drafted player and one who never cleared the ADP
+# threshold. w7 is the whole point: the archive knows only its ID, so its name
+# and position have to survive the trip through cloud resolution, the staged
+# bundle, and the Valuator.
+_TRADE_ONLY_ADP = [("p1", 3.0), ("p2", 14.5)]
+_TRADE_ONLY_TXNS = [("t9", 1756180000000, {"p1": 1, "w7": 2}, None, None)]
+_TRADE_ONLY_PLAYERS = [
+    ("p1", "QB One", "QB"),
+    ("p2", "RB Two", "RB"),
+    ("w7", "WR Seven", "WR"),
+]
+
+
+def _trade_only_archive(sql, params):
+    if "sleeper_draft_picks" in sql:
+        return _TRADE_ONLY_ADP
+    if "sleeper_transactions" in sql:
+        return _TRADE_ONLY_TXNS
+    return []
+
+
+def _published(cloud: FakeConnection) -> list[tuple]:
+    return [
+        row
+        for op, sql, rows in cloud.calls
+        if op == "executemany" and sql and "INSERT INTO player_valuations" in sql
+        for row in rows
+    ]
+
+
+def test_a_trade_only_player_is_published_with_its_real_position(
+    monkeypatch, staging_dir
+):
+    cloud = FakeConnection("cloud", _cloud_responder(players=_TRADE_ONLY_PLAYERS, scores=[]))
+    archive = FakeConnection("archive", _trade_only_archive)
+    _install(monkeypatch, cloud, archive)
+
+    main.run_replay(*ARGS)
+
+    # write_snapshot rows are (segment, player_id, date, rank, pos_rank,
+    # value, vorp, sd, games, position)
+    w7 = [r for r in _published(cloud) if r[1] == "w7"]
+    assert w7, "the trade-only player was never published"
+    assert {r[9] for r in w7} == {"WR"}
+    assert "DEFAULT" not in {r[9] for r in _published(cloud)}
+
+
+def test_the_staged_bundle_reproduces_trade_only_identities(monkeypatch, staging_dir):
+    """--from-bundle must resolve identities the same way the database run
+    did, or the reproducibility check quietly compares different models."""
+    cloud = FakeConnection("cloud", _cloud_responder(players=_TRADE_ONLY_PLAYERS, scores=[]))
+    _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
+
+    main.run_replay(*ARGS)
+
+    run_dir = next(iter(staging_dir.iterdir()))
+    staged = staging.read_bundle(run_dir)
+    assert staged.players["w7"].name == "WR Seven"
+    assert staged.players["w7"].position == "WR"
+    assert "w7" not in {a.player_id for a in staged.adp}  # trade-only, as intended

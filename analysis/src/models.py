@@ -20,6 +20,19 @@ class Trade:
 
 
 @dataclass(frozen=True)
+class PlayerProfile:
+    """Cloud `sleeper_players` identity for one player.
+
+    Lives here rather than in db.py because staging round-trips these: a
+    bundle has to resolve identities the same way the database run did.
+    """
+
+    player_id: str
+    name: str
+    position: str
+
+
+@dataclass(frozen=True)
 class WeeklyScore:
     week: int
     player_id: str

@@ -29,6 +29,7 @@ from .config import MIN_ADP_DRAFTS, SeasonDates, Segment, week_ts
 from .models import (
     AverageDraftPosition,
     PlayerBeliefState,
+    PlayerProfile,
     RunState,
     Trade,
     WeeklyScore,
@@ -67,13 +68,6 @@ class MissingPlayerIdentities(RuntimeError):
 
 
 @dataclass(frozen=True)
-class PlayerProfile:
-    player_id: str
-    name: str
-    position: str
-
-
-@dataclass(frozen=True)
 class DataSources:
     """The two open connections a replay run reads from."""
 
@@ -88,6 +82,10 @@ class Inputs:
     adp: list[AverageDraftPosition]
     trades: list[Trade]
     scores: list[WeeklyScore]
+    # Every player referenced by any input, including ones that only appear
+    # inside a trade. The Valuator needs these to avoid minting nameless
+    # DEFAULT beliefs; staged so --from-bundle resolves identities identically.
+    players: dict[str, PlayerProfile]
     skipped_trades: int  # rows that parsed to None (picks/FAAB/not two-sided)
 
 
@@ -376,7 +374,11 @@ def load_inputs(
         if profiles[pid].position in FANTASY_POSITIONS
     ]
     return Inputs(
-        adp=adp, trades=trades, scores=scores, skipped_trades=skipped_trades
+        adp=adp,
+        trades=trades,
+        scores=scores,
+        players=profiles,
+        skipped_trades=skipped_trades,
     )
 
 

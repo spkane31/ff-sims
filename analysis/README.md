@@ -66,9 +66,14 @@ Every database run materializes its normalized inputs as Parquet before
 touching cloud output:
 
 ```
-/tmp/ff-sims-player-valuations/<run-id>/{adp,trades,weekly_scores}.parquet
+/tmp/ff-sims-player-valuations/<run-id>/{adp,trades,weekly_scores,players}.parquet
 /tmp/ff-sims-player-valuations/<run-id>/manifest.json
 ```
+
+`players.parquet` is the resolved identity of every player any input
+references, not just the drafted ones — trades carry bare Sleeper IDs, so
+without it a bundle replay could not name or position a player who only ever
+appears in a trade, and would not reproduce the run it was staged from.
 
 The manifest is written last (so its presence means the bundle is complete) and
 records the arguments, UTC boundaries, source counts, schema version, and a

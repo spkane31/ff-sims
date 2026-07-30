@@ -214,10 +214,15 @@ def run_demo(top: int) -> None:
     _print_rankings(v, top, "built-in demo data")
 
 
-def _seeded_valuator(segment_key: str, adp, start: date) -> Valuator:
+def _seeded_valuator(segment_key: str, adp, start: date, players=None) -> Valuator:
+    """players: the full resolved identity map, so a player who only ever shows
+    up inside a trade still gets their real name and position."""
     v = Valuator(
         start_ts=datetime.combine(start, datetime.min.time()),
         repl_rank_by_pos=SEGMENTS[segment_key].repl_rank_by_pos,
+        identities={
+            pid: (p.name, p.position) for pid, p in (players or {}).items()
+        },
     )
     v.seed_from_adp(adp_frame(adp))
     return v
@@ -243,7 +248,7 @@ def run_from_bundle(
         f" {len(inputs.scores)} weekly score rows"
     )
 
-    v = _seeded_valuator(segment_key, inputs.adp, start)
+    v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players)
     events = build_events(inputs.trades, inputs.scores, SEASONS[season])
     stats = replay(v, events, start, end, step, on_snapshot=lambda d, df: None)
     print(f"  {stats.snapshots} snapshots, {stats.events_applied} events applied")
@@ -327,6 +332,7 @@ def run_replay(
                 adp=inputs.adp,
                 trades=inputs.trades,
                 scores=inputs.scores,
+                players=inputs.players,
                 manifest_extra={
                     **staging.manifest_args(segment.key, season, start, end, step),
                     "skipped_trades": inputs.skipped_trades,
@@ -343,7 +349,7 @@ def run_replay(
                 )
             sources.cloud.commit()  # end the read phase before the write phase
 
-            v = _seeded_valuator(segment.key, inputs.adp, start)
+            v = _seeded_valuator(segment.key, inputs.adp, start, inputs.players)
             events = build_events(inputs.trades, inputs.scores, season_dates)
 
             # Everything below is one cloud transaction: the delete and every

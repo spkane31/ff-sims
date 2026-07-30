@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from src import staging
-from src.models import AverageDraftPosition, Trade, WeeklyScore
+from src.models import AverageDraftPosition, PlayerProfile, Trade, WeeklyScore
 
 ADP = [
     AverageDraftPosition(player_id="p1", player_name="A", position="QB", adp=1.5),
@@ -23,12 +23,19 @@ SCORES = [
     WeeklyScore(week=1, player_id="p1", position="QB", points=31.5),
     WeeklyScore(week=1, player_id="p2", position="RB", points=0.0),
 ]
+# p3 is trade-only: it appears in TRADES but never in ADP or SCORES, so the
+# bundle is the only place a replay can learn its name and position.
+PLAYERS = {
+    "p1": PlayerProfile(player_id="p1", name="A", position="QB"),
+    "p2": PlayerProfile(player_id="p2", name="B", position="RB"),
+    "p3": PlayerProfile(player_id="p3", name="C", position="WR"),
+}
 
 
 def _write(tmp_path):
     run_dir = staging.new_run_dir(tmp_path, run_id="run-a")
     manifest = staging.write_bundle(
-        run_dir, adp=ADP, trades=TRADES, scores=SCORES,
+        run_dir, adp=ADP, trades=TRADES, scores=SCORES, players=PLAYERS,
         manifest_extra=staging.manifest_args(
             "ppr-sf-10", "2025", date(2025, 8, 25), date(2026, 7, 28),
             timedelta(hours=24),
@@ -43,6 +50,7 @@ def test_bundle_round_trips_without_database_access(tmp_path):
     assert got.adp == ADP
     assert got.trades == TRADES
     assert got.scores == SCORES
+    assert got.players == PLAYERS
 
 
 def test_bundle_schemas_are_stable_and_explicit(tmp_path):
@@ -50,15 +58,16 @@ def test_bundle_schemas_are_stable_and_explicit(tmp_path):
     assert pq.read_schema(run_dir / staging.ADP_FILE).equals(staging.ADP_SCHEMA)
     assert pq.read_schema(run_dir / staging.TRADES_FILE).equals(staging.TRADES_SCHEMA)
     assert pq.read_schema(run_dir / staging.SCORES_FILE).equals(staging.SCORES_SCHEMA)
+    assert pq.read_schema(run_dir / staging.PLAYERS_FILE).equals(staging.PLAYERS_SCHEMA)
 
 
 def test_empty_inputs_keep_the_same_schemas(tmp_path):
     """Without an explicit schema, pyarrow would infer null-typed columns here."""
     run_dir = staging.new_run_dir(tmp_path, run_id="empty")
-    staging.write_bundle(run_dir, adp=[], trades=[], scores=[])
+    staging.write_bundle(run_dir, adp=[], trades=[], scores=[], players={})
     assert pq.read_schema(run_dir / staging.TRADES_FILE).equals(staging.TRADES_SCHEMA)
     got = staging.read_bundle(run_dir)
-    assert (got.adp, got.trades, got.scores) == ([], [], [])
+    assert (got.adp, got.trades, got.scores, got.players) == ([], [], [], {})
 
 
 def test_manifest_records_arguments_counts_and_checksums(tmp_path):
@@ -70,9 +79,12 @@ def test_manifest_records_arguments_counts_and_checksums(tmp_path):
         "segment": "ppr-sf-10", "season": "2025",
         "start": "2025-08-25", "end": "2026-07-28", "step_hours": 24.0,
     }
-    assert on_disk["counts"] == {"adp": 2, "trades": 1, "weekly_scores": 2}
+    assert on_disk["counts"] == {
+        "adp": 2, "trades": 1, "weekly_scores": 2, "players": 3,
+    }
     assert set(on_disk["checksums"]) == {
-        staging.ADP_FILE, staging.TRADES_FILE, staging.SCORES_FILE
+        staging.ADP_FILE, staging.TRADES_FILE, staging.SCORES_FILE,
+        staging.PLAYERS_FILE,
     }
     assert all(len(c) == 64 for c in on_disk["checksums"].values())
 
@@ -109,7 +121,7 @@ def _age(path, days: float) -> None:
 def test_prune_removes_old_runs_and_never_the_active_one(tmp_path):
     active = staging.new_run_dir(tmp_path, run_id="active")
     stale_ok = staging.new_run_dir(tmp_path, run_id="stale-complete")
-    staging.write_bundle(stale_ok, adp=ADP, trades=[], scores=[])
+    staging.write_bundle(stale_ok, adp=ADP, trades=[], scores=[], players=PLAYERS)
     stale_failed = staging.new_run_dir(tmp_path, run_id="stale-failed")  # no manifest
     recent = staging.new_run_dir(tmp_path, run_id="recent")
 

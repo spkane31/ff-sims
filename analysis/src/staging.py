@@ -10,6 +10,7 @@ Layout of a run directory:
     <root>/<run-id>/adp.parquet
     <root>/<run-id>/trades.parquet
     <root>/<run-id>/weekly_scores.parquet
+    <root>/<run-id>/players.parquet
     <root>/<run-id>/manifest.json     <- written last, after every file is flushed
 
 The manifest's presence is therefore the marker of a complete bundle.
@@ -31,15 +32,19 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from .models import AverageDraftPosition, Trade, WeeklyScore
+from .models import AverageDraftPosition, PlayerProfile, Trade, WeeklyScore
 
 # Bump when a staged column changes meaning, is added, or is removed. A reader
 # that does not recognize the version refuses the bundle rather than guessing.
-SCHEMA_VERSION = 1
+# v2 added players.parquet: without it a bundle replay cannot give a
+# trade-only player its name and position, so it would not reproduce the
+# database run it was staged from.
+SCHEMA_VERSION = 2
 
 ADP_FILE = "adp.parquet"
 TRADES_FILE = "trades.parquet"
 SCORES_FILE = "weekly_scores.parquet"
+PLAYERS_FILE = "players.parquet"
 MANIFEST_FILE = "manifest.json"
 
 STAGING_DIR_ENV = "FF_SIMS_VALUATION_STAGING_DIR"
@@ -79,6 +84,15 @@ SCORES_SCHEMA = pa.schema(
 )
 
 
+PLAYERS_SCHEMA = pa.schema(
+    [
+        pa.field("player_id", pa.string(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("position", pa.string(), nullable=False),
+    ]
+)
+
+
 class BundleError(RuntimeError):
     """A staged bundle is missing, incomplete, or of an unknown schema version."""
 
@@ -88,6 +102,7 @@ class StagedInputs:
     adp: list[AverageDraftPosition]
     trades: list[Trade]
     scores: list[WeeklyScore]
+    players: dict[str, PlayerProfile]
 
 
 def staging_root() -> Path:
@@ -198,6 +213,20 @@ def _scores_table(scores: Iterable[WeeklyScore]) -> pa.Table:
     )
 
 
+def _players_table(players: dict[str, PlayerProfile]) -> pa.Table:
+    # Sorted by id so the file — and therefore its checksum — depends only on
+    # the resolved set, not on dict insertion order.
+    rows = [players[pid] for pid in sorted(players)]
+    return pa.table(
+        {
+            "player_id": [r.player_id for r in rows],
+            "name": [r.name for r in rows],
+            "position": [r.position for r in rows],
+        },
+        schema=PLAYERS_SCHEMA,
+    )
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -211,13 +240,15 @@ def write_bundle(
     adp: list[AverageDraftPosition],
     trades: list[Trade],
     scores: list[WeeklyScore],
+    players: dict[str, PlayerProfile],
     manifest_extra: dict | None = None,
 ) -> dict:
-    """Write the three input files, then the manifest. Returns the manifest."""
+    """Write the four input files, then the manifest. Returns the manifest."""
     files = {
         ADP_FILE: _adp_table(adp),
         TRADES_FILE: _trades_table(trades),
         SCORES_FILE: _scores_table(scores),
+        PLAYERS_FILE: _players_table(players),
     }
     for name, table in files.items():
         pq.write_table(table, run_dir / name)
@@ -230,6 +261,7 @@ def write_bundle(
             "adp": len(adp),
             "trades": len(trades),
             "weekly_scores": len(scores),
+            "players": len(players),
         },
         "checksums": {name: _sha256(run_dir / name) for name in files},
     }
@@ -271,6 +303,7 @@ def read_bundle(run_dir: Path, verify_checksums: bool = True) -> StagedInputs:
     adp_t = pq.read_table(run_dir / ADP_FILE)
     trades_t = pq.read_table(run_dir / TRADES_FILE)
     scores_t = pq.read_table(run_dir / SCORES_FILE)
+    players_t = pq.read_table(run_dir / PLAYERS_FILE)
 
     adp = [
         AverageDraftPosition(
@@ -300,7 +333,13 @@ def read_bundle(run_dir: Path, verify_checksums: bool = True) -> StagedInputs:
         )
         for r in scores_t.to_pylist()
     ]
-    return StagedInputs(adp=adp, trades=trades, scores=scores)
+    players = {
+        r["player_id"]: PlayerProfile(
+            player_id=r["player_id"], name=r["name"], position=r["position"]
+        )
+        for r in players_t.to_pylist()
+    }
+    return StagedInputs(adp=adp, trades=trades, scores=scores, players=players)
 
 
 def manifest_args(

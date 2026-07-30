@@ -170,3 +170,23 @@ def test_replay_rejects_a_step_that_does_not_divide_the_range():
     start, end = date(2025, 9, 1), date(2025, 9, 4)
     with pytest.raises(ValueError):
         replay(_valuator(start), [], start, end, timedelta(days=2), lambda d, df: None)
+
+
+def test_a_trade_only_player_gets_its_real_identity_not_a_default_belief():
+    """Trades carry bare player IDs. Without the resolved identity map, the
+    only player in a trade who was never drafted becomes a nameless DEFAULT
+    belief — wrong drift rate, and a DEFAULT row published to the API."""
+    v = Valuator(
+        start_ts=datetime(2025, 8, 25),
+        repl_rank_by_pos=REPL,
+        identities={"w7": ("WR Seven", "WR")},
+    )
+    v.seed_from_adp(_adp())
+
+    v.apply_trade(["p1"], ["w7"])
+
+    assert v.beliefs["w7"].position == "WR"
+    assert v.beliefs["w7"].name == "WR Seven"
+    ranked = v.rankings().set_index("player_id")
+    assert ranked.loc["w7", "player"] == "WR Seven"
+    assert "DEFAULT" not in set(ranked["pos"])

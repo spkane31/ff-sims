@@ -94,13 +94,22 @@ class Valuator:
         self,
         start_ts: datetime,
         repl_rank_by_pos: dict[str, int],
+        identities: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         """repl_rank_by_pos: weekly replacement rank per position for the
         league combo being valued (each Segment in src/config.py defines its
-        own — the Nth-best scorer at a position is "replacement")."""
+        own — the Nth-best scorer at a position is "replacement").
+
+        identities: player_id -> (name, position) for every player the run can
+        touch, not just the ADP-seeded ones. Trades carry bare player IDs, so
+        without this a player who only ever appears inside a trade gets a
+        nameless DEFAULT belief: wrong drift rate, a bogus DEFAULT position
+        group for pos_rank, and a DEFAULT row published to player_valuations.
+        """
         self.beliefs: dict[str, Belief] = {}
         self.last_ts: datetime = start_ts
         self.repl_rank_by_pos = dict(repl_rank_by_pos)
+        self.identities = dict(identities or {})
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -117,6 +126,10 @@ class Valuator:
 
     def _ensure(self, pid: str, position: str | None = None, name: str = "") -> Belief:
         """Fetch a belief, creating a wide-uncertainty one for players we've never seen."""
+        if not position or not name:
+            known_name, known_pos = self.identities.get(pid, ("", ""))
+            position = position or known_pos
+            name = name or known_name
         b = self.beliefs.get(pid)
         if b is None:
             b = Belief(
