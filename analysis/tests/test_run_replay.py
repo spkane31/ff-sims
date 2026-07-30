@@ -312,3 +312,35 @@ def test_the_replay_reports_progress_as_it_steps(monkeypatch, staging_dir, capsy
     assert "3/3 snapshots" in out
     assert "2025-08-28" in out
     assert "100%" in out
+
+
+def test_the_run_logs_model_diagnostics(monkeypatch, staging_dir, capsys):
+    """The rankings table alone cannot say whether trades converged or how
+    much of the belief set rests on real evidence."""
+    cloud = FakeConnection("cloud", _cloud_responder())
+    _install(monkeypatch, cloud)
+
+    main.run_replay(*ARGS)
+
+    out = capsys.readouterr().out
+    assert "model diagnostics:" in out
+    assert "with score evidence" in out
+    assert "ADP rank" in out  # top value reported next to the rank it implies
+    assert "trade fit:" in out
+
+
+def test_a_position_that_can_never_be_scored_is_called_out(
+    monkeypatch, staging_dir, capsys
+):
+    """The weekly-score query filters to fantasy positions, so an IDP or FB
+    picked up through a trade can never receive performance evidence — it
+    keeps whatever the trade stream implies, forever."""
+    idp = _TRADE_ONLY_PLAYERS[:2] + [("w7", "Edge Rusher", "DE")]
+    cloud = FakeConnection("cloud", _cloud_responder(players=idp, scores=[]))
+    _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
+
+    main.run_replay(*ARGS)
+
+    out = capsys.readouterr().out
+    assert "never scoreable" in out
+    assert "DE 1" in out

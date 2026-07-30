@@ -59,11 +59,16 @@ class ProgressReporter:
         interval: float = DEFAULT_INTERVAL_S,
         log: Callable[[str], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        extra: Callable[[], str] | None = None,
     ) -> None:
+        """extra: called only when a line is emitted, for a caller-supplied
+        suffix. Because it runs once per line and not once per snapshot, a
+        caller can use it to difference its own counters over the interval."""
         self.total = total
         self.interval = interval
         self.log = log or _stdout
         self.clock = clock
+        self.extra = extra
         self.done = 0
         self.started = clock()
         self._last_report_at = self.started
@@ -97,6 +102,10 @@ class ProgressReporter:
         ]
         if remaining:
             parts.append(self._eta(now, remaining))
+        if self.extra is not None:
+            note = self.extra()
+            if note:
+                parts.append(note)
         return " · ".join(parts)
 
     def _eta(self, now: float, remaining: int) -> str:

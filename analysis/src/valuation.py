@@ -72,6 +72,26 @@ def curve(rank: float) -> float:
     return V_TOP * math.exp(-LAMBDA_ADP * (rank - 1.0))
 
 
+def curve_rank(value: float) -> float:
+    """Inverse of curve(): what draft rank a value corresponds to.
+
+    Reported alongside the top value so "4561" reads as "the model values its
+    best player like the ~20th pick", which is the form the number is
+    actually interpretable in.
+    """
+    if value <= 0:
+        return float("inf")
+    return 1.0 - math.log(value / V_TOP) / LAMBDA_ADP
+
+
+def _percentile(ordered: list[float], pct: float) -> float:
+    """Nearest-rank percentile over an already-sorted list."""
+    if not ordered:
+        return 0.0
+    idx = min(len(ordered) - 1, int(round(pct / 100.0 * (len(ordered) - 1))))
+    return ordered[idx]
+
+
 # ----------------------------------------------------------------------------- #
 # THE BELIEF + THE VALUATOR
 # ----------------------------------------------------------------------------- #
@@ -110,6 +130,13 @@ class Valuator:
         self.last_ts: datetime = start_ts
         self.repl_rank_by_pos = dict(repl_rank_by_pos)
         self.identities = dict(identities or {})
+        # Trade fit: how far each trade was from what the model already
+        # believed, accumulated. Falling mean |gap| is the market and the
+        # model converging; a flat one means trades keep saying something the
+        # values never absorb. Cumulative so a caller can difference it over
+        # any window it likes.
+        self.trades_applied = 0
+        self.trade_abs_gap = 0.0
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -191,6 +218,9 @@ class Valuator:
         total_var = sum(x.var for x in a + b)
         if total_var <= 0:
             return
+        self.trades_applied += 1
+        self.trade_abs_gap += abs(gap)
+
         k = total_var / (total_var + TRADE_VAR)  # gain on the summed constraint
 
         # spread the correction across players, weighted by how unsure we were:
@@ -252,6 +282,40 @@ class Valuator:
                 self.apply_trade(ev["side_a"], ev["side_b"])
             elif ev["kind"] == "week":
                 self.apply_week(ev["scores"])
+
+    # -- run diagnostics ---------------------------------------------------------
+    def diagnostics(self) -> dict:
+        """Model-health numbers for the end of a run log.
+
+        These answer the questions a finished replay actually raises: did the
+        trade stream converge, how much of the belief set rests on real
+        performance evidence, and how wide is the remaining uncertainty. All
+        derived from current state — no extra bookkeeping during the replay.
+        """
+        beliefs = list(self.beliefs.values())
+        values = sorted(b.guess for b in beliefs)
+        sds = sorted(math.sqrt(b.var) for b in beliefs)
+        by_position: dict[str, int] = {}
+        for b in beliefs:
+            by_position[b.position] = by_position.get(b.position, 0) + 1
+        scored = sum(1 for b in beliefs if b.games > 0)
+        return {
+            "beliefs": len(beliefs),
+            "scored": scored,
+            "never_scored": len(beliefs) - scored,
+            "value_top": values[-1] if values else 0.0,
+            "value_p50": _percentile(values, 50),
+            "sd_p50": _percentile(sds, 50),
+            "sd_p90": _percentile(sds, 90),
+            "trades_applied": self.trades_applied,
+            "trade_mean_abs_gap": (
+                self.trade_abs_gap / self.trades_applied
+                if self.trades_applied
+                else 0.0
+            ),
+            "by_position": by_position,
+            "last_ts": self.last_ts,
+        }
 
     # -- persistence: round-trip beliefs through valuation_state ------------------
     def to_state(self) -> list[PlayerBeliefState]:

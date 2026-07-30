@@ -190,3 +190,52 @@ def test_a_trade_only_player_gets_its_real_identity_not_a_default_belief():
     ranked = v.rankings().set_index("player_id")
     assert ranked.loc["w7", "player"] == "WR Seven"
     assert "DEFAULT" not in set(ranked["pos"])
+
+
+def test_trade_fit_accumulates_so_consensus_is_measurable():
+    """Mean |gap| is the consensus signal: how far each trade landed from what
+    the model already believed. Without it a run can only report that trades
+    were applied, not whether they agreed with the values."""
+    v = _valuator(date(2025, 8, 25))
+    assert (v.trades_applied, v.trade_abs_gap) == (0, 0.0)
+
+    v.apply_trade(["p1"], ["p2"])  # QB1 for RB10: a large gap
+    first_gap = v.trade_abs_gap
+    assert v.trades_applied == 1
+    assert first_gap > 0
+
+    # the same trade again moves the values closer together, so it now
+    # surprises the model less than it did the first time
+    v.apply_trade(["p1"], ["p2"])
+    assert v.trades_applied == 2
+    assert v.trade_abs_gap - first_gap < first_gap
+
+
+def test_a_trade_the_model_cannot_use_is_not_counted_as_fit():
+    v = _valuator(date(2025, 8, 25))
+    v.apply_trade(["p1"], [])  # one-sided: no constraint to fit
+    assert v.trades_applied == 0
+
+
+def test_diagnostics_summarize_evidence_coverage_and_spread():
+    v = _valuator(date(2025, 8, 25))
+    v.apply_trade(["p1"], ["idp1"])  # pulls in a player with no ADP and no scores
+
+    d = v.diagnostics()
+    assert d["beliefs"] == 3
+    assert d["scored"] == 0  # no weeks applied in this test
+    assert d["never_scored"] == 3
+    assert d["trades_applied"] == 1
+    assert d["value_top"] > d["value_p50"]
+    assert d["sd_p90"] >= d["sd_p50"]
+    assert d["by_position"]["QB"] == 1
+    assert d["last_ts"] == datetime(2025, 8, 25)
+
+
+def test_curve_rank_inverts_the_seed_curve():
+    """The top value is only interpretable next to the rank it implies."""
+    from src.valuation import curve, curve_rank
+
+    assert round(curve_rank(curve(1))) == 1
+    assert round(curve_rank(curve(20))) == 20
+    assert curve_rank(0) == float("inf")

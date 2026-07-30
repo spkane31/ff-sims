@@ -35,7 +35,7 @@ from src import db, progress, staging
 from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
 from src.runner import adp_frame, build_events, replay, validate_step
-from src.valuation import RHO, V_TOP, Valuator, curve
+from src.valuation import RHO, V_TOP, Valuator, curve, curve_rank
 
 SEASON_2025 = SEASONS["2025"]
 
@@ -214,6 +214,69 @@ def run_demo(top: int) -> None:
     _print_rankings(v, top, "built-in demo data")
 
 
+def _trade_fit_note(v: Valuator):
+    """Per-interval trade volume and fit, for the progress line.
+
+    Differences the valuator's cumulative counters, so each line describes the
+    interval it closes rather than the run so far — a run-so-far average would
+    flatten out and stop showing whether trades are still moving values.
+    """
+    seen = {"trades": 0, "gap": 0.0}
+
+    def note() -> str:
+        trades = v.trades_applied - seen["trades"]
+        gap = v.trade_abs_gap - seen["gap"]
+        seen["trades"], seen["gap"] = v.trades_applied, v.trade_abs_gap
+        if not trades:
+            return "no trades"
+        return f"{trades} trades, mean |gap| {gap / trades:,.0f}"
+
+    return note
+
+
+def _log_diagnostics(v: Valuator) -> None:
+    """One block at the end describing what the model actually ended up with."""
+    d = v.diagnostics()
+    print("  model diagnostics:", flush=True)
+    print(
+        f"    beliefs {d['beliefs']} · with score evidence {d['scored']}"
+        f" · never scored {d['never_scored']}",
+        flush=True,
+    )
+    print(
+        f"    value: top {d['value_top']:,.0f}"
+        f" (≈ADP rank {curve_rank(d['value_top']):.0f} on the seed curve)"
+        f" · median {d['value_p50']:,.0f}",
+        flush=True,
+    )
+    print(
+        f"    sd: median {d['sd_p50']:,.0f} · p90 {d['sd_p90']:,.0f}"
+        f" · last evidence {d['last_ts'].date()}",
+        flush=True,
+    )
+    print(
+        f"    trade fit: {d['trades_applied']:,} trades,"
+        f" mean |gap| {d['trade_mean_abs_gap']:,.0f}",
+        flush=True,
+    )
+
+    # Positions the weekly-score query cannot return (it filters to the
+    # fantasy set), so these beliefs can never receive performance evidence:
+    # they enter through trades and keep whatever the trade stream implies.
+    unscoreable = {
+        pos: n
+        for pos, n in sorted(d["by_position"].items())
+        if pos not in db.FANTASY_POSITIONS
+    }
+    if unscoreable:
+        census = ", ".join(f"{pos} {n}" for pos, n in unscoreable.items())
+        print(
+            f"    never scoreable ({sum(unscoreable.values())} beliefs"
+            f" outside the fantasy positions): {census}",
+            flush=True,
+        )
+
+
 def _seeded_valuator(segment_key: str, adp, start: date, players=None) -> Valuator:
     """players: the full resolved identity map, so a player who only ever shows
     up inside a trade still gets their real name and position."""
@@ -250,11 +313,14 @@ def run_from_bundle(
 
     v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players)
     events = build_events(inputs.trades, inputs.scores, SEASONS[season])
-    reporter = progress.ProgressReporter(progress.total_batches(start, end, step))
+    reporter = progress.ProgressReporter(
+        progress.total_batches(start, end, step), extra=_trade_fit_note(v)
+    )
     stats = replay(
         v, events, start, end, step, on_snapshot=lambda d, df: reporter.tick(d)
     )
     print(f"  {stats.snapshots} snapshots, {stats.events_applied} events applied")
+    _log_diagnostics(v)
     _print_rankings(v, top, f"{segment_key} season {season} (staged bundle)")
 
 
@@ -361,7 +427,7 @@ def run_replay(
             # snapshot land together or not at all.
             db.delete_snapshots(sources.cloud, segment.key, start, end)
 
-            reporter = progress.ProgressReporter(total)
+            reporter = progress.ProgressReporter(total, extra=_trade_fit_note(v))
 
             def on_snapshot(day: date, rankings: pd.DataFrame) -> None:
                 db.write_snapshot(sources.cloud, segment.key, day, rankings)
@@ -402,6 +468,7 @@ def run_replay(
             f" {stats.dropped_at_or_after_end} at/after {end}"
         )
     print(f"  elapsed {time.monotonic() - started:.1f}s")
+    _log_diagnostics(v)
     _print_rankings(v, top, f"{segment.key} season {season} (database)")
 
 
