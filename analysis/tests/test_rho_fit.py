@@ -129,3 +129,39 @@ def test_fitting_passes_build_no_snapshots():
 
     fit_rho(make, events, START, END, STEP, seed=17.0, iterations=3)
     assert calls == []
+
+
+# ------------------------------------ why lambda is not fitted alongside rho --
+
+
+def test_a_flat_curve_satisfies_every_trade_exactly():
+    """The reason λ is taken as given rather than fitted. Set every player to
+    the same value V and ρ to V: a 1-for-1 reads V == V, a 1-for-2 reads
+    V == V + V - ρ, a 1-for-3 reads V == 3V - 2ρ. All exact. So trade fairness
+    has a global optimum at "everybody is worth the same", and minimizing trade
+    residuals over λ walks to zero rather than to the market's shape."""
+    flat = 2_000.0
+    v = Valuator(
+        start_ts=datetime(2025, 9, 1), repl_rank_by_pos=REPL, rho=flat, lam=0.0
+    )
+    v.seed_from_adp(_adp())
+    for b in v.beliefs.values():
+        b.guess = flat
+
+    for a, b in ((["p00"], ["p05"]), (["p00"], ["p05", "p06"]),
+                 (["p00"], ["p05", "p06", "p07"])):
+        before = v.trade_abs_gap
+        v.apply_trade(a, b)
+        assert v.trade_abs_gap == before  # zero residual: nothing to correct
+
+
+def test_lambda_is_settable_but_never_fitted():
+    """--lam exists to try a shape by hand; no code path infers one."""
+    import src.runner as runner
+
+    assert not any(name.startswith("fit_lam") for name in dir(runner))
+    v = Valuator(start_ts=datetime(2025, 9, 1), repl_rank_by_pos=REPL, lam=0.008)
+    v.seed_from_adp(_adp())
+    # a flatter curve lifts the mid-round players off the floor
+    steep = _valuator()
+    assert v.beliefs["p20"].guess > steep.beliefs["p20"].guess

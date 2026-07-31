@@ -72,16 +72,17 @@ def curve(rank: float) -> float:
     return V_TOP * math.exp(-LAMBDA_ADP * (rank - 1.0))
 
 
-def curve_rank(value: float) -> float:
+def curve_rank(value: float, lam: float = LAMBDA_ADP) -> float:
     """Inverse of curve(): what draft rank a value corresponds to.
 
     Reported alongside the top value so "4561" reads as "the model values its
     best player like the ~20th pick", which is the form the number is
-    actually interpretable in.
+    actually interpretable in. Takes the steepness so it inverts the curve the
+    run actually used, not the seed default.
     """
     if value <= 0:
         return float("inf")
-    return 1.0 - math.log(value / V_TOP) / LAMBDA_ADP
+    return 1.0 - math.log(value / V_TOP) / lam
 
 
 def _percentile(ordered: list[float], pct: float) -> float:
@@ -120,6 +121,7 @@ class Valuator:
         repl_rank_by_pos: dict[str, int],
         identities: dict[str, tuple[str, str]] | None = None,
         rho: float | None = None,
+        lam: float | None = None,
     ) -> None:
         """repl_rank_by_pos: weekly replacement rank per position for the
         league combo being valued (each Segment in src/config.py defines its
@@ -142,8 +144,12 @@ class Valuator:
         # any window it likes.
         self.trades_applied = 0
         self.trade_abs_gap = 0.0
-        # Replacement value. RHO is a starting guess read off the curve; a run
-        # can instead fit it from evidence (see fit_rho in runner.py).
+        # Curve steepness. Settable so a run can try a different shape, but
+        # NOT fitted from trades: a flat curve (lam -> 0, rho -> the common
+        # value) satisfies every trade constraint exactly, so trade fairness
+        # has a global optimum at "everybody is worth the same" and cannot
+        # identify the shape. See the NOTES at the bottom.
+        self.lam = LAMBDA_ADP if lam is None else lam
         self.rho = RHO if rho is None else rho
         # Sufficient statistics for that fit. The trade rule only ever uses ρ
         # as ρ·(|B|−|A|), so a balanced trade says nothing about it: n = 0
@@ -152,6 +158,11 @@ class Valuator:
         self.rho_dn = 0.0  # Σ d·n, d = value gap, n = size gap
         self.rho_nn = 0.0  # Σ n²
         self.unbalanced_trades = 0
+
+    def _curve(self, rank: float) -> float:
+        """This run's rank -> value curve. Same shape as the module-level
+        curve(), but at the steepness this run is using."""
+        return V_TOP * math.exp(-self.lam * (rank - 1.0))
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -175,7 +186,7 @@ class Valuator:
         b = self.beliefs.get(pid)
         if b is None:
             b = Belief(
-                guess=curve(90),
+                guess=self._curve(90),
                 var=UNSEEN_VAR,  # seed low, very unsure
                 position=(position or "DEFAULT"),
                 name=name,
@@ -196,7 +207,7 @@ class Valuator:
             if row.player_id in self.beliefs:
                 continue
             self.beliefs[row.player_id] = Belief(
-                guess=curve(row.adp),
+                guess=self._curve(row.adp),
                 var=ADP_VAR,
                 position=row.position,
                 name=row.player_name,
@@ -295,7 +306,7 @@ class Valuator:
         # fuse the performance-implied value into the players who played this week
         for pid in played:
             b = self.beliefs[pid]
-            obs = curve(perf_rank[pid])
+            obs = self._curve(perf_rank[pid])
             obs_var = WEEK_VAR_BASE / min(b.games, PERF_N_CAP)  # more games -> tighter
             b.guess, b.var = self._fuse(b.guess, b.var, obs, obs_var)
 
@@ -335,6 +346,7 @@ class Valuator:
             "sd_p50": _percentile(sds, 50),
             "sd_p90": _percentile(sds, 90),
             "rho": self.rho,
+            "lam": self.lam,
             "unbalanced_trades": self.unbalanced_trades,
             "trades_applied": self.trades_applied,
             "trade_mean_abs_gap": (
@@ -409,10 +421,28 @@ class Valuator:
 # ----------------------------------------------------------------------------- #
 # NOTES / KNOWN SIMPLIFICATIONS (honest list of what to improve)
 # ----------------------------------------------------------------------------- #
-# 1. ρ is a fixed parameter here (read off the curve). The principled version
-#    ESTIMATES ρ from unbalanced trades — those are what pin the replacement floor.
-#    That needs a small joint least-squares pass; this recursive version treats ρ
-#    as given. Start by tuning RHO_RANK, then upgrade.
+# 1. ρ is now fitted from unbalanced trades (runner.fit_rho) rather than read
+#    off the curve. On real data that cut mean |trade gap| by 38% (618 -> 385).
+#    LAMBDA_ADP is NOT fitted, and cannot be from trades alone: see 7.
+# 7. THE TRADE CONSTRAINT CANNOT IDENTIFY THE CURVE'S SHAPE, and it actively
+#    pulls values together. Give every player the same value V and set ρ = V:
+#    a 1-for-1 reads V == V, a 1-for-2 reads V == V + V - ρ, a 1-for-3 reads
+#    V == 3V - 2ρ. All satisfied exactly. So "everybody is worth the same" is a
+#    global optimum of trade fairness, and fitting λ by minimizing trade
+#    residuals just walks to λ -> 0 (measured: the objective falls monotonically
+#    all the way to the search floor).
+#    This is also why the published top value sits near ADP rank 20 rather than
+#    at V_TOP. Every trade nudges its two sides toward satisfying the sum rule,
+#    which contracts the whole value distribution toward a common level around
+#    ρ; the only things resisting are the ADP seed and the weekly PAR readings,
+#    and with ~600 trades per top player against 18 weeks of scores, the trades
+#    win. Raising ρ raises the level everything is pulled toward, which is why
+#    fitting ρ moved the median up (117 -> 135) but barely moved the peak.
+#    Fixing the compression means changing the trade update itself — e.g.
+#    projecting out the common-mode component so a trade re-weights players
+#    relative to each other without moving the overall scale — not fitting more
+#    parameters to a system that is indifferent to scale. Until then, treat
+#    published values as ordinal-plus-ratio, and set the scale from the seed.
 # 2. Trade updates ignore CORRELATION between players. When A is traded for B, a
 #    true Kalman filter records that their errors are now linked (in a covariance
 #    matrix). The variance-share split here is a clean approximation that treats

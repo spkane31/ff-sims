@@ -35,7 +35,7 @@ from src import db, progress, staging
 from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
 from src.runner import adp_frame, build_events, fit_rho, replay, validate_step
-from src.valuation import RHO, V_TOP, Valuator, curve, curve_rank
+from src.valuation import LAMBDA_ADP, RHO, V_TOP, Valuator, curve, curve_rank
 
 SEASON_2025 = SEASONS["2025"]
 
@@ -192,6 +192,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="pin replacement value instead of fitting it from unbalanced"
         " trades (for comparing a fitted run against a fixed one)",
     )
+    ap.add_argument(
+        "--lam",
+        type=float,
+        metavar="VALUE",
+        help="pin the curve steepness instead of fitting it (e.g. 0.04, the"
+        " seed default). Pinning either parameter pins both — they are fitted"
+        " jointly and mixing a fitted one with a pinned one is meaningless",
+    )
     return ap
 
 
@@ -254,8 +262,13 @@ def _log_diagnostics(v: Valuator) -> None:
     )
     print(
         f"    value: top {d['value_top']:,.0f}"
-        f" (≈ADP rank {curve_rank(d['value_top']):.0f} on the seed curve)"
+        f" (≈ADP rank {curve_rank(d['value_top'], d['lam']):.0f} on its curve)"
         f" · median {d['value_p50']:,.0f}",
+        flush=True,
+    )
+    print(
+        f"    curve: ρ {d['rho']:,.0f} · λ {d['lam']:.4f}"
+        f" (e-fold every {1 / d['lam']:.0f} picks)",
         flush=True,
     )
     print(
@@ -266,7 +279,7 @@ def _log_diagnostics(v: Valuator) -> None:
     print(
         f"    trade fit: {d['trades_applied']:,} trades"
         f" ({d['unbalanced_trades']:,} unbalanced, the only ones that identify"
-        f" ρ), mean |gap| {d['trade_mean_abs_gap']:,.0f}, ρ {d['rho']:,.0f}",
+        f" ρ), mean |gap| {d['trade_mean_abs_gap']:,.0f}",
         flush=True,
     )
 
@@ -287,28 +300,40 @@ def _log_diagnostics(v: Valuator) -> None:
         )
 
 
-def _resolve_rho(
+def _resolve_curve(
     segment_key: str,
     inputs,
     events: list[dict],
     start: date,
     end: date,
     step: timedelta,
-    override: float | None,
-) -> float:
-    """Fit ρ from unbalanced trades, unless the caller pinned it.
+    rho_pin: float | None,
+    lam_pin: float | None,
+) -> tuple[float, float]:
+    """Settle the two curve parameters for this run.
 
-    Reported in full — the iteration path, the identifying sample size, and
-    the raw pre-clamp value — because a ρ fitted from a handful of trades
-    deserves less trust than the seed it replaced, and the log is the only
-    place that difference is visible.
+    λ is taken as given — from --lam, else the seed default. It is deliberately
+    not fitted: trade fairness has a global optimum at a flat curve (see note 7
+    in src/valuation.py), so minimizing trade residuals over λ just walks to
+    zero. ρ is fitted, because unbalanced trades do identify it.
+
+    Reported in full — the iteration path, the identifying sample size, and the
+    raw pre-clamp value — because a ρ fitted from a thin sample deserves less
+    trust than the seed it replaced, and the log is the only place that
+    difference is visible.
     """
-    if override is not None:
-        print(f"  ρ pinned at {override:,.0f} (not fitted)", flush=True)
-        return override
+    lam = LAMBDA_ADP if lam_pin is None else lam_pin
+    if lam_pin is not None:
+        print(f"  λ pinned at {lam:.4f} (never fitted; see note 7)", flush=True)
+
+    if rho_pin is not None:
+        print(f"  ρ pinned at {rho_pin:,.0f} (not fitted)", flush=True)
+        return rho_pin, lam
 
     fit = fit_rho(
-        lambda r: _seeded_valuator(segment_key, inputs.adp, start, inputs.players, r),
+        lambda r: _seeded_valuator(
+            segment_key, inputs.adp, start, inputs.players, r, lam
+        ),
         events,
         start,
         end,
@@ -317,11 +342,11 @@ def _resolve_rho(
     )
     if not fit.unbalanced:
         print(
-            f"  ρ not identifiable — no unbalanced trades in window;"
+            "  ρ not identifiable — no unbalanced trades in window;"
             f" keeping the seed {fit.rho:,.0f}",
             flush=True,
         )
-        return fit.rho
+        return fit.rho, lam
 
     path = " -> ".join(f"{r:,.0f}" for r in fit.path)
     print(
@@ -336,11 +361,16 @@ def _resolve_rho(
             " for a negative replacement value, which was clamped to 0",
             flush=True,
         )
-    return fit.rho
+    return fit.rho, lam
 
 
 def _seeded_valuator(
-    segment_key: str, adp, start: date, players=None, rho: float | None = None
+    segment_key: str,
+    adp,
+    start: date,
+    players=None,
+    rho: float | None = None,
+    lam: float | None = None,
 ) -> Valuator:
     """players: the full resolved identity map, so a player who only ever shows
     up inside a trade still gets their real name and position."""
@@ -351,6 +381,7 @@ def _seeded_valuator(
             pid: (p.name, p.position) for pid, p in (players or {}).items()
         },
         rho=rho,
+        lam=lam,
     )
     v.seed_from_adp(adp_frame(adp))
     return v
@@ -377,11 +408,13 @@ def run_from_bundle(
     )
 
     events = build_events(inputs.trades, inputs.scores, SEASONS[season])
-    staged_rho = manifest.get("rho")
-    resolved_rho = _resolve_rho(
-        segment_key, inputs, events, start, end, step, staged_rho
+    resolved_rho, resolved_lam = _resolve_curve(
+        segment_key, inputs, events, start, end, step,
+        manifest.get("rho"), manifest.get("lam"),
     )
-    v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players, resolved_rho)
+    v = _seeded_valuator(
+        segment_key, inputs.adp, start, inputs.players, resolved_rho, resolved_lam
+    )
     reporter = progress.ProgressReporter(
         progress.total_batches(start, end, step), extra=_trade_fit_note(v)
     )
@@ -401,6 +434,7 @@ def run_replay(
     step: timedelta,
     top: int,
     rho: float | None = None,
+    lam: float | None = None,
 ) -> None:
     segment = SEGMENTS[segment_key]
     season_dates = SEASONS[season]
@@ -469,8 +503,8 @@ def run_replay(
                 sys.exit("no ADP data for this segment/season — nothing to seed")
 
             events = build_events(inputs.trades, inputs.scores, season_dates)
-            resolved_rho = _resolve_rho(
-                segment.key, inputs, events, start, end, step, rho
+            resolved_rho, resolved_lam = _resolve_curve(
+                segment.key, inputs, events, start, end, step, rho, lam
             )
 
             manifest = staging.write_bundle(
@@ -484,6 +518,7 @@ def run_replay(
                     "skipped_trades": inputs.skipped_trades,
                     "skipped_nonfantasy": inputs.skipped_nonfantasy,
                     "rho": resolved_rho,
+                    "lam": resolved_lam,
                 },
             )
             print(f"  staged bundle checksums: {manifest['checksums']}")
@@ -515,7 +550,8 @@ def run_replay(
                 sys.exit(EXIT_LOCKED)
 
             v = _seeded_valuator(
-                segment.key, inputs.adp, start, inputs.players, resolved_rho
+                segment.key, inputs.adp, start, inputs.players,
+                resolved_rho, resolved_lam,
             )
 
             db.delete_snapshots(sources.cloud, segment.key, start, end)
@@ -589,7 +625,8 @@ def main(argv: list[str] | None = None) -> None:
 
     end = args.end or default_end()
     run_replay(
-        args.segment, args.season, args.start, end, args.step, args.top, args.rho
+        args.segment, args.season, args.start, end, args.step, args.top,
+        args.rho, args.lam,
     )
 
 
