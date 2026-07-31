@@ -90,10 +90,24 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 			return ClaimLeaguesForTransactions(ctx, db, ClaimLeaguesForTransactionsParams{BatchSize: n})
 		},
 		func(ctx context.Context, db *gorm.DB, lg LeagueTransactionState) (LeagueTransactionFetchResult, error) {
-			return FetchLeagueTransactions(ctx, dfa, lg, MaxLegForLeague(lg.Season, state))
+			return FetchLeagueTransactions(ctx, dfa, lg, state)
 		},
 		func(ctx context.Context, tx *gorm.DB, batch []LeagueTransactionFetchResult) error {
-			return FlushLeagueTransactions(ctx, dfa, tx, batch)
+			flushStart := time.Now()
+			err := FlushLeagueTransactions(ctx, dfa, tx, batch)
+			var rows, advances int
+			for _, r := range batch {
+				rows += len(r.CloudRows) + len(r.ArchiveRows)
+				if r.WeekWatermark > 0 {
+					advances++
+				}
+			}
+			if err != nil {
+				logger.Warn("batch flush failed", "leagues", len(batch), "rows", rows, "duration", time.Since(flushStart), "error", err)
+			} else {
+				logger.Info("batch flush completed", "leagues", len(batch), "rows", rows, "watermarkAdvances", advances, "duration", time.Since(flushStart))
+			}
+			return err
 		},
 		func(lg LeagueTransactionState, err error, duration time.Duration) {
 			if err != nil {
