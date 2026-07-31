@@ -98,8 +98,9 @@ def test_replay_receives_the_defaulted_end(monkeypatch):
     monkeypatch.setattr(main, "default_end", lambda: date(2026, 7, 28))
     monkeypatch.setattr(
         main, "run_replay",
-        lambda segment, season, start, end, step, top: seen.update(
-            segment=segment, season=season, start=start, end=end, step=step
+        lambda segment, season, start, end, step, top, rho: seen.update(
+            segment=segment, season=season, start=start, end=end, step=step,
+            rho=rho,
         ),
     )
     main.main(SCHEDULED)
@@ -107,4 +108,6 @@ def test_replay_receives_the_defaulted_end(monkeypatch):
         "segment": "ppr-sf-10", "season": "2025",
         "start": date(2025, 8, 25), "end": date(2026, 7, 28),
         "step": timedelta(hours=24),
+        # the scheduled invocation pins nothing: ρ is fitted from the data
+        "rho": None,
     }

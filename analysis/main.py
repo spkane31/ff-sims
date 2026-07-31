@@ -34,7 +34,7 @@ import pandas as pd
 from src import db, progress, staging
 from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
-from src.runner import adp_frame, build_events, replay, validate_step
+from src.runner import adp_frame, build_events, fit_rho, replay, validate_step
 from src.valuation import RHO, V_TOP, Valuator, curve, curve_rank
 
 SEASON_2025 = SEASONS["2025"]
@@ -185,6 +185,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay batch/snapshot cadence, e.g. 24h (required for a database run)",
     )
     ap.add_argument("--top", type=int, default=30, help="how many players to print")
+    ap.add_argument(
+        "--rho",
+        type=float,
+        metavar="VALUE",
+        help="pin replacement value instead of fitting it from unbalanced"
+        " trades (for comparing a fitted run against a fixed one)",
+    )
     return ap
 
 
@@ -195,7 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _print_rankings(v: Valuator, top: int, source: str) -> None:
     print(f"\nPlayer valuations  ({source})")
-    print(f"ρ (replacement) = {RHO:.0f}   |   top of curve = {V_TOP:.0f}\n")
+    print(f"ρ (replacement) = {v.rho:.0f}   |   top of curve = {V_TOP:.0f}\n")
     print(v.rankings().head(top).to_string())
     print(
         "\nvalue = current belief (additive scale) | vorp = value - ρ"
@@ -257,8 +264,9 @@ def _log_diagnostics(v: Valuator) -> None:
         flush=True,
     )
     print(
-        f"    trade fit: {d['trades_applied']:,} trades,"
-        f" mean |gap| {d['trade_mean_abs_gap']:,.0f}",
+        f"    trade fit: {d['trades_applied']:,} trades"
+        f" ({d['unbalanced_trades']:,} unbalanced, the only ones that identify"
+        f" ρ), mean |gap| {d['trade_mean_abs_gap']:,.0f}, ρ {d['rho']:,.0f}",
         flush=True,
     )
 
@@ -279,7 +287,61 @@ def _log_diagnostics(v: Valuator) -> None:
         )
 
 
-def _seeded_valuator(segment_key: str, adp, start: date, players=None) -> Valuator:
+def _resolve_rho(
+    segment_key: str,
+    inputs,
+    events: list[dict],
+    start: date,
+    end: date,
+    step: timedelta,
+    override: float | None,
+) -> float:
+    """Fit ρ from unbalanced trades, unless the caller pinned it.
+
+    Reported in full — the iteration path, the identifying sample size, and
+    the raw pre-clamp value — because a ρ fitted from a handful of trades
+    deserves less trust than the seed it replaced, and the log is the only
+    place that difference is visible.
+    """
+    if override is not None:
+        print(f"  ρ pinned at {override:,.0f} (not fitted)", flush=True)
+        return override
+
+    fit = fit_rho(
+        lambda r: _seeded_valuator(segment_key, inputs.adp, start, inputs.players, r),
+        events,
+        start,
+        end,
+        step,
+        seed=RHO,
+    )
+    if not fit.unbalanced:
+        print(
+            f"  ρ not identifiable — no unbalanced trades in window;"
+            f" keeping the seed {fit.rho:,.0f}",
+            flush=True,
+        )
+        return fit.rho
+
+    path = " -> ".join(f"{r:,.0f}" for r in fit.path)
+    print(
+        f"  ρ fitted to {fit.rho:,.0f} from {fit.unbalanced:,} unbalanced"
+        f" trades (seed {RHO:,.0f}; {path};"
+        f" {'converged' if fit.converged else 'did NOT converge'})",
+        flush=True,
+    )
+    if fit.raw < 0:
+        print(
+            f"    note: the raw estimate was {fit.raw:,.0f} — the data asked"
+            " for a negative replacement value, which was clamped to 0",
+            flush=True,
+        )
+    return fit.rho
+
+
+def _seeded_valuator(
+    segment_key: str, adp, start: date, players=None, rho: float | None = None
+) -> Valuator:
     """players: the full resolved identity map, so a player who only ever shows
     up inside a trade still gets their real name and position."""
     v = Valuator(
@@ -288,6 +350,7 @@ def _seeded_valuator(segment_key: str, adp, start: date, players=None) -> Valuat
         identities={
             pid: (p.name, p.position) for pid, p in (players or {}).items()
         },
+        rho=rho,
     )
     v.seed_from_adp(adp_frame(adp))
     return v
@@ -313,8 +376,12 @@ def run_from_bundle(
         f" {len(inputs.scores)} weekly score rows"
     )
 
-    v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players)
     events = build_events(inputs.trades, inputs.scores, SEASONS[season])
+    staged_rho = manifest.get("rho")
+    resolved_rho = _resolve_rho(
+        segment_key, inputs, events, start, end, step, staged_rho
+    )
+    v = _seeded_valuator(segment_key, inputs.adp, start, inputs.players, resolved_rho)
     reporter = progress.ProgressReporter(
         progress.total_batches(start, end, step), extra=_trade_fit_note(v)
     )
@@ -333,6 +400,7 @@ def run_replay(
     end: date,
     step: timedelta,
     top: int,
+    rho: float | None = None,
 ) -> None:
     segment = SEGMENTS[segment_key]
     season_dates = SEASONS[season]
@@ -400,6 +468,11 @@ def run_replay(
             if not inputs.adp:
                 sys.exit("no ADP data for this segment/season — nothing to seed")
 
+            events = build_events(inputs.trades, inputs.scores, season_dates)
+            resolved_rho = _resolve_rho(
+                segment.key, inputs, events, start, end, step, rho
+            )
+
             manifest = staging.write_bundle(
                 run_dir,
                 adp=inputs.adp,
@@ -410,6 +483,7 @@ def run_replay(
                     **staging.manifest_args(segment.key, season, start, end, step),
                     "skipped_trades": inputs.skipped_trades,
                     "skipped_nonfantasy": inputs.skipped_nonfantasy,
+                    "rho": resolved_rho,
                 },
             )
             print(f"  staged bundle checksums: {manifest['checksums']}")
@@ -440,8 +514,9 @@ def run_replay(
                 )
                 sys.exit(EXIT_LOCKED)
 
-            v = _seeded_valuator(segment.key, inputs.adp, start, inputs.players)
-            events = build_events(inputs.trades, inputs.scores, season_dates)
+            v = _seeded_valuator(
+                segment.key, inputs.adp, start, inputs.players, resolved_rho
+            )
 
             db.delete_snapshots(sources.cloud, segment.key, start, end)
 
@@ -513,7 +588,9 @@ def main(argv: list[str] | None = None) -> None:
         ap.error("--start is required for a database run (e.g. --start 2025-08-25)")
 
     end = args.end or default_end()
-    run_replay(args.segment, args.season, args.start, end, args.step, args.top)
+    run_replay(
+        args.segment, args.season, args.start, end, args.step, args.top, args.rho
+    )
 
 
 if __name__ == "__main__":

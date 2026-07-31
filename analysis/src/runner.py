@@ -146,7 +146,7 @@ def replay(
     start: date,
     end: date,
     step: timedelta,
-    on_snapshot: Callable[[date, pd.DataFrame], None],
+    on_snapshot: Callable[[date, pd.DataFrame], None] | None,
 ) -> ReplayStats:
     """Replay [start, end) in fixed UTC steps, snapshotting at every boundary.
 
@@ -154,6 +154,11 @@ def replay(
     events strictly before that boundary. Quiet batches still emit: the
     valuator is aged to the boundary first, so uncertainty drifts through the
     off-season the same way it does mid-season.
+
+    on_snapshot=None runs the model without producing snapshots at all — not
+    even building the rankings frame, which along with writing it is most of
+    what a published run costs. That is what makes the repeated passes in
+    fit_rho affordable.
     """
     validate_step(start, end, step)
     window_start = datetime.combine(start, datetime.min.time())
@@ -173,6 +178,83 @@ def replay(
         valuator.age_to(batch_end)  # quiet batches still drift
         stats.events_applied += len(batch)
         stats.snapshots += 1
-        on_snapshot(batch_end.date(), valuator.rankings())
+        if on_snapshot is not None:
+            on_snapshot(batch_end.date(), valuator.rankings())
 
     return stats
+
+
+# ----------------------------------------------------------- fitting rho --
+
+
+@dataclass
+class RhoFit:
+    """Result of estimating replacement value from unbalanced trades."""
+
+    rho: float  # what the published run should use
+    path: list[float]  # estimate after each iteration, for the log
+    unbalanced: int  # trades that carried any information about rho
+    raw: float  # final estimate before clamping
+    converged: bool
+
+
+def fit_rho(
+    make_valuator: Callable[[float], Valuator],
+    events: list[dict],
+    start: date,
+    end: date,
+    step: timedelta,
+    seed: float,
+    iterations: int = 25,
+    tolerance: float = 1.0,
+) -> RhoFit:
+    """Estimate ρ from unbalanced trades by fixed-point iteration.
+
+    ρ enters the trade rule only as ρ·(|B|−|A|), so balanced trades carry no
+    information about it — the estimate rests entirely on trades whose sides
+    differ in size. Least squares over those gives ρ̂ = Σ(d·n)/Σ(n²), where d
+    is the value gap between the sides and n the size gap.
+
+    Iterated because d depends on the values, which depend on ρ: each pass
+    replays the whole event stream with a fixed ρ, collects the statistics,
+    solves for a new one, and starts over from the ADP seed. Passes build no
+    snapshots and touch no database, so this costs a fraction of a published
+    run.
+
+    A negative estimate is clamped to zero — replacement value is a floor a
+    roster spot is worth, and a negative floor is not a thing — but the raw
+    value is kept so the log can say the data asked for something impossible.
+
+    Convergence is monotone but unhurried: against synthetic trades planted at
+    a known ρ, starting from the seed of 17 it took ~18 passes to settle,
+    which is why the iteration budget is 25 rather than a handful. A run that
+    exhausts it reports `converged=False` instead of quietly publishing a
+    half-converged value.
+    """
+    rho = seed
+    path: list[float] = []
+    unbalanced = 0
+    raw = seed
+    converged = False
+
+    for _ in range(iterations):
+        v = make_valuator(rho)
+        replay(v, events, start, end, step, None)
+        unbalanced = v.unbalanced_trades
+        if v.rho_nn <= 0:
+            # No unbalanced trades at all: ρ is not identified by this data.
+            return RhoFit(
+                rho=seed, path=path, unbalanced=0, raw=seed, converged=True
+            )
+        raw = v.rho_dn / v.rho_nn
+        nxt = max(0.0, raw)
+        path.append(nxt)
+        if abs(nxt - rho) < tolerance:
+            rho = nxt
+            converged = True
+            break
+        rho = nxt
+
+    return RhoFit(
+        rho=rho, path=path, unbalanced=unbalanced, raw=raw, converged=converged
+    )

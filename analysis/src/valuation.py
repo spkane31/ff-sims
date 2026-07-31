@@ -119,6 +119,7 @@ class Valuator:
         start_ts: datetime,
         repl_rank_by_pos: dict[str, int],
         identities: dict[str, tuple[str, str]] | None = None,
+        rho: float | None = None,
     ) -> None:
         """repl_rank_by_pos: weekly replacement rank per position for the
         league combo being valued (each Segment in src/config.py defines its
@@ -141,6 +142,16 @@ class Valuator:
         # any window it likes.
         self.trades_applied = 0
         self.trade_abs_gap = 0.0
+        # Replacement value. RHO is a starting guess read off the curve; a run
+        # can instead fit it from evidence (see fit_rho in runner.py).
+        self.rho = RHO if rho is None else rho
+        # Sufficient statistics for that fit. The trade rule only ever uses ρ
+        # as ρ·(|B|−|A|), so a balanced trade says nothing about it: n = 0
+        # contributes nothing to either sum, which is exactly why only
+        # unbalanced trades identify ρ.
+        self.rho_dn = 0.0  # Σ d·n, d = value gap, n = size gap
+        self.rho_nn = 0.0  # Σ n²
+        self.unbalanced_trades = 0
 
     # -- the single update primitive: trust-weighted blend of guess and evidence --
     @staticmethod
@@ -216,7 +227,11 @@ class Valuator:
         pred_a = sum(x.guess for x in a)
         pred_b = sum(x.guess for x in b)
         # fair-trade rule:  value(A) = value(B) - ρ * (|B| - |A|)
-        target_a = pred_b - RHO * (len(b) - len(a))
+        # Equivalently, total VORP is conserved across the sides: each roster
+        # spot a side gives up is worth at least replacement.
+        size_gap = len(b) - len(a)
+        value_gap = pred_b - pred_a
+        target_a = pred_b - self.rho * size_gap
         gap = target_a - pred_a  # how wrong our values are
 
         total_var = sum(x.var for x in a + b)
@@ -224,6 +239,12 @@ class Valuator:
             return
         self.trades_applied += 1
         self.trade_abs_gap += abs(gap)
+        if size_gap:
+            # Least-squares accumulators for ρ̂ = Σ(d·n)/Σ(n²): the ρ that best
+            # explains why the sides of unbalanced trades differ in value.
+            self.rho_dn += value_gap * size_gap
+            self.rho_nn += float(size_gap * size_gap)
+            self.unbalanced_trades += 1
         for x in a + b:
             x.trades += 1
 
@@ -313,6 +334,8 @@ class Valuator:
             "value_p50": _percentile(values, 50),
             "sd_p50": _percentile(sds, 50),
             "sd_p90": _percentile(sds, 90),
+            "rho": self.rho,
+            "unbalanced_trades": self.unbalanced_trades,
             "trades_applied": self.trades_applied,
             "trade_mean_abs_gap": (
                 self.trade_abs_gap / self.trades_applied
@@ -360,7 +383,7 @@ class Valuator:
                     "player": b.name or pid,
                     "pos": b.position,
                     "value": round(b.guess),
-                    "vorp": round(max(0.0, b.guess - RHO)),
+                    "vorp": round(max(0.0, b.guess - self.rho)),
                     "sd": round(math.sqrt(b.var)),  # uncertainty band half-width
                     "games": round(b.games, 1),
                     "trades": b.trades,
