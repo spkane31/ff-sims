@@ -80,6 +80,7 @@ type AnnualStatsEntry struct {
 type PlayerDetailResponse struct {
 	ID                   string              `json:"id"`
 	ESPNID               string              `json:"espnId"`
+	SleeperID            string              `json:"sleeperId"`
 	Name                 string              `json:"name"`
 	Position             string              `json:"position"`
 	Team                 string              `json:"team"`
@@ -535,6 +536,7 @@ func GetPlayerByID(c *gin.Context) {
 	response := PlayerDetailResponse{
 		ID:                   strconv.FormatUint(uint64(player.ID), 10),
 		ESPNID:               strconv.FormatInt(player.ESPNID, 10),
+		SleeperID:            player.SleeperID,
 		Name:                 player.Name,
 		Position:             player.Position,
 		Team:                 player.Team,

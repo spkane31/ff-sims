@@ -46,7 +46,7 @@ func SetupRouter(r *gin.Engine) {
 	sleeper.GET("/adp", handlers.GetSleeperADP)
 
 	admin := v1.Group("/admin")
-	admin.GET("/backlog", handlers.GetAdminBacklog)
+	admin.GET("/transaction-fetch-age-history", handlers.GetAdminTransactionFetchAgeHistory)
 	admin.GET("/segments", handlers.GetAdminSegments)
 	admin.GET("/database-size", handlers.GetAdminDatabaseSize)
 	admin.GET("/discovery-frontier", handlers.GetAdminDiscoveryFrontier)

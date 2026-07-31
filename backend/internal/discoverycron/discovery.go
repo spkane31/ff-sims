@@ -35,34 +35,26 @@ const discoveryLogTag = "discovery_trace"
 // the binding constraint on pool size is Sleeper API concurrency, not
 // DB_MAX_OPEN_CONNS.
 type Config struct {
-	UserPoolSize      int // CRON_DISCOVERY_USER_POOL_SIZE, default 10
-	UserRefillBatch   int // CRON_DISCOVERY_USER_REFILL_BATCH, default 2
-	LeaguePoolSize    int // CRON_DISCOVERY_LEAGUE_POOL_SIZE, default 4
-	LeagueRefillBatch int // CRON_DISCOVERY_LEAGUE_REFILL_BATCH, default 2
+	UserPoolSize      int `env:"CRON_DISCOVERY_USER_POOL_SIZE,default=15,min=1"`
+	UserRefillBatch   int `env:"CRON_DISCOVERY_USER_REFILL_BATCH,default=10,min=1"`
+	LeaguePoolSize    int `env:"CRON_DISCOVERY_LEAGUE_POOL_SIZE,default=10,min=1"`
+	LeagueRefillBatch int `env:"CRON_DISCOVERY_LEAGUE_REFILL_BATCH,default=10,min=1"`
 	// UserBatchSize/LeagueBatchSize flush each pool's accumulated results
 	// once this many have been fetched.
-	UserBatchSize   int // CRON_DISCOVERY_USER_BATCH_SIZE, default 10
-	LeagueBatchSize int // CRON_DISCOVERY_LEAGUE_BATCH_SIZE, default 5
+	UserBatchSize   int `env:"CRON_DISCOVERY_USER_BATCH_SIZE,default=15,min=1"`
+	LeagueBatchSize int `env:"CRON_DISCOVERY_LEAGUE_BATCH_SIZE,default=10,min=1"`
 	// UserBatchFlushInterval/LeagueBatchFlushInterval flush accumulated
 	// results at least this often, even short of the batch size, so results
 	// don't sit indefinitely.
-	UserBatchFlushInterval   time.Duration // CRON_DISCOVERY_USER_BATCH_FLUSH_INTERVAL_DURATION, default 5s
-	LeagueBatchFlushInterval time.Duration // CRON_DISCOVERY_LEAGUE_BATCH_FLUSH_INTERVAL_DURATION, default 5s
+	UserBatchFlushInterval   time.Duration `env:"CRON_DISCOVERY_USER_BATCH_FLUSH_INTERVAL_DURATION,default=5s,min=1s"`
+	LeagueBatchFlushInterval time.Duration `env:"CRON_DISCOVERY_LEAGUE_BATCH_FLUSH_INTERVAL_DURATION,default=5s,min=1s"`
 }
 
-// LoadConfig reads Config from env, clamped to at least 1 (durations to at
-// least 1s).
+// LoadConfig reads Config from env.
 func LoadConfig() Config {
-	return Config{
-		UserPoolSize:             max(helpers.GetEnv("CRON_DISCOVERY_USER_POOL_SIZE", 25), 1),
-		UserRefillBatch:          max(helpers.GetEnv("CRON_DISCOVERY_USER_REFILL_BATCH", 6), 1),
-		LeaguePoolSize:           max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_POOL_SIZE", 12), 1),
-		LeagueRefillBatch:        max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_REFILL_BATCH", 4), 1),
-		UserBatchSize:            max(helpers.GetEnv("CRON_DISCOVERY_USER_BATCH_SIZE", 25), 1),
-		LeagueBatchSize:          max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_BATCH_SIZE", 12), 1),
-		UserBatchFlushInterval:   max(helpers.GetEnv("CRON_DISCOVERY_USER_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
-		LeagueBatchFlushInterval: max(helpers.GetEnv("CRON_DISCOVERY_LEAGUE_BATCH_FLUSH_INTERVAL_DURATION", 5*time.Second), time.Second),
-	}
+	var cfg Config
+	helpers.LoadEnvStruct(&cfg)
+	return cfg
 }
 
 // Report summarizes one RunDiscovery call.

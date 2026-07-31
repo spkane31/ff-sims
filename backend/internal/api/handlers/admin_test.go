@@ -21,7 +21,11 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperUser{}, &models.SleeperLifetimeCount{}, &models.SleeperDraft{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.SleeperLeague{}, &models.SleeperTransaction{}, &models.SleeperPlayer{}, &models.Player{},
+		&models.SleeperUser{}, &models.SleeperLifetimeCount{}, &models.SleeperDraft{},
+		&models.SleeperTransactionFetchAgeSnapshot{},
+	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -34,13 +38,13 @@ func withAdminTestDB(t *testing.T, db *gorm.DB) {
 	t.Cleanup(func() { database.DB = original })
 }
 
-func performGetAdminBacklog(t *testing.T) AdminBacklogResponse {
+func performGetAdminTransactionFetchAgeHistory(t *testing.T, query string) AdminTransactionFetchAgeHistoryResponse {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.GET("/admin/backlog", GetAdminBacklog)
+	r.GET("/admin/transaction-fetch-age-history", GetAdminTransactionFetchAgeHistory)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/backlog", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/transaction-fetch-age-history"+query, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -48,7 +52,7 @@ func performGetAdminBacklog(t *testing.T) AdminBacklogResponse {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp AdminBacklogResponse
+	var resp AdminTransactionFetchAgeHistoryResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
@@ -216,205 +220,39 @@ func TestGetAdminSegments_EmptyTable(t *testing.T) {
 	}
 }
 
-func TestGetAdminBacklog_MixedFetchState(t *testing.T) {
+func TestGetAdminTransactionFetchAgeHistory_ReturnsCurrentSeasonInReverseChronologicalOrder(t *testing.T) {
 	db := newAdminTestDB(t)
 	withAdminTestDB(t, db)
+	if err := db.Create(&models.SleeperLeague{SleeperLeagueID: "current", Season: "2026"}).Error; err != nil {
+		t.Fatalf("create current season: %v", err)
+	}
 
-	now := time.Now().UTC().Truncate(time.Second)
-	older := now.Add(-48 * time.Hour)
+	older := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	rows := []models.SleeperTransactionFetchAgeSnapshot{
+		{SnapshotAt: older, Season: "2026", NeverFetched: 6},
+		{SnapshotAt: newer, Season: "2026", FetchedWithinFourHours: 4},
+		{SnapshotAt: newer.Add(-24 * time.Hour), Season: "2025", FetchedTwentyFourOrMoreHours: 99},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("create fetch-age snapshots: %v", err)
+	}
 
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-never", Season: "2026"})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-recent", Season: "2026", LastTransactionsFetchedAt: &now})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-old", Season: "2026", LastTransactionsFetchedAt: &older})
-	// different (older) season — must not be counted in the 2026 totals
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2025", Season: "2025", LastTransactionsFetchedAt: &now})
-
-	resp := performGetAdminBacklog(t)
-
+	resp := performGetAdminTransactionFetchAgeHistory(t, "")
 	if resp.Season != "2026" {
-		t.Errorf("expected season 2026, got %q", resp.Season)
+		t.Errorf("season = %q, want 2026", resp.Season)
 	}
-	if resp.TotalLeagues != 3 {
-		t.Errorf("expected 3 leagues in 2026, got %d", resp.TotalLeagues)
+	if len(resp.Snapshots) != 2 {
+		t.Fatalf("snapshots = %d, want 2", len(resp.Snapshots))
 	}
-	if resp.NeverFetchedCount != 1 {
-		t.Errorf("expected 1 never-fetched, got %d", resp.NeverFetchedCount)
+	if !resp.Snapshots[0].SnapshotAt.Equal(newer) || !resp.Snapshots[1].SnapshotAt.Equal(older) {
+		t.Errorf("snapshot order = %+v, want %s then %s", resp.Snapshots, newer, older)
 	}
-	if resp.OldestTransactionsFetchedAt == nil {
-		t.Fatal("expected non-nil oldest fetch timestamp")
+	if got := resp.Snapshots[0].FetchedWithinFourHours; got != 4 {
+		t.Errorf("newest fresh count = %d, want 4", got)
 	}
-	if !resp.OldestTransactionsFetchedAt.Equal(older) {
-		t.Errorf("expected oldest fetch %v, got %v", older, *resp.OldestTransactionsFetchedAt)
-	}
-}
-
-func TestGetAdminBacklog_AllNeverFetched(t *testing.T) {
-	db := newAdminTestDB(t)
-	withAdminTestDB(t, db)
-
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-a", Season: "2026"})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-b", Season: "2026"})
-
-	resp := performGetAdminBacklog(t)
-
-	if resp.TotalLeagues != 2 || resp.NeverFetchedCount != 2 {
-		t.Errorf("expected 2/2 never fetched, got total=%d never=%d", resp.TotalLeagues, resp.NeverFetchedCount)
-	}
-	if resp.OldestTransactionsFetchedAt != nil {
-		t.Errorf("expected nil oldest fetch timestamp, got %v", *resp.OldestTransactionsFetchedAt)
-	}
-}
-
-func TestGetAdminBacklog_ExcludesSkipped(t *testing.T) {
-	db := newAdminTestDB(t)
-	withAdminTestDB(t, db)
-
-	skippedAt := time.Now().UTC()
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-skipped", Season: "2026", SkippedAt: &skippedAt})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-active", Season: "2026"})
-
-	resp := performGetAdminBacklog(t)
-
-	if resp.TotalLeagues != 1 {
-		t.Errorf("expected 1 non-skipped league, got %d", resp.TotalLeagues)
-	}
-	if resp.NeverFetchedCount != 1 {
-		t.Errorf("expected 1 never-fetched (excluding skipped), got %d", resp.NeverFetchedCount)
-	}
-}
-
-func TestGetAdminBacklog_Buckets(t *testing.T) {
-	db := newAdminTestDB(t)
-	withAdminTestDB(t, db)
-
-	now := time.Now().UTC()
-	at := func(d time.Duration) *time.Time {
-		ts := now.Add(d)
-		return &ts
-	}
-
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "never", Season: "2026"})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b0", Season: "2026", LastTransactionsFetchedAt: at(-1 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b4", Season: "2026", LastTransactionsFetchedAt: at(-5 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b8", Season: "2026", LastTransactionsFetchedAt: at(-9 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b12", Season: "2026", LastTransactionsFetchedAt: at(-13 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b16", Season: "2026", LastTransactionsFetchedAt: at(-17 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b20", Season: "2026", LastTransactionsFetchedAt: at(-21 * time.Hour)})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "b24", Season: "2026", LastTransactionsFetchedAt: at(-30 * time.Hour)})
-
-	resp := performGetAdminBacklog(t)
-
-	if len(resp.Buckets) != 8 {
-		t.Fatalf("expected 8 buckets, got %d", len(resp.Buckets))
-	}
-
-	wantOrder := []string{
-		"Never fetched", "0h-3h59m", "4h-7h59m", "8h-11h59m",
-		"12h-15h59m", "16h-19h59m", "20h-23h59m", "24h+",
-	}
-	for i, label := range wantOrder {
-		if resp.Buckets[i].Label != label {
-			t.Errorf("index %d: expected label %q, got %q", i, label, resp.Buckets[i].Label)
-		}
-		if resp.Buckets[i].Leagues != 1 {
-			t.Errorf("bucket %q: expected 1 league, got %d", label, resp.Buckets[i].Leagues)
-		}
-	}
-}
-
-func TestGetAdminBacklog_BucketsExcludeOtherSeasonsAndSkipped(t *testing.T) {
-	db := newAdminTestDB(t)
-	withAdminTestDB(t, db)
-
-	now := time.Now().UTC()
-	skippedAt := now
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2026", Season: "2026", LastTransactionsFetchedAt: &now})
-	db.Create(&models.SleeperLeague{
-		SleeperLeagueID: "lg-2026-skipped", Season: "2026", LastTransactionsFetchedAt: &now, SkippedAt: &skippedAt,
-	})
-	db.Create(&models.SleeperLeague{SleeperLeagueID: "lg-2025", Season: "2025", LastTransactionsFetchedAt: &now})
-
-	resp := performGetAdminBacklog(t)
-
-	if resp.Season != "2026" {
-		t.Fatalf("expected season 2026, got %q", resp.Season)
-	}
-
-	var total int64
-	for _, row := range resp.Buckets {
-		total += row.Leagues
-	}
-	if total != 1 {
-		t.Errorf("expected 1 league counted across buckets (excluding other season + skipped), got %d", total)
-	}
-}
-
-func TestGetAdminBacklog_EmptyTable(t *testing.T) {
-	db := newAdminTestDB(t)
-	withAdminTestDB(t, db)
-
-	resp := performGetAdminBacklog(t)
-
-	if resp.Season != "" {
-		t.Errorf("expected empty season, got %q", resp.Season)
-	}
-	if resp.TotalLeagues != 0 || resp.NeverFetchedCount != 0 {
-		t.Errorf("expected 0/0, got total=%d never=%d", resp.TotalLeagues, resp.NeverFetchedCount)
-	}
-	if resp.OldestTransactionsFetchedAt != nil {
-		t.Error("expected nil oldest fetch timestamp for empty table")
-	}
-	if len(resp.Buckets) != 8 {
-		t.Fatalf("expected 8 buckets, got %d", len(resp.Buckets))
-	}
-	for _, row := range resp.Buckets {
-		if row.Leagues != 0 {
-			t.Errorf("bucket %q: expected 0 leagues, got %d", row.Label, row.Leagues)
-		}
-	}
-}
-
-func TestFillBacklogBuckets_ZeroFillsMissingLabels(t *testing.T) {
-	rows := []AdminBacklogBucketRow{
-		{Label: "24h+", Leagues: 3},
-		{Label: "Never fetched", Leagues: 5},
-	}
-
-	filled := fillBacklogBuckets(rows)
-
-	want := []AdminBacklogBucketRow{
-		{Label: "Never fetched", Leagues: 5},
-		{Label: "0h-3h59m", Leagues: 0},
-		{Label: "4h-7h59m", Leagues: 0},
-		{Label: "8h-11h59m", Leagues: 0},
-		{Label: "12h-15h59m", Leagues: 0},
-		{Label: "16h-19h59m", Leagues: 0},
-		{Label: "20h-23h59m", Leagues: 0},
-		{Label: "24h+", Leagues: 3},
-	}
-	if len(filled) != len(want) {
-		t.Fatalf("expected %d buckets, got %d", len(want), len(filled))
-	}
-	for i, w := range want {
-		if filled[i] != w {
-			t.Errorf("index %d: expected %+v, got %+v", i, w, filled[i])
-		}
-	}
-}
-
-func TestFillBacklogBuckets_EmptyInput(t *testing.T) {
-	filled := fillBacklogBuckets(nil)
-
-	if len(filled) != len(backlogBucketLabels) {
-		t.Fatalf("expected %d buckets, got %d", len(backlogBucketLabels), len(filled))
-	}
-	for i, row := range filled {
-		if row.Leagues != 0 {
-			t.Errorf("index %d: expected 0 leagues, got %d", i, row.Leagues)
-		}
-		if row.Label != backlogBucketLabels[i] {
-			t.Errorf("index %d: expected label %q, got %q", i, backlogBucketLabels[i], row.Label)
-		}
+	if got := resp.Snapshots[1].NeverFetched; got != 6 {
+		t.Errorf("oldest never-fetched count = %d, want 6", got)
 	}
 }
 

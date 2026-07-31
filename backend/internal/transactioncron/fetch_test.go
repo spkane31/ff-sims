@@ -92,6 +92,10 @@ func claimedLeague(t *testing.T, db *gorm.DB, id string) models.SleeperLeague {
 	return l
 }
 
+// week3 is the NFL state most fetch tests use: current season, week 3, so
+// MaxLegForLeague caps the sweep at leg 3 for a "2026" league.
+func week3() *sleeper.NFLState { return &sleeper.NFLState{Season: "2026", Week: 3} }
+
 func TestMaxLegForLeague(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -121,7 +125,7 @@ func TestFetchLeagueTransactions_FetchesLegsUpToMaxLeg(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3); err != nil {
+	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3()); err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
 	if got := calls.Load(); got != 3 {
@@ -129,24 +133,25 @@ func TestFetchLeagueTransactions_FetchesLegsUpToMaxLeg(t *testing.T) {
 	}
 }
 
-func TestFetchLeagueTransactions_ResumesFromLastLegFetched(t *testing.T) {
+func TestFetchLeagueTransactions_ResumesFromWatermark(t *testing.T) {
 	db := newTestDB(t)
 	var calls atomic.Int64
 	srv := batchTestServer(t, nil, &calls) // all legs 404
 	defer srv.Close()
 
-	lastLeg := 5
+	watermark := 5
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &lastLeg}, 7); err != nil {
+	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &watermark}, &sleeper.NFLState{Season: "2026", Week: 7}); err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
-	// Resumes at lastLeg-1 (4) through maxLeg (7): legs 4,5,6,7 = 4 calls.
-	if got := calls.Load(); got != 4 {
-		t.Errorf("expected 4 HTTP calls (legs 4..7), got %d", got)
+	// Weeks below the watermark are final; resumes at the watermark week (5)
+	// through the current week (7): legs 5,6,7 = 3 calls.
+	if got := calls.Load(); got != 3 {
+		t.Errorf("expected 3 HTTP calls (legs 5..7), got %d", got)
 	}
 }
 
-func TestFetchLeagueTransactions_ReturnsRowsAndMaxLegSeen(t *testing.T) {
+func TestFetchLeagueTransactions_ReturnsRowsAndAdvancesNilWatermark(t *testing.T) {
 	db := newTestDB(t)
 	srv := batchTestServer(t, map[string][]sleeper.Transaction{
 		"lg1/2": {{TransactionID: "tx1", Type: "waiver", Status: "complete", Leg: 2}},
@@ -154,15 +159,118 @@ func TestFetchLeagueTransactions_ReturnsRowsAndMaxLegSeen(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
 	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx1" {
 		t.Fatalf("expected tx1 in CloudRows, got %+v", res.CloudRows)
 	}
-	if res.MaxLegSeen != 2 {
-		t.Errorf("expected MaxLegSeen == 2, got %d", res.MaxLegSeen)
+	// Nil watermark + known week: the backfill succeeded, so the watermark
+	// moves to the Sleeper-reported week (3) — not to the last leg with a
+	// transaction (2).
+	if res.WeekWatermark != 3 {
+		t.Errorf("expected WeekWatermark == 3 (current week), got %d", res.WeekWatermark)
+	}
+}
+
+// The next four tests pin the watermark semantics from #211: the cursor is a
+// week watermark driven by Sleeper's reported week, not by whether any leg
+// happened to contain a transaction.
+
+func TestFetchLeagueTransactions_RefetchesEmptyActiveWeek(t *testing.T) {
+	db := newTestDB(t)
+	var calls atomic.Int64
+	srv := batchTestServer(t, nil, &calls) // all legs 404 (empty)
+	defer srv.Close()
+
+	watermark := 5
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa,
+		transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &watermark},
+		&sleeper.NFLState{Season: "2026", Week: 5})
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	// Same week as the watermark: exactly one call, re-fetching the active
+	// week — no reset to a wider scan just because the week was empty.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 HTTP call (re-fetch of active week 5), got %d", got)
+	}
+	if res.WeekWatermark != 0 {
+		t.Errorf("same-week visit must not advance the watermark, got %d", res.WeekWatermark)
+	}
+}
+
+func TestFetchLeagueTransactions_TransactionDoesNotAdvanceWatermark(t *testing.T) {
+	db := newTestDB(t)
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
+		"lg1/6": {{TransactionID: "tx1", Type: "waiver", Status: "complete", Leg: 6}},
+	}, nil)
+	defer srv.Close()
+
+	watermark := 6
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa,
+		transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &watermark},
+		&sleeper.NFLState{Season: "2026", Week: 6})
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	if len(res.CloudRows) != 1 {
+		t.Fatalf("expected the active week's transaction in CloudRows, got %+v", res.CloudRows)
+	}
+	if res.WeekWatermark != 0 {
+		t.Errorf("a transaction in the active week must not advance the watermark, got %d", res.WeekWatermark)
+	}
+}
+
+func TestFetchLeagueTransactions_WeekRolloverAdvancesWatermark(t *testing.T) {
+	db := newTestDB(t)
+	var calls atomic.Int64
+	srv := batchTestServer(t, nil, &calls) // all legs 404 (empty)
+	defer srv.Close()
+
+	watermark := 5
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa,
+		transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026", LastLegFetched: &watermark},
+		&sleeper.NFLState{Season: "2026", Week: 6})
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	// Rollover from week 5 to 6: fetch the closed watermark week's tail (5)
+	// plus the new active week (6), then advance the watermark to 6 even
+	// though both weeks were empty.
+	if got := calls.Load(); got != 2 {
+		t.Errorf("expected 2 HTTP calls (legs 5..6), got %d", got)
+	}
+	if res.WeekWatermark != 6 {
+		t.Errorf("expected watermark to advance to 6 on week rollover, got %d", res.WeekWatermark)
+	}
+}
+
+func TestFetchLeagueTransactions_NilStateNeverAdvancesWatermark(t *testing.T) {
+	db := newTestDB(t)
+	srv := batchTestServer(t, map[string][]sleeper.Transaction{
+		"lg1/2": {{TransactionID: "tx1", Type: "waiver", Status: "complete", Leg: 2}},
+	}, nil)
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa,
+		transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, nil)
+	if err != nil {
+		t.Fatalf("FetchLeagueTransactions error: %v", err)
+	}
+	if len(res.CloudRows) != 1 {
+		t.Fatalf("expected the fallback sweep to still collect rows, got %+v", res.CloudRows)
+	}
+	// State endpoint down: the 18-leg fallback sweep must not stamp a
+	// watermark it can't justify — otherwise a current-season league would
+	// skip every week between the fake watermark and reality.
+	if res.WeekWatermark != 0 {
+		t.Errorf("nil state must not advance the watermark, got %d", res.WeekWatermark)
 	}
 }
 
@@ -174,7 +282,7 @@ func TestFetchLeagueTransactions_PropagatesNonNotFoundLegErrors(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3); err == nil {
+	if _, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3()); err == nil {
 		t.Fatal("expected a non-404 leg error to propagate")
 	}
 }
@@ -196,7 +304,7 @@ func TestFetchLeagueTransactions_SplitsOldRowsToArchiveByAge(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
@@ -225,7 +333,7 @@ func TestFetchLeagueTransactions_ArchiveExcludesTransactionsWithDraftPicksOrFAAB
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
@@ -259,7 +367,7 @@ func TestFetchLeagueTransactions_ExcludesDraftPicksOrFAABEvenWhenCloudBound(t *t
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
@@ -280,7 +388,7 @@ func TestFetchLeagueTransactions_AllRowsToCloudWhenArchiveNil(t *testing.T) {
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}
@@ -299,11 +407,11 @@ func TestFlushLeagueTransactions_StampsClearsClaimsAndWritesRows(t *testing.T) {
 
 	batch := []transactioncron.LeagueTransactionFetchResult{
 		{
-			LeagueID:   "lg1",
-			CloudRows:  []models.SleeperTransaction{{SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
-			MaxLegSeen: 2,
+			LeagueID:      "lg1",
+			CloudRows:     []models.SleeperTransaction{{SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
+			WeekWatermark: 2,
 		},
-		{LeagueID: "lg2"}, // nothing new this run — MaxLegSeen 0
+		{LeagueID: "lg2"}, // no watermark movement this run — WeekWatermark 0
 	}
 	dfa := &activities.DataFetchActivities{DB: db}
 	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, db, batch); err != nil {
@@ -323,7 +431,7 @@ func TestFlushLeagueTransactions_StampsClearsClaimsAndWritesRows(t *testing.T) {
 		t.Errorf("lg2 not stamped/unclaimed: %+v", lg2)
 	}
 	if lg2.LastTransactionLegFetched != nil {
-		t.Errorf("expected lg2's leg cursor untouched (MaxLegSeen 0), got %v", lg2.LastTransactionLegFetched)
+		t.Errorf("expected lg2's watermark untouched (WeekWatermark 0), got %v", lg2.LastTransactionLegFetched)
 	}
 	var txCount int64
 	db.Model(&models.SleeperTransaction{}).Count(&txCount)
@@ -339,9 +447,9 @@ func TestFlushLeagueTransactions_WritesArchiveRowsToArchiveDB(t *testing.T) {
 
 	batch := []transactioncron.LeagueTransactionFetchResult{
 		{
-			LeagueID:    "lg1",
-			ArchiveRows: []models.SleeperTransaction{{SleeperTransactionID: "tx-old", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
-			MaxLegSeen:  2,
+			LeagueID:      "lg1",
+			ArchiveRows:   []models.SleeperTransaction{{SleeperTransactionID: "tx-old", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
+			WeekWatermark: 2,
 		},
 	}
 	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive}
@@ -361,6 +469,61 @@ func TestFlushLeagueTransactions_WritesArchiveRowsToArchiveDB(t *testing.T) {
 	}
 }
 
+func TestFlushLeagueTransactions_WatermarkNeverRegresses(t *testing.T) {
+	db := newTestDB(t)
+	lg := claimedLeague(t, db, "lg1")
+	stored := 7
+	if err := db.Model(&lg).Update("last_transaction_leg_fetched", stored).Error; err != nil {
+		t.Fatalf("seed watermark: %v", err)
+	}
+
+	dfa := &activities.DataFetchActivities{DB: db}
+	batch := []transactioncron.LeagueTransactionFetchResult{{LeagueID: "lg1", WeekWatermark: 6}}
+	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, db, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var got models.SleeperLeague
+	db.First(&got, "sleeper_league_id = ?", "lg1")
+	if got.LastTransactionLegFetched == nil || *got.LastTransactionLegFetched != 7 {
+		t.Errorf("watermark regressed: got %v, want 7", got.LastTransactionLegFetched)
+	}
+	if got.LastTransactionsFetchedAt == nil || got.ClaimedAt != nil {
+		t.Errorf("expected lg1 stamped and unclaimed despite the stale watermark, got %+v", got)
+	}
+}
+
+// TestFlushLeagueTransactions_ErrorLeavesStateUntouched guards existing
+// ordering (it passes before and after #211's fix): a failed flush must not
+// stamp last_transactions_fetched_at, clear the claim, or move the watermark
+// — the league stays claimed and is retried when the claim expires.
+func TestFlushLeagueTransactions_ErrorLeavesStateUntouched(t *testing.T) {
+	cloud := newTestDB(t)
+	archive := newArchiveTestDB(t)
+	claimedLeague(t, cloud, "lg1")
+	sqlDB, err := archive.DB()
+	if err != nil {
+		t.Fatalf("unwrap archive sql.DB: %v", err)
+	}
+	sqlDB.Close() // make the archive upsert fail
+
+	dfa := &activities.DataFetchActivities{DB: cloud, Archive: archive}
+	batch := []transactioncron.LeagueTransactionFetchResult{{
+		LeagueID:      "lg1",
+		ArchiveRows:   []models.SleeperTransaction{{SleeperTransactionID: "tx-old", SleeperLeagueID: "lg1", Type: "waiver", Status: "complete", Leg: 2}},
+		WeekWatermark: 2,
+	}}
+	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, cloud, batch); err == nil {
+		t.Fatal("expected flush to fail when the archive write fails")
+	}
+
+	var got models.SleeperLeague
+	cloud.First(&got, "sleeper_league_id = ?", "lg1")
+	if got.LastTransactionsFetchedAt != nil || got.ClaimedAt == nil || got.LastTransactionLegFetched != nil {
+		t.Errorf("failed flush must leave claim/stamp/watermark untouched, got %+v", got)
+	}
+}
+
 func TestFetchLeagueTransactions_ExcludesDraftPicksWhenArchiveNil(t *testing.T) {
 	cloud := newTestDB(t)
 
@@ -375,7 +538,7 @@ func TestFetchLeagueTransactions_ExcludesDraftPicksWhenArchiveNil(t *testing.T) 
 	defer srv.Close()
 
 	dfa := &activities.DataFetchActivities{DB: cloud, Sleeper: sleeper.NewWithBaseURL(srv.URL)} // Archive nil
-	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, 3)
+	res, err := transactioncron.FetchLeagueTransactions(context.Background(), dfa, transactioncron.LeagueTransactionState{LeagueID: "lg1", Season: "2026"}, week3())
 	if err != nil {
 		t.Fatalf("FetchLeagueTransactions error: %v", err)
 	}

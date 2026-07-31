@@ -36,7 +36,11 @@ type LeagueTransactionFetchResult struct {
 	LeagueID    string
 	CloudRows   []models.SleeperTransaction
 	ArchiveRows []models.SleeperTransaction
-	MaxLegSeen  int // 0 if no new legs were found this run
+	// WeekWatermark is the new value for the league's week watermark
+	// (last_transaction_leg_fetched), or 0 when it should not move — the
+	// Sleeper-reported week is unknown or hasn't advanced past the stored
+	// watermark. Derived from the NFL state, never from transaction presence.
+	WeekWatermark int
 }
 
 // claimLeaguesForTransactionsSQL atomically claims up to batchSize stale
@@ -104,14 +108,22 @@ func archiveRoutingCutoff() time.Time {
 	return time.Now().UTC().AddDate(0, 0, -days)
 }
 
-// FetchLeagueTransactions walks lg's leg cursor up to maxLeg, splitting each
-// leg's rows into cloud-bound and archive-bound sets by age, and returns them
-// without writing anything — FlushLeagueTransactions is the batch-write
-// counterpart, called once per accumulated batch of these results.
-func FetchLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActivities, lg LeagueTransactionState, maxLeg int) (LeagueTransactionFetchResult, error) {
+// FetchLeagueTransactions walks the league's legs from its week watermark up
+// to the current week, splitting each leg's rows into cloud-bound and
+// archive-bound sets by age, and returns them without writing anything —
+// FlushLeagueTransactions is the batch-write counterpart, called once per
+// accumulated batch of these results.
+//
+// The watermark (last_transaction_leg_fetched) is the week Sleeper reported
+// as current the last time this league's fetch succeeded: weeks below it are
+// closed and final, the watermark week itself was active and is re-fetched on
+// every visit (even when it keeps coming back empty). A nil watermark means
+// never visited — backfill from leg 1.
+func FetchLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActivities, lg LeagueTransactionState, state *sleeper.NFLState) (LeagueTransactionFetchResult, error) {
+	maxLeg := MaxLegForLeague(lg.Season, state)
 	startLeg := 1
 	if lg.LastLegFetched != nil && *lg.LastLegFetched > 1 {
-		startLeg = *lg.LastLegFetched - 1
+		startLeg = *lg.LastLegFetched
 	}
 
 	res := LeagueTransactionFetchResult{LeagueID: lg.LeagueID}
@@ -169,9 +181,14 @@ func FetchLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActiv
 		} else {
 			res.CloudRows = append(res.CloudRows, rows...)
 		}
-		if leg > res.MaxLegSeen {
-			res.MaxLegSeen = leg
-		}
+	}
+	// Every leg through maxLeg fetched successfully: advance the watermark to
+	// the Sleeper-reported week, but only when that week is actually known
+	// (nil state means the 18-leg sweep was a fallback, not evidence of the
+	// current week) and has moved past the stored watermark. Transaction
+	// presence plays no part in this.
+	if state != nil && (lg.LastLegFetched == nil || maxLeg > *lg.LastLegFetched) {
+		res.WeekWatermark = maxLeg
 	}
 	return res, nil
 }
@@ -182,8 +199,9 @@ func FetchLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActiv
 // one for archive rows (against dfa.Archive directly — a second, distinct
 // database fdb's transaction doesn't span; skipped when there are none), one
 // bulk claim-clearing update covering every league in the batch, then a
-// per-league leg-cursor update only where MaxLegSeen > 0 (that value
-// genuinely varies per league, unlike the claim-clear). The archive write's
+// per-league watermark update only where WeekWatermark > 0 (that value
+// genuinely varies per league, unlike the claim-clear), guarded so a stale
+// result can never move the watermark backwards. The archive write's
 // error is not swallowed: if it fails, this whole batch's flush fails, so
 // fdb rolls tx back and drops the batch for retry rather than committing a
 // claim-clear whose archive copy never landed.
@@ -220,14 +238,14 @@ func FlushLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActiv
 	}
 
 	for _, r := range batch {
-		if r.MaxLegSeen == 0 {
+		if r.WeekWatermark == 0 {
 			continue
 		}
 		if err := tx.WithContext(ctx).
 			Model(&models.SleeperLeague{}).
-			Where("sleeper_league_id = ?", r.LeagueID).
-			Update("last_transaction_leg_fetched", r.MaxLegSeen).Error; err != nil {
-			return fmt.Errorf("leg cursor update for %s: %w", r.LeagueID, err)
+			Where("sleeper_league_id = ? AND (last_transaction_leg_fetched IS NULL OR last_transaction_leg_fetched < ?)", r.LeagueID, r.WeekWatermark).
+			Update("last_transaction_leg_fetched", r.WeekWatermark).Error; err != nil {
+			return fmt.Errorf("watermark update for %s: %w", r.LeagueID, err)
 		}
 	}
 	return nil

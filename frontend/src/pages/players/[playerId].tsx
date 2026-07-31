@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import ADPFilterBar from "@/components/ADPFilterBar";
+import LeagueFilterBar from "@/components/LeagueFilterBar";
+import { useSleeperADP, useSleeperTrades } from "@/hooks/useSleeperData";
+import { SleeperADPFilters, SleeperLeagueFilters } from "@/types/models";
 import {
   playersService,
   PlayerDetail,
@@ -22,9 +26,210 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import EmptyState from "@/components/design-system/EmptyState";
 import ErrorState from "@/components/design-system/ErrorState";
+import StatCard from "@/components/design-system/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/design-system/DataTable";
 
-type Tab = "overview" | "stats" | "gamelog";
+type Tab = "overview" | "stats" | "gamelog" | "market";
+
+const MARKET_TRADE_LIMIT = 10;
+
+function formatTradeDate(unixMs: number): string {
+  return new Date(unixMs).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function PlayerMarket({ sleeperId }: { sleeperId: string }) {
+  const [tradePage, setTradePage] = useState(1);
+  const [tradeFilters, setTradeFilters] = useState<SleeperLeagueFilters>({});
+  const [adpFilters, setAdpFilters] = useState<SleeperADPFilters>({});
+  const {
+    items: trades,
+    total,
+    totalPages,
+    isLoading: tradesLoading,
+    error: tradesError,
+  } = useSleeperTrades(tradePage, MARKET_TRADE_LIMIT, {
+    ...tradeFilters,
+    sleeper_player_id: sleeperId,
+    days: 30,
+  });
+  const {
+    items: adpItems,
+    season,
+    availableSeasons,
+    isLoading: adpLoading,
+    error: adpError,
+  } = useSleeperADP(1, 1, { ...adpFilters, sleeper_player_id: sleeperId });
+  const adp = adpItems[0];
+
+  function applyTradeFilters(next: SleeperLeagueFilters) {
+    setTradeFilters(next);
+    setTradePage(1);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+            Average Draft Position
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+            Select a league format to see this player&apos;s current-season ADP.
+          </p>
+          <div className="mt-4">
+            <ADPFilterBar
+              filters={adpFilters}
+              onChange={setAdpFilters}
+              availableSeasons={availableSeasons}
+              position=""
+              onPositionChange={() => undefined}
+            />
+          </div>
+          {adpError ? (
+            <div className="mt-4">
+              <ErrorState message={`Failed to load ADP: ${adpError.message}`} />
+            </div>
+          ) : adpLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : adp ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <StatCard label="Average pick" value={adp.avg_pick_no.toFixed(1)} />
+              <StatCard
+                label="95% confidence interval"
+                value={`${adp.ci_low_pick_no.toFixed(1)}–${adp.ci_high_pick_no.toFixed(1)}`}
+              />
+              <StatCard
+                label="Qualifying drafts"
+                value={adp.pick_count.toLocaleString()}
+                detail={`${season} season`}
+              />
+            </div>
+          ) : (
+            <p className="text-sm mt-4" style={{ color: "var(--text-muted)" }}>
+              No qualifying ADP data for this league format.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+                Recent Trades
+              </h2>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                {tradesLoading
+                  ? "Loading…"
+                  : `${total.toLocaleString()} trades involving this player in the last 30 days`}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <LeagueFilterBar filters={tradeFilters} onChange={applyTradeFilters} showSuperflexFilter />
+          </div>
+          {tradesError ? (
+            <div className="mt-4">
+              <ErrorState message={`Failed to load trades: ${tradesError.message}`} />
+            </div>
+          ) : tradesLoading ? (
+            <div className="mt-4 space-y-2">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : trades.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState title="No trades found for this player and league filter." />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {trades.map((trade) => (
+                <article
+                  key={trade.id}
+                  className="rounded-lg border p-4"
+                  style={{ borderColor: "var(--border-subtle)" }}
+                >
+                  <div
+                    className="flex flex-wrap gap-x-3 gap-y-1 text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span>{formatTradeDate(trade.created_at)}</span>
+                    <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
+                      {trade.league_name || "Unnamed league"}
+                    </span>
+                    <span>{trade.season}</span>
+                    <span>{trade.league_size}-team</span>
+                    <span>{trade.scoring}</span>
+                    <span>{trade.superflex ? "Superflex" : "1QB"}</span>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3 mt-3">
+                    {trade.sides.map((side) => (
+                      <div
+                        key={side.roster_id}
+                        className="rounded p-3 text-sm"
+                        style={{
+                          backgroundColor: "var(--surface-sunken)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {side.players.length > 0 || side.picks.length > 0 ? (
+                          <ul className="space-y-1">
+                            {side.players.map((p) => (
+                              <li key={p.id}>
+                                {p.name}
+                                {p.position ? ` (${p.position})` : ""}
+                              </li>
+                            ))}
+                            {side.picks.map((pick) => (
+                              <li key={pick}>{pick}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setTradePage(tradePage - 1)}
+                disabled={tradePage <= 1 || tradesLoading}
+              >
+                Previous
+              </Button>
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                Page {tradePage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setTradePage(tradePage + 1)}
+                disabled={tradePage >= totalPages || tradesLoading}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // Colorblind-safe qualitative palette (--chart-series-*) — position is an
 // unordered category label, not a status, so the semantic --status-* tokens
@@ -493,6 +698,9 @@ export default function PlayerDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="gamelog" className="px-4">
             Game Log
+          </TabsTrigger>
+          <TabsTrigger value="market" className="px-4">
+            Market
           </TabsTrigger>
         </TabsList>
 
@@ -969,6 +1177,20 @@ export default function PlayerDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="market" className="space-y-6">
+          {player.sleeperId ? (
+            <PlayerMarket sleeperId={player.sleeperId} />
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <p style={{ color: "var(--text-muted)" }}>
+                  Market data is not available because this player has no Sleeper identity.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
