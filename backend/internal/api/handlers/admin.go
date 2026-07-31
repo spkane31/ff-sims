@@ -1,56 +1,16 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	"backend/internal/database"
 	"backend/internal/models"
 	"backend/internal/transactionage"
 )
-
-// AdminBacklogResponse reports the Sleeper transaction-sync backlog for the
-// current season, used to size Temporal worker throughput.
-type AdminBacklogResponse struct {
-	Season                      string                  `json:"season"`
-	TotalLeagues                int64                   `json:"total_leagues"`
-	NeverFetchedCount           int64                   `json:"never_fetched_count"`
-	OldestTransactionsFetchedAt *time.Time              `json:"oldest_transactions_fetched_at"`
-	Buckets                     []AdminBacklogBucketRow `json:"buckets"`
-}
-
-// AdminBacklogBucketRow is one fetch-age bucket for current-season leagues,
-// ordered from "never fetched" through "24h+".
-type AdminBacklogBucketRow struct {
-	Label   string `json:"label"`
-	Leagues int64  `json:"leagues"`
-}
-
-// backlogBucketLabels remains package-visible for the legacy handler tests;
-// transactionage is the canonical owner of these labels.
-var backlogBucketLabels = transactionage.Labels()
-
-// fillBacklogBuckets reorders a sparse (possibly out-of-order) set of bucket
-// rows onto transactionage's fixed label sequence, zero-filling any label
-// with no matching rows.
-func fillBacklogBuckets(rows []AdminBacklogBucketRow) []AdminBacklogBucketRow {
-	ageRows := make([]transactionage.Bucket, len(rows))
-	for i, row := range rows {
-		ageRows[i] = transactionage.Bucket{Label: row.Label, Leagues: row.Leagues}
-	}
-
-	filledAgeRows := transactionage.Fill(ageRows)
-	filled := make([]AdminBacklogBucketRow, len(filledAgeRows))
-	for i, row := range filledAgeRows {
-		filled[i] = AdminBacklogBucketRow{Label: row.Label, Leagues: row.Leagues}
-	}
-	return filled
-}
 
 // AdminTransactionFetchAgeHistorySnapshot is one hourly current-season
 // transaction-fetch age distribution for the admin history chart. The age
@@ -241,61 +201,6 @@ func GetAdminDiscoveryFrontier(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, AdminDiscoveryFrontierResponse{Users: users, LeaguesBySeason: rows})
-}
-
-// GetAdminBacklog returns how many leagues in the current season (the max
-// value of sleeper_leagues.season) have never had transactions fetched, and
-// the oldest last_transactions_fetched_at among the ones that have.
-func GetAdminBacklog(c *gin.Context) {
-	season, err := transactionage.CurrentSeason(c.Request.Context(), database.DB)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var resp AdminBacklogResponse
-	resp.Season = season
-
-	if err := database.DB.Model(&models.SleeperLeague{}).
-		Where("season = ? AND skipped_at IS NULL", season).
-		Count(&resp.TotalLeagues).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := database.DB.Model(&models.SleeperLeague{}).
-		Where("season = ? AND skipped_at IS NULL AND last_transactions_fetched_at IS NULL", season).
-		Count(&resp.NeverFetchedCount).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var oldestLeague models.SleeperLeague
-	err = database.DB.
-		Where("season = ? AND skipped_at IS NULL AND last_transactions_fetched_at IS NOT NULL", season).
-		Order("last_transactions_fetched_at ASC").
-		Limit(1).
-		Take(&oldestLeague).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err == nil {
-		resp.OldestTransactionsFetchedAt = oldestLeague.LastTransactionsFetchedAt
-	}
-
-	buckets, err := transactionage.Count(c.Request.Context(), database.DB, season, time.Now().UTC())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	bucketRows := make([]AdminBacklogBucketRow, len(buckets))
-	for i, bucket := range buckets {
-		bucketRows[i] = AdminBacklogBucketRow{Label: bucket.Label, Leagues: bucket.Leagues}
-	}
-	resp.Buckets = fillBacklogBuckets(bucketRows)
-
-	c.JSON(http.StatusOK, resp)
 }
 
 // GetAdminTransactionFetchAgeHistory returns recent hourly fetch-age bucket
