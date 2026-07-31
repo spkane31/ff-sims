@@ -84,6 +84,7 @@ throttles.
 | `CRON_TXN_REFILL_BATCH` | 4 | Free pool slots required before claiming more. |
 | `CRON_TXN_BATCH_SIZE` | 20 | Fetched league results accumulated before one bulk flush write. |
 | `CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION` | 5s | Flush accumulated results at least this often, even short of `CRON_TXN_BATCH_SIZE` (a Go duration string, e.g. `5s`, `500ms`). |
+| `CRON_TXN_SHUTDOWN_GRACE_PERIOD_DURATION` | 30s | Stop claiming new leagues this long before the cron deadline so in-flight fetches and the final batch flush can finish cleanly. |
 
 These take effect on cron's next invocation — no restart needed or possible,
 since `cron -job=transactions` is a fresh process each timer tick, not a

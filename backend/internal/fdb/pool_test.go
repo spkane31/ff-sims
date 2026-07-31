@@ -171,6 +171,63 @@ func TestRunPool_ClaimErrorIncrementsClaimErrorsAndDoesNotBusyLoop(t *testing.T)
 	}
 }
 
+func TestRunPool_DeadlineCanceledClaimIsNotAClaimError(t *testing.T) {
+	db := newTestDB(t)
+	claim := func(ctx context.Context, db *gorm.DB, n int) ([]string, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	res := fdb.RunPool(ctx, db, fdb.Config{Size: 1, RefillBatch: 1, PollInterval: 5 * time.Millisecond, BatchSize: 1, BatchFlushInterval: time.Hour},
+		claim, noopFetch, noopFlush, func(string, error, time.Duration) {})
+
+	if res.ClaimErrors != 0 {
+		t.Fatalf("expected the pool's own deadline cancellation not to count as a claim error, got %+v", res)
+	}
+}
+
+func TestRunPool_ShutdownGraceDrainsBeforeDeadline(t *testing.T) {
+	db := newTestDB(t)
+	var nextID int32
+	claim := func(ctx context.Context, db *gorm.DB, n int) ([]string, error) {
+		items := make([]string, n)
+		for i := range items {
+			items[i] = fmt.Sprintf("item%d", atomic.AddInt32(&nextID, 1))
+		}
+		return items, nil
+	}
+	fetch := func(ctx context.Context, db *gorm.DB, id string) (string, error) {
+		select {
+		case <-time.After(35 * time.Millisecond):
+			return id, nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	res := fdb.RunPool(ctx, db, fdb.Config{
+		Size: 2, RefillBatch: 2, PollInterval: 5 * time.Millisecond,
+		BatchSize: 1_000_000, BatchFlushInterval: time.Hour,
+		ShutdownGracePeriod: 150 * time.Millisecond,
+	}, claim, fetch, noopFlush, func(string, error, time.Duration) {})
+	elapsed := time.Since(started)
+
+	if res.Processed == 0 || res.Failed != 0 || res.FlushDropped != 0 {
+		t.Fatalf("expected admitted work to drain and flush cleanly, got %+v", res)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("expected the pool to return before the hard deadline, got %v after %s", ctx.Err(), elapsed)
+	}
+	if elapsed < 150*time.Millisecond {
+		t.Fatalf("expected the pool to accept work until the grace window, returned after %s", elapsed)
+	}
+}
+
 func TestRunPool_DrainsInFlightWorkOnDeadline(t *testing.T) {
 	db := newTestDB(t)
 	q := newFakeQueue(1)

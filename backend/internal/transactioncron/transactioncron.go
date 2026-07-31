@@ -34,6 +34,9 @@ type Config struct {
 	// BatchFlushInterval flushes accumulated results at least this often,
 	// even short of BatchSize, so results don't sit indefinitely.
 	BatchFlushInterval time.Duration `env:"CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION,default=5s,min=1s"`
+	// ShutdownGracePeriod stops new claims before the cron's hard deadline so
+	// in-flight Sleeper requests and their final DB batch can finish cleanly.
+	ShutdownGracePeriod time.Duration `env:"CRON_TXN_SHUTDOWN_GRACE_PERIOD_DURATION,default=30s,min=0s"`
 }
 
 // LoadConfig reads Config from env.
@@ -69,7 +72,8 @@ type Report struct {
 func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities, cfg Config) (Report, error) {
 	logger := newStdLogger()
 	logger.Info("transaction sync cron starting", "poolSize", cfg.PoolSize, "refillBatch", cfg.RefillBatch,
-		"batchSize", cfg.BatchSize, "batchFlushInterval", cfg.BatchFlushInterval)
+		"batchSize", cfg.BatchSize, "batchFlushInterval", cfg.BatchFlushInterval,
+		"shutdownGracePeriod", cfg.ShutdownGracePeriod)
 	start := time.Now()
 
 	state, err := dfa.Sleeper.GetNFLState(ctx)
@@ -80,11 +84,12 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 
 	result := fdb.RunPool(ctx, dfa.DB,
 		fdb.Config{
-			Size:               cfg.PoolSize,
-			RefillBatch:        cfg.RefillBatch,
-			PollInterval:       pollInterval,
-			BatchSize:          cfg.BatchSize,
-			BatchFlushInterval: cfg.BatchFlushInterval,
+			Size:                cfg.PoolSize,
+			RefillBatch:         cfg.RefillBatch,
+			PollInterval:        pollInterval,
+			BatchSize:           cfg.BatchSize,
+			BatchFlushInterval:  cfg.BatchFlushInterval,
+			ShutdownGracePeriod: cfg.ShutdownGracePeriod,
 		},
 		func(ctx context.Context, db *gorm.DB, n int) ([]LeagueTransactionState, error) {
 			return ClaimLeaguesForTransactions(ctx, db, ClaimLeaguesForTransactionsParams{BatchSize: n})

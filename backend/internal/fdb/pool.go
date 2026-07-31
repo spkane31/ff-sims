@@ -60,6 +60,10 @@ type Config struct {
 	// if BatchSize hasn't been reached, so results don't sit indefinitely.
 	// Defaults to defaultBatchFlushInterval if zero.
 	BatchFlushInterval time.Duration
+	// ShutdownGracePeriod stops claiming new work this long before ctx's
+	// deadline, leaving time to drain in-flight fetches and flush their results.
+	// Zero preserves the caller's existing run-until-deadline behavior.
+	ShutdownGracePeriod time.Duration
 }
 
 // Result summarizes one RunPool call. Processed + Failed + FlushDropped
@@ -117,7 +121,10 @@ type pendingItem[C any, R any] struct {
 // bookkeeping, whether via Failed, a successful flush, or a failed flush.
 //
 // No per-item timeout is imposed here — fetch is expected to respect ctx
-// itself.
+// itself. When ShutdownGracePeriod is configured and ctx has a deadline,
+// RunPool stops claiming new work before that deadline but keeps passing the
+// original ctx to already-admitted fetches and flushes so they can drain
+// cleanly during the grace period.
 func RunPool[C any, R any](
 	ctx context.Context,
 	db *gorm.DB,
@@ -138,6 +145,15 @@ func RunPool[C any, R any](
 	if batchFlushInterval <= 0 {
 		batchFlushInterval = defaultBatchFlushInterval
 	}
+
+	admissionCtx := ctx
+	var cancelAdmission context.CancelFunc = func() {}
+	if cfg.ShutdownGracePeriod > 0 {
+		if deadline, ok := ctx.Deadline(); ok {
+			admissionCtx, cancelAdmission = context.WithDeadline(ctx, deadline.Add(-cfg.ShutdownGracePeriod))
+		}
+	}
+	defer cancelAdmission()
 
 	var res Result
 	fetched := make(chan pendingItem[C, R], size)
@@ -208,7 +224,7 @@ func RunPool[C any, R any](
 		}
 	}
 
-	for ctx.Err() == nil {
+	for admissionCtx.Err() == nil {
 		drainNonBlocking()
 		checkTicker()
 
@@ -220,19 +236,24 @@ func RunPool[C any, R any](
 			case <-ticker.C:
 				flushNow(ctx)
 			case <-time.After(pollInterval):
-			case <-ctx.Done():
+			case <-admissionCtx.Done():
 			}
 			continue
 		}
 
-		items, err := claim(ctx, db, free)
+		items, err := claim(admissionCtx, db, free)
 		if err != nil {
+			// Reaching the pool's own admission cutoff is an orderly shutdown,
+			// not evidence that the claim store is unhealthy.
+			if admissionCtx.Err() != nil {
+				break
+			}
 			res.ClaimErrors++
 			select {
 			case <-ticker.C:
 				flushNow(ctx)
 			case <-time.After(pollInterval):
-			case <-ctx.Done():
+			case <-admissionCtx.Done():
 			}
 			continue
 		}
@@ -241,7 +262,7 @@ func RunPool[C any, R any](
 			case <-ticker.C:
 				flushNow(ctx)
 			case <-time.After(pollInterval):
-			case <-ctx.Done():
+			case <-admissionCtx.Done():
 			}
 			continue
 		}
@@ -260,8 +281,14 @@ func RunPool[C any, R any](
 		recordFetch(<-fetched)
 	}
 
-	// ctx is guaranteed already done here — give this last, best-effort
-	// flush its own fresh deadline instead of one that would fail instantly.
+	// A configured admission grace period normally leaves ctx alive for this
+	// final flush. Preserve the independent best-effort fallback for callers
+	// without a grace period and for in-flight work that consumes the entire
+	// remaining deadline.
+	if ctx.Err() == nil {
+		flushNow(ctx)
+		return res
+	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownFlushTimeout)
 	defer shutdownCancel()
 	flushNow(shutdownCtx)
