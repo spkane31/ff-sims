@@ -86,6 +86,7 @@ func TestRun_CloudMigrations_ApplyCleanlyAndCreateScavengerIndexes(t *testing.T)
 	for _, idx := range []string{
 		"idx_sleeper_transactions_created_at", "idx_sleeper_drafts_last_fetched_at", "idx_sleeper_drafts_created_at",
 		"idx_sleeper_transactions_created_at_sleeper", "idx_sleeper_drafts_season",
+		"idx_sleeper_leagues_txn_claimable_stale",
 	} {
 		if !indexExists(t, scopedDSN, idx) {
 			t.Errorf("expected index %s to exist after migrate up", idx)
