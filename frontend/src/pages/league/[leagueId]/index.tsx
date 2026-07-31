@@ -1,13 +1,18 @@
-import { useState, useMemo, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "@/components/Layout";
-import { leaguesService, League } from "@/services/leaguesService";
+import { useLeague } from "@/hooks/useLeagues";
 import { useTeams } from "@/hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
+import type { Team } from "@/services/teamsService";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
 import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import StatCard from "@/components/design-system/StatCard";
+import DataTable, { type DataTableColumn } from "@/components/design-system/DataTable";
+import ErrorState from "@/components/design-system/ErrorState";
 
 type SortField =
   | "rank"
@@ -20,23 +25,31 @@ type SortField =
   | "diff";
 type SortDirection = "asc" | "desc";
 
+function formatAvgTotal(avg: number, total: number, sign = false): string {
+  const avgSign = sign && avg > 0 ? "+" : "";
+  const totalSign = sign && total > 0 ? "+" : "";
+  return `${avgSign}${avg.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} (${totalSign}${total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })})`;
+}
+
+function playoffBarColor(chance: number): string {
+  if (chance > 75) return "var(--status-success-fg)";
+  if (chance > 50) return "var(--action-primary)";
+  if (chance > 25) return "var(--status-warning-fg)";
+  return "var(--status-danger-fg)";
+}
+
 export default function LeagueDashboard() {
   const router = useRouter();
   const { leagueId } = router.query;
   const id = Number(leagueId);
 
-  const [league, setLeague] = useState<League | null>(null);
-  const [isLeagueLoading, setIsLeagueLoading] = useState(true);
-
-  useEffect(() => {
-    if (!id) return;
-    setIsLeagueLoading(true);
-    leaguesService
-      .getLeague(id)
-      .then(setLeague)
-      .finally(() => setIsLeagueLoading(false));
-  }, [id]);
-
+  const { league, isLoading: isLeagueLoading } = useLeague(id || undefined);
   const { teams, isLoading, error } = useTeams(id);
   const {
     schedule,
@@ -229,11 +242,12 @@ export default function LeagueDashboard() {
     };
   }, [schedule, teams]);
 
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
+  const handleSort = (field: string) => {
+    const f = field as SortField;
+    if (f === sortField) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      setSortField(field);
+      setSortField(f);
       setSortDirection("asc");
     }
   };
@@ -285,216 +299,313 @@ export default function LeagueDashboard() {
           return sortDirection === "asc" ? result : -result;
         });
 
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return null;
-    return (
-      <span className="ml-1 text-gray-400">
-        {sortDirection === "asc" ? "↑" : "↓"}
-      </span>
-    );
-  };
+  const standingsColumns: DataTableColumn<Team>[] = [
+    { id: "rank", header: "Rank", sortable: true, cell: (team) => team.rank },
+    {
+      id: "name",
+      header: "Team",
+      sortable: true,
+      cell: (team) => (
+        <div className="flex flex-col">
+          <Link
+            href={`/league/${id}/teams/${team.espnId}`}
+            className="font-medium hover:underline"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {team.name}
+          </Link>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {team.owner}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "wins",
+      header: "W",
+      sortable: true,
+      cell: (team) => adjustedRecords.get(team.espnId)?.wins ?? 0,
+    },
+    {
+      id: "losses",
+      header: "L",
+      sortable: true,
+      cell: (team) => adjustedRecords.get(team.espnId)?.losses ?? 0,
+    },
+    {
+      id: "pf",
+      header: "PF / G",
+      sortable: true,
+      cell: (team) => {
+        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
+        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
+        const totalGames = wins + losses;
+        const avgPF = totalGames > 0 ? team.points.scored / totalGames : 0;
+        return formatAvgTotal(avgPF, team.points.scored);
+      },
+    },
+    {
+      id: "pa",
+      header: "PA / G",
+      sortable: true,
+      cell: (team) => {
+        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
+        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
+        const totalGames = wins + losses;
+        const avgPA = totalGames > 0 ? team.points.against / totalGames : 0;
+        return formatAvgTotal(avgPA, team.points.against);
+      },
+    },
+    {
+      id: "diff",
+      header: "Diff",
+      sortable: true,
+      cell: (team) => {
+        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
+        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
+        const totalGames = wins + losses;
+        const totalDiff = team.points.scored - team.points.against;
+        const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
+        return formatAvgTotal(avgDiff, totalDiff, true);
+      },
+    },
+    {
+      id: "playoffs",
+      header: "Playoff %",
+      sortable: true,
+      cell: (team) => (
+        <div>
+          <div
+            className="h-2.5 w-full rounded-full"
+            style={{ backgroundColor: "var(--surface-sunken)" }}
+          >
+            <div
+              className="h-2.5 rounded-full"
+              style={{
+                width: `${team.playoffChance}%`,
+                backgroundColor: playoffBarColor(team.playoffChance),
+              }}
+            />
+          </div>
+          <span className="mt-1 block text-xs" style={{ color: "var(--text-muted)" }}>
+            {team.playoffChance}%
+          </span>
+        </div>
+      ),
+    },
+  ];
 
   if (error || scheduleError) {
     return (
-      <Layout>
-        <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
-          <h2 className="text-xl font-semibold">Error loading data</h2>
-          <p>{error?.message}</p>
-          <p>{scheduleError?.message}</p>
-        </div>
-      </Layout>
+      <ErrorState
+        message={[error?.message, scheduleError?.message].filter(Boolean).join(" ")}
+      />
     );
   }
 
   return (
-    <Layout>
-      <div className="space-y-8">
-        {/* League header */}
-        <section>
-          {isLeagueLoading ? (
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <p>Loading league...</p>
-            </div>
-          ) : league ? (
-            <>
-              <h1 className="text-4xl md:text-5xl font-bold text-blue-600 mb-2">
-                {league.name}
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                {league.platform && <span>Platform: {league.platform} · </span>}
-                {league.current_week > 0 && (
-                  <span>Week {league.current_week} of {league.total_weeks}</span>
-                )}
-              </p>
-            </>
-          ) : null}
-        </section>
+    <div className="space-y-10">
+      {/* League header */}
+      <section>
+        {isLeagueLoading ? (
+          <Skeleton className="h-10 w-64" />
+        ) : league ? (
+          <>
+            <h1 className="text-4xl font-bold md:text-5xl" style={{ color: "var(--text-primary)" }}>
+              {league.name}
+            </h1>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              {league.platform && <span>Platform: {league.platform} · </span>}
+              {league.current_week > 0 && (
+                <span>
+                  Week {league.current_week} of {league.total_weeks}
+                </span>
+              )}
+            </p>
+          </>
+        ) : null}
+      </section>
 
-        {/* Standings */}
-        <section>
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-6">Standings</h2>
+      {/* This season */}
+      <section className="space-y-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          This season
+        </h2>
 
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="mb-6 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+              Standings
+            </h3>
             {isLoading ? (
-              <div className="flex items-center justify-center h-40">
-                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <span className="ml-2">Loading teams...</span>
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("rank")}
-                      >
-                        Rank {renderSortIcon("rank")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("name")}
-                      >
-                        Team {renderSortIcon("name")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("wins")}
-                      >
-                        W {renderSortIcon("wins")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("losses")}
-                      >
-                        L {renderSortIcon("losses")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("pf")}
-                      >
-                        PF / G {renderSortIcon("pf")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("pa")}
-                      >
-                        PA / G {renderSortIcon("pa")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("diff")}
-                      >
-                        Diff {renderSortIcon("diff")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("playoffs")}
-                      >
-                        Playoff % {renderSortIcon("playoffs")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {sortedTeams.map((team, i) => (
-                      <tr
-                        key={team.id}
-                        className={
-                          i % 2 === 0
-                            ? "bg-white dark:bg-gray-800"
-                            : "bg-gray-50 dark:bg-gray-700"
-                        }
-                      >
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {team.rank}
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex flex-col">
-                            <Link
-                              href={`/league/${id}/teams/${team.espnId}`}
-                              className="font-medium hover:text-blue-600"
-                            >
-                              {team.name}
-                            </Link>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {team.owner}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.wins ?? 0}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {adjustedRecords.get(team.espnId)?.losses ?? 0}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
-                            const avgPF = totalGames > 0 ? team.points.scored / totalGames : 0;
-                            return `${avgPF.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${team.points.scored.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
-                            const avgPA = totalGames > 0 ? team.points.against / totalGames : 0;
-                            return `${avgPA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${team.points.against.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-                            const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-                            const totalGames = wins + losses;
-                            const totalDiff = team.points.scored - team.points.against;
-                            const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
-                            const avgSign = avgDiff > 0 ? "+" : "";
-                            const totalSign = totalDiff > 0 ? "+" : "";
-                            return `${avgSign}${avgDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${totalSign}${totalDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
-                            <div
-                              className={`h-2.5 rounded-full ${
-                                team.playoffChance > 75
-                                  ? "bg-green-500"
-                                  : team.playoffChance > 50
-                                  ? "bg-blue-500"
-                                  : team.playoffChance > 25
-                                  ? "bg-yellow-500"
-                                  : "bg-red-500"
-                              }`}
-                              style={{ width: `${team.playoffChance}%` }}
-                            />
-                          </div>
-                          <span className="text-xs mt-1 block">
-                            {team.playoffChance}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={standingsColumns}
+                rows={sortedTeams}
+                rowKey={(team) => team.id}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+              />
             )}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        {/* Head-to-head grid */}
-        <section>
-          <AllTimeMatchupsGrid
-            teams={filteredTeams}
-            headToHeadRecords={headToHeadRecords}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Average Score"
+            value={
+              isScheduleLoading
+                ? "…"
+                : `${leagueStats.averageScore > 0 ? leagueStats.averageScore.toFixed(1) : "0.0"} pts`
+            }
+            detail="per team/week"
           />
-        </section>
+          <StatCard
+            label="Highest Score"
+            value={
+              isScheduleLoading
+                ? "…"
+                : `${leagueStats.highestScore.score > 0 ? leagueStats.highestScore.score.toFixed(1) : "0"} pts`
+            }
+            detail={
+              !isScheduleLoading && leagueStats.highestScore.teamName && leagueStats.highestScore.week > 0
+                ? `${leagueStats.highestScore.teamName}, Week ${leagueStats.highestScore.week}`
+                : "No data"
+            }
+          />
+          <StatCard
+            label="Closest Matchup"
+            value={
+              isScheduleLoading
+                ? "…"
+                : leagueStats.closestMatchup.margin < Infinity
+                ? `${leagueStats.closestMatchup.homeScore.toFixed(2)}-${leagueStats.closestMatchup.awayScore.toFixed(2)}`
+                : "None"
+            }
+            detail={
+              !isScheduleLoading && leagueStats.closestMatchup.margin < Infinity
+                ? `${leagueStats.closestMatchup.homeTeam} vs ${leagueStats.closestMatchup.awayTeam}, Week ${leagueStats.closestMatchup.week}`
+                : "No matchups"
+            }
+          />
+          <StatCard
+            label="Biggest Blowout"
+            value={
+              isScheduleLoading
+                ? "…"
+                : leagueStats.biggestBlowout.margin > 0
+                ? `${leagueStats.biggestBlowout.winnerScore.toFixed(1)}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
+                : "None"
+            }
+            detail={
+              !isScheduleLoading && leagueStats.biggestBlowout.margin > 0
+                ? `${leagueStats.biggestBlowout.winner} vs ${leagueStats.biggestBlowout.loser}, Week ${leagueStats.biggestBlowout.week} (margin ${leagueStats.biggestBlowout.margin.toFixed(1)} pts)`
+                : "No games"
+            }
+          />
+        </div>
 
-        {/* Hall of Fame & Wall of Shame */}
+        <Card>
+          <CardContent className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+            <div>
+              <h3 className="mb-2 text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                Most Points Scored
+              </h3>
+              {isLoading ? (
+                <Skeleton className="h-6 w-full" />
+              ) : teams && teams.length > 0 ? (
+                [...teams]
+                  .filter(
+                    (team) =>
+                      !team.owner.includes("Knapp") && !team.owner.includes("Landry")
+                  )
+                  .sort((a, b) => b.points.scored - a.points.scored)
+                  .slice(0, 3)
+                  .map((team) => (
+                    <div key={`pf-${team.id}`} className="flex items-center justify-between py-2">
+                      <Link
+                        href={`/league/${id}/teams/${team.espnId}`}
+                        className="font-medium hover:underline"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {team.owner}
+                      </Link>
+                      <span style={{ color: "var(--action-primary)" }}>
+                        {team.points.scored.toLocaleString(undefined, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}{" "}
+                        pts
+                      </span>
+                    </div>
+                  ))
+              ) : (
+                <p className="py-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                  No data available
+                </p>
+              )}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                Most Points Against
+              </h3>
+              {isLoading ? (
+                <Skeleton className="h-6 w-full" />
+              ) : teams && teams.length > 0 ? (
+                [...teams]
+                  .filter(
+                    (team) =>
+                      !team.owner.includes("Knapp") && !team.owner.includes("Landry")
+                  )
+                  .sort((a, b) => b.points.against - a.points.against)
+                  .slice(0, 3)
+                  .map((team) => (
+                    <div key={`pa-${team.id}`} className="flex items-center justify-between py-2">
+                      <Link
+                        href={`/league/${id}/teams/${team.espnId}`}
+                        className="font-medium hover:underline"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {team.owner}
+                      </Link>
+                      <span style={{ color: "var(--status-danger-fg)" }}>
+                        {team.points.against.toLocaleString(undefined, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}{" "}
+                        pts
+                      </span>
+                    </div>
+                  ))
+              ) : (
+                <p className="py-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                  No data available
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* League history */}
+      <section className="space-y-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          League history
+        </h2>
+
+        <Card>
+          <CardContent className="p-6">
+            <AllTimeMatchupsGrid teams={filteredTeams} headToHeadRecords={headToHeadRecords} />
+          </CardContent>
+        </Card>
+
         <HallOfFameWallOfShame
           leagueId={id}
           schedule={schedule}
@@ -502,202 +613,8 @@ export default function LeagueDashboard() {
           teams={teams}
         />
 
-        {/* All-Time Team Records */}
         <AllTimeRecordsTable leagueId={id} />
-
-        {/* League leaders + summary */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-lg font-semibold mb-4">League Leaders</h2>
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
-                  Most Points Scored
-                </h3>
-                <div className="overflow-hidden">
-                  {isLoading ? (
-                    <div className="py-2 text-sm text-gray-500">Loading...</div>
-                  ) : teams && teams.length > 0 ? (
-                    [...teams]
-                      .filter(
-                        (team) =>
-                          !team.owner.includes("Knapp") &&
-                          !team.owner.includes("Landry")
-                      )
-                      .sort((a, b) => b.points.scored - a.points.scored)
-                      .slice(0, 3)
-                      .map((team) => (
-                        <div
-                          key={`pf-${team.id}`}
-                          className="flex justify-between items-center py-2"
-                        >
-                          <Link
-                            href={`/league/${id}/teams/${team.espnId}`}
-                            className="font-medium hover:text-blue-600"
-                          >
-                            {team.owner}
-                          </Link>
-                          <span className="text-blue-600">
-                            {team.points.scored.toLocaleString(undefined, {
-                              minimumFractionDigits: 1,
-                              maximumFractionDigits: 1,
-                            })}{" "}
-                            pts
-                          </span>
-                        </div>
-                      ))
-                  ) : (
-                    <div className="py-2 text-sm text-gray-500">
-                      No data available
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
-                  Most Points Against
-                </h3>
-                <div className="overflow-hidden">
-                  {isLoading ? (
-                    <div className="py-2 text-sm text-gray-500">Loading...</div>
-                  ) : teams && teams.length > 0 ? (
-                    [...teams]
-                      .filter(
-                        (team) =>
-                          !team.owner.includes("Knapp") &&
-                          !team.owner.includes("Landry")
-                      )
-                      .sort((a, b) => b.points.against - a.points.against)
-                      .slice(0, 3)
-                      .map((team) => (
-                        <div
-                          key={`pa-${team.id}`}
-                          className="flex justify-between items-center py-2"
-                        >
-                          <Link
-                            href={`/league/${id}/teams/${team.espnId}`}
-                            className="font-medium hover:text-blue-600"
-                          >
-                            {team.owner}
-                          </Link>
-                          <span className="text-red-600">
-                            {team.points.against.toLocaleString(undefined, {
-                              minimumFractionDigits: 1,
-                              maximumFractionDigits: 1,
-                            })}{" "}
-                            pts
-                          </span>
-                        </div>
-                      ))
-                  ) : (
-                    <div className="py-2 text-sm text-gray-500">
-                      No data available
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-lg font-semibold mb-4">League Summary</h2>
-            <div className="space-y-4">
-              <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Average Score
-                </span>
-                <span className="text-2xl font-bold">
-                  {isScheduleLoading
-                    ? "..."
-                    : leagueStats.averageScore > 0
-                    ? leagueStats.averageScore.toFixed(1)
-                    : "0.0"}{" "}
-                  pts
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                  per team/week
-                </span>
-              </div>
-
-              <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Highest Score
-                </span>
-                <span className="text-2xl font-bold">
-                  {isScheduleLoading
-                    ? "..."
-                    : leagueStats.highestScore.score > 0
-                    ? leagueStats.highestScore.score.toFixed(1)
-                    : "0"}{" "}
-                  pts
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                  {!isScheduleLoading &&
-                  leagueStats.highestScore.teamName &&
-                  leagueStats.highestScore.week > 0
-                    ? `${leagueStats.highestScore.teamName}, Week ${leagueStats.highestScore.week}`
-                    : "No data"}
-                </span>
-              </div>
-
-              <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Closest Matchup
-                </span>
-                <span className="text-2xl font-bold">
-                  {isScheduleLoading
-                    ? "..."
-                    : leagueStats.closestMatchup.margin < Infinity
-                    ? `${leagueStats.closestMatchup.homeScore.toFixed(2)}-${leagueStats.closestMatchup.awayScore.toFixed(2)}`
-                    : "None"}
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                  {!isScheduleLoading &&
-                  leagueStats.closestMatchup.margin < Infinity
-                    ? `${leagueStats.closestMatchup.homeTeam} vs ${leagueStats.closestMatchup.awayTeam}, Week ${leagueStats.closestMatchup.week}`
-                    : "No matchups"}
-                </span>
-              </div>
-
-              <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Biggest Blowout
-                </span>
-                <span className="text-2xl font-bold">
-                  {isScheduleLoading
-                    ? "..."
-                    : leagueStats.biggestBlowout.margin > 0
-                    ? `${leagueStats.biggestBlowout.winnerScore.toFixed(1)}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
-                    : "None"}
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                  {!isScheduleLoading && leagueStats.biggestBlowout.margin > 0
-                    ? `${leagueStats.biggestBlowout.winner} vs ${leagueStats.biggestBlowout.loser}, Week ${leagueStats.biggestBlowout.week}`
-                    : "No games"}
-                </span>
-                <div className="mt-2">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    Margin:{" "}
-                    {leagueStats.biggestBlowout.margin > 0
-                      ? `${leagueStats.biggestBlowout.margin.toFixed(1)} pts`
-                      : "0 pts"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 text-sm"
-          >
-            ← All Leagues
-          </Link>
-        </section>
-      </div>
-    </Layout>
+      </section>
+    </div>
   );
 }

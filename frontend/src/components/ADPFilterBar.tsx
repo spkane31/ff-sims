@@ -43,7 +43,10 @@ export default function ADPFilterBar({ filters, onChange, availableSeasons, posi
   const currentSeason = filters.season ?? seasonOptions[0]?.value ?? '';
 
   return (
-    <div className="flex flex-col gap-2.5 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3">
+    <div
+      className="flex flex-col gap-2.5 rounded-lg border px-4 py-3"
+      style={{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)' }}
+    >
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <PillGroup
           label="Size"

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "@/components/Layout";
 import ADPFilterBar from "@/components/ADPFilterBar";
 import LeagueFilterBar from "@/components/LeagueFilterBar";
 import { useSleeperADP, useSleeperTrades } from "@/hooks/useSleeperData";
@@ -10,8 +9,27 @@ import {
   playersService,
   PlayerDetail,
   PlayerStats,
+  AnnualStatsEntry,
   GameLogEntry,
 } from "@/services/playersService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import EmptyState from "@/components/design-system/EmptyState";
+import ErrorState from "@/components/design-system/ErrorState";
+import StatCard from "@/components/design-system/StatCard";
+import DataTable, { type DataTableColumn } from "@/components/design-system/DataTable";
+
+type Tab = "overview" | "stats" | "gamelog" | "market";
 
 const MARKET_TRADE_LIMIT = 10;
 
@@ -27,16 +45,24 @@ function PlayerMarket({ sleeperId }: { sleeperId: string }) {
   const [tradePage, setTradePage] = useState(1);
   const [tradeFilters, setTradeFilters] = useState<SleeperLeagueFilters>({});
   const [adpFilters, setAdpFilters] = useState<SleeperADPFilters>({});
-  const { items: trades, total, totalPages, isLoading: tradesLoading, error: tradesError } = useSleeperTrades(
-    tradePage,
-    MARKET_TRADE_LIMIT,
-    { ...tradeFilters, sleeper_player_id: sleeperId, days: 30 }
-  );
-  const { items: adpItems, season, availableSeasons, isLoading: adpLoading, error: adpError } = useSleeperADP(
-    1,
-    1,
-    { ...adpFilters, sleeper_player_id: sleeperId }
-  );
+  const {
+    items: trades,
+    total,
+    totalPages,
+    isLoading: tradesLoading,
+    error: tradesError,
+  } = useSleeperTrades(tradePage, MARKET_TRADE_LIMIT, {
+    ...tradeFilters,
+    sleeper_player_id: sleeperId,
+    days: 30,
+  });
+  const {
+    items: adpItems,
+    season,
+    availableSeasons,
+    isLoading: adpLoading,
+    error: adpError,
+  } = useSleeperADP(1, 1, { ...adpFilters, sleeper_player_id: sleeperId });
   const adp = adpItems[0];
 
   function applyTradeFilters(next: SleeperLeagueFilters) {
@@ -46,120 +72,186 @@ function PlayerMarket({ sleeperId }: { sleeperId: string }) {
 
   return (
     <div className="space-y-6">
-      <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold">Average Draft Position</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Select a league format to see this player&apos;s current-season ADP.
-        </p>
-        <div className="mt-4">
-          <ADPFilterBar
-            filters={adpFilters}
-            onChange={setAdpFilters}
-            availableSeasons={availableSeasons}
-            position=""
-            onPositionChange={() => undefined}
-          />
-        </div>
-        {adpError ? (
-          <p className="mt-4 text-red-600 dark:text-red-400">Failed to load ADP: {adpError.message}</p>
-        ) : adpLoading ? (
-          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading ADP…</p>
-        ) : adp ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Average pick</div>
-              <div className="text-2xl font-bold text-blue-600">{adp.avg_pick_no.toFixed(1)}</div>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <div className="text-sm text-gray-500 dark:text-gray-400">95% confidence interval</div>
-              <div className="text-2xl font-bold">{adp.ci_low_pick_no.toFixed(1)}–{adp.ci_high_pick_no.toFixed(1)}</div>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Qualifying drafts</div>
-              <div className="text-2xl font-bold">{adp.pick_count.toLocaleString()}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{season} season</div>
-            </div>
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+            Average Draft Position
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+            Select a league format to see this player&apos;s current-season ADP.
+          </p>
+          <div className="mt-4">
+            <ADPFilterBar
+              filters={adpFilters}
+              onChange={setAdpFilters}
+              availableSeasons={availableSeasons}
+              position=""
+              onPositionChange={() => undefined}
+            />
           </div>
-        ) : (
-          <p className="mt-4 text-gray-500 dark:text-gray-400">No qualifying ADP data for this league format.</p>
-        )}
-      </section>
-
-      <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-          <div>
-            <h2 className="text-xl font-semibold">Recent Trades</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {tradesLoading ? "Loading…" : `${total.toLocaleString()} trades involving this player in the last 30 days`}
+          {adpError ? (
+            <div className="mt-4">
+              <ErrorState message={`Failed to load ADP: ${adpError.message}`} />
+            </div>
+          ) : adpLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : adp ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <StatCard label="Average pick" value={adp.avg_pick_no.toFixed(1)} />
+              <StatCard
+                label="95% confidence interval"
+                value={`${adp.ci_low_pick_no.toFixed(1)}–${adp.ci_high_pick_no.toFixed(1)}`}
+              />
+              <StatCard
+                label="Qualifying drafts"
+                value={adp.pick_count.toLocaleString()}
+                detail={`${season} season`}
+              />
+            </div>
+          ) : (
+            <p className="text-sm mt-4" style={{ color: "var(--text-muted)" }}>
+              No qualifying ADP data for this league format.
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+                Recent Trades
+              </h2>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                {tradesLoading
+                  ? "Loading…"
+                  : `${total.toLocaleString()} trades involving this player in the last 30 days`}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="mt-4">
-          <LeagueFilterBar filters={tradeFilters} onChange={applyTradeFilters} showSuperflexFilter />
-        </div>
-        {tradesError ? (
-          <p className="mt-4 text-red-600 dark:text-red-400">Failed to load trades: {tradesError.message}</p>
-        ) : tradesLoading ? (
-          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading trades…</p>
-        ) : trades.length === 0 ? (
-          <p className="mt-4 text-gray-500 dark:text-gray-400">No trades found for this player and league filter.</p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {trades.map((trade) => (
-              <article key={trade.id} className="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-                  <span>{formatTradeDate(trade.created_at)}</span>
-                  <span className="font-medium text-gray-700 dark:text-gray-200">{trade.league_name || "Unnamed league"}</span>
-                  <span>{trade.season}</span>
-                  <span>{trade.league_size}-team</span>
-                  <span>{trade.scoring}</span>
-                  <span>{trade.superflex ? "Superflex" : "1QB"}</span>
-                </div>
-                <div className="grid md:grid-cols-2 gap-3 mt-3">
-                  {trade.sides.map((side) => (
-                    <div key={side.roster_id} className="bg-gray-50 dark:bg-gray-800 rounded p-3 text-sm">
-                      {(side.players.length > 0 || side.picks.length > 0) ? (
-                        <ul className="space-y-1">
-                          {side.players.map((p) => <li key={p.id}>{p.name}{p.position ? ` (${p.position})` : ""}</li>)}
-                          {side.picks.map((pick) => <li key={pick}>{pick}</li>)}
-                        </ul>
-                      ) : "—"}
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+          <div className="mt-4">
+            <LeagueFilterBar filters={tradeFilters} onChange={applyTradeFilters} showSuperflexFilter />
           </div>
-        )}
-        {totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-between">
-            <button className="px-4 py-2 text-sm border rounded disabled:opacity-40" onClick={() => setTradePage(tradePage - 1)} disabled={tradePage <= 1 || tradesLoading}>Previous</button>
-            <span className="text-sm text-gray-600 dark:text-gray-300">Page {tradePage} of {totalPages}</span>
-            <button className="px-4 py-2 text-sm border rounded disabled:opacity-40" onClick={() => setTradePage(tradePage + 1)} disabled={tradePage >= totalPages || tradesLoading}>Next</button>
-          </div>
-        )}
-      </section>
+          {tradesError ? (
+            <div className="mt-4">
+              <ErrorState message={`Failed to load trades: ${tradesError.message}`} />
+            </div>
+          ) : tradesLoading ? (
+            <div className="mt-4 space-y-2">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : trades.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState title="No trades found for this player and league filter." />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {trades.map((trade) => (
+                <article
+                  key={trade.id}
+                  className="rounded-lg border p-4"
+                  style={{ borderColor: "var(--border-subtle)" }}
+                >
+                  <div
+                    className="flex flex-wrap gap-x-3 gap-y-1 text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span>{formatTradeDate(trade.created_at)}</span>
+                    <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
+                      {trade.league_name || "Unnamed league"}
+                    </span>
+                    <span>{trade.season}</span>
+                    <span>{trade.league_size}-team</span>
+                    <span>{trade.scoring}</span>
+                    <span>{trade.superflex ? "Superflex" : "1QB"}</span>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3 mt-3">
+                    {trade.sides.map((side) => (
+                      <div
+                        key={side.roster_id}
+                        className="rounded p-3 text-sm"
+                        style={{
+                          backgroundColor: "var(--surface-sunken)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {side.players.length > 0 || side.picks.length > 0 ? (
+                          <ul className="space-y-1">
+                            {side.players.map((p) => (
+                              <li key={p.id}>
+                                {p.name}
+                                {p.position ? ` (${p.position})` : ""}
+                              </li>
+                            ))}
+                            {side.picks.map((pick) => (
+                              <li key={pick}>{pick}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setTradePage(tradePage - 1)}
+                disabled={tradePage <= 1 || tradesLoading}
+              >
+                Previous
+              </Button>
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                Page {tradePage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setTradePage(tradePage + 1)}
+                disabled={tradePage >= totalPages || tradesLoading}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-// Helper function to get position color
+// Colorblind-safe qualitative palette (--chart-series-*) — position is an
+// unordered category label, not a status, so the semantic --status-* tokens
+// don't apply here. Mirrors the mapping established in
+// league/[leagueId]/transactions/index.tsx (positionColor) and
+// pages/players/index.tsx (getPositionColor).
 function getPositionColor(position: string): string {
   switch (position) {
     case "QB":
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      return "var(--chart-series-1)";
     case "RB":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      return "var(--chart-series-2)";
     case "WR":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      return "var(--chart-series-3)";
     case "TE":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+      return "var(--chart-series-4)";
     case "K":
-      return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+      return "var(--chart-series-5)";
     case "D/ST":
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+      return "var(--chart-series-6)";
     default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+      return "var(--chart-series-6)";
   }
 }
 
@@ -230,7 +322,7 @@ export default function PlayerDetailPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
 
   // Add filter states for game log
@@ -263,521 +355,590 @@ export default function PlayerDetailPage() {
 
   if (isLoading) {
     return (
-      <Layout>
-        <div className="flex flex-col items-center justify-center h-64 space-y-4">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <div className="text-center">
-            <div className="text-lg font-medium">Loading player data...</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              This may take up to 10 seconds as we fetch data from the database
-            </div>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <Skeleton className="h-8 w-8 rounded-full" />
+        <div className="text-center">
+          <div className="text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+            Loading player data...
+          </div>
+          <div className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
+            This may take up to 10 seconds as we fetch data from the database
           </div>
         </div>
-      </Layout>
+      </div>
     );
   }
 
   if (error || !player) {
     return (
-      <Layout>
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <h2 className="text-lg font-medium mb-2">Player not found</h2>
-          <p>
-            {error ||
-              "We could not find a player with the requested ID. Please check the URL and try again."}
-          </p>
-          <Link
-            href="/players"
-            className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
-          >
-            ← Back to Players
-          </Link>
-        </div>
-      </Layout>
+      <div className="space-y-4">
+        <h2 className="text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+          Player not found
+        </h2>
+        <ErrorState
+          message={
+            error ||
+            "We could not find a player with the requested ID. Please check the URL and try again."
+          }
+        />
+        <Link
+          href="/players"
+          className="inline-block hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          ← Back to Players
+        </Link>
+      </div>
     );
   }
 
+  // Game log filtered by the year/week selects (Game Log tab)
+  const filteredGameLog = filterGameLog(
+    player.gameLog || [],
+    yearFilter,
+    weekFilter
+  );
+
+  const annualStatsColumns: DataTableColumn<AnnualStatsEntry>[] = [
+    {
+      id: "year",
+      header: "Year",
+      cell: (y) => (
+        <span className="font-medium" style={{ color: "var(--action-primary)" }}>
+          {y.year}
+        </span>
+      ),
+    },
+    {
+      id: "games",
+      header: "Games",
+      cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.gamesPlayed}</span>,
+    },
+    {
+      id: "points",
+      header: "Points",
+      cell: (y) => (
+        <span className="font-bold" style={{ color: "var(--text-primary)" }}>
+          {y.totalFantasyPoints.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "projected",
+      header: "Projected",
+      cell: (y) => (
+        <span style={{ color: "var(--text-muted)" }}>
+          {y.totalProjectedPoints.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "average",
+      header: "Average",
+      cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.avgFantasyPoints.toFixed(1)}</span>,
+    },
+    {
+      id: "difference",
+      header: "Difference",
+      cell: (y) => (
+        <span
+          className="font-medium"
+          style={{
+            color:
+              y.difference > 0
+                ? "var(--status-success-fg)"
+                : "var(--status-danger-fg)",
+          }}
+        >
+          {y.difference > 0 ? "+" : ""}
+          {y.difference.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "bestGame",
+      header: "Best Game",
+      cell: (y) => (
+        <div>
+          <div className="font-medium" style={{ color: "var(--status-success-fg)" }}>
+            {y.bestGame.points.toFixed(1)}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Wk {y.bestGame.week}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "worstGame",
+      header: "Worst Game",
+      cell: (y) => (
+        <div>
+          <div className="font-medium" style={{ color: "var(--status-danger-fg)" }}>
+            {y.worstGame.points.toFixed(1)}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Wk {y.worstGame.week}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "consistency",
+      header: "Consistency",
+      cell: (y) => (
+        <div>
+          <div className="font-medium" style={{ color: "var(--text-primary)" }}>
+            {y.consistencyScore.toFixed(1)}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {y.consistencyScore < 5
+              ? "Very consistent"
+              : y.consistencyScore < 8
+              ? "Consistent"
+              : y.consistencyScore < 12
+              ? "Variable"
+              : "Inconsistent"}
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  if (player.position === "QB") {
+    annualStatsColumns.push(
+      {
+        id: "passYds",
+        header: "Pass Yds",
+        cell: (y) => (
+          <span style={{ color: "var(--text-primary)" }}>
+            {y.totalStats.passingYards.toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "passTDs",
+        header: "Pass TDs",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.passingTDs}</span>,
+      },
+      {
+        id: "ints",
+        header: "INTs",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.interceptions}</span>,
+      }
+    );
+  } else if (
+    player.position === "RB" ||
+    player.position === "WR" ||
+    player.position === "TE"
+  ) {
+    annualStatsColumns.push(
+      {
+        id: "rec",
+        header: "Rec",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.receptions}</span>,
+      },
+      {
+        id: "recYds",
+        header: "Rec Yds",
+        cell: (y) => (
+          <span style={{ color: "var(--text-primary)" }}>
+            {y.totalStats.receivingYards.toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "recTDs",
+        header: "Rec TDs",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.receivingTDs}</span>,
+      }
+    );
+  } else if (player.position === "K") {
+    annualStatsColumns.push(
+      {
+        id: "fg",
+        header: "FG",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.fieldGoals}</span>,
+      },
+      {
+        id: "xp",
+        header: "XP",
+        cell: (y) => <span style={{ color: "var(--text-primary)" }}>{y.totalStats.extraPoints}</span>,
+      }
+    );
+  }
+
+  const gameLogColumns: DataTableColumn<GameLogEntry>[] = [
+    {
+      id: "week",
+      header: "Week",
+      cell: (g) => (
+        <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+          {g.week}
+        </span>
+      ),
+    },
+    {
+      id: "year",
+      header: "Year",
+      cell: (g) => <span style={{ color: "var(--text-primary)" }}>{g.year}</span>,
+    },
+    {
+      id: "points",
+      header: "Points",
+      cell: (g) => (
+        <span className="font-bold" style={{ color: "var(--action-primary)" }}>
+          {g.actualPoints.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "projected",
+      header: "Projected",
+      cell: (g) => <span style={{ color: "var(--text-muted)" }}>{g.projectedPoints.toFixed(1)}</span>,
+    },
+    {
+      id: "difference",
+      header: "Difference",
+      cell: (g) => (
+        <span
+          className="font-medium"
+          style={{
+            color:
+              g.difference > 0
+                ? "var(--status-success-fg)"
+                : "var(--status-danger-fg)",
+          }}
+        >
+          {g.difference > 0 ? "+" : ""}
+          {g.difference.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "started",
+      header: "Started",
+      cell: (g) =>
+        g.startedFlag ? (
+          <Badge
+            variant="outline"
+            style={{
+              color: "var(--status-success-fg)",
+              borderColor: "var(--status-success-fg)",
+              backgroundColor: "var(--status-success-bg)",
+            }}
+          >
+            Started
+          </Badge>
+        ) : (
+          <Badge variant="secondary">Bench</Badge>
+        ),
+    },
+    {
+      id: "date",
+      header: "Date",
+      cell: (g) => (
+        <span style={{ color: "var(--text-muted)" }}>
+          {new Date(g.gameDate).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <Layout>
-      <div className="space-y-8">
-        {/* Player Header */}
-        <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+    <div className="space-y-8">
+      {/* Player Header */}
+      <Card>
+        <CardContent className="p-6">
           <div className="flex flex-col md:flex-row justify-between md:items-center">
             <div>
               <div className="flex items-center mb-2">
-                <h1 className="text-3xl md:text-4xl font-bold text-blue-600">
+                <h1
+                  className="text-3xl md:text-4xl font-bold"
+                  style={{ color: "var(--action-primary)" }}
+                >
                   {player.name}
                 </h1>
-                <span
-                  className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${getPositionColor(
-                    player.position
-                  )}`}
+                <Badge
+                  variant="outline"
+                  className="ml-3"
+                  style={{
+                    color: getPositionColor(player.position),
+                    borderColor: getPositionColor(player.position),
+                  }}
                 >
                   {player.position}
-                </span>
-                <span className="ml-2 px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-sm">
+                </Badge>
+                <Badge variant="secondary" className="ml-2">
                   #{player.positionRank} {player.position}
-                </span>
+                </Badge>
               </div>
             </div>
 
             <div className="mt-4 md:mt-0">
               <Link
                 href="/players"
-                className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
+                className="hover:underline"
+                style={{ color: "var(--action-primary)" }}
               >
                 ← Back to Players
               </Link>
             </div>
           </div>
-        </section>
+        </CardContent>
+      </Card>
 
-        {/* Navigation Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex space-x-8">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "overview"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab("stats")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "stats"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Statistics
-            </button>
-            <button
-              onClick={() => setActiveTab("gamelog")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "gamelog"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Game Log
-            </button>
-            <button
-              onClick={() => setActiveTab("market")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "market"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              Market
-            </button>
-          </nav>
-        </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+        <TabsList variant="line" className="mb-2">
+          <TabsTrigger value="overview" className="px-4">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="stats" className="px-4">
+            Statistics
+          </TabsTrigger>
+          <TabsTrigger value="gamelog" className="px-4">
+            Game Log
+          </TabsTrigger>
+          <TabsTrigger value="market" className="px-4">
+            Market
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Tab Content */}
-        <div className="space-y-6">
-          {/* Overview Tab */}
-          {activeTab === "overview" && (
-            <>
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">
-                  Fantasy Performance
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Total Points
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {player.totalFantasyPoints.toFixed(1)}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {player.avgFantasyPoints.toFixed(1)} per game
-                    </div>
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                Fantasy Performance
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="p-4 rounded-lg" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                  <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+                    Total Points
+                  </h3>
+                  <div className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                    {player.totalFantasyPoints.toFixed(1)}
                   </div>
-
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Projected Points
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {player.totalProjectedPoints.toFixed(1)}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {(
-                        player.totalProjectedPoints / player.gamesPlayed
-                      ).toFixed(1)}{" "}
-                      per game
-                    </div>
+                  <div className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                    {player.avgFantasyPoints.toFixed(1)} per game
                   </div>
+                </div>
 
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Difference
-                    </h3>
-                    <div
-                      className={`text-2xl font-bold ${
+                <div className="p-4 rounded-lg" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                  <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+                    Projected Points
+                  </h3>
+                  <div className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                    {player.totalProjectedPoints.toFixed(1)}
+                  </div>
+                  <div className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                    {(
+                      player.totalProjectedPoints / player.gamesPlayed
+                    ).toFixed(1)}{" "}
+                    per game
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                  <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+                    Difference
+                  </h3>
+                  <div
+                    className="text-2xl font-bold"
+                    style={{
+                      color:
                         player.difference > 0
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      {player.difference > 0 ? "+" : ""}
-                      {player.difference.toFixed(1)}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      vs projection
-                    </div>
+                          ? "var(--status-success-fg)"
+                          : "var(--status-danger-fg)",
+                    }}
+                  >
+                    {player.difference > 0 ? "+" : ""}
+                    {player.difference.toFixed(1)}
                   </div>
-
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Games Played
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {player.gamesPlayed}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      Position rank: #{player.positionRank}
-                    </div>
+                  <div className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                    vs projection
                   </div>
                 </div>
-              </section>
 
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">
-                  Season Statistics
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {getRelevantStats(player.totalStats, player.position).map(
-                    (stat, index) => (
-                      <div key={index} className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">
-                          {stat.value}
-                        </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {stat.label}
-                        </div>
+                <div className="p-4 rounded-lg" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                  <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+                    Games Played
+                  </h3>
+                  <div className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                    {player.gamesPlayed}
+                  </div>
+                  <div className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                    Position rank: #{player.positionRank}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                Season Statistics
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {getRelevantStats(player.totalStats, player.position).map(
+                  (stat, index) => (
+                    <div key={index} className="text-center">
+                      <div className="text-2xl font-bold" style={{ color: "var(--action-primary)" }}>
+                        {stat.value}
                       </div>
-                    )
-                  )}
-                </div>
-              </section>
-
-              {/* Annual Statistics Table */}
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">
-                  Annual Statistics
-                </h2>
-                {player.annualStats && player.annualStats.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-                      <thead className="bg-gray-50 dark:bg-gray-800">
-                        <tr>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Year
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Games
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Points
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Projected
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Average
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Difference
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Best Game
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Worst Game
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Consistency
-                          </th>
-                          {player.position === "QB" && (
-                            <>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Pass Yds
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Pass TDs
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                INTs
-                              </th>
-                            </>
-                          )}
-                          {(player.position === "RB" ||
-                            player.position === "WR" ||
-                            player.position === "TE") && (
-                            <>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Rec
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Rec Yds
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Rec TDs
-                              </th>
-                            </>
-                          )}
-                          {player.position === "K" && (
-                            <>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                FG
-                              </th>
-                              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                XP
-                              </th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                        {player.annualStats.map((yearStats, index) => (
-                          <tr
-                            key={yearStats.year}
-                            className={
-                              index % 2 === 0
-                                ? "bg-white dark:bg-gray-700"
-                                : "bg-gray-50 dark:bg-gray-800"
-                            }
-                          >
-                            <td className="py-3 px-4 text-sm font-medium text-blue-600">
-                              {yearStats.year}
-                            </td>
-                            <td className="py-3 px-4 text-sm">
-                              {yearStats.gamesPlayed}
-                            </td>
-                            <td className="py-3 px-4 text-sm font-bold">
-                              {yearStats.totalFantasyPoints.toFixed(1)}
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-500">
-                              {yearStats.totalProjectedPoints.toFixed(1)}
-                            </td>
-                            <td className="py-3 px-4 text-sm">
-                              {yearStats.avgFantasyPoints.toFixed(1)}
-                            </td>
-                            <td
-                              className={`py-3 px-4 text-sm font-medium ${
-                                yearStats.difference > 0
-                                  ? "text-green-600 dark:text-green-400"
-                                  : "text-red-600 dark:text-red-400"
-                              }`}
-                            >
-                              {yearStats.difference > 0 ? "+" : ""}
-                              {yearStats.difference.toFixed(1)}
-                            </td>
-                            <td className="py-3 px-4 text-sm">
-                              <div className="font-medium text-green-600 dark:text-green-400">
-                                {yearStats.bestGame.points.toFixed(1)}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Wk {yearStats.bestGame.week}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-sm">
-                              <div className="font-medium text-red-600 dark:text-red-400">
-                                {yearStats.worstGame.points.toFixed(1)}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Wk {yearStats.worstGame.week}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-sm">
-                              <div className="font-medium">
-                                {yearStats.consistencyScore.toFixed(1)}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {yearStats.consistencyScore < 5
-                                  ? "Very consistent"
-                                  : yearStats.consistencyScore < 8
-                                  ? "Consistent"
-                                  : yearStats.consistencyScore < 12
-                                  ? "Variable"
-                                  : "Inconsistent"}
-                              </div>
-                            </td>
-                            {player.position === "QB" && (
-                              <>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.passingYards.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.passingTDs}
-                                </td>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.interceptions}
-                                </td>
-                              </>
-                            )}
-                            {(player.position === "RB" ||
-                              player.position === "WR" ||
-                              player.position === "TE") && (
-                              <>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.receptions}
-                                </td>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.receivingYards.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.receivingTDs}
-                                </td>
-                              </>
-                            )}
-                            {player.position === "K" && (
-                              <>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.fieldGoals}
-                                </td>
-                                <td className="py-3 px-4 text-sm">
-                                  {yearStats.totalStats.extraPoints}
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <p>No annual statistics available</p>
-                  </div>
+                      <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                        {stat.label}
+                      </div>
+                    </div>
+                  )
                 )}
-              </section>
+              </div>
+            </CardContent>
+          </Card>
 
-              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-lg font-semibold mb-4">
-                    Performance Trends
-                  </h2>
-                  {/* TODO: Add chart showing points per game over time */}
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <p>Performance chart coming soon</p>
-                    <p className="text-sm mt-2">
-                      Will show weekly fantasy points trend
-                    </p>
+          {/* Annual Statistics Table */}
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                Annual Statistics
+              </h2>
+              {player.annualStats && player.annualStats.length > 0 ? (
+                <DataTable
+                  columns={annualStatsColumns}
+                  rows={player.annualStats}
+                  rowKey={(y) => String(y.year)}
+                />
+              ) : (
+                <EmptyState title="No annual statistics available" />
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                  Performance Trends
+                </h2>
+                {/* TODO: Add chart showing points per game over time */}
+                <div className="text-center py-8" style={{ color: "var(--text-muted)" }}>
+                  <p>Performance chart coming soon</p>
+                  <p className="text-sm mt-2">
+                    Will show weekly fantasy points trend
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                  Quick Stats
+                </h2>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span style={{ color: "var(--text-primary)" }}>Best Game:</span>
+                    <span className="font-medium" style={{ color: "var(--status-success-fg)" }}>
+                      {player.bestGame?.points > 0 ? (
+                        <>
+                          {player.bestGame.points.toFixed(1)} pts
+                          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                            {player.bestGame.year} Week {player.bestGame.week}
+                          </div>
+                        </>
+                      ) : (
+                        "No games"
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: "var(--text-primary)" }}>Worst Game:</span>
+                    <span className="font-medium" style={{ color: "var(--status-danger-fg)" }}>
+                      {player.worstGame?.points >= 0 &&
+                      player.worstGame.points < 1000 ? (
+                        <>
+                          {player.worstGame.points.toFixed(1)} pts
+                          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                            {player.worstGame.year} Week{" "}
+                            {player.worstGame.week}
+                          </div>
+                        </>
+                      ) : (
+                        "No games"
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: "var(--text-primary)" }}>Consistency:</span>
+                    <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                      {player.consistencyScore > 0 ? (
+                        <>
+                          σ = {player.consistencyScore.toFixed(1)}
+                          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                            {player.consistencyScore < 5
+                              ? "Very consistent"
+                              : player.consistencyScore < 8
+                              ? "Consistent"
+                              : player.consistencyScore < 12
+                              ? "Variable"
+                              : "Inconsistent"}
+                          </div>
+                        </>
+                      ) : (
+                        "No data"
+                      )}
+                    </span>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
-                <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-lg font-semibold mb-4">Quick Stats</h2>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span>Best Game:</span>
-                      <span className="font-medium text-green-600 dark:text-green-400">
-                        {player.bestGame?.points > 0 ? (
-                          <>
-                            {player.bestGame.points.toFixed(1)} pts
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {player.bestGame.year} Week {player.bestGame.week}
-                            </div>
-                          </>
-                        ) : (
-                          "No games"
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Worst Game:</span>
-                      <span className="font-medium text-red-600 dark:text-red-400">
-                        {player.worstGame?.points >= 0 &&
-                        player.worstGame.points < 1000 ? (
-                          <>
-                            {player.worstGame.points.toFixed(1)} pts
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {player.worstGame.year} Week{" "}
-                              {player.worstGame.week}
-                            </div>
-                          </>
-                        ) : (
-                          "No games"
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Consistency:</span>
-                      <span className="font-medium">
-                        {player.consistencyScore > 0 ? (
-                          <>
-                            σ = {player.consistencyScore.toFixed(1)}
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {player.consistencyScore < 5
-                                ? "Very consistent"
-                                : player.consistencyScore < 8
-                                ? "Consistent"
-                                : player.consistencyScore < 12
-                                ? "Variable"
-                                : "Inconsistent"}
-                            </div>
-                          </>
-                        ) : (
-                          "No data"
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Statistics Tab */}
-          {activeTab === "stats" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">
+        {/* Statistics Tab */}
+        <TabsContent value="stats" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
                 Detailed Statistics
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Offensive Stats */}
                 <div>
-                  <h3 className="text-lg font-medium mb-4">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: "var(--text-primary)" }}>
                     Offensive Statistics
                   </h3>
                   <div className="space-y-3">
                     {player.position === "QB" && (
                       <>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Passing Yards</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Passing Yards</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.passingYards.toLocaleString()}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Passing Touchdowns</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Passing Touchdowns</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.passingTDs}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Interceptions</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Interceptions</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.interceptions}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Rushing Yards</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Rushing Yards</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.rushingYards.toLocaleString()}
                           </span>
                         </div>
                         <div className="flex justify-between py-2">
-                          <span>Rushing Touchdowns</span>
-                          <span className="font-medium">
+                          <span style={{ color: "var(--text-primary)" }}>Rushing Touchdowns</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.rushingTDs}
                           </span>
                         </div>
@@ -788,43 +949,43 @@ export default function PlayerDetailPage() {
                       player.position === "WR" ||
                       player.position === "TE") && (
                       <>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Receptions</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Receptions</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.receptions}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Receiving Yards</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Receiving Yards</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.receivingYards.toLocaleString()}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Receiving Touchdowns</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Receiving Touchdowns</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.receivingTDs}
                           </span>
                         </div>
                         {player.position === "RB" && (
                           <>
-                            <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                              <span>Rushing Yards</span>
-                              <span className="font-medium">
+                            <div className="flex justify-between py-2 border-b">
+                              <span style={{ color: "var(--text-primary)" }}>Rushing Yards</span>
+                              <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                                 {player.totalStats.rushingYards.toLocaleString()}
                               </span>
                             </div>
-                            <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                              <span>Rushing Touchdowns</span>
-                              <span className="font-medium">
+                            <div className="flex justify-between py-2 border-b">
+                              <span style={{ color: "var(--text-primary)" }}>Rushing Touchdowns</span>
+                              <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                                 {player.totalStats.rushingTDs}
                               </span>
                             </div>
                           </>
                         )}
                         <div className="flex justify-between py-2">
-                          <span>Fumbles</span>
-                          <span className="font-medium">
+                          <span style={{ color: "var(--text-primary)" }}>Fumbles</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.fumbles}
                           </span>
                         </div>
@@ -833,15 +994,15 @@ export default function PlayerDetailPage() {
 
                     {player.position === "K" && (
                       <>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Field Goals Made</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Field Goals Made</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.fieldGoals}
                           </span>
                         </div>
                         <div className="flex justify-between py-2">
-                          <span>Extra Points Made</span>
-                          <span className="font-medium">
+                          <span style={{ color: "var(--text-primary)" }}>Extra Points Made</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {player.totalStats.extraPoints}
                           </span>
                         </div>
@@ -852,30 +1013,30 @@ export default function PlayerDetailPage() {
 
                 {/* Per Game Averages */}
                 <div>
-                  <h3 className="text-lg font-medium mb-4">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: "var(--text-primary)" }}>
                     Per Game Averages
                   </h3>
                   <div className="space-y-3">
-                    <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                      <span>Fantasy Points</span>
-                      <span className="font-medium">
+                    <div className="flex justify-between py-2 border-b">
+                      <span style={{ color: "var(--text-primary)" }}>Fantasy Points</span>
+                      <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                         {player.avgFantasyPoints.toFixed(1)}
                       </span>
                     </div>
                     {player.position === "QB" && (
                       <>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Passing Yards</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Passing Yards</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {(
                               player.totalStats.passingYards /
                               player.gamesPlayed
                             ).toFixed(1)}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Passing TDs</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Passing TDs</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {(
                               player.totalStats.passingTDs / player.gamesPlayed
                             ).toFixed(1)}
@@ -887,17 +1048,17 @@ export default function PlayerDetailPage() {
                       player.position === "WR" ||
                       player.position === "TE") && (
                       <>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Receptions</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Receptions</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {(
                               player.totalStats.receptions / player.gamesPlayed
                             ).toFixed(1)}
                           </span>
                         </div>
-                        <div className="flex justify-between py-2 border-b dark:border-gray-600">
-                          <span>Receiving Yards</span>
-                          <span className="font-medium">
+                        <div className="flex justify-between py-2 border-b">
+                          <span style={{ color: "var(--text-primary)" }}>Receiving Yards</span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                             {(
                               player.totalStats.receivingYards /
                               player.gamesPlayed
@@ -910,203 +1071,128 @@ export default function PlayerDetailPage() {
                   </div>
                 </div>
               </div>
-            </section>
-          )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {/* Game Log Tab */}
-          {activeTab === "gamelog" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Game Log</h2>
+        {/* Game Log Tab */}
+        <TabsContent value="gamelog" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+                Game Log
+              </h2>
 
               {/* Filters */}
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="w-full md:w-auto">
                   <label
                     htmlFor="year-filter"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     Filter by Year
                   </label>
-                  <select
-                    id="year-filter"
-                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    value={yearFilter}
-                    onChange={(e) => setYearFilter(e.target.value)}
-                  >
-                    <option value="all">All Years</option>
-                    <option value="2024">2024</option>
-                    <option value="2023">2023</option>
-                  </select>
+                  <Select value={yearFilter} onValueChange={(v) => setYearFilter(v)}>
+                    <SelectTrigger id="year-filter" aria-label="Filter by Year" className="w-full md:w-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      <SelectItem value="2024">2024</SelectItem>
+                      <SelectItem value="2023">2023</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="w-full md:w-auto">
                   <label
                     htmlFor="week-filter"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     Filter by Week
                   </label>
-                  <select
-                    id="week-filter"
-                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    value={weekFilter}
-                    onChange={(e) => setWeekFilter(e.target.value)}
-                  >
-                    <option value="all">All Weeks</option>
-                    {Array.from({ length: 18 }, (_, i) => i + 1).map((week) => (
-                      <option key={week} value={week}>
-                        Week {week}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={weekFilter} onValueChange={(v) => setWeekFilter(v)}>
+                    <SelectTrigger id="week-filter" aria-label="Filter by Week" className="w-full md:w-auto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Weeks</SelectItem>
+                      {Array.from({ length: 18 }, (_, i) => i + 1).map((week) => (
+                        <SelectItem key={week} value={String(week)}>
+                          Week {week}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Reset button */}
                 {(yearFilter !== "all" || weekFilter !== "all") && (
                   <div className="w-full md:w-auto flex items-end">
-                    <button
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         setYearFilter("all");
                         setWeekFilter("all");
                       }}
-                      className="py-2 px-4 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md border border-gray-300 dark:border-gray-600 transition-colors"
                     >
-                      <div className="flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 mr-1"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                        Reset Filters
-                      </div>
-                    </button>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                      Reset Filters
+                    </Button>
                   </div>
                 )}
               </div>
 
               {/* Game Log Table */}
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Week
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Year
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Points
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Projected
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Difference
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Started
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Date
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                    {(() => {
-                      const filteredGameLog = filterGameLog(
-                        player.gameLog || [],
-                        yearFilter,
-                        weekFilter
-                      );
+              {filteredGameLog.length === 0 ? (
+                <EmptyState
+                  title={
+                    player.gameLog?.length === 0
+                      ? "No game log data available"
+                      : "No games match the selected filters"
+                  }
+                />
+              ) : (
+                <DataTable
+                  columns={gameLogColumns}
+                  rows={filteredGameLog}
+                  rowKey={(g) => `${g.year}-${g.week}`}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                      if (filteredGameLog.length === 0) {
-                        return (
-                          <tr>
-                            <td
-                              colSpan={7}
-                              className="py-8 text-center text-gray-500 dark:text-gray-400"
-                            >
-                              {player.gameLog?.length === 0
-                                ? "No game log data available"
-                                : "No games match the selected filters"}
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return filteredGameLog.map((game, index) => (
-                        <tr
-                          key={`${game.year}-${game.week}`}
-                          className={
-                            index % 2 === 0
-                              ? "bg-white dark:bg-gray-700"
-                              : "bg-gray-50 dark:bg-gray-800"
-                          }
-                        >
-                          <td className="py-3 px-4 text-sm font-medium">
-                            {game.week}
-                          </td>
-                          <td className="py-3 px-4 text-sm">{game.year}</td>
-                          <td className="py-3 px-4 text-sm font-bold text-blue-600">
-                            {game.actualPoints.toFixed(1)}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-500">
-                            {game.projectedPoints.toFixed(1)}
-                          </td>
-                          <td
-                            className={`py-3 px-4 text-sm font-medium ${
-                              game.difference > 0
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-red-600 dark:text-red-400"
-                            }`}
-                          >
-                            {game.difference > 0 ? "+" : ""}
-                            {game.difference.toFixed(1)}
-                          </td>
-                          <td className="py-3 px-4 text-sm">
-                            <span
-                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                game.startedFlag
-                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                  : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                              }`}
-                            >
-                              {game.startedFlag ? "Started" : "Bench"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-500">
-                            {new Date(game.gameDate).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+        <TabsContent value="market" className="space-y-6">
+          {player.sleeperId ? (
+            <PlayerMarket sleeperId={player.sleeperId} />
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <p style={{ color: "var(--text-muted)" }}>
+                  Market data is not available because this player has no Sleeper identity.
+                </p>
+              </CardContent>
+            </Card>
           )}
-
-          {activeTab === "market" && (
-            player.sleeperId ? (
-              <PlayerMarket sleeperId={player.sleeperId} />
-            ) : (
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md text-gray-500 dark:text-gray-400">
-                Market data is not available because this player has no Sleeper identity.
-              </section>
-            )
-          )}
-        </div>
-      </div>
-    </Layout>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

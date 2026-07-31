@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { teamsService, Team } from "@/services/teamsService";
 import { expectedWinsService } from "@/services/expectedWinsService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import EmptyState from "@/components/design-system/EmptyState";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
 
 interface Props {
   leagueId: number;
@@ -55,22 +61,14 @@ export default function AllTimeRecordsTable({ leagueId }: Props) {
       .finally(() => setLoading(false));
   }, [leagueId]);
 
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
+  const handleSort = (field: string) => {
+    const f = field as SortField;
+    if (f === sortField) {
       setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
     } else {
-      setSortField(field);
+      setSortField(f);
       setSortDirection("desc");
     }
-  };
-
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return null;
-    return (
-      <span className="ml-1 text-gray-400">
-        {sortDirection === "asc" ? "↑" : "↓"}
-      </span>
-    );
   };
 
   const sortedTeams = [...teams].sort((a, b) => {
@@ -129,144 +127,150 @@ export default function AllTimeRecordsTable({ leagueId }: Props) {
     return sortDirection === "asc" ? result : -result;
   });
 
-  const thClass =
-    "px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-500 transition-colors";
+  const columns: DataTableColumn<Team>[] = [
+    {
+      id: "owner",
+      header: "Owner",
+      sortable: true,
+      cell: (team) => (
+        <Link
+          href={`/league/${leagueId}/teams/${team.espnId}`}
+          className="hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          {team.owner}
+        </Link>
+      ),
+    },
+    {
+      id: "regularSeasonRecord",
+      header: "Regular Season Record",
+      sortable: true,
+      align: "center",
+      cell: (team) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {team.record.wins}-{team.record.losses}
+          {team.record.ties > 0 ? `-${team.record.ties}` : ""}
+        </span>
+      ),
+    },
+    {
+      id: "playoffRecord",
+      header: "Playoffs Record",
+      sortable: true,
+      align: "center",
+      cell: (team) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {team.playoffRecord.wins}-{team.playoffRecord.losses}
+          {team.playoffRecord.ties > 0 ? `-${team.playoffRecord.ties}` : ""}
+        </span>
+      ),
+    },
+    {
+      id: "pointsFor",
+      header: "Points For",
+      sortable: true,
+      align: "center",
+      cell: (team) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {team.points.scored.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      id: "pointsAgainst",
+      header: "Points Against",
+      sortable: true,
+      align: "center",
+      cell: (team) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {team.points.against.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      id: "expectedRecord",
+      header: "Expected Record (Regular Season)",
+      sortable: true,
+      align: "center",
+      cell: (team) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {team.expectedWins?.expectedWins !== undefined &&
+          team.expectedWins?.expectedLosses !== undefined
+            ? `${team.expectedWins.expectedWins.toLocaleString(undefined, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}-${team.expectedWins.expectedLosses.toLocaleString(undefined, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}`
+            : "N/A"}
+        </span>
+      ),
+    },
+    {
+      id: "luck",
+      header: "Luck",
+      sortable: true,
+      align: "center",
+      cell: (team) =>
+        team.expectedWins?.winLuck !== undefined ? (
+          <span
+            style={{
+              color:
+                team.expectedWins.winLuck > 0
+                  ? "var(--status-success-fg)"
+                  : team.expectedWins.winLuck < 0
+                  ? "var(--status-danger-fg)"
+                  : "var(--text-muted)",
+            }}
+          >
+            {team.expectedWins.winLuck > 0 ? "+" : ""}
+            {team.expectedWins.winLuck.toLocaleString(undefined, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })}
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>N/A</span>
+        ),
+    },
+  ];
 
   return (
-    <section className="bg-gray-100 dark:bg-gray-700 rounded-lg p-6">
-      <h2 className="text-xl font-semibold mb-4">All-Time Team Records</h2>
-      {loading ? (
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p>Loading teams data...</p>
-        </div>
-      ) : teams.length === 0 ? (
-        <p className="text-gray-500">No team data available.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full bg-white dark:bg-gray-800 rounded-lg">
-            <thead className="bg-gray-50 dark:bg-gray-600">
-              <tr>
-                <th
-                  className={`${thClass} text-left`}
-                  onClick={() => handleSort("owner")}
-                >
-                  Owner{renderSortIcon("owner")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("regularSeasonRecord")}
-                >
-                  Regular Season Record{renderSortIcon("regularSeasonRecord")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("playoffRecord")}
-                >
-                  Playoffs Record{renderSortIcon("playoffRecord")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("pointsFor")}
-                >
-                  Points For{renderSortIcon("pointsFor")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("pointsAgainst")}
-                >
-                  Points Against{renderSortIcon("pointsAgainst")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("expectedRecord")}
-                >
-                  Expected Record (Regular Season)
-                  {renderSortIcon("expectedRecord")}
-                </th>
-                <th
-                  className={`${thClass} text-center`}
-                  onClick={() => handleSort("luck")}
-                >
-                  Luck{renderSortIcon("luck")}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {sortedTeams.map((team) => (
-                <tr
-                  key={team.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  <td className="px-4 py-3 text-sm">
-                    <Link
-                      href={`/league/${leagueId}/teams/${team.espnId}`}
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
-                    >
-                      {team.owner}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {team.record.wins}-{team.record.losses}
-                    {team.record.ties > 0 ? `-${team.record.ties}` : ""}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {team.playoffRecord.wins}-{team.playoffRecord.losses}
-                    {team.playoffRecord.ties > 0
-                      ? `-${team.playoffRecord.ties}`
-                      : ""}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {team.points.scored.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {team.points.against.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600 dark:text-gray-300">
-                    {team.expectedWins?.expectedWins !== undefined &&
-                    team.expectedWins?.expectedLosses !== undefined
-                      ? `${team.expectedWins.expectedWins.toLocaleString(
-                          undefined,
-                          { minimumFractionDigits: 1, maximumFractionDigits: 1 }
-                        )}-${team.expectedWins.expectedLosses.toLocaleString(
-                          undefined,
-                          { minimumFractionDigits: 1, maximumFractionDigits: 1 }
-                        )}`
-                      : "N/A"}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center">
-                    {team.expectedWins?.winLuck !== undefined ? (
-                      <span
-                        className={
-                          team.expectedWins.winLuck > 0
-                            ? "text-green-600 dark:text-green-400"
-                            : team.expectedWins.winLuck < 0
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-gray-500 dark:text-gray-400"
-                        }
-                      >
-                        {team.expectedWins.winLuck > 0 ? "+" : ""}
-                        {team.expectedWins.winLuck.toLocaleString(undefined, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        })}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">N/A</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    <Card>
+      <CardContent className="p-6">
+        <h2
+          className="text-xl font-semibold mb-4"
+          style={{ color: "var(--text-primary)" }}
+        >
+          All-Time Team Records
+        </h2>
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : teams.length === 0 ? (
+          <EmptyState title="No team data available." />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={sortedTeams}
+            rowKey={(team) => team.id}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }

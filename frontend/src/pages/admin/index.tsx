@@ -1,9 +1,12 @@
-import Layout from "../../components/Layout";
 import { useAdminTransactionFetchAgeHistory } from "../../hooks/useAdminTransactionFetchAgeHistory";
 import { useAdminSegments } from "../../hooks/useAdminSegments";
 import { useAdminDatabaseSize } from "../../hooks/useAdminDatabaseSize";
 import { useAdminDiscoveryFrontier } from "../../hooks/useAdminDiscoveryFrontier";
 import { useSleeperStatsHistory } from "../../hooks/useSleeperData";
+import {
+  AdminTableSizeRow,
+  AdminDiscoveryLeagueSeasonRow,
+} from "../../services/adminService";
 import {
   UsersDiscoveryChart,
   LeaguesDiscoveryChart,
@@ -13,6 +16,14 @@ import {
   ArchiveGrowthRateChart,
   TransactionFetchAgeChart,
 } from "../../components/SleeperGrowthCharts";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import ErrorState from "@/components/design-system/ErrorState";
+import EmptyState from "@/components/design-system/EmptyState";
+import StatCard from "@/components/design-system/StatCard";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -26,192 +37,253 @@ function SegmentDistribution() {
   const { segments, isLoading, error } = useAdminSegments();
 
   return (
-    <section>
-      <h2 className="text-2xl font-bold text-blue-600 mb-2">Segment Distribution</h2>
-      <p className="text-gray-600 dark:text-gray-300 mb-4">
-        Fetched leagues bucketed by scoring type, superflex, and league size — used to decide
-        which segments are worth adding to the player-valuation model.
-      </p>
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Segment Distribution
+        </h2>
+        <p className="mb-4" style={{ color: "var(--text-muted)" }}>
+          Fetched leagues bucketed by scoring type, superflex, and league size — used to decide
+          which segments are worth adding to the player-valuation model.
+        </p>
 
-      {isLoading && (
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p>Loading segments...</p>
-        </div>
-      )}
+        {isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        )}
 
-      {error && <p className="text-red-600">Failed to load segment distribution.</p>}
+        {error && <ErrorState message="Failed to load segment distribution." />}
 
-      {!isLoading && !error && segments && (
-        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Scoring
-                </th>
-                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Superflex
-                </th>
-                <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  League Size
-                </th>
-                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Leagues
-                </th>
-                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  % of Total
-                </th>
-                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Transactions
-                </th>
-                <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  % of Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {segments.segments.map((row) => (
-                <tr key={`${row.scoring}-${row.superflex}-${row.league_size}`}>
-                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.scoring}</td>
-                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">
-                    {row.superflex ? "Yes" : "No"}
-                  </td>
-                  <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.league_size}</td>
-                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                    {row.leagues.toLocaleString()}
-                  </td>
-                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                    {segments.total_leagues > 0
-                      ? `${((row.leagues / segments.total_leagues) * 100).toFixed(1)}%`
-                      : "—"}
-                  </td>
-                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                    {row.transactions.toLocaleString()}
-                  </td>
-                  <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                    {segments.total_transactions > 0
-                      ? `${((row.transactions / segments.total_transactions) * 100).toFixed(1)}%`
-                      : "—"}
-                  </td>
+        {!isLoading && !error && segments && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Scoring
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Superflex
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    League Size
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Leagues
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    % of Total
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Transactions
+                  </th>
+                  <th
+                    className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    % of Total
+                  </th>
                 </tr>
-              ))}
-              {segments.segments.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
-                    No fetched leagues yet.
-                  </td>
-                </tr>
+              </thead>
+              <tbody>
+                {segments.segments.map((row, i) => (
+                  <tr
+                    key={`${row.scoring}-${row.superflex}-${row.league_size}`}
+                    style={{
+                      backgroundColor:
+                        i % 2 === 0 ? "var(--surface-raised)" : "var(--surface-sunken)",
+                      borderBottom: "1px solid var(--border-subtle)",
+                    }}
+                  >
+                    <td className="whitespace-nowrap px-4 py-4" style={{ color: "var(--text-primary)" }}>
+                      {row.scoring}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4" style={{ color: "var(--text-primary)" }}>
+                      {row.superflex ? "Yes" : "No"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4" style={{ color: "var(--text-primary)" }}>
+                      {row.league_size}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-4 text-right"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {row.leagues.toLocaleString()}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-4 text-right"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {segments.total_leagues > 0
+                        ? `${((row.leagues / segments.total_leagues) * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-4 text-right"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {row.transactions.toLocaleString()}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-4 text-right"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {segments.total_transactions > 0
+                        ? `${((row.transactions / segments.total_transactions) * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {segments.segments.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-4 py-4 text-center"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      No fetched leagues yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {segments.segments.length > 0 && (
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid var(--border-strong)" }}>
+                    <td
+                      colSpan={3}
+                      className="whitespace-nowrap px-4 py-3 font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Total
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-3 text-right font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {segments.total_leagues.toLocaleString()}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-3 text-right font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      100%
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-3 text-right font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {segments.total_transactions.toLocaleString()}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-3 text-right font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      100%
+                    </td>
+                  </tr>
+                </tfoot>
               )}
-            </tbody>
-            {segments.segments.length > 0 && (
-              <tfoot className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <td colSpan={3} className="py-2 px-4 font-medium text-gray-800 dark:text-gray-100">
-                    Total
-                  </td>
-                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
-                    {segments.total_leagues.toLocaleString()}
-                  </td>
-                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
-                    100%
-                  </td>
-                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
-                    {segments.total_transactions.toLocaleString()}
-                  </td>
-                  <td className="py-2 px-4 text-right font-medium text-gray-800 dark:text-gray-100">
-                    100%
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      )}
-    </section>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 function DatabaseSize() {
   const { databaseSize, isLoading, error } = useAdminDatabaseSize();
 
+  const columns: DataTableColumn<AdminTableSizeRow>[] = [
+    { id: "table_name", header: "Table", cell: (row) => row.table_name },
+    {
+      id: "size_bytes",
+      header: "Size",
+      align: "right",
+      cell: (row) => formatBytes(row.size_bytes),
+    },
+    {
+      id: "pct_of_total",
+      header: "% of Total",
+      align: "right",
+      cell: (row) =>
+        databaseSize && databaseSize.total_bytes > 0
+          ? `${((row.size_bytes / databaseSize.total_bytes) * 100).toFixed(1)}%`
+          : "—",
+    },
+    {
+      id: "row_estimate",
+      header: "Rows (est.)",
+      align: "right",
+      cell: (row) => row.row_estimate.toLocaleString(),
+    },
+  ];
+
   return (
-    <section>
-      <h2 className="text-2xl font-bold text-blue-600 mb-2">Database Size</h2>
-      <p className="text-gray-600 dark:text-gray-300 mb-4">
-        Total Postgres database size and a per-table breakdown, used to spot which tables are
-        driving storage growth. Per-table sizes include their indexes and won&apos;t sum exactly
-        to the total (which also covers system catalogs and free space).
-      </p>
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Database Size
+        </h2>
+        <p className="mb-4" style={{ color: "var(--text-muted)" }}>
+          Total Postgres database size and a per-table breakdown, used to spot which tables are
+          driving storage growth. Per-table sizes include their indexes and won&apos;t sum exactly
+          to the total (which also covers system catalogs and free space).
+        </p>
 
-      {isLoading && (
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p>Loading database size...</p>
-        </div>
-      )}
-
-      {error && <p className="text-red-600">Failed to load database size.</p>}
-
-      {!isLoading && !error && databaseSize && (
-        <>
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 mb-4 max-w-xs">
-            <div className="text-3xl font-bold text-blue-600 mb-1">
-              {formatBytes(databaseSize.total_bytes)}
-            </div>
-            <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
-              Total database size
+        {isLoading && (
+          <div className="space-y-4">
+            <Skeleton className="h-24 w-full max-w-xs" />
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
           </div>
+        )}
 
-          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Table
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Size
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    % of Total
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Rows (est.)
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                {databaseSize.tables.map((row) => (
-                  <tr key={row.table_name}>
-                    <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.table_name}</td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {formatBytes(row.size_bytes)}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {databaseSize.total_bytes > 0
-                        ? `${((row.size_bytes / databaseSize.total_bytes) * 100).toFixed(1)}%`
-                        : "—"}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.row_estimate.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-                {databaseSize.tables.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
-                      No tables found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </section>
+        {error && <ErrorState message="Failed to load database size." />}
+
+        {!isLoading && !error && databaseSize && (
+          <>
+            <div className="mb-4 max-w-xs">
+              <StatCard label="Total database size" value={formatBytes(databaseSize.total_bytes)} />
+            </div>
+
+            {databaseSize.tables.length > 0 ? (
+              <DataTable
+                columns={columns}
+                rows={databaseSize.tables}
+                rowKey={(row) => row.table_name}
+              />
+            ) : (
+              <EmptyState title="No tables found." />
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -223,148 +295,105 @@ function DiscoveryFrontier() {
     error: fetchAgeHistoryError,
   } = useAdminTransactionFetchAgeHistory();
 
+  const seasonColumns: DataTableColumn<AdminDiscoveryLeagueSeasonRow>[] = [
+    { id: "season", header: "Season", cell: (row) => row.season },
+    { id: "total", header: "Total", align: "right", cell: (row) => row.total.toLocaleString() },
+    {
+      id: "expanded",
+      header: "Expanded",
+      align: "right",
+      cell: (row) => row.expanded.toLocaleString(),
+    },
+    {
+      id: "pending",
+      header: "Pending",
+      align: "right",
+      cell: (row) => row.pending.toLocaleString(),
+    },
+    {
+      id: "skipped",
+      header: "Skipped",
+      align: "right",
+      cell: (row) => row.skipped.toLocaleString(),
+    },
+    {
+      id: "pct_pending",
+      header: "% Pending",
+      align: "right",
+      cell: (row) => (row.total > 0 ? `${((row.pending / row.total) * 100).toFixed(1)}%` : "—"),
+    },
+  ];
+
   return (
-    <section>
-      <h2 className="text-2xl font-bold text-blue-600 mb-2">Discovery Frontier</h2>
-      <p className="text-gray-600 dark:text-gray-300 mb-4">
-        How much of the league/user discovery graph is known but not yet expanded by the
-        recursive discovery workflow — pending counts are the frontier still left to fetch.
-      </p>
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Discovery Frontier
+        </h2>
+        <p className="mb-4" style={{ color: "var(--text-muted)" }}>
+          How much of the league/user discovery graph is known but not yet expanded by the
+          recursive discovery workflow — pending counts are the frontier still left to fetch.
+        </p>
 
-      {isLoading && (
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p>Loading discovery frontier...</p>
-        </div>
-      )}
-
-      {error && <p className="text-red-600">Failed to load discovery frontier.</p>}
-
-      {!isLoading && !error && frontier && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-4">
-            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
-                {frontier.users.total.toLocaleString()}
-              </div>
-              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
-                Users discovered
-              </div>
+        {isLoading && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
             </div>
-
-            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
-                {frontier.users.expanded.toLocaleString()}
-              </div>
-              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
-                Users expanded
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
-                {frontier.users.pending.toLocaleString()}
-              </div>
-              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
-                Users pending
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md border border-gray-100 dark:border-gray-600">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
-                {frontier.users.skipped.toLocaleString()}
-              </div>
-              <div className="text-lg font-medium text-gray-800 dark:text-gray-100">
-                Users skipped
-              </div>
-            </div>
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
           </div>
+        )}
 
-          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md border border-gray-100 dark:border-gray-600 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Season
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Total
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Expanded
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Pending
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Skipped
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    % Pending
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                {frontier.leagues_by_season.map((row) => (
-                  <tr key={row.season}>
-                    <td className="py-2 px-4 text-gray-800 dark:text-gray-100">{row.season}</td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.total.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.expanded.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.pending.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.skipped.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-800 dark:text-gray-100">
-                      {row.total > 0 ? `${((row.pending / row.total) * 100).toFixed(1)}%` : "—"}
-                    </td>
-                  </tr>
-                ))}
-                {frontier.leagues_by_season.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
-                      No leagues discovered yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+        {error && <ErrorState message="Failed to load discovery frontier." />}
 
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-            Total is every league discovered that season; Expanded means the discovery workflow
-            has fetched it (<code>last_fetched_at</code> set); Pending is discovered but not yet
-            expanded — the frontier left to crawl; Skipped is permanently excluded and doesn&apos;t
-            count toward pending.
-          </p>
+        {!isLoading && !error && frontier && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-4">
+              <StatCard label="Users discovered" value={frontier.users.total.toLocaleString()} />
+              <StatCard label="Users expanded" value={frontier.users.expanded.toLocaleString()} />
+              <StatCard label="Users pending" value={frontier.users.pending.toLocaleString()} />
+              <StatCard label="Users skipped" value={frontier.users.skipped.toLocaleString()} />
+            </div>
 
-          <div className="mt-8">
-            {isFetchAgeHistoryLoading && (
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <p>Loading transaction fetch-age history...</p>
-              </div>
-            )}
-
-            {fetchAgeHistoryError && (
-              <p className="text-red-600">Failed to load transaction fetch-age history.</p>
-            )}
-
-            {!isFetchAgeHistoryLoading && !fetchAgeHistoryError && (
-              <TransactionFetchAgeChart
-                season={fetchAgeHistory?.season || ""}
-                snapshots={fetchAgeHistory?.snapshots || []}
+            {frontier.leagues_by_season.length > 0 ? (
+              <DataTable
+                columns={seasonColumns}
+                rows={frontier.leagues_by_season}
+                rowKey={(row) => row.season}
               />
+            ) : (
+              <EmptyState title="No leagues discovered yet." />
             )}
-          </div>
-        </>
-      )}
-    </section>
+
+            <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
+              Total is every league discovered that season; Expanded means the discovery workflow
+              has fetched it (<code>last_fetched_at</code> set); Pending is discovered but not yet
+              expanded — the frontier left to crawl; Skipped is permanently excluded and doesn&apos;t
+              count toward pending.
+            </p>
+
+            <div className="mt-8">
+              {isFetchAgeHistoryLoading && <Skeleton className="h-[300px] w-full" />}
+
+              {fetchAgeHistoryError && (
+                <ErrorState message="Failed to load transaction fetch-age history." />
+              )}
+
+              {!isFetchAgeHistoryLoading && !fetchAgeHistoryError && (
+                <TransactionFetchAgeChart
+                  season={fetchAgeHistory?.season || ""}
+                  snapshots={fetchAgeHistory?.snapshots || []}
+                />
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -372,57 +401,62 @@ function LifetimeGrowth() {
   const { snapshots, isLoading, error } = useSleeperStatsHistory();
 
   return (
-    <section>
-      <h2 className="text-2xl font-bold text-blue-600 mb-2">Lifetime Growth</h2>
-      <p className="text-gray-600 dark:text-gray-300 mb-4">
-        Hourly snapshots of discovery state and all-time totals from{" "}
-        <code>sleeper_lifetime_counts</code>, over the last 7 days — the same rollup the home
-        page&apos;s totals are drawn from, so it stays accurate even after the cloud database
-        purges old data.
-      </p>
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-2xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Lifetime Growth
+        </h2>
+        <p className="mb-4" style={{ color: "var(--text-muted)" }}>
+          Hourly snapshots of discovery state and all-time totals from{" "}
+          <code>sleeper_lifetime_counts</code>, over the last 7 days — the same rollup the home
+          page&apos;s totals are drawn from, so it stays accurate even after the cloud database
+          purges old data.
+        </p>
 
-      {isLoading && (
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p>Loading lifetime growth...</p>
-        </div>
-      )}
+        {isLoading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-64 w-full" />
+            ))}
+          </div>
+        )}
 
-      {error && <p className="text-red-600">Failed to load lifetime growth.</p>}
+        {error && <ErrorState message="Failed to load lifetime growth." />}
 
-      {!isLoading && !error && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <UsersDiscoveryChart snapshots={snapshots} />
-          <LeaguesDiscoveryChart snapshots={snapshots} />
-          <ArchiveGrowthChart snapshots={snapshots} />
-          <UsersDiscoveryRateChart snapshots={snapshots} />
-          <LeaguesDiscoveryRateChart snapshots={snapshots} />
-          <ArchiveGrowthRateChart snapshots={snapshots} />
-        </div>
-      )}
-    </section>
+        {!isLoading && !error && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <UsersDiscoveryChart snapshots={snapshots} />
+            <LeaguesDiscoveryChart snapshots={snapshots} />
+            <ArchiveGrowthChart snapshots={snapshots} />
+            <UsersDiscoveryRateChart snapshots={snapshots} />
+            <LeaguesDiscoveryRateChart snapshots={snapshots} />
+            <ArchiveGrowthRateChart snapshots={snapshots} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 export default function AdminBacklog() {
   return (
-    <Layout>
-      <div className="space-y-8">
-        <section>
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">Admin</h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            Discovery and database operational metrics.
-          </p>
-        </section>
+    <div className="space-y-8">
+      <section>
+        <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Admin
+        </h1>
+        <p style={{ color: "var(--text-muted)" }}>
+          Discovery and database operational metrics.
+        </p>
+      </section>
 
-        <SegmentDistribution />
+      <SegmentDistribution />
 
-        <DatabaseSize />
+      <DatabaseSize />
 
-        <DiscoveryFrontier />
+      <DiscoveryFrontier />
 
-        <LifetimeGrowth />
-      </div>
-    </Layout>
+      <LifetimeGrowth />
+    </div>
   );
 }

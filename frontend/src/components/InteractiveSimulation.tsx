@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { Simulator } from "../utils/simulator";
 import { Schedule, Matchup, TeamScoringData } from "../types/simulation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface PivotalGame {
   week: number;
@@ -36,6 +39,38 @@ interface InteractiveSimulationProps {
   autoRun?: boolean;
   onPivotalGamesCalculated?: (games: PivotalGame[]) => void;
 }
+
+type MatchupState = "win" | "loss" | "none";
+
+// Static class strings (not template-built) so Tailwind's content scanner can
+// find these arbitrary-value utilities even though the state key is picked at
+// runtime.
+const MATCHUP_HOVER_CLASSES: Record<MatchupState, string> = {
+  win: "hover:bg-[color-mix(in_oklch,var(--status-success-bg),var(--status-success-fg)_20%)]",
+  loss: "hover:bg-[color-mix(in_oklch,var(--status-danger-bg),var(--status-danger-fg)_20%)]",
+  none: "hover:bg-[color-mix(in_oklch,var(--surface-sunken),var(--text-primary)_8%)]",
+};
+
+const MATCHUP_STYLES: Record<
+  MatchupState,
+  { backgroundColor: string; borderColor: string; color: string }
+> = {
+  win: {
+    backgroundColor: "var(--status-success-bg)",
+    borderColor: "var(--status-success-fg)",
+    color: "var(--status-success-fg)",
+  },
+  loss: {
+    backgroundColor: "var(--status-danger-bg)",
+    borderColor: "var(--status-danger-fg)",
+    color: "var(--status-danger-fg)",
+  },
+  none: {
+    backgroundColor: "var(--surface-sunken)",
+    borderColor: "var(--border-subtle)",
+    color: "var(--text-secondary)",
+  },
+};
 
 export default function InteractiveSimulation({
   schedule,
@@ -168,7 +203,7 @@ export default function InteractiveSimulation({
   const getMatchupState = (
     matchup: Matchup,
     teamId: number
-  ): "win" | "loss" | "none" => {
+  ): MatchupState => {
     const matchupKey = `${matchup.week}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
     const winner = selectedResults.get(matchupKey);
 
@@ -192,37 +227,37 @@ export default function InteractiveSimulation({
     };
   };
 
-  const getDefaultOddsColor = (percentage: number): string => {
+  const getDefaultOddsColor = (percentage: number): string | undefined => {
     if (percentage < 30) {
-      return "text-red-600 dark:text-red-400";
+      return "var(--status-danger-fg)";
     } else if (percentage > 70) {
-      return "text-green-600 dark:text-green-400";
+      return "var(--status-success-fg)";
     }
-    return "";
+    return undefined;
   };
 
   // Inverted color logic for last place odds (low = good, high = bad)
-  const getDefaultLastPlaceOddsColor = (percentage: number): string => {
+  const getDefaultLastPlaceOddsColor = (percentage: number): string | undefined => {
     if (percentage < 5) {
-      return "text-green-600 dark:text-green-400";
+      return "var(--status-success-fg)";
     } else if (percentage >= 5 && percentage <= 20) {
-      return "text-yellow-600 dark:text-yellow-400";
+      return "var(--status-warning-fg)";
     } else {
-      return "text-red-600 dark:text-red-400";
+      return "var(--status-danger-fg)";
     }
   };
 
   const getNewOddsColor = (
     newPercentage: number,
     defaultPercentage: number
-  ): string => {
+  ): string | undefined => {
     const diff = newPercentage - defaultPercentage;
     if (Math.abs(diff) <= 3) {
-      return ""; // No color for minimal change
+      return undefined; // No color for minimal change
     } else if (diff > 3) {
-      return "text-green-600 dark:text-green-400";
+      return "var(--status-success-fg)";
     } else {
-      return "text-red-600 dark:text-red-400";
+      return "var(--status-danger-fg)";
     }
   };
 
@@ -230,24 +265,29 @@ export default function InteractiveSimulation({
   const getNewLastPlaceOddsColor = (
     newPercentage: number,
     defaultPercentage: number
-  ): string => {
+  ): string | undefined => {
     const diff = newPercentage - defaultPercentage;
     if (Math.abs(diff) <= 3) {
-      return ""; // No color for minimal change
+      return undefined; // No color for minimal change
     } else if (diff > 3) {
-      return "text-red-600 dark:text-red-400"; // Increase is bad
+      return "var(--status-danger-fg)"; // Increase is bad
     } else {
-      return "text-green-600 dark:text-green-400"; // Decrease is good
+      return "var(--status-success-fg)"; // Decrease is good
     }
   };
 
   if (isSimulating) {
     return (
-      <div className="p-8 text-center">
-        <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-gray-600 dark:text-gray-300">
-          Running simulation...
-        </p>
+      <div className="p-8">
+        <div className="mb-4 flex items-center justify-center">
+          <Skeleton className="h-5 w-48" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       </div>
     );
   }
@@ -270,29 +310,43 @@ export default function InteractiveSimulation({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium">Choose Your Own Results</h3>
+        <h3
+          className="text-lg font-medium"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Choose Your Own Results
+        </h3>
         {selectedResults.size > 0 && (
-          <button
-            onClick={handleResetSelections}
-            className="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-          >
+          <Button variant="destructive" size="sm" onClick={handleResetSelections}>
             Reset All
-          </button>
+          </Button>
         )}
       </div>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+      <p className="text-sm mb-2" style={{ color: "var(--text-muted)" }}>
         Click on matchups to select winners and see how results affect playoff
         odds
       </p>
-      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
-        <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+      <div
+        className="mb-4 p-3 rounded-md border"
+        style={{
+          backgroundColor: "var(--status-info-bg)",
+          borderColor: "var(--status-info-fg)",
+        }}
+      >
+        <p
+          className="text-sm font-medium"
+          style={{ color: "var(--status-info-fg)" }}
+        >
           Matching Simulations: {matchStats.matching.toLocaleString()}/
           {matchStats.total.toLocaleString()} (
           {matchStats.percentage.toFixed(1)}
           %)
         </p>
         {selectedResults.size > 0 && (
-          <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+          <p
+            className="text-xs mt-1"
+            style={{ color: "var(--status-info-fg)" }}
+          >
             {selectedResults.size} game{selectedResults.size !== 1 ? "s" : ""}{" "}
             selected
           </p>
@@ -300,60 +354,84 @@ export default function InteractiveSimulation({
       </div>
 
       {matchStats.percentage < 0.5 && selectedResults.size > 0 && (
-        <div className="mb-4 p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-2 border-orange-400 dark:border-orange-600 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <span className="text-2xl mr-3">🎲</span>
-            <div>
-              <p className="text-sm font-bold text-orange-900 dark:text-orange-200">
-                This is a very unlikely scenario, keep dreaming partner!
-              </p>
-              <p className="text-xs text-orange-700 dark:text-orange-300 mt-1">
-                Less than 1 in 200 simulations match your picks. Might want to
-                reconsider your strategy...
-              </p>
+        <Card
+          className="mb-4 border-l-4"
+          style={{ borderLeftColor: "var(--status-warning-fg)" }}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center">
+              <span className="text-2xl mr-3">🎲</span>
+              <div>
+                <p
+                  className="text-sm font-bold"
+                  style={{ color: "var(--status-warning-fg)" }}
+                >
+                  This is a very unlikely scenario, keep dreaming partner!
+                </p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  Less than 1 in 200 simulations match your picks. Might want to
+                  reconsider your strategy...
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-800">
-            <tr>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <table className="min-w-full border-collapse">
+          <thead style={{ backgroundColor: "var(--surface-sunken)" }}>
+            <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+              <th
+                className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Team
               </th>
               {sortedWeeks.map((week) => (
                 <th
                   key={week}
-                  className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32"
+                  className="py-3 px-4 text-center text-xs font-medium uppercase tracking-wider w-32"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   Week {week}
                 </th>
               ))}
-              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th
+                className="py-3 px-4 text-center text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Playoff Odds
                 <br />
                 <span className="text-[10px] font-normal">(Default)</span>
               </th>
-              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th
+                className="py-3 px-4 text-center text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Playoff Odds
                 <br />
                 <span className="text-[10px] font-normal">(New)</span>
               </th>
-              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th
+                className="py-3 px-4 text-center text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Last Place Odds
                 <br />
                 <span className="text-[10px] font-normal">(Default)</span>
               </th>
-              <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th
+                className="py-3 px-4 text-center text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Last Place Odds
                 <br />
                 <span className="text-[10px] font-normal">(New)</span>
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody>
             {simulationResults
               .filter(
                 (team) => team.teamName !== "League Average" && team.id !== -1
@@ -368,13 +446,18 @@ export default function InteractiveSimulation({
                 return (
                   <tr
                     key={team.id}
-                    className={
-                      index % 2 === 0
-                        ? "bg-white dark:bg-gray-800"
-                        : "bg-gray-50 dark:bg-gray-700"
-                    }
+                    style={{
+                      backgroundColor:
+                        index % 2 === 0
+                          ? "var(--surface-raised)"
+                          : "var(--surface-sunken)",
+                      borderBottom: "1px solid var(--border-subtle)",
+                    }}
                   >
-                    <td className="py-3 px-4 whitespace-nowrap font-medium">
+                    <td
+                      className="py-3 px-4 whitespace-nowrap font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
                       {team.teamName}
                     </td>
 
@@ -384,7 +467,12 @@ export default function InteractiveSimulation({
                       if (!matchup) {
                         return (
                           <td key={week} className="py-3 px-4 text-center w-32">
-                            <div className="text-gray-400 text-xs">-</div>
+                            <div
+                              className="text-xs"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              -
+                            </div>
                           </td>
                         );
                       }
@@ -398,24 +486,7 @@ export default function InteractiveSimulation({
                         : matchup.homeTeamName;
 
                       const state = getMatchupState(matchup, team.id);
-
-                      let buttonClasses =
-                        "w-full px-2 py-2 rounded-md transition-colors cursor-pointer border ";
-                      let textClasses = "text-xs";
-
-                      if (state === "win") {
-                        buttonClasses +=
-                          "bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 hover:bg-green-200 dark:hover:bg-green-900/50";
-                        textClasses += " text-green-800 dark:text-green-200";
-                      } else if (state === "loss") {
-                        buttonClasses +=
-                          "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50";
-                        textClasses += " text-red-800 dark:text-red-200";
-                      } else {
-                        buttonClasses +=
-                          "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/50";
-                        textClasses += " text-gray-700 dark:text-gray-300";
-                      }
+                      const stateStyle = MATCHUP_STYLES[state];
 
                       return (
                         <td key={week} className="py-3 px-4 text-center w-32">
@@ -423,9 +494,16 @@ export default function InteractiveSimulation({
                             onClick={() =>
                               handleMatchupClick(matchup, team.id, opponentId)
                             }
-                            className={buttonClasses}
+                            className={`w-full px-2 py-2 rounded-md transition-colors cursor-pointer border ${MATCHUP_HOVER_CLASSES[state]}`}
+                            style={{
+                              backgroundColor: stateStyle.backgroundColor,
+                              borderColor: stateStyle.borderColor,
+                            }}
                           >
-                            <div className={textClasses}>
+                            <div
+                              className="text-xs"
+                              style={{ color: stateStyle.color }}
+                            >
                               <div className="font-semibold">
                                 Week {matchup.week}
                               </div>
@@ -440,9 +518,8 @@ export default function InteractiveSimulation({
 
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`font-medium ${getDefaultOddsColor(
-                          team.playoffOdds * 100
-                        )}`}
+                        className="font-medium"
+                        style={{ color: getDefaultOddsColor(team.playoffOdds * 100) }}
                       >
                         {(team.playoffOdds * 100).toFixed(1)}%
                       </span>
@@ -450,14 +527,15 @@ export default function InteractiveSimulation({
 
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`font-medium ${
-                          filteredTeam
+                        className="font-medium"
+                        style={{
+                          color: filteredTeam
                             ? getNewOddsColor(
                                 filteredTeam.playoffOdds * 100,
                                 team.playoffOdds * 100
                               )
-                            : ""
-                        }`}
+                            : undefined,
+                        }}
                       >
                         {filteredTeam
                           ? (filteredTeam.playoffOdds * 100).toFixed(1)
@@ -468,9 +546,12 @@ export default function InteractiveSimulation({
 
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`font-medium ${getDefaultLastPlaceOddsColor(
-                          team.lastPlaceOdds * 100
-                        )}`}
+                        className="font-medium"
+                        style={{
+                          color: getDefaultLastPlaceOddsColor(
+                            team.lastPlaceOdds * 100
+                          ),
+                        }}
                       >
                         {(team.lastPlaceOdds * 100).toFixed(1)}%
                       </span>
@@ -478,14 +559,15 @@ export default function InteractiveSimulation({
 
                     <td className="py-3 px-4 text-center">
                       <span
-                        className={`font-medium ${
-                          filteredTeam
+                        className="font-medium"
+                        style={{
+                          color: filteredTeam
                             ? getNewLastPlaceOddsColor(
                                 filteredTeam.lastPlaceOdds * 100,
                                 team.lastPlaceOdds * 100
                               )
-                            : ""
-                        }`}
+                            : undefined,
+                        }}
                       >
                         {filteredTeam
                           ? (filteredTeam.lastPlaceOdds * 100).toFixed(1)

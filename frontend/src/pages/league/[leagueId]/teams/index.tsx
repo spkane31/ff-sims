@@ -1,10 +1,16 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/router";
-import Layout from "@/components/Layout";
 import Link from "next/link";
 import { useTeams } from "@/hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
+import type { Team } from "@/services/teamsService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
+import ErrorState from "@/components/design-system/ErrorState";
 
 type SortField =
   | "rank"
@@ -16,6 +22,39 @@ type SortField =
   | "playoffs"
   | "diff";
 type SortDirection = "asc" | "desc";
+
+function formatAvgTotal(avg: number, total: number): string {
+  return `${avg.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} (${total.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })})`;
+}
+
+// Diff column formatting matches this page's original logic exactly: the
+// sign prefix is only ever "+" for positive values (never "-" for negative)
+// and the numeric magnitude is shown via Math.abs — a negative differential
+// renders as magnitude-only, indistinguishable in sign from zero.
+function formatSignedDiff(avg: number, total: number): string {
+  const avgSign = avg > 0 ? "+" : "";
+  const totalSign = total > 0 ? "+" : "";
+  return `${avgSign}${Math.abs(avg).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} (${totalSign}${Math.abs(total).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })})`;
+}
+
+function playoffBarColor(chance: number): string {
+  if (chance > 75) return "var(--status-success-fg)";
+  if (chance > 50) return "var(--action-primary)";
+  if (chance > 25) return "var(--status-warning-fg)";
+  return "var(--status-danger-fg)";
+}
 
 export default function Teams() {
   const router = useRouter();
@@ -204,11 +243,12 @@ export default function Teams() {
     };
   }, [schedule, teams]);
 
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
+  const handleSort = (field: string) => {
+    const f = field as SortField;
+    if (f === sortField) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      setSortField(field);
+      setSortField(f);
       setSortDirection("asc");
     }
   };
@@ -261,15 +301,101 @@ export default function Teams() {
           return sortDirection === "asc" ? result : -result;
         });
 
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return null;
-
-    return (
-      <span className="ml-1 text-gray-400">
-        {sortDirection === "asc" ? "↑" : "↓"}
-      </span>
-    );
-  };
+  const standingsColumns: DataTableColumn<Team>[] = [
+    { id: "rank", header: "Rank", sortable: true, cell: (team) => team.rank },
+    {
+      id: "name",
+      header: "Team",
+      sortable: true,
+      cell: (team) => (
+        <div className="flex flex-col">
+          <Link
+            href={`/league/${leagueId}/teams/${team.espnId}`}
+            className="font-medium hover:underline"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {team.name}
+          </Link>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {team.owner}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "wins",
+      header: "W",
+      sortable: true,
+      cell: (team) => team.record.wins,
+    },
+    {
+      id: "losses",
+      header: "L",
+      sortable: true,
+      cell: (team) => team.record.losses,
+    },
+    {
+      id: "pf",
+      header: "PF / G",
+      sortable: true,
+      cell: (team) => {
+        const totalGames =
+          team.record.wins + team.record.losses + team.record.ties;
+        const avgPF = totalGames > 0 ? team.points.scored / totalGames : 0;
+        return formatAvgTotal(avgPF, team.points.scored);
+      },
+    },
+    {
+      id: "pa",
+      header: "PA / G",
+      sortable: true,
+      cell: (team) => {
+        const totalGames =
+          team.record.wins + team.record.losses + team.record.ties;
+        const avgPA = totalGames > 0 ? team.points.against / totalGames : 0;
+        return formatAvgTotal(avgPA, team.points.against);
+      },
+    },
+    {
+      id: "diff",
+      header: "Diff",
+      sortable: true,
+      cell: (team) => {
+        const totalGames =
+          team.record.wins + team.record.losses + team.record.ties;
+        const totalDiff = team.points.scored - team.points.against;
+        const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
+        return formatSignedDiff(avgDiff, totalDiff);
+      },
+    },
+    {
+      id: "playoffs",
+      header: "Playoff %",
+      sortable: true,
+      cell: (team) => (
+        <div>
+          <div
+            className="h-2.5 w-full rounded-full"
+            style={{ backgroundColor: "var(--surface-sunken)" }}
+          >
+            <div
+              className="h-2.5 rounded-full"
+              style={{
+                width: `${team.playoffChance}%`,
+                backgroundColor: playoffBarColor(team.playoffChance),
+              }}
+            />
+          </div>
+          <span
+            className="mt-1 block text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {team.playoffChance}%
+          </span>
+        </div>
+      ),
+    },
+  ];
 
   if (error || scheduleError) {
     console.error("Error loading data:", {
@@ -277,239 +403,86 @@ export default function Teams() {
       scheduleError,
     });
     return (
-      <Layout>
-        <div className="bg-red-100 dark:bg-red-900 p-4 rounded-lg text-red-700 dark:text-red-200">
-          <h2 className="text-xl font-semibold">Error loading teams data</h2>
-          <p>{error?.message}</p>
-          <p>{scheduleError?.message}</p>
-        </div>
-      </Layout>
+      <ErrorState
+        message={[error?.message, scheduleError?.message]
+          .filter(Boolean)
+          .join(" ")}
+      />
     );
   }
 
   return (
-    <Layout>
-      <div className="space-y-8">
-        <section>
-          <h1 className="text-3xl md:text-4xl font-bold text-blue-600 mb-6">
-            Fantasy Teams
-          </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-300 mb-8 max-w-3xl">
-            View all teams in your league, their records, and key statistics.
-          </p>
+    <div className="space-y-8">
+      <section>
+        <h1
+          className="text-3xl md:text-4xl font-bold mb-6"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Fantasy Teams
+        </h1>
+        <p
+          className="text-lg mb-8 max-w-3xl"
+          style={{ color: "var(--text-muted)" }}
+        >
+          View all teams in your league, their records, and key statistics.
+        </p>
 
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-6">Standings</h2>
+        <Card>
+          <CardContent className="p-6">
+            <h2
+              className="text-xl font-semibold mb-6"
+              style={{ color: "var(--text-primary)" }}
+            >
+              Standings
+            </h2>
 
             {isLoading ? (
-              <div className="flex items-center justify-center h-40">
-                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="ml-2">Loading teams...</span>
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("rank")}
-                      >
-                        Rank {renderSortIcon("rank")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("name")}
-                      >
-                        Team {renderSortIcon("name")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("wins")}
-                      >
-                        W {renderSortIcon("wins")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("losses")}
-                      >
-                        L {renderSortIcon("losses")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("pf")}
-                      >
-                        PF / G {renderSortIcon("pf")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("pa")}
-                      >
-                        PA / G {renderSortIcon("pa")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("diff")}
-                      >
-                        Diff {renderSortIcon("diff")}
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort("playoffs")}
-                      >
-                        Playoff % {renderSortIcon("playoffs")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {sortedTeams.map((team, i) => (
-                      <tr
-                        key={team.id}
-                        className={
-                          i % 2 === 0
-                            ? "bg-white dark:bg-gray-800"
-                            : "bg-gray-50 dark:bg-gray-700"
-                        }
-                      >
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {team.rank}
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex flex-col">
-                            <Link
-                              href={`/league/${leagueId}/teams/${team.espnId}`}
-                              className="font-medium hover:text-blue-600"
-                            >
-                              {team.name}
-                            </Link>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {team.owner}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.wins}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {team.record.losses}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const totalGames =
-                              team.record.wins + team.record.losses + team.record.ties;
-                            const avgPF =
-                              totalGames > 0
-                                ? team.points.scored / totalGames
-                                : 0;
-                            const avgFormatted = avgPF.toLocaleString(
-                              undefined,
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }
-                            );
-                            const totalFormatted =
-                              team.points.scored.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              });
-                            return `${avgFormatted} (${totalFormatted})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const totalGames =
-                              team.record.wins + team.record.losses + team.record.ties;
-                            const avgPA =
-                              totalGames > 0
-                                ? team.points.against / totalGames
-                                : 0;
-                            const avgFormatted = avgPA.toLocaleString(
-                              undefined,
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }
-                            );
-                            const totalFormatted =
-                              team.points.against.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              });
-                            return `${avgFormatted} (${totalFormatted})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {(() => {
-                            const totalGames =
-                              team.record.wins + team.record.losses + team.record.ties;
-                            const totalDiff =
-                              team.points.scored - team.points.against;
-                            const avgDiff =
-                              totalGames > 0 ? totalDiff / totalGames : 0;
-                            const avgSign = avgDiff > 0 ? "+" : "";
-                            const totalSign = totalDiff > 0 ? "+" : "";
-                            const avgFormatted = Math.abs(
-                              avgDiff
-                            ).toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            });
-                            const totalFormatted = Math.abs(
-                              totalDiff
-                            ).toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            });
-                            return `${avgSign}${avgFormatted} (${totalSign}${totalFormatted})`;
-                          })()}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
-                            <div
-                              className={`h-2.5 rounded-full ${
-                                team.playoffChance > 75
-                                  ? "bg-green-500"
-                                  : team.playoffChance > 50
-                                  ? "bg-blue-500"
-                                  : team.playoffChance > 25
-                                  ? "bg-yellow-500"
-                                  : "bg-red-500"
-                              }`}
-                              style={{ width: `${team.playoffChance}%` }}
-                            />
-                          </div>
-                          <span className="text-xs mt-1 block">
-                            {team.playoffChance}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={standingsColumns}
+                rows={sortedTeams}
+                rowKey={(team) => team.id}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+              />
             )}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
+      </section>
 
-        <section>
-          <AllTimeMatchupsGrid
-            teams={teams}
-            headToHeadRecords={headToHeadRecords}
-          />
-        </section>
+      <section>
+        <AllTimeMatchupsGrid
+          teams={teams}
+          headToHeadRecords={headToHeadRecords}
+        />
+      </section>
 
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-lg font-semibold mb-4">League Leaders</h2>
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardContent className="p-6">
+            <h2
+              className="text-lg font-semibold mb-4"
+              style={{ color: "var(--text-primary)" }}
+            >
+              League Leaders
+            </h2>
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                <h3
+                  className="text-sm font-medium mb-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Most Points Scored
                 </h3>
                 <div className="overflow-hidden">
                   {isLoading ? (
-                    <div className="py-2 text-sm text-gray-500">Loading...</div>
+                    <Skeleton className="h-6 w-full" />
                   ) : teams && teams.length > 0 ? (
                     [...teams]
                       .sort((a, b) => b.points.scored - a.points.scored)
@@ -521,11 +494,12 @@ export default function Teams() {
                         >
                           <Link
                             href={`/league/${leagueId}/teams/${team.espnId}`}
-                            className="font-medium hover:text-blue-600"
+                            className="font-medium hover:underline"
+                            style={{ color: "var(--text-primary)" }}
                           >
                             {team.owner}
                           </Link>
-                          <span className="text-blue-600">
+                          <span style={{ color: "var(--action-primary)" }}>
                             {team.points.scored.toLocaleString(undefined, {
                               minimumFractionDigits: 1,
                               maximumFractionDigits: 1,
@@ -535,20 +509,26 @@ export default function Teams() {
                         </div>
                       ))
                   ) : (
-                    <div className="py-2 text-sm text-gray-500">
+                    <p
+                      className="py-2 text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       No data available
-                    </div>
+                    </p>
                   )}
                 </div>
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                <h3
+                  className="text-sm font-medium mb-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Most Points Against
                 </h3>
                 <div className="overflow-hidden">
                   {isLoading ? (
-                    <div className="py-2 text-sm text-gray-500">Loading...</div>
+                    <Skeleton className="h-6 w-full" />
                   ) : teams && teams.length > 0 ? (
                     [...teams]
                       .sort((a, b) => b.points.against - a.points.against)
@@ -560,11 +540,12 @@ export default function Teams() {
                         >
                           <Link
                             href={`/league/${leagueId}/teams/${team.espnId}`}
-                            className="font-medium hover:text-blue-600"
+                            className="font-medium hover:underline"
+                            style={{ color: "var(--text-primary)" }}
                           >
                             {team.owner}
                           </Link>
-                          <span className="text-red-600">
+                          <span style={{ color: "var(--status-danger-fg)" }}>
                             {team.points.against.toLocaleString(undefined, {
                               minimumFractionDigits: 1,
                               maximumFractionDigits: 1,
@@ -574,23 +555,39 @@ export default function Teams() {
                         </div>
                       ))
                   ) : (
-                    <div className="py-2 text-sm text-gray-500">
+                    <p
+                      className="py-2 text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       No data available
-                    </div>
+                    </p>
                   )}
                 </div>
               </div>
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-            <h2 className="text-lg font-semibold mb-4">League Summary</h2>
+        <Card>
+          <CardContent className="p-6">
+            <h2
+              className="text-lg font-semibold mb-4"
+              style={{ color: "var(--text-primary)" }}
+            >
+              League Summary
+            </h2>
             <div className="space-y-4">
               <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                <span
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Average Score
                 </span>
-                <span className="text-2xl font-bold">
+                <span
+                  className="text-2xl font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
                   {isScheduleLoading
                     ? "..."
                     : leagueStats.averageScore > 0
@@ -598,16 +595,25 @@ export default function Teams() {
                     : "0.0"}{" "}
                   pts
                 </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                <span
+                  className="text-sm ml-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   per team/week
                 </span>
               </div>
 
               <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                <span
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Highest Score
                 </span>
-                <span className="text-2xl font-bold">
+                <span
+                  className="text-2xl font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
                   {isScheduleLoading
                     ? "..."
                     : leagueStats.highestScore.score > 0
@@ -615,7 +621,10 @@ export default function Teams() {
                     : "0"}{" "}
                   pts
                 </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                <span
+                  className="text-sm ml-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   {!isScheduleLoading &&
                   leagueStats.highestScore.teamName &&
                   leagueStats.highestScore.week > 0
@@ -625,10 +634,16 @@ export default function Teams() {
               </div>
 
               <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                <span
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Closest Matchup
                 </span>
-                <span className="text-2xl font-bold">
+                <span
+                  className="text-2xl font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
                   {isScheduleLoading
                     ? "..."
                     : leagueStats.closestMatchup.margin < Infinity
@@ -637,7 +652,10 @@ export default function Teams() {
                       )}-${leagueStats.closestMatchup.awayScore.toFixed(2)}`
                     : "None"}
                 </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                <span
+                  className="text-sm ml-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   {!isScheduleLoading &&
                   leagueStats.closestMatchup.margin < Infinity
                     ? `${leagueStats.closestMatchup.homeTeam} vs ${leagueStats.closestMatchup.awayTeam}, Week ${leagueStats.closestMatchup.week}`
@@ -646,10 +664,16 @@ export default function Teams() {
               </div>
 
               <div>
-                <span className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                <span
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Biggest Blowout
                 </span>
-                <span className="text-2xl font-bold">
+                <span
+                  className="text-2xl font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
                   {isScheduleLoading
                     ? "..."
                     : leagueStats.biggestBlowout.margin > 0
@@ -658,13 +682,19 @@ export default function Teams() {
                       )}-${leagueStats.biggestBlowout.loserScore.toFixed(1)}`
                     : "None"}
                 </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+                <span
+                  className="text-sm ml-2"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   {!isScheduleLoading && leagueStats.biggestBlowout.margin > 0
                     ? `${leagueStats.biggestBlowout.winner} vs ${leagueStats.biggestBlowout.loser}, Week ${leagueStats.biggestBlowout.week}`
                     : "No games"}
                 </span>
                 <div className="mt-2">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                  <span
+                    className="text-xs"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     Margin:{" "}
                     {leagueStats.biggestBlowout.margin > 0
                       ? `${leagueStats.biggestBlowout.margin.toFixed(1)} pts`
@@ -673,9 +703,9 @@ export default function Teams() {
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-      </div>
-    </Layout>
+          </CardContent>
+        </Card>
+      </section>
+    </div>
   );
 }

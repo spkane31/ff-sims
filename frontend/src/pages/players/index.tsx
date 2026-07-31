@@ -1,28 +1,50 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Layout from "@/components/Layout";
 import {
   playersService,
   GetPlayersResponse,
 } from "@/services/playersService";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import EmptyState from "@/components/design-system/EmptyState";
+import ErrorState from "@/components/design-system/ErrorState";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
+import { FOCUS_RING } from "@/components/design-system/focus-ring";
 
-// Helper function to get position color
+type PlayerRow = GetPlayersResponse["players"][number];
+
+// Colorblind-safe qualitative palette (--chart-series-*) — position is an
+// unordered category label, not a status, so the semantic --status-* tokens
+// don't apply here. Mirrors the mapping established in
+// league/[leagueId]/transactions/index.tsx (positionColor), extended with
+// D/ST since this page uses that label instead of DEF.
 function getPositionColor(position: string): string {
   switch (position) {
     case "QB":
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      return "var(--chart-series-1)";
     case "RB":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      return "var(--chart-series-2)";
     case "WR":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      return "var(--chart-series-3)";
     case "TE":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+      return "var(--chart-series-4)";
     case "K":
-      return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+      return "var(--chart-series-5)";
     case "D/ST":
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+      return "var(--chart-series-6)";
     default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+      return "var(--chart-series-6)";
   }
 }
 
@@ -48,13 +70,6 @@ export default function PlayersIndex() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
-
-  // Header component for table headers
-  const TableHeader = ({ children }: { children: React.ReactNode }) => (
-    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-      {children}
-    </th>
-  );
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -97,53 +112,173 @@ export default function PlayersIndex() {
 
   if (isLoading) {
     return (
-      <Layout>
-        <div className="flex flex-col items-center justify-center h-64 space-y-4">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <div className="text-center">
-            <div className="text-lg font-medium">Loading players...</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              This may take up to 10 seconds as we fetch data from the database
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-full max-w-md" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
             </div>
-          </div>
-        </div>
-      </Layout>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6 space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   if (error) {
-    return (
-      <Layout>
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <h2 className="text-lg font-medium mb-2">Error loading players</h2>
-          <p>{error}</p>
-        </div>
-      </Layout>
-    );
+    return <ErrorState message={error} />;
   }
 
   const totalPages = Math.ceil((playersData?.total || 0) / pageSize);
 
-  return (
-    <Layout>
-      <div className="space-y-6">
-        {/* Header */}
-        <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">Players</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            View career statistics and performance data for all fantasy players.
-            Use the season filter to view specific year data.
-          </p>
-        </section>
+  const summaryStats: { label: string; value: number; color?: string }[] = [
+    { label: "Total Players", value: playersData?.total || 0 },
+    {
+      label: "Active Players",
+      value: filteredPlayers.filter((p) => p.totalFantasyPoints > 0).length,
+    },
+    {
+      label: "Outperforming Projections",
+      value: filteredPlayers.filter((p) => p.difference > 0).length,
+      color: "var(--status-success-fg)",
+    },
+    {
+      label: "Underperforming Projections",
+      value: filteredPlayers.filter((p) => p.difference < 0).length,
+      color: "var(--status-danger-fg)",
+    },
+  ];
 
-        {/* Filters */}
-        <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+  const columns: DataTableColumn<PlayerRow>[] = [
+    {
+      id: "rank",
+      header: "Rank",
+      cell: (player) => (
+        <span style={{ color: "var(--text-muted)" }}>
+          #{player.positionRank} {player.position}
+        </span>
+      ),
+    },
+    {
+      id: "player",
+      header: "Player",
+      cell: (player) => (
+        <Link
+          href={`/players/${player.id}`}
+          className="font-medium hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          {player.name}
+        </Link>
+      ),
+    },
+    {
+      id: "position",
+      header: "Position",
+      cell: (player) => (
+        <Badge
+          variant="outline"
+          style={{
+            color: getPositionColor(player.position),
+            borderColor: getPositionColor(player.position),
+          }}
+        >
+          {player.position}
+        </Badge>
+      ),
+    },
+    {
+      id: "fantasyPoints",
+      header: "Fantasy Points",
+      cell: (player) => (
+        <span
+          className="font-medium"
+          style={{ color: "var(--text-primary)" }}
+        >
+          {player.totalFantasyPoints.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "avgPerGame",
+      header: "Avg/Game",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>
+          {player.avgFantasyPoints.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "vsProjection",
+      header: "vs Projection",
+      cell: (player) => (
+        <span
+          className="font-medium"
+          style={{
+            color:
+              player.difference > 0
+                ? "var(--status-success-fg)"
+                : "var(--status-danger-fg)",
+          }}
+        >
+          {player.difference > 0 ? "+" : ""}
+          {player.difference.toFixed(1)}
+        </span>
+      ),
+    },
+    {
+      id: "games",
+      header: "Games",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>
+          {player.gamesPlayed}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <Card>
+        <CardContent className="p-6">
+          <h1
+            className="text-3xl font-bold mb-2"
+            style={{ color: "var(--text-primary)" }}
+          >
+            Players
+          </h1>
+          <p style={{ color: "var(--text-muted)" }}>
+            View career statistics and performance data for all fantasy
+            players. Use the season filter to view specific year data.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {/* Search Filter */}
             <div>
               <label
                 htmlFor="search"
-                className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                className="block text-sm font-medium mb-1"
+                style={{ color: "var(--text-muted)" }}
               >
                 Search Players
               </label>
@@ -151,7 +286,11 @@ export default function PlayersIndex() {
                 type="text"
                 id="search"
                 placeholder="Search by name or team..."
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className={`w-full rounded-lg border bg-transparent px-2.5 py-2 text-sm ${FOCUS_RING}`}
+                style={{
+                  borderColor: "var(--border-subtle)",
+                  color: "var(--text-primary)",
+                }}
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
               />
@@ -161,66 +300,70 @@ export default function PlayersIndex() {
             <div>
               <label
                 htmlFor="position"
-                className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                className="block text-sm font-medium mb-1"
+                style={{ color: "var(--text-muted)" }}
               >
                 Position
               </label>
-              <select
-                id="position"
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              <Select
                 value={positionFilter}
-                onChange={(e) => setPositionFilter(e.target.value)}
+                onValueChange={(v) => setPositionFilter(v)}
               >
-                <option value="all">All Positions</option>
-                {positions.map((position) => (
-                  <option key={position} value={position}>
-                    {position}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="position" aria-label="Position" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Positions</SelectItem>
+                  {positions.map((position) => (
+                    <SelectItem key={position} value={position}>
+                      {position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Year Filter */}
             <div>
               <label
                 htmlFor="year"
-                className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                className="block text-sm font-medium mb-1"
+                style={{ color: "var(--text-muted)" }}
               >
                 Season
               </label>
-              <select
-                id="year"
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                value={yearFilter}
-                onChange={(e) => setYearFilter(e.target.value)}
-              >
-                <option value="all">All Time</option>
-                {Array.from(
-                  { length: new Date().getFullYear() - 2019 + 1 },
-                  (_, i) => new Date().getFullYear() - i
-                ).map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
+              <Select value={yearFilter} onValueChange={(v) => setYearFilter(v)}>
+                <SelectTrigger id="year" aria-label="Season" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  {Array.from(
+                    { length: new Date().getFullYear() - 2019 + 1 },
+                    (_, i) => new Date().getFullYear() - i
+                  ).map((year) => (
+                    <SelectItem key={year} value={String(year)}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Ranking Filter */}
             <div>
               <label
                 htmlFor="rank"
-                className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                className="block text-sm font-medium mb-1"
+                style={{ color: "var(--text-muted)" }}
               >
                 Rank By
               </label>
-              <select
-                id="rank"
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              <Select
                 value={rankFilter}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   setRankFilter(
-                    e.target.value as
+                    v as
                       | "fantasy_points"
                       | "avg_points"
                       | "projected_points"
@@ -229,17 +372,26 @@ export default function PlayersIndex() {
                   )
                 }
               >
-                <option value="fantasy_points">Fantasy Points</option>
-                <option value="avg_points">Avg Points/Game</option>
-                <option value="projected_points">Projected Points</option>
-                <option value="games_played">Games Played</option>
-                <option value="vs_projection">vs Projection</option>
-              </select>
+                <SelectTrigger id="rank" aria-label="Rank By" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fantasy_points">Fantasy Points</SelectItem>
+                  <SelectItem value="avg_points">Avg Points/Game</SelectItem>
+                  <SelectItem value="projected_points">
+                    Projected Points
+                  </SelectItem>
+                  <SelectItem value="games_played">Games Played</SelectItem>
+                  <SelectItem value="vs_projection">vs Projection</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Reset Filters */}
             <div className="flex items-end">
-              <button
+              <Button
+                variant="outline"
+                className="w-full"
                 onClick={() => {
                   setPositionFilter("all");
                   setYearFilter("all");
@@ -247,169 +399,87 @@ export default function PlayersIndex() {
                   setSearchFilter("");
                   setCurrentPage(1);
                 }}
-                className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md border border-gray-300 dark:border-gray-600 transition-colors"
               >
                 Reset Filters
-              </button>
+              </Button>
             </div>
           </div>
-        </section>
+        </CardContent>
+      </Card>
 
-        {/* Players Table */}
-        <section className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <TableHeader>Rank</TableHeader>
-                  <TableHeader>Player</TableHeader>
-                  <TableHeader>Position</TableHeader>
-                  <TableHeader>Fantasy Points</TableHeader>
-                  <TableHeader>Avg/Game</TableHeader>
-                  <TableHeader>vs Projection</TableHeader>
-                  <TableHeader>Games</TableHeader>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                {filteredPlayers.length > 0 ? (
-                  filteredPlayers.map((player) => (
-                    <tr
-                      key={player.id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                    >
-                      <td className="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        #{player.positionRank} {player.position}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        <Link
-                          href={`/players/${player.id}`}
-                          className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 font-medium transition-colors"
-                        >
-                          {player.name}
-                        </Link>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex px-2 py-1 text-xs rounded-full font-medium ${getPositionColor(
-                            player.position
-                          )}`}
-                        >
-                          {player.position}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {player.totalFantasyPoints.toFixed(1)}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                        {player.avgFantasyPoints.toFixed(1)}
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap text-sm">
-                        <span
-                          className={`font-medium ${
-                            player.difference > 0
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-red-600 dark:text-red-400"
-                          }`}
-                        >
-                          {player.difference > 0 ? "+" : ""}
-                          {player.difference.toFixed(1)}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                        {player.gamesPlayed}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="py-8 text-center text-gray-500 dark:text-gray-400"
-                    >
-                      No players found matching your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="bg-gray-50 dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                  <span>
-                    Showing {(currentPage - 1) * pageSize + 1} to{" "}
-                    {Math.min(currentPage * pageSize, playersData?.total || 0)}{" "}
-                    of {playersData?.total || 0} players
-                  </span>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <button
-                    onClick={() =>
-                      setCurrentPage(Math.min(totalPages, currentPage + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
+      {/* Players Table */}
+      <Card>
+        <CardContent className="p-6">
+          {filteredPlayers.length > 0 ? (
+            <DataTable
+              columns={columns}
+              rows={filteredPlayers}
+              rowKey={(player) => player.id}
+            />
+          ) : (
+            <EmptyState title="No players found matching your filters." />
           )}
-        </section>
+        </CardContent>
 
-        {/* Summary Stats */}
-        <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-          <h2 className="text-lg font-semibold mb-4">Summary</h2>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <CardContent className="flex items-center justify-between border-t pt-4">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Showing {(currentPage - 1) * pageSize + 1} to{" "}
+              {Math.min(currentPage * pageSize, playersData?.total || 0)} of{" "}
+              {playersData?.total || 0} players
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setCurrentPage(Math.min(totalPages, currentPage + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Summary Stats */}
+      <Card>
+        <CardContent className="p-6">
+          <h2
+            className="text-lg font-semibold mb-4"
+            style={{ color: "var(--text-primary)" }}
+          >
+            Summary
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {playersData?.total || 0}
+            {summaryStats.map((stat) => (
+              <div key={stat.label} className="text-center">
+                <div
+                  className="text-2xl font-bold"
+                  style={{ color: stat.color ?? "var(--text-primary)" }}
+                >
+                  {stat.value}
+                </div>
+                <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  {stat.label}
+                </div>
               </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Total Players
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {filteredPlayers.filter((p) => p.totalFantasyPoints > 0).length}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Active Players
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {filteredPlayers.filter((p) => p.difference > 0).length}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Outperforming Projections
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
-                {filteredPlayers.filter((p) => p.difference < 0).length}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Underperforming Projections
-              </div>
-            </div>
+            ))}
           </div>
-        </section>
-      </div>
-    </Layout>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

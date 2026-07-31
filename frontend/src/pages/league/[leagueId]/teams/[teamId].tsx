@@ -1,11 +1,27 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Layout from "@/components/Layout";
 import {
   teamsService,
   TeamDetail as TeamDetailType,
 } from "@/services/teamsService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import EmptyState from "@/components/design-system/EmptyState";
+import ErrorState from "@/components/design-system/ErrorState";
+import DataTable, {
+  type DataTableColumn,
+} from "@/components/design-system/DataTable";
 
 // Type definitions for the legacy UI components
 interface Player {
@@ -39,6 +55,8 @@ interface Game {
   isPlayoff?: boolean; // Add isPlayoff field
   matchupId?: string; // Add matchup ID for linking to schedule detail page
 }
+
+type Tab = "overview" | "players" | "schedule" | "draft" | "transactions";
 
 // This mapping function converts API data to UI component format
 function mapApiDataToUiFormat(teamData: TeamDetailType): {
@@ -229,6 +247,8 @@ function calculateYearByYearRecords(games: Game[]) {
   return Array.from(yearRecords.values()).sort((a, b) => b.year - a.year);
 }
 
+type YearRecord = ReturnType<typeof calculateYearByYearRecords>[number];
+
 // Calculate team performance metrics from schedule data
 function calculateTeamStats(games: Game[]) {
   // Filter only completed games (games with results)
@@ -333,6 +353,55 @@ function getStreakText(streak: { type: string; count: number }) {
   return `${streakType} ${streak.count}`;
 }
 
+// A game result (and a win/loss streak) is the outcome of a comparison, so it
+// maps to the semantic --status-* tokens rather than the categorical chart
+// palette. This is the exact mapping the page used before (green W / red L /
+// yellow otherwise), shared by the streak label, the recent-form circles, the
+// recent-performance circles and the schedule-card circles.
+function resultTokens(result: string): { fg: string; bg: string } {
+  if (result === "W") {
+    return { fg: "var(--status-success-fg)", bg: "var(--status-success-bg)" };
+  }
+  if (result === "L") {
+    return { fg: "var(--status-danger-fg)", bg: "var(--status-danger-bg)" };
+  }
+  return { fg: "var(--status-warning-fg)", bg: "var(--status-warning-bg)" };
+}
+
+// A winning record is a positive result, a losing record a negative one, an
+// even record neither — same three-way comparison the year-by-year table used
+// for both its regular-season and playoff record cells.
+function recordColor(wins: number, losses: number): string {
+  if (wins > losses) return "var(--status-success-fg)";
+  if (wins < losses) return "var(--status-danger-fg)";
+  return "var(--status-warning-fg)";
+}
+
+// Roster availability is a status (available / out / questionable-ish), so the
+// semantic status tokens apply.
+function playerStatusTokens(status: string): { fg: string; bg: string } {
+  if (status === "Active") {
+    return { fg: "var(--status-success-fg)", bg: "var(--status-success-bg)" };
+  }
+  if (status === "IR") {
+    return { fg: "var(--status-danger-fg)", bg: "var(--status-danger-bg)" };
+  }
+  return { fg: "var(--status-warning-fg)", bg: "var(--status-warning-bg)" };
+}
+
+// Transaction type is an unordered category label (draft vs. trade vs. the
+// rest), not a status, so it uses the colorblind-safe qualitative palette. The
+// hues mirror the ones this page used before (purple draft / blue trade / green
+// other) and agree with the trade colour on league/[leagueId]/transactions.
+function txTypeColor(type: string): string {
+  const normalized = type.toLowerCase();
+  if (normalized === "draft") return "var(--chart-series-4)";
+  if (normalized === "trade") return "var(--chart-series-1)";
+  return "var(--chart-series-3)";
+}
+
+type IndexedDraftPick = { pick: DraftPick; index: number };
+
 export default function TeamDetail() {
   const router = useRouter();
   const { teamId, leagueId } = router.query;
@@ -342,7 +411,7 @@ export default function TeamDetail() {
   const [team, setTeam] = useState<ReturnType<
     typeof mapApiDataToUiFormat
   > | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [, setError] = useState<string | null>(null);
 
   // Add these state variables at the top of the TeamDetail function component
@@ -400,48 +469,272 @@ export default function TeamDetail() {
 
   if (isLoading) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-lg">Loading team data...</span>
-        </div>
-      </Layout>
+      <div className="flex items-center justify-center h-64">
+        <Skeleton className="w-8 h-8 rounded-full" />
+        <span className="ml-3 text-lg" style={{ color: "var(--text-primary)" }}>
+          Loading team data...
+        </span>
+      </div>
     );
   }
 
   if (!team) {
     return (
-      <Layout>
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <h2 className="text-lg font-medium mb-2">Team not found</h2>
-          <p>
-            We could not find a team with the requested ID. Please check the URL
-            and try again.
-          </p>
-          <Link
-            href={`/league/${leagueIdNum}/teams`}
-            className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
-          >
-            ← Back to Teams
-          </Link>
-        </div>
-      </Layout>
+      <div className="space-y-4">
+        <h2
+          className="text-lg font-medium"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Team not found
+        </h2>
+        <ErrorState message="We could not find a team with the requested ID. Please check the URL and try again." />
+        <Link
+          href={`/league/${leagueIdNum}/teams`}
+          className="inline-block hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          ← Back to Teams
+        </Link>
+      </div>
     );
   }
 
+  // Schedule tab: games matching the year + opponent filters (same filter chain
+  // the grid and the "no games" message each ran before).
+  const filteredSchedule = team.schedule
+    .filter(
+      (game) => yearFilter === "all" || game.year.toString() === yearFilter
+    )
+    .filter(
+      (game) => opponentFilter === "all" || game.opponent === opponentFilter
+    );
+
+  // Draft tab: picks matching the year filter (shares the transaction year
+  // filter state, exactly as before).
+  const filteredDraftPicks: IndexedDraftPick[] = team.draftPicks
+    .filter((pick) => {
+      if (transactionYearFilter === "all") return true;
+      const pickYear = pick.description.match(/\((\d{4})\)/)?.[1];
+      return pickYear === transactionYearFilter;
+    })
+    .map((pick, index) => ({ pick, index }));
+
+  const yearRecordColumns: DataTableColumn<YearRecord>[] = [
+    {
+      id: "year",
+      header: "Year",
+      cell: (yearRecord) => (
+        <span
+          className="font-medium"
+          style={{ color: "var(--text-primary)" }}
+        >
+          {yearRecord.year}
+        </span>
+      ),
+    },
+    {
+      id: "regularSeason",
+      header: "Regular Season",
+      cell: (yearRecord) => (
+        <span
+          className="font-medium"
+          style={{
+            color: recordColor(
+              yearRecord.regularSeason.wins,
+              yearRecord.regularSeason.losses
+            ),
+          }}
+        >
+          {`${yearRecord.regularSeason.wins}-${
+            yearRecord.regularSeason.losses
+          }${
+            yearRecord.regularSeason.ties > 0
+              ? `-${yearRecord.regularSeason.ties}`
+              : ""
+          }`}
+        </span>
+      ),
+    },
+    {
+      id: "playoffs",
+      header: "Playoff Record",
+      cell: (yearRecord) => {
+        const playoffRecord = `${yearRecord.playoffs.wins}-${
+          yearRecord.playoffs.losses
+        }${
+          yearRecord.playoffs.ties > 0 ? `-${yearRecord.playoffs.ties}` : ""
+        }`;
+        const totalPlayoffGames =
+          yearRecord.playoffs.wins +
+          yearRecord.playoffs.losses +
+          yearRecord.playoffs.ties;
+
+        return totalPlayoffGames > 0 ? (
+          <span
+            className="font-medium"
+            style={{
+              color: recordColor(
+                yearRecord.playoffs.wins,
+                yearRecord.playoffs.losses
+              ),
+            }}
+          >
+            {playoffRecord}
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>-</span>
+        );
+      },
+    },
+    {
+      id: "totalPoints",
+      header: "Total Points",
+      cell: (yearRecord) => (
+        <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+          {yearRecord.totalPoints.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      id: "avgPoints",
+      header: "Avg Points/Game",
+      cell: (yearRecord) => (
+        <span style={{ color: "var(--text-secondary)" }}>
+          {yearRecord.gamesPlayed > 0
+            ? (yearRecord.totalPoints / yearRecord.gamesPlayed).toFixed(2)
+            : "-"}
+        </span>
+      ),
+    },
+  ];
+
+  const rosterColumns: DataTableColumn<Player>[] = [
+    {
+      id: "position",
+      header: "Position",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>{player.position}</span>
+      ),
+    },
+    {
+      id: "name",
+      header: "Player",
+      cell: (player) => (
+        <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+          {player.name}
+        </span>
+      ),
+    },
+    {
+      id: "team",
+      header: "Team",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>{player.team}</span>
+      ),
+    },
+    {
+      id: "points",
+      header: "Points",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>
+          {player.points.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      id: "projection",
+      header: "Projection",
+      cell: (player) => (
+        <span style={{ color: "var(--text-primary)" }}>
+          {player.projection > 0 ? player.projection.toFixed(2) : "-"}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      cell: (player) => {
+        const tokens = playerStatusTokens(player.status);
+        return (
+          <Badge
+            variant="outline"
+            className="rounded-full"
+            style={{
+              color: tokens.fg,
+              borderColor: tokens.fg,
+              backgroundColor: tokens.bg,
+            }}
+          >
+            {player.status}
+          </Badge>
+        );
+      },
+    },
+  ];
+
+  const draftPickColumns: DataTableColumn<IndexedDraftPick>[] = [
+    {
+      id: "year",
+      header: "Year",
+      cell: ({ pick }) => (
+        <span style={{ color: "var(--text-primary)" }}>
+          {pick.description.match(/\((\d{4})\)/)?.[1] || ""}
+        </span>
+      ),
+    },
+    {
+      id: "round",
+      header: "Round",
+      cell: ({ pick }) => (
+        <span style={{ color: "var(--text-primary)" }}>{pick.round}</span>
+      ),
+    },
+    {
+      id: "pick",
+      header: "Pick",
+      cell: ({ pick }) => (
+        <span style={{ color: "var(--text-primary)" }}>{pick.pick}</span>
+      ),
+    },
+    {
+      id: "overall",
+      header: "Overall",
+      cell: ({ pick }) => (
+        <span style={{ color: "var(--text-primary)" }}>{pick.overall}</span>
+      ),
+    },
+    {
+      id: "player",
+      header: "Player",
+      cell: ({ pick }) => (
+        <Link
+          href="#"
+          onClick={(e) => e.preventDefault()}
+          className="hover:underline"
+          style={{ color: "var(--action-primary)" }}
+        >
+          {pick.player} ({pick.position})
+        </Link>
+      ),
+    },
+  ];
+
   return (
-    <Layout>
-      <div className="space-y-8">
-        {/* Team Header */}
-        <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+    <div className="space-y-8">
+      {/* Team Header */}
+      <Card>
+        <CardContent className="p-6">
           <div className="flex flex-col md:flex-row justify-between md:items-center">
             <div>
               <div className="flex items-center">
-                <h1 className="text-3xl md:text-4xl font-bold text-blue-600">
+                <h1
+                  className="text-3xl md:text-4xl font-bold"
+                  style={{ color: "var(--action-primary)" }}
+                >
                   {team.name}
                 </h1>
               </div>
-              <p className="text-lg text-gray-500 dark:text-gray-400">
+              <p className="text-lg" style={{ color: "var(--text-muted)" }}>
                 Managed by {team.owner}
               </p>
             </div>
@@ -449,1014 +742,950 @@ export default function TeamDetail() {
             <div className="mt-4 md:mt-0">
               <Link
                 href={`/league/${leagueIdNum}/teams`}
-                className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
+                className="hover:underline"
+                style={{ color: "var(--action-primary)" }}
               >
                 ← Back to Teams
               </Link>
             </div>
           </div>
-        </section>
+        </CardContent>
+      </Card>
 
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as Tab)}
+      >
         {/* Navigation Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex overflow-x-auto scrollbar-hide">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
-                activeTab === "overview"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab("players")}
-              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
-                activeTab === "players"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Players
-            </button>
-            <button
-              onClick={() => setActiveTab("schedule")}
-              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
-                activeTab === "schedule"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Schedule
-            </button>
-            <button
-              onClick={() => setActiveTab("draft")}
-              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
-                activeTab === "draft"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Draft Picks
-            </button>
-            <button
-              onClick={() => setActiveTab("transactions")}
-              className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
-                activeTab === "transactions"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Transactions
-            </button>
-          </nav>
-        </div>
+        <TabsList
+          variant="line"
+          className="mb-2 max-w-full overflow-x-auto scrollbar-hide"
+        >
+          <TabsTrigger value="overview" className="px-3">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="players" className="px-3">
+            Players
+          </TabsTrigger>
+          <TabsTrigger value="schedule" className="px-3">
+            Schedule
+          </TabsTrigger>
+          <TabsTrigger value="draft" className="px-3">
+            Draft Picks
+          </TabsTrigger>
+          <TabsTrigger value="transactions" className="px-3">
+            Transactions
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Tab Content */}
-        <div className="space-y-6">
-          {/* Overview Tab */}
-          {activeTab === "overview" && (
-            <>
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Overall Record
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {teamStats
-                        ? teamStats.awayRecord.wins + teamStats.homeRecord.wins
-                        : "-"}
-                      -
-                      {teamStats
-                        ? teamStats.awayRecord.losses +
-                          teamStats.homeRecord.losses
-                        : "-"}
-                      {teamStats
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Team Overview
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div
+                  className="p-4 rounded-lg"
+                  style={{ backgroundColor: "var(--surface-sunken)" }}
+                >
+                  <h3
+                    className="text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Overall Record
+                  </h3>
+                  <div
+                    className="text-2xl font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {teamStats
+                      ? teamStats.awayRecord.wins + teamStats.homeRecord.wins
+                      : "-"}
+                    -
+                    {teamStats
+                      ? teamStats.awayRecord.losses +
+                        teamStats.homeRecord.losses
+                      : "-"}
+                    {teamStats
+                      ? teamStats.awayRecord.ties +
+                          teamStats.homeRecord.ties >
+                        0
                         ? teamStats.awayRecord.ties +
-                            teamStats.homeRecord.ties >
-                          0
-                          ? teamStats.awayRecord.ties +
-                            teamStats.homeRecord.ties
-                          : ""
-                        : ""}
-                    </div>
-                    {teamStats?.streak && (
-                      <div className="mt-1 text-sm">
-                        <span
-                          className={`font-medium ${
-                            teamStats.streak.type === "W"
-                              ? "text-green-600 dark:text-green-400"
-                              : teamStats.streak.type === "L"
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-yellow-600 dark:text-yellow-400"
-                          }`}
-                        >
-                          {getStreakText(teamStats.streak)}
-                        </span>
-                      </div>
-                    )}
+                          teamStats.homeRecord.ties
+                        : ""
+                      : ""}
                   </div>
+                  {teamStats?.streak && (
+                    <div className="mt-1 text-sm">
+                      <span
+                        className="font-medium"
+                        style={{
+                          color: resultTokens(teamStats.streak.type).fg,
+                        }}
+                      >
+                        {getStreakText(teamStats.streak)}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Points For
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {team.points.scored.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {(
-                        team.points.scored /
-                        (team.record.wins +
-                          team.record.losses +
-                          team.record.ties)
-                      ).toFixed(2)}{" "}
-                      per game
-                    </div>
+                <div
+                  className="p-4 rounded-lg"
+                  style={{ backgroundColor: "var(--surface-sunken)" }}
+                >
+                  <h3
+                    className="text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Points For
+                  </h3>
+                  <div
+                    className="text-2xl font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {team.points.scored.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </div>
-
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Points Against
-                    </h3>
-                    <div className="text-2xl font-bold">
-                      {team.points.against.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {(
-                        team.points.against /
-                        (team.record.wins +
-                          team.record.losses +
-                          team.record.ties)
-                      ).toFixed(2)}{" "}
-                      per game
-                    </div>
+                  <div
+                    className="mt-1 text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {(
+                      team.points.scored /
+                      (team.record.wins +
+                        team.record.losses +
+                        team.record.ties)
+                    ).toFixed(2)}{" "}
+                    per game
                   </div>
+                </div>
 
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      Point Differential
-                    </h3>
-                    <div
-                      className={`text-2xl font-bold ${
+                <div
+                  className="p-4 rounded-lg"
+                  style={{ backgroundColor: "var(--surface-sunken)" }}
+                >
+                  <h3
+                    className="text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Points Against
+                  </h3>
+                  <div
+                    className="text-2xl font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {team.points.against.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <div
+                    className="mt-1 text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {(
+                      team.points.against /
+                      (team.record.wins +
+                        team.record.losses +
+                        team.record.ties)
+                    ).toFixed(2)}{" "}
+                    per game
+                  </div>
+                </div>
+
+                <div
+                  className="p-4 rounded-lg"
+                  style={{ backgroundColor: "var(--surface-sunken)" }}
+                >
+                  <h3
+                    className="text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Point Differential
+                  </h3>
+                  <div
+                    className="text-2xl font-bold"
+                    style={{
+                      color:
                         team.points.scored - team.points.against > 0
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      {team.points.scored - team.points.against > 0 ? "+" : ""}
-                      {(team.points.scored - team.points.against).toFixed(2)}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {(
-                        (team.points.scored - team.points.against) /
-                        (team.record.wins +
-                          team.record.losses +
-                          team.record.ties)
-                      ).toFixed(2)}{" "}
-                      per game
-                    </div>
+                          ? "var(--status-success-fg)"
+                          : "var(--status-danger-fg)",
+                    }}
+                  >
+                    {team.points.scored - team.points.against > 0 ? "+" : ""}
+                    {(team.points.scored - team.points.against).toFixed(2)}
+                  </div>
+                  <div
+                    className="mt-1 text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {(
+                      (team.points.scored - team.points.against) /
+                      (team.record.wins +
+                        team.record.losses +
+                        team.record.ties)
+                    ).toFixed(2)}{" "}
+                    per game
                   </div>
                 </div>
-              </section>
+              </div>
+            </CardContent>
+          </Card>
 
-              {/* Add detailed performance metrics section */}
-              <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">
-                  Performance Breakdown
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="border rounded-lg p-4 dark:border-gray-600">
-                    <h3 className="font-medium mb-3 text-lg">Home vs Away</h3>
-                    <div className="flex flex-col space-y-4">
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <span>Home Record</span>
-                          <span className="font-medium">
-                            {teamStats?.homeRecord
-                              ? `${teamStats.homeRecord.wins}-${
-                                  teamStats.homeRecord.losses
-                                }${
-                                  teamStats.homeRecord.ties > 0
-                                    ? `-${teamStats.homeRecord.ties}`
-                                    : ""
-                                }`
-                              : "N/A"}
-                          </span>
-                        </div>
-                        {teamStats?.homeRecord && (
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
-                            <div
-                              className="h-2.5 rounded-full bg-blue-600"
-                              style={{
-                                width: `${
-                                  (teamStats.homeRecord.wins /
-                                    (teamStats.homeRecord.wins +
-                                      teamStats.homeRecord.losses +
-                                      teamStats.homeRecord.ties)) *
-                                  100
-                                }%`,
-                              }}
-                            ></div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <span>Away Record</span>
-                          <span className="font-medium">
-                            {teamStats?.awayRecord
-                              ? `${teamStats.awayRecord.wins}-${
-                                  teamStats.awayRecord.losses
-                                }${
-                                  teamStats.awayRecord.ties > 0
-                                    ? `-${teamStats.awayRecord.ties}`
-                                    : ""
-                                }`
-                              : "N/A"}
-                          </span>
-                        </div>
-                        {teamStats?.awayRecord && (
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
-                            <div
-                              className="h-2.5 rounded-full bg-green-600"
-                              style={{
-                                width: `${
-                                  (teamStats.awayRecord.wins /
-                                    (teamStats.awayRecord.wins +
-                                      teamStats.awayRecord.losses +
-                                      teamStats.awayRecord.ties)) *
-                                  100
-                                }%`,
-                              }}
-                            ></div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border rounded-lg p-4 dark:border-gray-600">
-                    <h3 className="font-medium mb-3 text-lg">Recent Form</h3>
-                    {teamStats?.recentForm &&
-                    teamStats.recentForm.length > 0 ? (
-                      <div className="flex space-x-2 mb-2">
-                        {teamStats.recentForm.map((result, i) => (
-                          <div
-                            key={i}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-medium ${
-                              result === "W"
-                                ? "bg-green-500"
-                                : result === "L"
-                                ? "bg-red-500"
-                                : "bg-yellow-500"
-                            }`}
-                          >
-                            {result}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-gray-500 dark:text-gray-400">
-                        No recent games available
-                      </p>
-                    )}
-
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                        Last 5 Games
-                      </h4>
-                      <div className="text-sm">
-                        {teamStats?.recentForm && (
-                          <span>
-                            {
-                              teamStats.recentForm.filter((r) => r === "W")
-                                .length
-                            }{" "}
-                            wins,{" "}
-                            {
-                              teamStats.recentForm.filter((r) => r === "L")
-                                .length
-                            }{" "}
-                            losses
-                            {teamStats.recentForm.filter((r) => r === "T")
-                              .length > 0 &&
-                              `, ${
-                                teamStats.recentForm.filter((r) => r === "T")
-                                  .length
-                              } ties`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-lg font-semibold mb-4">Playoff Odds</h2>
-                  {/* TODO(seankane): this whole section is hard coded */}
-                  <div className="space-y-4">
+          {/* Add detailed performance metrics section */}
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Performance Breakdown
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="border rounded-lg p-4">
+                  <h3
+                    className="font-medium mb-3 text-lg"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Home vs Away
+                  </h3>
+                  <div className="flex flex-col space-y-4">
                     <div>
                       <div className="flex justify-between mb-1">
-                        <span>Last Place</span>
-                        <span className="font-medium">0%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
-                        <div
-                          className="h-2.5 rounded-full bg-blue-600"
-                          style={{ width: `${team.playoffChance}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>Make Playoffs</span>
-                        <span className="font-medium">
-                          {team.playoffChance}%
+                        <span style={{ color: "var(--text-primary)" }}>
+                          Home Record
+                        </span>
+                        <span
+                          className="font-medium"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {teamStats?.homeRecord
+                            ? `${teamStats.homeRecord.wins}-${
+                                teamStats.homeRecord.losses
+                              }${
+                                teamStats.homeRecord.ties > 0
+                                  ? `-${teamStats.homeRecord.ties}`
+                                  : ""
+                              }`
+                            : "N/A"}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
+                      {teamStats?.homeRecord && (
                         <div
-                          className="h-2.5 rounded-full bg-blue-600"
-                          style={{ width: `${team.playoffChance}%` }}
-                        ></div>
-                      </div>
+                          className="w-full rounded-full h-2.5"
+                          style={{
+                            backgroundColor: "var(--surface-sunken)",
+                          }}
+                        >
+                          <div
+                            className="h-2.5 rounded-full"
+                            style={{
+                              backgroundColor: "var(--chart-series-1)",
+                              width: `${
+                                (teamStats.homeRecord.wins /
+                                  (teamStats.homeRecord.wins +
+                                    teamStats.homeRecord.losses +
+                                    teamStats.homeRecord.ties)) *
+                                100
+                              }%`,
+                            }}
+                          ></div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <div className="flex justify-between mb-1">
-                        <span>Win Championship</span>
-                        <span className="font-medium">0%</span>
+                        <span style={{ color: "var(--text-primary)" }}>
+                          Away Record
+                        </span>
+                        <span
+                          className="font-medium"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {teamStats?.awayRecord
+                            ? `${teamStats.awayRecord.wins}-${
+                                teamStats.awayRecord.losses
+                              }${
+                                teamStats.awayRecord.ties > 0
+                                  ? `-${teamStats.awayRecord.ties}`
+                                  : ""
+                              }`
+                            : "N/A"}
+                        </span>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
+                      {teamStats?.awayRecord && (
                         <div
-                          className="h-2.5 rounded-full bg-yellow-600"
-                          style={{ width: "0%" }}
-                        ></div>
-                      </div>
+                          className="w-full rounded-full h-2.5"
+                          style={{
+                            backgroundColor: "var(--surface-sunken)",
+                          }}
+                        >
+                          <div
+                            className="h-2.5 rounded-full"
+                            style={{
+                              backgroundColor: "var(--chart-series-3)",
+                              width: `${
+                                (teamStats.awayRecord.wins /
+                                  (teamStats.awayRecord.wins +
+                                    teamStats.awayRecord.losses +
+                                    teamStats.awayRecord.ties)) *
+                                100
+                              }%`,
+                            }}
+                          ></div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-lg font-semibold mb-4">
-                    Recent Performance
-                  </h2>
-                  <div className="space-y-3">
-                    {team.schedule
-                      .slice(-5)
-                      .reverse()
-                      .map((game, i) => (
+                <div className="border rounded-lg p-4">
+                  <h3
+                    className="font-medium mb-3 text-lg"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Recent Form
+                  </h3>
+                  {teamStats?.recentForm &&
+                  teamStats.recentForm.length > 0 ? (
+                    <div className="flex space-x-2 mb-2">
+                      {teamStats.recentForm.map((result, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between py-2 border-b dark:border-gray-600 last:border-0"
+                          className="w-8 h-8 rounded-full flex items-center justify-center font-medium"
+                          style={{
+                            backgroundColor: resultTokens(result).fg,
+                            color: resultTokens(result).bg,
+                          }}
                         >
-                          <div>
-                            <span className="font-medium">
-                              Week {game.week}
-                            </span>
-                            <span className="mx-2 text-gray-400">vs</span>
-                            <span>{game.opponent}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <span className="mr-2">{game.score}</span>
-                            {game.result === "W" && (
-                              <span className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-xs">
-                                W
-                              </span>
-                            )}
-                            {game.result === "L" && (
-                              <span className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs">
-                                L
-                              </span>
-                            )}
-                            {game.result === "T" && (
-                              <span className="w-5 h-5 rounded-full bg-yellow-500 text-white flex items-center justify-center text-xs">
-                                T
-                              </span>
-                            )}
-                            {game.result === "-" && (
-                              <span className="text-gray-400">Upcoming</span>
-                            )}
-                          </div>
+                          {result}
                         </div>
                       ))}
+                    </div>
+                  ) : (
+                    <p style={{ color: "var(--text-muted)" }}>
+                      No recent games available
+                    </p>
+                  )}
+
+                  <div className="mt-4">
+                    <h4
+                      className="text-sm font-medium mb-1"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Last 5 Games
+                    </h4>
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {teamStats?.recentForm && (
+                        <span>
+                          {
+                            teamStats.recentForm.filter((r) => r === "W")
+                              .length
+                          }{" "}
+                          wins,{" "}
+                          {
+                            teamStats.recentForm.filter((r) => r === "L")
+                              .length
+                          }{" "}
+                          losses
+                          {teamStats.recentForm.filter((r) => r === "T")
+                            .length > 0 &&
+                            `, ${
+                              teamStats.recentForm.filter((r) => r === "T")
+                                .length
+                            } ties`}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </section>
-
-              {/* Add history vs top opponents section */}
-              {teamStats?.topOpponents && teamStats.topOpponents.length > 0 && (
-                <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-xl font-semibold mb-4">
-                    History vs Top Opponents
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {teamStats.topOpponents
-                      .sort((a, b) => b.record.wins - a.record.wins)
-                      .map((opponentData, i) => (
-                        <div
-                          key={i}
-                          className="border rounded-lg p-4 dark:border-gray-600"
-                        >
-                          <h3 className="font-medium mb-2">
-                            <Link
-                              href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
-                              className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 transition-colors duration-200"
-                            >
-                              {opponentData.opponent}
-                            </Link>
-                          </h3>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                              Record:
-                            </span>
-                            <span className="font-medium">
-                              {opponentData.record.wins}-
-                              {opponentData.record.losses}
-                              {opponentData.record.ties > 0
-                                ? `-${opponentData.record.ties}`
-                                : ""}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                              Win %:
-                            </span>
-                            <span
-                              className={`font-medium ${
-                                opponentData.winPercentage >= 50
-                                  ? "text-green-600 dark:text-green-400"
-                                  : "text-red-600 dark:text-red-400"
-                              }`}
-                            >
-                              {opponentData.winPercentage.toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="mt-2">
-                            <Link
-                              href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
-                              className="text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300"
-                            >
-                              View {opponentData.opponent}&apos;s Team Page →
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Year-by-Year Records Table */}
-              {yearByYearRecords.length > 0 && (
-                <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-                  <h2 className="text-xl font-semibold mb-4">
-                    Year-by-Year Record
-                  </h2>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-                      <thead className="bg-gray-50 dark:bg-gray-800">
-                        <tr>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Year
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Regular Season
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Playoff Record
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Total Points
-                          </th>
-                          <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Avg Points/Game
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                        {yearByYearRecords.map((yearRecord, index) => {
-                          const regularSeasonRecord = `${
-                            yearRecord.regularSeason.wins
-                          }-${yearRecord.regularSeason.losses}${
-                            yearRecord.regularSeason.ties > 0
-                              ? `-${yearRecord.regularSeason.ties}`
-                              : ""
-                          }`;
-                          const playoffRecord = `${yearRecord.playoffs.wins}-${
-                            yearRecord.playoffs.losses
-                          }${
-                            yearRecord.playoffs.ties > 0
-                              ? `-${yearRecord.playoffs.ties}`
-                              : ""
-                          }`;
-                          const totalPlayoffGames =
-                            yearRecord.playoffs.wins +
-                            yearRecord.playoffs.losses +
-                            yearRecord.playoffs.ties;
-
-                          return (
-                            <tr
-                              key={yearRecord.year}
-                              className={
-                                index % 2 === 0
-                                  ? "bg-white dark:bg-gray-700"
-                                  : "bg-gray-50 dark:bg-gray-800"
-                              }
-                            >
-                              <td className="py-4 px-4 whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">
-                                {yearRecord.year}
-                              </td>
-                              <td className="py-4 px-4 whitespace-nowrap">
-                                <span
-                                  className={`font-medium ${
-                                    yearRecord.regularSeason.wins >
-                                    yearRecord.regularSeason.losses
-                                      ? "text-green-600 dark:text-green-400"
-                                      : yearRecord.regularSeason.wins <
-                                        yearRecord.regularSeason.losses
-                                      ? "text-red-600 dark:text-red-400"
-                                      : "text-yellow-600 dark:text-yellow-400"
-                                  }`}
-                                >
-                                  {regularSeasonRecord}
-                                </span>
-                              </td>
-                              <td className="py-4 px-4 whitespace-nowrap">
-                                {totalPlayoffGames > 0 ? (
-                                  <span
-                                    className={`font-medium ${
-                                      yearRecord.playoffs.wins >
-                                      yearRecord.playoffs.losses
-                                        ? "text-green-600 dark:text-green-400"
-                                        : yearRecord.playoffs.wins <
-                                          yearRecord.playoffs.losses
-                                        ? "text-red-600 dark:text-red-400"
-                                        : "text-yellow-600 dark:text-yellow-400"
-                                    }`}
-                                  >
-                                    {playoffRecord}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-500 dark:text-gray-400">
-                                    -
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-4 px-4 whitespace-nowrap font-medium">
-                                {yearRecord.totalPoints.toFixed(2)}
-                              </td>
-                              <td className="py-4 px-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                {yearRecord.gamesPlayed > 0
-                                  ? (
-                                      yearRecord.totalPoints /
-                                      yearRecord.gamesPlayed
-                                    ).toFixed(2)
-                                  : "-"}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
-            </>
-          )}
-
-          {/* Players Tab */}
-          {activeTab === "players" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Team Roster</h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Position
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Player
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Team
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Points
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Projection
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                    {team.players.map((player) => (
-                      <tr key={player.id}>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {player.position}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap font-medium">
-                          {player.name}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {player.team}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {player.points.toFixed(2)}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          {player.projection > 0
-                            ? player.projection.toFixed(2)
-                            : "-"}
-                        </td>
-                        <td className="py-4 px-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs rounded-full
-                              ${
-                                player.status === "Active"
-                                  ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
-                                  : player.status === "IR"
-                                  ? "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100"
-                                  : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
-                              }
-                            `}
-                          >
-                            {player.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
-            </section>
+            </CardContent>
+          </Card>
+
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <h2
+                  className="text-lg font-semibold mb-4"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Playoff Odds
+                </h2>
+                {/* TODO(seankane): this whole section is hard coded */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span style={{ color: "var(--text-primary)" }}>
+                        Last Place
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        0%
+                      </span>
+                    </div>
+                    <div
+                      className="w-full rounded-full h-2.5"
+                      style={{ backgroundColor: "var(--surface-sunken)" }}
+                    >
+                      <div
+                        className="h-2.5 rounded-full"
+                        style={{
+                          backgroundColor: "var(--action-primary)",
+                          width: `${team.playoffChance}%`,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span style={{ color: "var(--text-primary)" }}>
+                        Make Playoffs
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {team.playoffChance}%
+                      </span>
+                    </div>
+                    <div
+                      className="w-full rounded-full h-2.5"
+                      style={{ backgroundColor: "var(--surface-sunken)" }}
+                    >
+                      <div
+                        className="h-2.5 rounded-full"
+                        style={{
+                          backgroundColor: "var(--action-primary)",
+                          width: `${team.playoffChance}%`,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span style={{ color: "var(--text-primary)" }}>
+                        Win Championship
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        0%
+                      </span>
+                    </div>
+                    <div
+                      className="w-full rounded-full h-2.5"
+                      style={{ backgroundColor: "var(--surface-sunken)" }}
+                    >
+                      <div
+                        className="h-2.5 rounded-full"
+                        style={{
+                          backgroundColor: "var(--chart-series-2)",
+                          width: "0%",
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <h2
+                  className="text-lg font-semibold mb-4"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Recent Performance
+                </h2>
+                <div className="space-y-3">
+                  {team.schedule
+                    .slice(-5)
+                    .reverse()
+                    .map((game, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between py-2 border-b last:border-0"
+                      >
+                        <div>
+                          <span
+                            className="font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            Week {game.week}
+                          </span>
+                          <span
+                            className="mx-2"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            vs
+                          </span>
+                          <span style={{ color: "var(--text-primary)" }}>
+                            {game.opponent}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <span
+                            className="mr-2"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {game.score}
+                          </span>
+                          {(game.result === "W" ||
+                            game.result === "L" ||
+                            game.result === "T") && (
+                            <span
+                              className="w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                              style={{
+                                backgroundColor: resultTokens(game.result).fg,
+                                color: resultTokens(game.result).bg,
+                              }}
+                            >
+                              {game.result}
+                            </span>
+                          )}
+                          {game.result === "-" && (
+                            <span style={{ color: "var(--text-muted)" }}>
+                              Upcoming
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+
+          {/* Add history vs top opponents section */}
+          {teamStats?.topOpponents && teamStats.topOpponents.length > 0 && (
+            <Card>
+              <CardContent className="p-6">
+                <h2
+                  className="text-xl font-semibold mb-4"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  History vs Top Opponents
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {teamStats.topOpponents
+                    .sort((a, b) => b.record.wins - a.record.wins)
+                    .map((opponentData, i) => (
+                      <div key={i} className="border rounded-lg p-4">
+                        <h3 className="font-medium mb-2">
+                          <Link
+                            href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
+                            className="hover:underline"
+                            style={{ color: "var(--action-primary)" }}
+                          >
+                            {opponentData.opponent}
+                          </Link>
+                        </h3>
+                        <div className="flex items-center justify-between mb-2">
+                          <span
+                            className="text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            Record:
+                          </span>
+                          <span
+                            className="font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {opponentData.record.wins}-
+                            {opponentData.record.losses}
+                            {opponentData.record.ties > 0
+                              ? `-${opponentData.record.ties}`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span
+                            className="text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            Win %:
+                          </span>
+                          <span
+                            className="font-medium"
+                            style={{
+                              color:
+                                opponentData.winPercentage >= 50
+                                  ? "var(--status-success-fg)"
+                                  : "var(--status-danger-fg)",
+                            }}
+                          >
+                            {opponentData.winPercentage.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <Link
+                            href={`/league/${leagueIdNum}/teams/${opponentData.opponentESPNID}`}
+                            className="text-xs hover:underline"
+                            style={{ color: "var(--action-primary)" }}
+                          >
+                            View {opponentData.opponent}&apos;s Team Page →
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
-          {/* Schedule Tab */}
-          {activeTab === "schedule" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Team Schedule</h2>
+          {/* Year-by-Year Records Table */}
+          {yearByYearRecords.length > 0 && (
+            <Card>
+              <CardContent className="p-6">
+                <h2
+                  className="text-xl font-semibold mb-4"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Year-by-Year Record
+                </h2>
+                <DataTable
+                  columns={yearRecordColumns}
+                  rows={yearByYearRecords}
+                  rowKey={(yearRecord) => String(yearRecord.year)}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Players Tab */}
+        <TabsContent value="players" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Team Roster
+              </h2>
+              <DataTable
+                columns={rosterColumns}
+                rows={team.players}
+                rowKey={(player) => String(player.id)}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Schedule Tab */}
+        <TabsContent value="schedule" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Team Schedule
+              </h2>
 
               {/* Add filters */}
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="w-full md:w-auto">
                   <label
                     htmlFor="year-filter"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     Filter by Year
                   </label>
-                  <select
-                    id="year-filter"
-                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  <Select
                     value={yearFilter}
-                    onChange={(e) => setYearFilter(e.target.value)}
+                    onValueChange={(value) => setYearFilter(value)}
                   >
-                    <option value="all">All Years</option>
-                    {Array.from(new Set(team.schedule.map((game) => game.year)))
-                      .sort((a, b) => b - a) // Sort years in descending order
-                      .map((year) => (
-                        <option key={`year-${year}`} value={year}>
-                          {year}
-                        </option>
-                      ))}
-                  </select>
+                    <SelectTrigger
+                      id="year-filter"
+                      aria-label="Filter by Year"
+                      className="w-full md:w-auto"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {Array.from(
+                        new Set(team.schedule.map((game) => game.year))
+                      )
+                        .sort((a, b) => b - a) // Sort years in descending order
+                        .map((year) => (
+                          <SelectItem key={`year-${year}`} value={String(year)}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="w-full md:w-auto">
                   <label
                     htmlFor="opponent-filter"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     Filter by Opponent
                   </label>
-                  <select
-                    id="opponent-filter"
-                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  <Select
                     value={opponentFilter}
-                    onChange={(e) => setOpponentFilter(e.target.value)}
+                    onValueChange={(value) => setOpponentFilter(value)}
                   >
-                    <option value="all">All Opponents</option>
-                    {Array.from(
-                      new Set(team.schedule.map((game) => game.opponent))
-                    )
-                      .sort((a, b) => a.localeCompare(b)) // Sort opponents alphabetically
-                      .map((opponent) => (
-                        <option key={`opponent-${opponent}`} value={opponent}>
-                          {opponent}
-                        </option>
-                      ))}
-                  </select>
+                    <SelectTrigger
+                      id="opponent-filter"
+                      aria-label="Filter by Opponent"
+                      className="w-full md:w-auto"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Opponents</SelectItem>
+                      {Array.from(
+                        new Set(team.schedule.map((game) => game.opponent))
+                      )
+                        .sort((a, b) => a.localeCompare(b)) // Sort opponents alphabetically
+                        .map((opponent) => (
+                          <SelectItem
+                            key={`opponent-${opponent}`}
+                            value={opponent}
+                          >
+                            {opponent}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Reset button - only show when filters are active */}
                 {(yearFilter !== "all" || opponentFilter !== "all") && (
                   <div className="w-full md:w-auto flex items-end">
-                    <button
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setYearFilter("all");
                         setOpponentFilter("all");
                       }}
-                      className="py-2 px-4 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md border border-gray-300 dark:border-gray-600 transition-colors"
                     >
-                      <div className="flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 mr-1"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                        Reset Filters
-                      </div>
-                    </button>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                      Reset Filters
+                    </Button>
                   </div>
                 )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {team.schedule
-                  // Filter games by year
-                  .filter(
-                    (game) =>
-                      yearFilter === "all" ||
-                      game.year.toString() === yearFilter
-                  )
-                  // Filter games by opponent
-                  .filter(
-                    (game) =>
-                      opponentFilter === "all" ||
-                      game.opponent === opponentFilter
-                  )
+                {filteredSchedule
                   // Sort by most recent
                   .sort((a, b) => {
                     if (a.year !== b.year) return b.year - a.year; // Most recent year first
                     return b.week - a.week; // Most recent week first
                   })
-                  .map((game, i) => (
-                    <div key={i}>
-                      {game.matchupId ? (
-                        <Link
-                          href={`/league/${leagueIdNum}/schedule/${game.matchupId}`}
-                          className={`block p-4 rounded-lg border cursor-pointer hover:shadow-md transition-shadow duration-200 ${
-                            game.result === "W"
-                              ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 hover:border-green-300"
-                              : game.result === "L"
-                              ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 hover:border-red-300"
-                              : "border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 hover:border-gray-300"
-                          }`}
-                        >
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="font-medium">
-                              Week {game.week} ({game.year})
+                  .map((game, i) => {
+                    // W / L is a status; anything else (upcoming or tie) keeps
+                    // the neutral surface the old gray card used.
+                    const cardBorderColor =
+                      game.result === "W"
+                        ? "var(--status-success-fg)"
+                        : game.result === "L"
+                        ? "var(--status-danger-fg)"
+                        : "var(--border-subtle)";
+                    const cardBackgroundColor =
+                      game.result === "W"
+                        ? "var(--status-success-bg)"
+                        : game.result === "L"
+                        ? "var(--status-danger-bg)"
+                        : "var(--surface-sunken)";
+
+                    const cardContents = (
+                      <>
+                        <div className="flex justify-between items-center mb-2">
+                          <span
+                            className="font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            Week {game.week} ({game.year})
+                          </span>
+                          {game.result !== "-" && (
+                            <span
+                              className="w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                              style={{
+                                backgroundColor: resultTokens(game.result).fg,
+                                color: resultTokens(game.result).bg,
+                              }}
+                            >
+                              {game.result}
                             </span>
-                            {game.result !== "-" && (
-                              <span
-                                className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white ${
-                                  game.result === "W"
-                                    ? "bg-green-500"
-                                    : game.result === "L"
-                                    ? "bg-red-500"
-                                    : "bg-yellow-500"
-                                }`}
-                              >
-                                {game.result}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mb-2">
-                            <span className="text-gray-500 dark:text-gray-400">
-                              {game.isHome ? "vs" : "@"}
-                            </span>
-                            <span className="ml-2 font-medium">
-                              {game.opponent}
-                            </span>
-                          </div>
-                          <div>
-                            {game.result !== "-" ? (
-                              <span>{game.score}</span>
-                            ) : (
-                              <span className="text-gray-500 dark:text-gray-400">
-                                Upcoming
-                              </span>
-                            )}
-                          </div>
-                        </Link>
-                      ) : (
-                        <div
-                          className={`p-4 rounded-lg border ${
-                            game.result === "W"
-                              ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800"
-                              : game.result === "L"
-                              ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
-                              : "border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700"
-                          }`}
-                        >
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="font-medium">
-                              Week {game.week} ({game.year})
-                            </span>
-                            {game.result !== "-" && (
-                              <span
-                                className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white ${
-                                  game.result === "W"
-                                    ? "bg-green-500"
-                                    : game.result === "L"
-                                    ? "bg-red-500"
-                                    : "bg-yellow-500"
-                                }`}
-                              >
-                                {game.result}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mb-2">
-                            <span className="text-gray-500 dark:text-gray-400">
-                              {game.isHome ? "vs" : "@"}
-                            </span>
-                            <span className="ml-2 font-medium">
-                              {game.opponent}
-                            </span>
-                          </div>
-                          <div>
-                            {game.result !== "-" ? (
-                              <span>{game.score}</span>
-                            ) : (
-                              <span className="text-gray-500 dark:text-gray-400">
-                                Upcoming
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <div className="mb-2">
+                          <span style={{ color: "var(--text-muted)" }}>
+                            {game.isHome ? "vs" : "@"}
+                          </span>
+                          <span
+                            className="ml-2 font-medium"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {game.opponent}
+                          </span>
+                        </div>
+                        <div>
+                          {game.result !== "-" ? (
+                            <span style={{ color: "var(--text-primary)" }}>
+                              {game.score}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--text-muted)" }}>
+                              Upcoming
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    );
+
+                    return (
+                      <div key={i}>
+                        {game.matchupId ? (
+                          <Link
+                            href={`/league/${leagueIdNum}/schedule/${game.matchupId}`}
+                            className="block p-4 rounded-lg border cursor-pointer hover:shadow-md transition-shadow duration-200"
+                            style={{
+                              borderColor: cardBorderColor,
+                              backgroundColor: cardBackgroundColor,
+                            }}
+                          >
+                            {cardContents}
+                          </Link>
+                        ) : (
+                          <div
+                            className="p-4 rounded-lg border"
+                            style={{
+                              borderColor: cardBorderColor,
+                              backgroundColor: cardBackgroundColor,
+                            }}
+                          >
+                            {cardContents}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
               {/* Show message when no games match filters */}
-              {team.schedule
-                .filter(
-                  (game) =>
-                    yearFilter === "all" || game.year.toString() === yearFilter
-                )
-                .filter(
-                  (game) =>
-                    opponentFilter === "all" || game.opponent === opponentFilter
-                ).length === 0 && (
-                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
-                  No games match the selected filters.
-                </div>
+              {filteredSchedule.length === 0 && (
+                <EmptyState title="No games match the selected filters." />
               )}
-            </section>
-          )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {/* Draft Picks Tab */}
-          {activeTab === "draft" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Draft Capital</h2>
+        {/* Draft Picks Tab */}
+        <TabsContent value="draft" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Draft Capital
+              </h2>
 
               {/* Year Filter */}
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <div className="w-full md:w-auto">
                   <label
                     htmlFor="draft-year-filter"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
                   >
                     Filter by Year
                   </label>
-                  <select
-                    id="draft-year-filter"
-                    className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  <Select
                     value={transactionYearFilter}
-                    onChange={(e) => setTransactionYearFilter(e.target.value)}
+                    onValueChange={(value) => setTransactionYearFilter(value)}
                   >
-                    <option value="all">All Years</option>
-                    {Array.from(
-                      new Set(
-                        team.draftPicks.map(
-                          (pick) =>
-                            pick.description.match(/\((\d{4})\)/)?.[1] || ""
+                    <SelectTrigger
+                      id="draft-year-filter"
+                      aria-label="Filter by Year"
+                      className="w-full md:w-auto"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {Array.from(
+                        new Set(
+                          team.draftPicks.map(
+                            (pick) =>
+                              pick.description.match(/\((\d{4})\)/)?.[1] || ""
+                          )
                         )
                       )
-                    )
-                      .filter(Boolean)
-                      .sort((a, b) => parseInt(b) - parseInt(a))
-                      .map((year) => (
-                        <option key={`draft-year-${year}`} value={year}>
-                          {year}
-                        </option>
-                      ))}
-                  </select>
+                        .filter(Boolean)
+                        .sort((a, b) => parseInt(b) - parseInt(a))
+                        .map((year) => (
+                          <SelectItem key={`draft-year-${year}`} value={year}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Year
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Round
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Pick
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Overall
-                      </th>
-                      <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Player
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                    {team.draftPicks
-                      .filter((pick) => {
-                        if (transactionYearFilter === "all") return true;
-                        const pickYear =
-                          pick.description.match(/\((\d{4})\)/)?.[1];
-                        return pickYear === transactionYearFilter;
-                      })
-                      .map((pick, i) => {
-                        const pickYear =
-                          pick.description.match(/\((\d{4})\)/)?.[1] || "";
-                        return (
-                          <tr
-                            key={i}
-                            className={
-                              i % 2 === 0 ? "" : "bg-gray-50 dark:bg-gray-700"
-                            }
-                          >
-                            <td className="py-4 px-4 whitespace-nowrap">
-                              {pickYear}
-                            </td>
-                            <td className="py-4 px-4 whitespace-nowrap">
-                              {pick.round}
-                            </td>
-                            <td className="py-4 px-4 whitespace-nowrap">
-                              {pick.pick}
-                            </td>
-                            <td className="py-4 px-4 whitespace-nowrap">
-                              {pick.overall}
-                            </td>
-                            <td className="py-4 px-4">
-                              <Link
-                                href="#"
-                                onClick={(e) => e.preventDefault()}
-                                className="text-blue-600 hover:text-blue-800 dark:hover:text-blue-400"
-                              >
-                                {pick.player} ({pick.position})
-                              </Link>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={draftPickColumns}
+                rows={filteredDraftPicks}
+                rowKey={({ index }) => String(index)}
+              />
 
               {/* Show message when no draft picks match the filter */}
-              {team.draftPicks.filter((pick) => {
-                if (transactionYearFilter === "all") return true;
-                const pickYear = pick.description.match(/\((\d{4})\)/)?.[1];
-                return pickYear === transactionYearFilter;
-              }).length === 0 && (
-                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
-                  No draft picks match the selected year filter.
-                </div>
+              {filteredDraftPicks.length === 0 && (
+                <EmptyState title="No draft picks match the selected year filter." />
               )}
-            </section>
-          )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {/* Transactions Tab */}
-          {activeTab === "transactions" && (
-            <section className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Team Transactions</h2>
+        {/* Transactions Tab */}
+        <TabsContent value="transactions" className="space-y-6">
+          <Card>
+            <CardContent className="p-6">
+              <h2
+                className="text-xl font-semibold mb-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Team Transactions
+              </h2>
 
               {team && team.transactions && team.transactions.length > 0 ? (
                 <div className="space-y-4">
@@ -1465,65 +1694,73 @@ export default function TeamDetail() {
                     <div className="w-full md:w-auto">
                       <label
                         htmlFor="transaction-year-filter"
-                        className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1"
+                        className="block text-sm font-medium mb-1"
+                        style={{ color: "var(--text-muted)" }}
                       >
                         Filter by Year
                       </label>
-                      <select
-                        id="transaction-year-filter"
-                        className="w-full md:w-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      <Select
                         value={transactionYearFilter}
-                        onChange={(e) =>
-                          setTransactionYearFilter(e.target.value)
+                        onValueChange={(value) =>
+                          setTransactionYearFilter(value)
                         }
                       >
-                        <option value="all">All Years</option>
-                        {Array.from(
-                          new Set(
-                            team.transactions.map(
-                              (transaction) => transaction.year
+                        <SelectTrigger
+                          id="transaction-year-filter"
+                          aria-label="Filter by Year"
+                          className="w-full md:w-auto"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Years</SelectItem>
+                          {Array.from(
+                            new Set(
+                              team.transactions.map(
+                                (transaction) => transaction.year
+                              )
                             )
                           )
-                        )
-                          .sort((a, b) => b - a)
-                          .map((year) => (
-                            <option
-                              key={`transaction-year-${year}`}
-                              value={year}
-                            >
-                              {year}
-                            </option>
-                          ))}
-                      </select>
+                            .sort((a, b) => b - a)
+                            .map((year) => (
+                              <SelectItem
+                                key={`transaction-year-${year}`}
+                                value={String(year)}
+                              >
+                                {year}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 
                   {/* Filter buttons */}
                   <div className="flex flex-wrap gap-2 mb-6 justify-center sm:justify-start">
-                    <button
-                      className="px-4 py-2 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
-                      onClick={() => {}}
-                    >
+                    <Button className="rounded-full px-4" onClick={() => {}}>
                       All Types
-                    </button>
-                    <button
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="rounded-full px-4"
                       onClick={() => {}}
                     >
                       Draft
-                    </button>
-                    <button
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="rounded-full px-4"
                       onClick={() => {}}
                     >
                       Trade
-                    </button>
-                    <button
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="rounded-full px-4"
                       onClick={() => {}}
                     >
                       Waiver
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Transaction Cards */}
@@ -1537,32 +1774,33 @@ export default function TeamDetail() {
                       .map((transaction) => (
                         <div
                           key={transaction.id}
-                          className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
+                          className="border rounded-lg overflow-hidden"
+                          style={{
+                            borderLeftWidth: 4,
+                            borderLeftColor: txTypeColor(transaction.type),
+                          }}
                         >
                           <div
-                            className={`px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0
-                          ${
-                            transaction.type.toLowerCase() === "draft"
-                              ? "bg-purple-50 dark:bg-purple-900/20"
-                              : transaction.type.toLowerCase() === "trade"
-                              ? "bg-blue-50 dark:bg-blue-900/20"
-                              : "bg-green-50 dark:bg-green-900/20"
-                          }`}
+                            className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0"
+                            style={{
+                              backgroundColor: "var(--surface-sunken)",
+                            }}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0">
-                              <span
-                                className={`px-2 py-1 text-xs rounded-full w-fit
-                              ${
-                                transaction.type.toLowerCase() === "draft"
-                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-                                  : transaction.type.toLowerCase() === "trade"
-                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                                  : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                              }`}
+                              <Badge
+                                variant="outline"
+                                className="rounded-full w-fit"
+                                style={{
+                                  color: txTypeColor(transaction.type),
+                                  borderColor: txTypeColor(transaction.type),
+                                }}
                               >
                                 {transaction.type}
-                              </span>
-                              <span className="sm:ml-3 text-gray-600 dark:text-gray-400 text-sm">
+                              </Badge>
+                              <span
+                                className="sm:ml-3 text-sm"
+                                style={{ color: "var(--text-muted)" }}
+                              >
                                 {transaction.date} - {transaction.year} Week{" "}
                                 {transaction.week}
                               </span>
@@ -1570,19 +1808,35 @@ export default function TeamDetail() {
                           </div>
 
                           <div className="p-4">
-                            <p className="mb-4">{transaction.description}</p>
+                            <p
+                              className="mb-4"
+                              style={{ color: "var(--text-primary)" }}
+                            >
+                              {transaction.description}
+                            </p>
 
                             <div className="space-y-4 sm:space-y-0 sm:grid sm:grid-cols-1 lg:grid-cols-2 sm:gap-4">
                               {transaction.playersGained &&
                                 transaction.playersGained.length > 0 && (
                                   <div>
-                                    <h4 className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">
+                                    <h4
+                                      className="text-sm font-medium mb-2"
+                                      style={{
+                                        color: "var(--status-success-fg)",
+                                      }}
+                                    >
                                       Players Gained:
                                     </h4>
                                     <ul className="list-disc list-inside space-y-1">
                                       {transaction.playersGained.map(
                                         (player, idx) => (
-                                          <li key={idx} className="text-sm">
+                                          <li
+                                            key={idx}
+                                            className="text-sm"
+                                            style={{
+                                              color: "var(--text-primary)",
+                                            }}
+                                          >
                                             {typeof player === "object"
                                               ? player.name ||
                                                 JSON.stringify(player)
@@ -1597,13 +1851,24 @@ export default function TeamDetail() {
                               {transaction.playersLost &&
                                 transaction.playersLost.length > 0 && (
                                   <div>
-                                    <h4 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
+                                    <h4
+                                      className="text-sm font-medium mb-2"
+                                      style={{
+                                        color: "var(--status-danger-fg)",
+                                      }}
+                                    >
                                       Players Lost:
                                     </h4>
                                     <ul className="list-disc list-inside space-y-1">
                                       {transaction.playersLost.map(
                                         (player, idx) => (
-                                          <li key={idx} className="text-sm">
+                                          <li
+                                            key={idx}
+                                            className="text-sm"
+                                            style={{
+                                              color: "var(--text-primary)",
+                                            }}
+                                          >
                                             {typeof player === "object"
                                               ? player.name ||
                                                 JSON.stringify(player)
@@ -1626,22 +1891,16 @@ export default function TeamDetail() {
                       transactionYearFilter === "all" ||
                       transaction.year.toString() === transactionYearFilter
                   ).length === 0 && (
-                    <div className="text-center py-6 text-gray-500 dark:text-gray-400">
-                      No transactions match the selected year filter.
-                    </div>
+                    <EmptyState title="No transactions match the selected year filter." />
                   )}
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <p className="text-gray-500 dark:text-gray-400">
-                    No transactions found for this team.
-                  </p>
-                </div>
+                <EmptyState title="No transactions found for this team." />
               )}
-            </section>
-          )}
-        </div>
-      </div>
-    </Layout>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
