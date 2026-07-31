@@ -1,18 +1,5 @@
 import { apiClient } from './apiClient';
 
-export interface AdminBacklogBucketRow {
-  label: string;
-  leagues: number;
-}
-
-export interface AdminBacklogResponse {
-  season: string;
-  total_leagues: number;
-  never_fetched_count: number;
-  oldest_transactions_fetched_at: string | null;
-  buckets: AdminBacklogBucketRow[];
-}
-
 export interface AdminTransactionFetchAgeHistorySnapshot {
   snapshot_at: string;
   never_fetched: number;
@@ -72,10 +59,6 @@ export interface AdminDiscoveryFrontierResponse {
 }
 
 export const adminService = {
-  getBacklog: async (): Promise<AdminBacklogResponse> => {
-    return apiClient.get<AdminBacklogResponse>('/admin/backlog');
-  },
-
   getTransactionFetchAgeHistory: async (): Promise<AdminTransactionFetchAgeHistoryResponse> => {
     return apiClient.get<AdminTransactionFetchAgeHistoryResponse>('/admin/transaction-fetch-age-history');
   },
