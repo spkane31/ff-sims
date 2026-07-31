@@ -105,6 +105,10 @@ class Belief:
     name: str = ""
     games: float = 0.0  # effective (decayed) games observed
     cum_par: float = 0.0  # decayed cumulative points-above-replacement
+    # Raw count of trades this player appeared in. Unlike `games` this is not
+    # decayed: it answers "how much market evidence is this belief built on",
+    # which is a question about the whole run, not about recent form.
+    trades: int = 0
 
 
 class Valuator:
@@ -220,6 +224,8 @@ class Valuator:
             return
         self.trades_applied += 1
         self.trade_abs_gap += abs(gap)
+        for x in a + b:
+            x.trades += 1
 
         k = total_var / (total_var + TRADE_VAR)  # gain on the summed constraint
 
@@ -323,6 +329,7 @@ class Valuator:
             PlayerBeliefState(
                 player_id=pid, guess=b.guess, var=b.var, games=b.games,
                 cum_par=b.cum_par, position=b.position, name=b.name,
+                trades=b.trades,
             )
             for pid, b in self.beliefs.items()
         ]
@@ -339,6 +346,7 @@ class Valuator:
             v.beliefs[s.player_id] = Belief(
                 guess=s.guess, var=s.var, position=s.position or "DEFAULT",
                 name=s.name or "", games=s.games, cum_par=s.cum_par,
+                trades=s.trades,
             )
         return v
 
@@ -355,6 +363,7 @@ class Valuator:
                     "vorp": round(max(0.0, b.guess - RHO)),
                     "sd": round(math.sqrt(b.var)),  # uncertainty band half-width
                     "games": round(b.games, 1),
+                    "trades": b.trades,
                 }
             )
         df = (
@@ -364,7 +373,10 @@ class Valuator:
         )
         df["pos_rank"] = df.groupby("pos").cumcount() + 1
         df = df[
-            ["player_id", "player", "pos", "pos_rank", "value", "vorp", "sd", "games"]
+            [
+                "player_id", "player", "pos", "pos_rank", "value", "vorp", "sd",
+                "games", "trades",
+            ]
         ]
         df.index += 1
         df.index.name = "rank"

@@ -387,7 +387,8 @@ def load_inputs(
 
 def load_state(conn: psycopg.Connection, segment_key: str) -> list[PlayerBeliefState]:
     sql = """
-        SELECT sleeper_player_id, guess, var, games, cum_par, position, name
+        SELECT sleeper_player_id, guess, var, games, cum_par, position, name,
+               trades
         FROM valuation_state WHERE segment = %s
     """
     with conn.cursor() as cur:
@@ -396,6 +397,7 @@ def load_state(conn: psycopg.Connection, segment_key: str) -> list[PlayerBeliefS
             PlayerBeliefState(
                 player_id=r[0], guess=r[1], var=r[2], games=r[3],
                 cum_par=r[4], position=r[5] or "DEFAULT", name=r[6] or "",
+                trades=int(r[7] or 0),
             )
             for r in cur.fetchall()
         ]
@@ -411,12 +413,12 @@ def save_state(
             """
             INSERT INTO valuation_state
                 (segment, sleeper_player_id, guess, var, games, cum_par,
-                 position, name, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                 position, name, trades, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             """,
             [
                 (segment_key, s.player_id, s.guess, s.var, s.games, s.cum_par,
-                 s.position, s.name)
+                 s.position, s.name, s.trades)
                 for s in states
             ],
         )
@@ -472,12 +474,13 @@ def write_snapshot(
     sql = """
         INSERT INTO player_valuations
             (segment, sleeper_player_id, valuation_date, rank, pos_rank,
-             value, vorp, sd, games, position)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             value, vorp, sd, games, position, trades)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (segment, sleeper_player_id, valuation_date) DO UPDATE SET
             rank = EXCLUDED.rank, pos_rank = EXCLUDED.pos_rank,
             value = EXCLUDED.value, vorp = EXCLUDED.vorp, sd = EXCLUDED.sd,
-            games = EXCLUDED.games, position = EXCLUDED.position
+            games = EXCLUDED.games, position = EXCLUDED.position,
+            trades = EXCLUDED.trades
     """
     with conn.cursor() as cur:
         cur.executemany(
@@ -485,7 +488,7 @@ def write_snapshot(
             [
                 (segment_key, row.player_id, valuation_date, rank,
                  int(row.pos_rank), float(row.value), float(row.vorp),
-                 float(row.sd), float(row.games), row.pos)
+                 float(row.sd), float(row.games), row.pos, int(row.trades))
                 for rank, row in zip(rankings.index, rankings.itertuples(index=False))
             ],
         )

@@ -199,7 +199,9 @@ def _print_rankings(v: Valuator, top: int, source: str) -> None:
     print(v.rankings().head(top).to_string())
     print(
         "\nvalue = current belief (additive scale) | vorp = value - ρ"
-        " | sd = uncertainty band\n"
+        " | sd = uncertainty band"
+        "\ngames = decayed effective games scored | trades = raw count of"
+        " trades the player appeared in\n"
     )
 
 

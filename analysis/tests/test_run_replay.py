@@ -344,3 +344,39 @@ def test_a_position_that_can_never_be_scored_is_called_out(
     out = capsys.readouterr().out
     assert "never scoreable" in out
     assert "DE 1" in out
+
+
+def test_the_trade_count_is_published_with_each_snapshot(monkeypatch, staging_dir):
+    # _trade_only_archive's trade lands 2025-08-26, inside the ARGS window
+    cloud = FakeConnection("cloud", _cloud_responder(players=_TRADE_ONLY_PLAYERS, scores=[]))
+    _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
+
+    main.run_replay(*ARGS)
+
+    insert = next(
+        sql for op, sql, _ in cloud.calls
+        if op == "executemany" and sql and "INSERT INTO player_valuations" in sql
+    )
+    assert "trades" in insert
+    assert "trades = EXCLUDED.trades" in insert  # a re-run must overwrite it
+
+    # p1 and w7 are the two sides of that trade; p2 was drafted, never traded
+    final_day = max(r[2] for r in _published(cloud))
+    rows = {r[1]: r[10] for r in _published(cloud) if r[2] == final_day}
+    assert rows["p1"] == 1 and rows["w7"] == 1
+    assert rows["p2"] == 0
+
+
+def test_state_persists_the_trade_count(monkeypatch, staging_dir):
+    """Otherwise to_state/from_state silently drops it and the incremental job
+    this state exists for would restart every player's market evidence at 0."""
+    cloud = FakeConnection("cloud", _cloud_responder())
+    _install(monkeypatch, cloud)
+
+    main.run_replay(*ARGS)
+
+    insert = next(
+        sql for op, sql, _ in cloud.calls
+        if op == "executemany" and sql and "INSERT INTO valuation_state" in sql
+    )
+    assert "trades" in insert

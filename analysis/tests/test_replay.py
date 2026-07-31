@@ -239,3 +239,36 @@ def test_curve_rank_inverts_the_seed_curve():
     assert round(curve_rank(curve(1))) == 1
     assert round(curve_rank(curve(20))) == 20
     assert curve_rank(0) == float("inf")
+
+
+def test_each_side_of_a_trade_counts_toward_its_players():
+    """`games` measures performance evidence; this is the market counterpart,
+    so a value backed by hundreds of trades is distinguishable from one backed
+    by two."""
+    v = _valuator(date(2025, 8, 25))
+    assert v.beliefs["p1"].trades == 0
+
+    v.apply_trade(["p1"], ["p2"])
+    v.apply_trade(["p1"], ["p2"])
+    v.apply_trade(["p2"], ["p1"])  # sides swapped: still one trade for each
+
+    assert v.beliefs["p1"].trades == 3
+    assert v.beliefs["p2"].trades == 3
+
+    ranked = v.rankings().set_index("player_id")
+    assert int(ranked.loc["p1", "trades"]) == 3
+
+
+def test_a_trade_the_model_cannot_use_counts_for_nobody():
+    v = _valuator(date(2025, 8, 25))
+    v.apply_trade(["p1"], [])
+    assert v.beliefs["p1"].trades == 0
+
+
+def test_trade_counts_are_not_decayed_like_games():
+    """Trade count answers how much evidence exists over the whole run, not
+    how recent it is, so it must stay a raw count."""
+    v = _valuator(date(2025, 8, 25))
+    for _ in range(10):
+        v.apply_trade(["p1"], ["p2"])
+    assert v.beliefs["p1"].trades == 10  # not 6.2-style decayed

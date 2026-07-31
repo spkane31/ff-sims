@@ -49,6 +49,7 @@ class PlayerBeliefState:
     cum_par: float
     position: str
     name: str
+    trades: int = 0
 
 
 @dataclass
