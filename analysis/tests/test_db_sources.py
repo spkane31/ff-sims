@@ -38,7 +38,7 @@ def _cloud_responder(players=PLAYER_ROWS, scores=SCORE_ROWS):
         if "FROM sleeper_players" in sql:
             requested = params[0] if params else []
             return [r for r in players if r[0] in requested]
-        if "pg_try_advisory_lock" in sql:
+        if "pg_try_advisory_xact_lock" in sql:
             return [(True,)]
         if "max(valuation_date)" in sql:
             return [(None,)]
@@ -159,24 +159,33 @@ def test_resolve_players_short_circuits_on_an_empty_id_list():
 
 def test_advisory_lock_uses_a_stable_segment_scoped_key():
     conn = FakeConnection("cloud", _cloud_responder())
-    assert db.try_advisory_lock(conn, "ppr-sf-10") is True
+    assert db.try_advisory_xact_lock(conn, "ppr-sf-10") is True
     _, sql, params = conn.calls[0]
-    assert "pg_try_advisory_lock" in sql
+    assert "pg_try_advisory_xact_lock" in sql
     assert params[0] == db.ADVISORY_LOCK_NAMESPACE
     assert -(2**31) <= params[1] < 2**31
     assert params[1] != db._lock_key("ppr-sf-12")  # segments don't collide
 
-    db.advisory_unlock(conn, "ppr-sf-10")
-    assert conn.order_of("pg_advisory_unlock") > 0
-    assert params[1] == conn.calls[-2][2][1]  # same key locked and unlocked
+
+def test_the_lock_is_transaction_scoped_and_never_committed():
+    """A session lock cannot be released through a transaction-pooling
+    connection pool: the pooler hands the next caller a different backend, and
+    an advisory lock belongs to the session that took it, so it strands. A
+    committed transaction lock would release itself early instead."""
+    conn = FakeConnection("cloud", _cloud_responder())
+    db.try_advisory_xact_lock(conn, "ppr-sf-10")
+
+    assert not conn.ran("pg_try_advisory_lock(")  # not the session variant
+    assert conn.commits == 0  # committing here would drop the lock
+    assert not conn.ran("pg_advisory_unlock")  # nothing to leak
 
 
 def test_contended_lock_reports_failure_rather_than_waiting():
     conn = FakeConnection(
         "cloud", lambda sql, params: [(False,)] if "advisory" in sql else []
     )
-    assert db.try_advisory_lock(conn, "ppr-sf-10") is False
-    assert not conn.ran("pg_advisory_lock(")  # never the blocking variant
+    assert db.try_advisory_xact_lock(conn, "ppr-sf-10") is False
+    assert not conn.ran("pg_advisory_xact_lock(")  # never the blocking variant
 
 
 def test_missing_database_url_fails_before_connecting(monkeypatch):

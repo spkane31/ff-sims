@@ -70,7 +70,12 @@ def test_successful_replay_stages_then_writes_one_transaction(monkeypatch, stagi
 
     assert cloud.ran("INSERT INTO valuation_state")
     assert cloud.ran("INSERT INTO valuation_runs")
-    assert cloud.ran("pg_advisory_unlock")
+    # the lock is the write transaction's first statement, so it is taken
+    # after staging and released by the commit that ends that transaction
+    assert cloud.order_of("pg_try_advisory_xact_lock") < cloud.order_of(
+        "DELETE FROM player_valuations"
+    )
+    assert not cloud.ran("pg_advisory_unlock")  # nothing to unlock by hand
     assert cloud.rollbacks == 1  # only the read-only snapshot's rollback
     assert sources.archive.closed is False  # closed by the real context manager
 
@@ -89,15 +94,17 @@ def test_a_failed_snapshot_write_rolls_back_the_delete(monkeypatch, staging_dir)
     after_delete = [op for op, _, _ in cloud.calls[deleted_at:]]
     # nothing committed the delete; it was rolled back instead
     assert "commit" not in after_delete[: after_delete.index("rollback")]
-    assert cloud.ran("pg_advisory_unlock")  # released even on failure
+    # the rollback is what releases the lock; there is no unlock to forget
+    assert "rollback" in after_delete
     assert not cloud.ran("INSERT INTO valuation_runs")
 
 
-def test_lock_contention_exits_immediately_without_touching_output(
-    monkeypatch, staging_dir
-):
+def test_lock_contention_exits_without_touching_output(monkeypatch, staging_dir):
+    """The loser stages its inputs — the lock is not taken until the write
+    transaction opens — but writes nothing, and rolls back, which is what
+    releases the lock the winner is holding."""
     def responder(sql, params):
-        if "pg_try_advisory_lock" in sql:
+        if "pg_try_advisory_xact_lock" in sql:
             return [(False,)]
         return _cloud_responder()(sql, params)
 
@@ -110,7 +117,10 @@ def test_lock_contention_exits_immediately_without_touching_output(
     assert exc.value.code == main.EXIT_LOCKED
     assert not cloud.ran("DELETE FROM player_valuations")
     assert not cloud.ran("INSERT INTO player_valuations")
-    assert not cloud.ran("sleeper_draft_picks")
+    assert not cloud.ran("INSERT INTO valuation_state")
+    # SystemExit still has to unwind through the rollback, or the aborted
+    # write transaction would keep the lock until the process exits
+    assert cloud.calls[-1][0] == "rollback"
 
 
 def test_missing_identity_aborts_before_the_output_transaction(
@@ -124,7 +134,8 @@ def test_missing_identity_aborts_before_the_output_transaction(
 
     assert not cloud.ran("DELETE FROM player_valuations")
     assert not cloud.ran("INSERT INTO player_valuations")
-    assert cloud.ran("pg_advisory_unlock")
+    # identity resolution fails in the read phase, before the lock is taken
+    assert not cloud.ran("pg_try_advisory_xact_lock")
     # the run directory is kept for inspection even though the run failed
     assert len(list(staging_dir.iterdir())) == 1
 
@@ -149,7 +160,7 @@ def test_start_must_be_the_season_draft_date(monkeypatch, staging_dir):
     # nothing was read, staged, or written
     assert not cloud.ran("DELETE FROM player_valuations")
     assert not cloud.ran("INSERT INTO valuation_state")
-    assert not cloud.ran("pg_try_advisory_lock")
+    assert not cloud.ran("pg_try_advisory_xact_lock")
     assert not staging_dir.exists() or list(staging_dir.iterdir()) == []
 
 

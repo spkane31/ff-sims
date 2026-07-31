@@ -147,29 +147,31 @@ def read_only_snapshot(conn: psycopg.Connection) -> Iterator[psycopg.Connection]
 # ------------------------------------------------------------------ locking --
 
 
-def try_advisory_lock(conn: psycopg.Connection, key: str) -> bool:
-    """Session-level lock so a manual replay can't overlap the timer.
+def try_advisory_xact_lock(conn: psycopg.Connection, key: str) -> bool:
+    """Take the segment lock for the duration of the current transaction.
 
-    Session-scoped (not transaction-scoped) because the run spans several
-    transactions; it survives the commits in between.
+    Transaction-scoped, deliberately, and it must therefore be the first
+    statement of the write transaction — do not commit after calling it, since
+    committing is exactly what releases it.
+
+    The session-scoped variant is unusable here. Postgres only releases a
+    session lock when the session ends, and `DATABASE_URL` may point at a
+    transaction-pooling connection pool, where a client "disconnect" just
+    returns a backend to the pool. PgBouncer does not run DISCARD ALL in that
+    mode (`server_reset_query_always` is off by default), so the lock stays
+    held on a pooled backend that nothing can release: an advisory lock
+    belongs to the session that took it, so a later run — which will land on
+    some other backend — cannot unlock it, and no amount of cleanup in a
+    `finally` helps. A transaction lock cannot leak that way: the database
+    drops it at commit or rollback however the client dies, and the lock's
+    lifetime matches exactly what the pooler multiplexes on.
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT pg_try_advisory_lock(%s, %s)",
+            "SELECT pg_try_advisory_xact_lock(%s, %s)",
             (ADVISORY_LOCK_NAMESPACE, _lock_key(key)),
         )
-        got = bool(cur.fetchone()[0])
-    conn.commit()
-    return got
-
-
-def advisory_unlock(conn: psycopg.Connection, key: str) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT pg_advisory_unlock(%s, %s)",
-            (ADVISORY_LOCK_NAMESPACE, _lock_key(key)),
-        )
-    conn.commit()
+        return bool(cur.fetchone()[0])
 
 
 def _lock_key(key: str) -> int:
@@ -562,7 +564,6 @@ __all__ = [
     "Inputs",
     "MissingPlayerIdentities",
     "PlayerProfile",
-    "advisory_unlock",
     "connect",
     "delete_snapshots",
     "get_adp_picks",
@@ -579,6 +580,6 @@ __all__ = [
     "rows_to_scores",
     "save_run",
     "save_state",
-    "try_advisory_lock",
+    "try_advisory_xact_lock",
     "write_snapshot",
 ]

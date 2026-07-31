@@ -376,14 +376,6 @@ def run_replay(
     window_end = datetime.combine(end, datetime.min.time())
 
     with db.open_sources() as sources:
-        locked = db.try_advisory_lock(sources.cloud, segment.key)
-        if not locked:
-            print(
-                f"another replay holds the {segment.key} lock — exiting without"
-                " touching cloud output",
-                file=sys.stderr,
-            )
-            sys.exit(EXIT_LOCKED)
         try:
             inputs = db.load_inputs(
                 sources, segment, season, season_dates, window_start, window_end
@@ -431,11 +423,26 @@ def run_replay(
                 )
             sources.cloud.commit()  # end the read phase before the write phase
 
+            # Everything below is one cloud transaction: the delete and every
+            # snapshot land together or not at all. The segment lock is its
+            # first statement and lives exactly as long as it does — the
+            # database releases it at commit or rollback no matter how this
+            # process dies, so it cannot be left behind for the next run.
+            # Contention is therefore detected after staging rather than
+            # before it, which costs the loser a read pass and buys a lock
+            # that cannot strand itself (see db.try_advisory_xact_lock).
+            if not db.try_advisory_xact_lock(sources.cloud, segment.key):
+                print(
+                    f"another replay holds the {segment.key} lock — exiting"
+                    " without touching cloud output",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                sys.exit(EXIT_LOCKED)
+
             v = _seeded_valuator(segment.key, inputs.adp, start, inputs.players)
             events = build_events(inputs.trades, inputs.scores, season_dates)
 
-            # Everything below is one cloud transaction: the delete and every
-            # snapshot land together or not at all.
             db.delete_snapshots(sources.cloud, segment.key, start, end)
 
             reporter = progress.ProgressReporter(total, extra=_trade_fit_note(v))
@@ -463,10 +470,11 @@ def run_replay(
             )
             sources.cloud.commit()
         except BaseException:
+            # BaseException, not Exception: SystemExit (the lock-contention
+            # path above) must roll back too, which is also what releases the
+            # transaction-scoped lock.
             sources.cloud.rollback()
             raise
-        finally:
-            db.advisory_unlock(sources.cloud, segment.key)
 
     rows = stats.snapshots * len(v.beliefs)
     print(
