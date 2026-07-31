@@ -188,3 +188,38 @@ def test_missing_database_url_fails_before_connecting(monkeypatch):
     with pytest.raises(RuntimeError, match=db.ARCHIVE_URL_ENV):
         with db.open_sources():
             pass
+
+
+# ------------------------------------------- unvaluable positions --
+
+
+IDP_TRADE_ROWS = [
+    ("t1", 1756909800000, {"p1": 1, "p2": 2}, None, None),      # both fantasy
+    ("t3", 1756909900000, {"p1": 1, "lb1": 2}, None, None),     # one IDP
+]
+IDP_PLAYER_ROWS = PLAYER_ROWS + [("lb1", "Line Backer", "LB")]
+
+
+def test_a_trade_touching_a_position_scores_never_cover_is_dropped():
+    """Weekly scores only ever return fantasy positions, so a belief created
+    for an IDP could never be corrected — it would hold whatever the trade
+    stream implied for the rest of the run."""
+    sources = db.DataSources(
+        archive=FakeConnection(
+            "archive",
+            lambda sql, params: (
+                ADP_ROWS if "sleeper_draft_picks" in sql
+                else IDP_TRADE_ROWS if "sleeper_transactions" in sql
+                else []
+            ),
+        ),
+        cloud=FakeConnection("cloud", _cloud_responder(players=IDP_PLAYER_ROWS)),
+    )
+    inputs = db.load_inputs(sources, PPR_SF_10, "2025", S2025, *WINDOW)
+
+    assert [t.trade_id for t in inputs.trades] == ["t1"]
+    assert inputs.skipped_nonfantasy == 1
+    assert inputs.skipped_trades == 0  # a different reason, counted separately
+    # the whole trade goes: p1 keeps only the trade it shared with a valuable
+    # player, rather than half of the dropped one
+    assert "lb1" not in inputs.players

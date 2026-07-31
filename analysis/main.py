@@ -395,7 +395,15 @@ def run_replay(
             if inputs.skipped_trades:
                 print(
                     f"  skipped {inputs.skipped_trades} trade rows the model"
-                    " cannot value (draft picks / FAAB / not two-sided)"
+                    " cannot value (draft picks / FAAB / not two-sided)",
+                    flush=True,
+                )
+            if inputs.skipped_nonfantasy:
+                print(
+                    f"  skipped {inputs.skipped_nonfantasy} trades involving a"
+                    " position weekly scores never cover (IDP / FB), which the"
+                    " model could never correct",
+                    flush=True,
                 )
             if not inputs.adp:
                 sys.exit("no ADP data for this segment/season — nothing to seed")
@@ -409,6 +417,7 @@ def run_replay(
                 manifest_extra={
                     **staging.manifest_args(segment.key, season, start, end, step),
                     "skipped_trades": inputs.skipped_trades,
+                    "skipped_nonfantasy": inputs.skipped_nonfantasy,
                 },
             )
             print(f"  staged bundle checksums: {manifest['checksums']}")

@@ -87,6 +87,9 @@ class Inputs:
     # DEFAULT beliefs; staged so --from-bundle resolves identities identically.
     players: dict[str, PlayerProfile]
     skipped_trades: int  # rows that parsed to None (picks/FAAB/not two-sided)
+    # Trades dropped because a player in them holds a position the weekly-score
+    # query can never return, so the model could never correct its value.
+    skipped_nonfantasy: int = 0
 
 
 def connect(env_var: str) -> psycopg.Connection:
@@ -373,12 +376,40 @@ def load_inputs(
         for pid, mean_pick in sorted(picks)
         if profiles[pid].position in FANTASY_POSITIONS
     ]
+
+    # Drop trades touching a position the model cannot value. get_weekly_scores
+    # only ever returns fantasy positions, so an IDP or FB that entered through
+    # a trade could never receive performance evidence: it would keep whatever
+    # the trade stream implied, forever, at whatever uncertainty it started
+    # with. The whole trade goes, not just that player — dropping one side
+    # would leave the sum constraint asserting an equality that was never
+    # offered. Same treatment as picks and FAAB in parse_trade, and counted
+    # separately so the two reasons stay distinguishable.
+    valuable = {
+        pid for pid, p in profiles.items() if p.position in FANTASY_POSITIONS
+    }
+    keep = [
+        t
+        for t in trades
+        if valuable.issuperset(t.side_a) and valuable.issuperset(t.side_b)
+    ]
+    skipped_nonfantasy = len(trades) - len(keep)
+    trades = keep
+
+    # Narrow identities to what survived, so the staged bundle records exactly
+    # the players the replay can actually touch.
+    needed = {a.player_id for a in adp} | {s.player_id for s in scores}
+    for t in trades:
+        needed.update(t.side_a)
+        needed.update(t.side_b)
+
     return Inputs(
         adp=adp,
         trades=trades,
         scores=scores,
-        players=profiles,
+        players={pid: profiles[pid] for pid in needed},
         skipped_trades=skipped_trades,
+        skipped_nonfantasy=skipped_nonfantasy,
     )
 
 

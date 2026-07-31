@@ -329,12 +329,14 @@ def test_the_run_logs_model_diagnostics(monkeypatch, staging_dir, capsys):
     assert "trade fit:" in out
 
 
-def test_a_position_that_can_never_be_scored_is_called_out(
+def test_a_trade_touching_an_unscoreable_position_is_skipped_whole(
     monkeypatch, staging_dir, capsys
 ):
-    """The weekly-score query filters to fantasy positions, so an IDP or FB
-    picked up through a trade can never receive performance evidence — it
-    keeps whatever the trade stream implies, forever."""
+    """The weekly-score query only returns fantasy positions, so an IDP or FB
+    that entered through a trade could never receive performance evidence and
+    would keep whatever the trade stream implied forever. The whole trade goes
+    — dropping just that player would leave the sum constraint asserting an
+    equality nobody offered."""
     idp = _TRADE_ONLY_PLAYERS[:2] + [("w7", "Edge Rusher", "DE")]
     cloud = FakeConnection("cloud", _cloud_responder(players=idp, scores=[]))
     _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
@@ -342,8 +344,28 @@ def test_a_position_that_can_never_be_scored_is_called_out(
     main.run_replay(*ARGS)
 
     out = capsys.readouterr().out
-    assert "never scoreable" in out
-    assert "DE 1" in out
+    assert "skipped 1 trades involving a position" in out
+    assert "0 trades" in out  # the fantasy side of it is gone too, deliberately
+
+    # neither the IDP nor its trade partner's trade count reaches the output
+    published = _published(cloud)
+    assert "w7" not in {r[1] for r in published}
+    assert all(r[10] == 0 for r in published)
+    assert "never scoreable" not in out  # nothing unscoreable is left to census
+
+
+def test_the_staged_bundle_omits_players_no_surviving_input_references(
+    monkeypatch, staging_dir
+):
+    idp = _TRADE_ONLY_PLAYERS[:2] + [("w7", "Edge Rusher", "DE")]
+    cloud = FakeConnection("cloud", _cloud_responder(players=idp, scores=[]))
+    _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
+
+    main.run_replay(*ARGS)
+
+    staged = staging.read_bundle(next(iter(staging_dir.iterdir())))
+    assert "w7" not in staged.players
+    assert staged.trades == []
 
 
 def test_the_trade_count_is_published_with_each_snapshot(monkeypatch, staging_dir):
