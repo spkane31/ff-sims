@@ -54,6 +54,11 @@ WEEK_VAR_BASE = 4_000_000.0     # noise in a performance reading, divided by gam
 MAX_VAR = 9_000_000.0           # cap so long-inactive players don't blow up
 UNSEEN_VAR = ADP_VAR * 3        # a player who appears with no ADP (UDFA, call-up)
 
+# Residual size, in units of its own expected spread, past which a trade is
+# counted as an outlier for diagnostics. 2 is the conventional gate for a
+# robust (Huber) update; nothing acts on it yet.
+OUTLIER_Z = 2.0
+
 # Performance signal.
 PERF_DECAY = 0.85  # recency weight: last week matters more than week 1
 PERF_N_CAP = 6.0  # cap effective games so performance can't get overconfident
@@ -158,6 +163,14 @@ class Valuator:
         self.rho_dn = 0.0  # Σ d·n, d = value gap, n = size gap
         self.rho_nn = 0.0  # Σ n²
         self.unbalanced_trades = 0
+        # Per-trade residuals, kept whole rather than summarised on the fly:
+        # the question is the shape of the tail, and a mean cannot answer it.
+        # ~40k floats per run, rebuilt per fitting pass, so nothing accumulates.
+        self.trade_gaps: list[float] = []
+        self.trade_zs: list[float] = []
+        self.trade_move_total = 0.0  # total value movement caused by trades
+        self.trade_move_outlier = 0.0  # ...of which, from |z| > OUTLIER_Z
+        self.outlier_trades = 0
 
     def _curve(self, rank: float) -> float:
         """This run's rank -> value curve. Same shape as the module-level
@@ -261,6 +274,25 @@ class Valuator:
 
         k = total_var / (total_var + TRADE_VAR)  # gain on the summed constraint
 
+        # -- outlier diagnostics ------------------------------------------------
+        # The model treats every trade as fair. Real ones include dumps, panic
+        # moves and rebuilds, and those enter as an equality constraint between
+        # sides that are not equal. z is the residual in units of its own
+        # expected spread, so it self-calibrates: early on, when variance is
+        # high, a big gap is information; once the model is confident the same
+        # gap is a bad trade. Recorded, not acted on — this measures how much
+        # of the value movement comes from trades a robust update would reject.
+        z = abs(gap) / math.sqrt(total_var + TRADE_VAR)
+        # Shares sum to 1 across both sides, so k*|gap| is the total absolute
+        # value movement this trade causes.
+        move = k * abs(gap)
+        self.trade_gaps.append(abs(gap))
+        self.trade_zs.append(z)
+        self.trade_move_total += move
+        if z > OUTLIER_Z:
+            self.outlier_trades += 1
+            self.trade_move_outlier += move
+
         # spread the correction across players, weighted by how unsure we were:
         # the uncertain players absorb most of the fix, the confident ones barely move.
         for x in a:
@@ -349,6 +381,25 @@ class Valuator:
             "lam": self.lam,
             "unbalanced_trades": self.unbalanced_trades,
             "trades_applied": self.trades_applied,
+            "gap_p50": _percentile(sorted(self.trade_gaps), 50),
+            "gap_p90": _percentile(sorted(self.trade_gaps), 90),
+            "gap_p99": _percentile(sorted(self.trade_gaps), 99),
+            "gap_max": max(self.trade_gaps, default=0.0),
+            "z_p50": _percentile(sorted(self.trade_zs), 50),
+            "z_p99": _percentile(sorted(self.trade_zs), 99),
+            "outlier_trades": self.outlier_trades,
+            "outlier_share": (
+                self.outlier_trades / self.trades_applied
+                if self.trades_applied
+                else 0.0
+            ),
+            # The decisive number: if a small share of trades carries a large
+            # share of the movement, rejecting them changes the answer.
+            "outlier_move_share": (
+                self.trade_move_outlier / self.trade_move_total
+                if self.trade_move_total > 0
+                else 0.0
+            ),
             "trade_mean_abs_gap": (
                 self.trade_abs_gap / self.trades_applied
                 if self.trades_applied

@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src import db, progress, staging
+from src import db, progress, staging, valuation
 from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
 from src.models import RunState
 from src.runner import adp_frame, build_events, fit_rho, replay, validate_step
@@ -196,9 +196,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--lam",
         type=float,
         metavar="VALUE",
-        help="pin the curve steepness instead of fitting it (e.g. 0.04, the"
-        " seed default). Pinning either parameter pins both — they are fitted"
-        " jointly and mixing a fitted one with a pinned one is meaningless",
+        help="curve steepness (default 0.04). Never fitted: trade fairness has"
+        " a global optimum at a flat curve, so it cannot identify a shape —"
+        " see note 7 in src/valuation.py. This is a knob for trying one by hand",
     )
     return ap
 
@@ -280,6 +280,23 @@ def _log_diagnostics(v: Valuator) -> None:
         f"    trade fit: {d['trades_applied']:,} trades"
         f" ({d['unbalanced_trades']:,} unbalanced, the only ones that identify"
         f" ρ), mean |gap| {d['trade_mean_abs_gap']:,.0f}",
+        flush=True,
+    )
+    print(
+        f"    |gap| spread: p50 {d['gap_p50']:,.0f} · p90 {d['gap_p90']:,.0f}"
+        f" · p99 {d['gap_p99']:,.0f} · max {d['gap_max']:,.0f}",
+        flush=True,
+    )
+    # The model treats every trade as fair. These two numbers say how much of
+    # the value movement comes from trades that plainly are not: the share of
+    # trades whose residual exceeds its own expected spread, and the share of
+    # total movement they cause. A small count carrying a large share of the
+    # movement is the case where rejecting outliers changes the answer.
+    print(
+        f"    outliers (|z| > {valuation.OUTLIER_Z:g}):"
+        f" {d['outlier_trades']:,} trades = {100 * d['outlier_share']:.1f}%"
+        f" of trades, causing {100 * d['outlier_move_share']:.1f}% of all"
+        f" value movement · z p50 {d['z_p50']:.2f} p99 {d['z_p99']:.2f}",
         flush=True,
     )
 

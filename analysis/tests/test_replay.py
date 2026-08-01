@@ -272,3 +272,78 @@ def test_trade_counts_are_not_decayed_like_games():
     for _ in range(10):
         v.apply_trade(["p1"], ["p2"])
     assert v.beliefs["p1"].trades == 10  # not 6.2-style decayed
+
+
+# ------------------------------------------------- trade residual spread --
+
+
+def _wide_valuator() -> Valuator:
+    """Beliefs far enough apart that a lopsided trade is a real outlier."""
+    v = Valuator(start_ts=datetime(2025, 8, 25), repl_rank_by_pos=REPL)
+    v.seed_from_adp(
+        pd.DataFrame(
+            [
+                {"player_id": "stud", "player_name": "S", "position": "RB", "adp": 1.0},
+                {"player_id": "mid", "player_name": "M", "position": "RB", "adp": 20.0},
+                {"player_id": "scrub", "player_name": "C", "position": "RB", "adp": 150.0},
+            ]
+        )
+    )
+    for b in v.beliefs.values():
+        b.var = 10_000.0  # confident, so a big gap is the trade's fault
+    return v
+
+
+def test_the_gap_distribution_is_recorded_not_just_its_mean():
+    """A mean cannot distinguish "every trade is slightly off" from "most are
+    fair and a few are dumps", which is the difference that decides whether
+    rejecting outliers would change anything."""
+    v = _wide_valuator()
+    v.apply_trade(["stud"], ["mid"])  # mildly off
+    v.apply_trade(["stud"], ["scrub"])  # a dump
+
+    d = v.diagnostics()
+    assert len(v.trade_gaps) == 2
+    assert d["gap_max"] == max(v.trade_gaps)
+    assert d["gap_p50"] <= d["gap_p99"] <= d["gap_max"]
+
+
+def test_a_lopsided_trade_is_counted_as_an_outlier_and_a_fair_one_is_not():
+    v = _wide_valuator()
+    v.apply_trade(["mid"], ["mid"])  # identical sides: zero residual
+    assert v.outlier_trades == 0
+
+    v.apply_trade(["stud"], ["scrub"])
+    assert v.outlier_trades == 1
+    assert v.diagnostics()["outlier_share"] == 0.5
+
+
+def test_the_share_of_movement_outliers_cause_is_reported():
+    """The decisive number: a few trades carrying most of the value movement
+    is the case where a robust update changes the answer."""
+    v = _wide_valuator()
+    v.apply_trade(["mid"], ["mid"])
+    v.apply_trade(["stud"], ["scrub"])
+
+    d = v.diagnostics()
+    assert d["outlier_move_share"] > 0.99  # the fair trade moved nothing
+    assert v.trade_move_outlier <= v.trade_move_total
+
+
+def test_confidence_decides_what_counts_as_an_outlier_not_raw_size():
+    """z is the residual over its own expected spread, so the same trade is
+    information early and a dump later. Without that, every trade looks like an
+    outlier in preseason when the model knows nothing."""
+    # stud-for-mid, not stud-for-scrub: the latter is implausible at any
+    # confidence, so it could not show the threshold moving.
+    unsure = _wide_valuator()
+    for b in unsure.beliefs.values():
+        b.var = 4_000_000.0  # preseason: wide open
+    unsure.apply_trade(["stud"], ["mid"])
+
+    sure = _wide_valuator()  # var 10_000: confident
+    sure.apply_trade(["stud"], ["mid"])
+
+    assert unsure.trade_gaps[0] == sure.trade_gaps[0]  # same raw disagreement
+    assert unsure.outlier_trades == 0
+    assert sure.outlier_trades == 1
