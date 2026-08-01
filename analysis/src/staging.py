@@ -39,7 +39,10 @@ from .models import AverageDraftPosition, PlayerProfile, Trade, WeeklyScore
 # v2 added players.parquet: without it a bundle replay cannot give a
 # trade-only player its name and position, so it would not reproduce the
 # database run it was staged from.
-SCHEMA_VERSION = 2
+# v3 added league_id to trades.parquet, which league-blocked evaluation splits
+# on. v2 bundles are still readable: their trades come back with league_id "".
+SCHEMA_VERSION = 3
+READABLE_SCHEMA_VERSIONS = (2, SCHEMA_VERSION)
 
 ADP_FILE = "adp.parquet"
 TRADES_FILE = "trades.parquet"
@@ -71,6 +74,7 @@ TRADES_SCHEMA = pa.schema(
         pa.field("side_a", pa.list_(pa.string()), nullable=False),
         pa.field("side_b", pa.list_(pa.string()), nullable=False),
         pa.field("created_ms", pa.int64(), nullable=False),
+        pa.field("league_id", pa.string(), nullable=False),
     ]
 )
 
@@ -195,6 +199,7 @@ def _trades_table(trades: Iterable[Trade]) -> pa.Table:
             "side_a": [list(r.side_a) for r in rows],
             "side_b": [list(r.side_b) for r in rows],
             "created_ms": [int(r.created_ms) for r in rows],
+            "league_id": [r.league_id for r in rows],
         },
         schema=TRADES_SCHEMA,
     )
@@ -281,9 +286,10 @@ def read_manifest(run_dir: Path) -> dict:
         raise BundleError(f"no {MANIFEST_FILE} in {run_dir} — bundle is incomplete")
     manifest = json.loads(path.read_text())
     version = manifest.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if version not in READABLE_SCHEMA_VERSIONS:
+        readable = ", ".join(str(v) for v in READABLE_SCHEMA_VERSIONS)
         raise BundleError(
-            f"{run_dir} has schema_version {version}, this build reads {SCHEMA_VERSION}"
+            f"{run_dir} has schema_version {version}, this build reads {readable}"
         )
     return manifest
 
@@ -321,6 +327,8 @@ def read_bundle(run_dir: Path, verify_checksums: bool = True) -> StagedInputs:
             side_a=list(r["side_a"]),
             side_b=list(r["side_b"]),
             created_ms=int(r["created_ms"]),
+            # absent in v2-era bundles: league unknown
+            league_id=r.get("league_id", "") or "",
         )
         for r in trades_t.to_pylist()
     ]

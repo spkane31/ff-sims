@@ -11,9 +11,11 @@ WINDOW = (datetime(2025, 8, 25), datetime(2026, 7, 28))
 
 ADP_ROWS = [("p1", 3.0), ("p2", 14.5), ("k9", 200.0)]
 TRADE_ROWS = [
-    # (id, created_ms, adds, draft_picks, waiver_budget) — Sep 3 2025 14:30 UTC
-    ("t1", 1756909800000, {"p1": 1, "p2": 2}, None, None),
-    ("t2", 1756909900000, {"p1": 1}, [{"round": 1}], None),  # picks -> unvaluable
+    # (id, created_ms, adds, draft_picks, waiver_budget, league_id)
+    # — Sep 3 2025 14:30 UTC
+    ("t1", 1756909800000, {"p1": 1, "p2": 2}, None, None, "lgA"),
+    # picks -> unvaluable
+    ("t2", 1756909900000, {"p1": 1}, [{"round": 1}], None, "lgA"),
 ]
 SCORE_ROWS = [(1, "p1", "QB", 31.5), (2, "p2", "RB", 8.0)]
 PLAYER_ROWS = [
@@ -102,6 +104,17 @@ def test_trade_window_is_filtered_server_side_in_unix_ms():
     # the pick-laden trade is reported as a skip, not silently dropped
     assert [t.trade_id for t in trades] == ["t1"]
     assert skipped == 1
+
+
+def test_trades_carry_their_league_id():
+    """League-blocked evaluation needs to know which league a trade came
+    from, so the query selects it and the parser keeps it."""
+    conn = FakeConnection("archive", _archive_responder)
+    trades, _ = db.get_trades(
+        conn, PPR_SF_10, "2025", datetime(2025, 8, 25), datetime(2025, 8, 26)
+    )
+    assert "t.sleeper_league_id" in conn.calls[0][1]
+    assert [t.league_id for t in trades] == ["lgA"]
 
 
 def test_weekly_scores_are_bounded_by_the_replay_window():
@@ -203,8 +216,8 @@ def test_missing_database_url_fails_before_connecting(monkeypatch):
 
 
 IDP_TRADE_ROWS = [
-    ("t1", 1756909800000, {"p1": 1, "p2": 2}, None, None),      # both fantasy
-    ("t3", 1756909900000, {"p1": 1, "lb1": 2}, None, None),     # one IDP
+    ("t1", 1756909800000, {"p1": 1, "p2": 2}, None, None, "lgA"),  # both fantasy
+    ("t3", 1756909900000, {"p1": 1, "lb1": 2}, None, None, "lgA"),  # one IDP
 ]
 IDP_PLAYER_ROWS = PLAYER_ROWS + [("lb1", "Line Backer", "LB")]
 

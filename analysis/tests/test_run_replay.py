@@ -67,9 +67,12 @@ def test_successful_replay_stages_then_writes_one_transaction(monkeypatch, stagi
     assert [rows[0][2] for _, _, rows in inserts] == [
         date(2025, 8, 26), date(2025, 8, 27), date(2025, 8, 28)
     ]
-
-    assert cloud.ran("INSERT INTO valuation_state")
-    assert cloud.ran("INSERT INTO valuation_runs")
+    # market outputs, and only market outputs: no belief state, no watermarks
+    for col in ("market_score", "market_dispersion", "projected_par",
+                "projection_uncertainty"):
+        assert col in inserts[0][1]
+    assert not cloud.ran("INSERT INTO valuation_state")
+    assert not cloud.ran("INSERT INTO valuation_runs")
     # the lock is the write transaction's first statement, so it is taken
     # after staging and released by the commit that ends that transaction
     assert cloud.order_of("pg_try_advisory_xact_lock") < cloud.order_of(
@@ -96,7 +99,6 @@ def test_a_failed_snapshot_write_rolls_back_the_delete(monkeypatch, staging_dir)
     assert "commit" not in after_delete[: after_delete.index("rollback")]
     # the rollback is what releases the lock; there is no unlock to forget
     assert "rollback" in after_delete
-    assert not cloud.ran("INSERT INTO valuation_runs")
 
 
 def test_lock_contention_exits_without_touching_output(monkeypatch, staging_dir):
@@ -117,7 +119,6 @@ def test_lock_contention_exits_without_touching_output(monkeypatch, staging_dir)
     assert exc.value.code == main.EXIT_LOCKED
     assert not cloud.ran("DELETE FROM player_valuations")
     assert not cloud.ran("INSERT INTO player_valuations")
-    assert not cloud.ran("INSERT INTO valuation_state")
     # SystemExit still has to unwind through the rollback, or the aborted
     # write transaction would keep the lock until the process exits
     assert cloud.calls[-1][0] == "rollback"
@@ -143,11 +144,11 @@ def test_missing_identity_aborts_before_the_output_transaction(
 def test_start_must_be_the_season_draft_date(monkeypatch, staging_dir):
     """A later --start silently drops every event before it.
 
-    --start is both the input window's lower bound and the model clock's
-    origin, so the run would re-seed from ADP, skip the intervening trades and
-    scores entirely, and still overwrite valuation_state with that gap-ridden
-    model. load_inputs already windows its queries to [start, end), so
-    replay()'s dropped_before_start counter sees nothing to report.
+    --start is both the input window's lower bound and the recency clock's
+    origin, so the run would fit from a partial trade window and publish
+    snapshots that omit every trade before it. load_inputs already windows
+    its queries to [start, end), so replay_market's dropped_before_start
+    counter sees nothing to report.
     """
     cloud = FakeConnection("cloud", _cloud_responder())
     _install(monkeypatch, cloud)
@@ -159,7 +160,7 @@ def test_start_must_be_the_season_draft_date(monkeypatch, staging_dir):
     assert "must be the 2025 draft date (2025-08-25)" in str(exc.value)
     # nothing was read, staged, or written
     assert not cloud.ran("DELETE FROM player_valuations")
-    assert not cloud.ran("INSERT INTO valuation_state")
+    assert not cloud.ran("INSERT INTO player_valuations")
     assert not cloud.ran("pg_try_advisory_xact_lock")
     assert not staging_dir.exists() or list(staging_dir.iterdir()) == []
 
@@ -251,7 +252,7 @@ def test_stale_run_directories_are_pruned_on_the_next_run(monkeypatch, staging_d
 # and position have to survive the trip through cloud resolution, the staged
 # bundle, and the Valuator.
 _TRADE_ONLY_ADP = [("p1", 3.0), ("p2", 14.5)]
-_TRADE_ONLY_TXNS = [("t9", 1756180000000, {"p1": 1, "w7": 2}, None, None)]
+_TRADE_ONLY_TXNS = [("t9", 1756180000000, {"p1": 1, "w7": 2}, None, None, "lgA")]
 _TRADE_ONLY_PLAYERS = [
     ("p1", "QB One", "QB"),
     ("p2", "RB Two", "RB"),
@@ -286,11 +287,12 @@ def test_a_trade_only_player_is_published_with_its_real_position(
     main.run_replay(*ARGS)
 
     # write_snapshot rows are (segment, player_id, date, rank, pos_rank,
-    # value, vorp, sd, games, position)
+    # value, market_score, market_dispersion, projected_par,
+    # projection_uncertainty, games, position, trades)
     w7 = [r for r in _published(cloud) if r[1] == "w7"]
     assert w7, "the trade-only player was never published"
-    assert {r[9] for r in w7} == {"WR"}
-    assert "DEFAULT" not in {r[9] for r in _published(cloud)}
+    assert {r[11] for r in w7} == {"WR"}
+    assert "DEFAULT" not in {r[11] for r in _published(cloud)}
 
 
 def test_the_staged_bundle_reproduces_trade_only_identities(monkeypatch, staging_dir):
@@ -325,19 +327,42 @@ def test_the_replay_reports_progress_as_it_steps(monkeypatch, staging_dir, capsy
     assert "100%" in out
 
 
-def test_the_run_logs_model_diagnostics(monkeypatch, staging_dir, capsys):
-    """The rankings table alone cannot say whether trades converged or how
-    much of the belief set rests on real evidence."""
+def test_the_run_logs_market_diagnostics(monkeypatch, staging_dir, capsys):
+    """The rankings table alone cannot say whether the fit is healthy — how
+    much trade evidence backs it, what the outlier pressure was, how
+    concentrated the leagues are, and how far the market moved players off
+    their ADP prior. A production run's log is where that has to live."""
+    cloud = FakeConnection(
+        "cloud", _cloud_responder(players=_TRADE_ONLY_PLAYERS, scores=[])
+    )
+    _install(monkeypatch, cloud, FakeConnection("archive", _trade_only_archive))
+
+    main.run_replay(*ARGS)
+
+    out = capsys.readouterr().out
+    assert "market diagnostics:" in out
+    assert "trades used 1" in out  # t9 lands Aug 26, inside the window
+    assert "outliers removed" in out
+    assert "|residual|" in out
+    assert "league" in out
+    assert "prior agreement" in out
+    assert "dispersion" in out
+    assert "scored 0 of" in out  # no weekly scores in this fixture
+
+
+def test_diagnostics_degrade_when_the_window_has_no_trades(
+    monkeypatch, staging_dir, capsys
+):
+    # the default responder's only trade is Sep 3, outside the Aug 25-28 window
     cloud = FakeConnection("cloud", _cloud_responder())
     _install(monkeypatch, cloud)
 
     main.run_replay(*ARGS)
 
     out = capsys.readouterr().out
-    assert "model diagnostics:" in out
-    assert "with score evidence" in out
-    assert "ADP rank" in out  # top value reported next to the rank it implies
-    assert "trade fit:" in out
+    assert "market diagnostics:" in out
+    assert "trades used 0" in out
+    assert "no trades in window" in out
 
 
 def test_a_trade_touching_an_unscoreable_position_is_skipped_whole(
@@ -361,7 +386,7 @@ def test_a_trade_touching_an_unscoreable_position_is_skipped_whole(
     # neither the IDP nor its trade partner's trade count reaches the output
     published = _published(cloud)
     assert "w7" not in {r[1] for r in published}
-    assert all(r[10] == 0 for r in published)
+    assert all(r[12] == 0 for r in published)
     assert "never scoreable" not in out  # nothing unscoreable is left to census
 
 
@@ -395,21 +420,21 @@ def test_the_trade_count_is_published_with_each_snapshot(monkeypatch, staging_di
 
     # p1 and w7 are the two sides of that trade; p2 was drafted, never traded
     final_day = max(r[2] for r in _published(cloud))
-    rows = {r[1]: r[10] for r in _published(cloud) if r[2] == final_day}
+    rows = {r[1]: r[12] for r in _published(cloud) if r[2] == final_day}
     assert rows["p1"] == 1 and rows["w7"] == 1
     assert rows["p2"] == 0
 
 
-def test_state_persists_the_trade_count(monkeypatch, staging_dir):
-    """Otherwise to_state/from_state silently drops it and the incremental job
-    this state exists for would restart every player's market evidence at 0."""
-    cloud = FakeConnection("cloud", _cloud_responder())
-    _install(monkeypatch, cloud)
-
-    main.run_replay(*ARGS)
-
-    insert = next(
-        sql for op, sql, _ in cloud.calls
-        if op == "executemany" and sql and "INSERT INTO valuation_state" in sql
-    )
-    assert "trades" in insert
+def test_migration_adds_the_market_columns():
+    """Migration 029 replaces the old model's schema: market columns in,
+    global-rho vorp and recursive sd out, belief state tables dropped."""
+    sql = (
+        Path(__file__).resolve().parents[2]
+        / "backend/migrations/029_market_valuation_model.sql"
+    ).read_text()
+    for needle in (
+        "market_score", "market_dispersion", "projected_par",
+        "projection_uncertainty", "DROP COLUMN vorp", "DROP COLUMN sd",
+        "DROP TABLE valuation_state", "DROP TABLE valuation_runs",
+    ):
+        assert needle in sql

@@ -1,85 +1,20 @@
-"""Orchestration: turn DB rows into model events and drive the Valuator.
+"""Orchestration: turn DB rows into market snapshots.
 
-No DB access here — main.py wires data in and snapshots out.
+No DB access here — main.py wires data in and snapshots out. Each replay
+boundary refits every market score jointly from the trades seen so far and
+advances the performance tracker through completed score weeks.
 """
 
+import math
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from itertools import groupby
 
 import pandas as pd
 
+from . import market_value, performance
 from .config import SeasonDates, week_ts
-from .models import AverageDraftPosition, Trade, WeeklyScore
-from .valuation import Valuator
-
-ADP_COLUMNS = ["player_id", "player_name", "position", "adp"]
-
-
-def adp_frame(adp: list[AverageDraftPosition]) -> pd.DataFrame:
-    if not adp:
-        return pd.DataFrame(columns=ADP_COLUMNS)
-    return pd.DataFrame(
-        [(a.player_id, a.player_name, a.position, a.adp) for a in adp],
-        columns=ADP_COLUMNS,
-    )
-
-
-def build_events(
-    trades: list[Trade], scores: list[WeeklyScore], season: SeasonDates
-) -> list[dict]:
-    """Valuator.advance() event dicts, sorted by timestamp."""
-    events: list[dict] = [
-        {"ts": t.ts, "kind": "trade", "side_a": t.side_a, "side_b": t.side_b}
-        for t in trades
-    ]
-    by_week: dict[int, list[WeeklyScore]] = {}
-    for s in scores:
-        by_week.setdefault(s.week, []).append(s)
-    for week, wk_scores in by_week.items():
-        events.append(
-            {
-                "ts": week_ts(season, week),
-                "kind": "week",
-                "scores": pd.DataFrame(
-                    [(s.player_id, s.position, s.points) for s in wk_scores],
-                    columns=["player_id", "position", "points"],
-                ),
-            }
-        )
-    events.sort(key=lambda e: e["ts"])
-    return events
-
-
-def filter_stale(
-    events: list[dict], last_event_ts: datetime | None
-) -> tuple[list[dict], int]:
-    """Drop events at or before the model clock (out-of-order arrivals)."""
-    if last_event_ts is None:
-        return events, 0
-    fresh = [e for e in events if e["ts"] > last_event_ts]
-    return fresh, len(events) - len(fresh)
-
-
-def run_backtest(
-    valuator: Valuator,
-    events: list[dict],
-    on_snapshot: Callable[[date, pd.DataFrame], None],
-) -> None:
-    """Replay a season as if live: advance one event-day at a time and emit a
-    valuation snapshot after each day that had events. Aging between days
-    changes only uncertainty (sd), not value, so event days are the complete
-    set of days the value series can move.
-
-    Kept for interactive/experimental use only. The scheduled job uses
-    replay() below, which also emits on quiet days so uncertainty drift shows
-    up in the published series."""
-    events = sorted(events, key=lambda e: e["ts"])
-    for day, day_events in groupby(events, key=lambda e: e["ts"].date()):
-        valuator.advance(list(day_events))
-        on_snapshot(day, valuator.rankings())
-
+from .models import AverageDraftPosition, PlayerProfile, Trade, WeeklyScore
 
 # ------------------------------------------------------------ fixed replay --
 
@@ -90,6 +25,9 @@ class ReplayStats:
     events_applied: int = 0
     dropped_before_start: int = 0
     dropped_at_or_after_end: int = 0
+    # market_value.fit_diagnostics of the final boundary's fit — the
+    # fit-health block a run log prints (None until a replay completes)
+    diagnostics: dict | None = None
 
 
 def validate_step(start: date, end: date, step: timedelta) -> None:
@@ -126,135 +64,181 @@ def utc_batches(
         cursor += step
 
 
-def take_events_before(
-    events: list[dict], cursor: int, boundary: datetime
-) -> tuple[list[dict], int]:
-    """Events from `cursor` onward whose ts is strictly before `boundary`.
+# ----------------------------------------------------------- market replay --
 
-    `events` must be sorted by ts. Returns the slice plus the new cursor, so
-    each event is consumed exactly once across the whole replay.
+
+MARKET_FRAME_COLUMNS = [
+    "player_id", "player", "pos", "pos_rank", "value", "market_score",
+    "market_dispersion", "projected_par", "projection_uncertainty", "games",
+    "trades",
+]
+
+
+def market_frame(
+    fit: market_value.FitResult,
+    tracker: performance.PerformanceTracker,
+    players: dict[str, PlayerProfile],
+    trade_counts: dict[str, int],
+) -> pd.DataFrame:
+    """One market-v2 snapshot as a rankings frame (index = market rank).
+
+    Publishes the union of market-fitted players and performance-tracked
+    ones: a scores-only streamer has no market evidence, so their score is 0
+    and they rank at the bottom — honest, rather than invisible.
     """
-    end = cursor
-    while end < len(events) and events[end]["ts"] < boundary:
-        end += 1
-    return events[cursor:end], end
+    scores = dict(fit.scores)
+    for pid in tracker.players:
+        scores.setdefault(pid, 0.0)
+    ordered = sorted(scores, key=lambda p: (-scores[p], p))
+
+    prior_band = math.sqrt(performance.PRIOR_PAR_VAR)
+    rows = []
+    for rank, pid in enumerate(ordered, start=1):
+        value = market_value.published_value(rank)
+        profile = players.get(pid)
+        perf = tracker.players.get(pid)
+        rows.append(
+            {
+                "player_id": pid,
+                "player": (profile.name if profile else "") or pid,
+                "pos": (
+                    (profile.position if profile else "")
+                    or (perf.position if perf else "")
+                    or "DEFAULT"
+                ),
+                "value": round(value),
+                "market_score": round(scores[pid], 1),
+                "market_dispersion": round(
+                    fit.dispersion.get(
+                        pid,
+                        max(
+                            market_value.MIN_DISPERSION,
+                            market_value.DISPERSION_VALUE_FLOOR_FRAC * value,
+                        ),
+                    )
+                ),
+                "projected_par": round(
+                    tracker.projected_par(pid) if perf else 0.0, 2
+                ),
+                "projection_uncertainty": round(
+                    tracker.projection_uncertainty(pid) if perf else prior_band,
+                    2,
+                ),
+                "games": round(perf.games, 1) if perf else 0.0,
+                "trades": trade_counts.get(pid, 0),
+            }
+        )
+    df = pd.DataFrame(rows, columns=MARKET_FRAME_COLUMNS[:3] + MARKET_FRAME_COLUMNS[4:])
+    df["pos_rank"] = df.groupby("pos").cumcount() + 1
+    df = df[MARKET_FRAME_COLUMNS]
+    df.index += 1
+    df.index.name = "rank"
+    return df
 
 
-def replay(
-    valuator: Valuator,
-    events: list[dict],
+def replay_market(
+    trades: list[Trade],
+    scores: list[WeeklyScore],
+    adp: list[AverageDraftPosition],
+    players: dict[str, PlayerProfile],
+    season: SeasonDates,
     start: date,
     end: date,
     step: timedelta,
+    repl_rank_by_pos: dict[str, int],
     on_snapshot: Callable[[date, pd.DataFrame], None] | None,
 ) -> ReplayStats:
     """Replay [start, end) in fixed UTC steps, snapshotting at every boundary.
 
-    A snapshot dated D is the model state at the start of UTC day D, after all
-    events strictly before that boundary. Quiet batches still emit: the
-    valuator is aged to the boundary first, so uncertainty drifts through the
-    off-season the same way it does mid-season.
-
-    on_snapshot=None runs the model without producing snapshots at all — not
-    even building the rankings frame, which along with writing it is most of
-    what a published run costs. That is what makes the repeated passes in
-    fit_rho affordable.
+    A snapshot dated D is the model state at the start of UTC day D, after
+    all events strictly before that boundary. Each boundary refits every
+    market score jointly from the trades seen so far (recency-weighted at the
+    boundary, warm-started from the previous snapshot) and advances the
+    performance tracker through any completed score weeks. There is no
+    incremental belief state: the fit at a boundary is a pure function of the
+    inputs before it.
     """
     validate_step(start, end, step)
     window_start = datetime.combine(start, datetime.min.time())
     window_end = datetime.combine(end, datetime.min.time())
 
-    ordered = sorted(events, key=lambda e: e["ts"])
-    in_window = [e for e in ordered if window_start <= e["ts"] < window_end]
+    ordered_trades = sorted(trades, key=lambda t: (t.created_ms, t.trade_id))
+    in_window = [
+        t for t in ordered_trades if window_start <= t.ts < window_end
+    ]
+
+    by_week: dict[int, list[WeeklyScore]] = {}
+    for s in scores:
+        by_week.setdefault(s.week, []).append(s)
+    weeks = sorted(
+        ((week_ts(season, wk), rows) for wk, rows in by_week.items()),
+        key=lambda pair: pair[0],
+    )
+    weeks_in_window = [
+        (ts, rows) for ts, rows in weeks if window_start <= ts < window_end
+    ]
+
     stats = ReplayStats(
-        dropped_before_start=sum(1 for e in ordered if e["ts"] < window_start),
-        dropped_at_or_after_end=sum(1 for e in ordered if e["ts"] >= window_end),
+        dropped_before_start=(
+            sum(1 for t in ordered_trades if t.ts < window_start)
+            + sum(1 for ts, _ in weeks if ts < window_start)
+        ),
+        dropped_at_or_after_end=(
+            sum(1 for t in ordered_trades if t.ts >= window_end)
+            + sum(1 for ts, _ in weeks if ts >= window_end)
+        ),
     )
 
-    cursor = 0
+    prior = market_value.adp_prior(adp)
+    preseason = {
+        a.player_id: (
+            a.position,
+            performance.preseason_par_from_market(
+                prior[a.player_id], market_value.PUBLISHED_TOP
+            ),
+        )
+        for a in adp
+    }
+    tracker = performance.PerformanceTracker(
+        repl_rank_by_pos, preseason_par=preseason
+    )
+
+    trade_cursor = 0
+    week_cursor = 0
+    warm: dict[str, float] | None = None
+    fit: market_value.FitResult | None = None
     for _, batch_end in utc_batches(start, end, step):
-        batch, cursor = take_events_before(in_window, cursor, batch_end)
-        valuator.advance(batch)
-        valuator.age_to(batch_end)  # quiet batches still drift
-        stats.events_applied += len(batch)
+        while (
+            week_cursor < len(weeks_in_window)
+            and weeks_in_window[week_cursor][0] < batch_end
+        ):
+            tracker.apply_week(weeks_in_window[week_cursor][1])
+            week_cursor += 1
+            stats.events_applied += 1
+        while (
+            trade_cursor < len(in_window)
+            and in_window[trade_cursor].ts < batch_end
+        ):
+            trade_cursor += 1
+            stats.events_applied += 1
+
+        window_trades = in_window[:trade_cursor]
+        fit = market_value.fit_snapshot(
+            window_trades, asof=batch_end, adp_prior=prior, warm_start=warm
+        )
+        warm = fit.scores
         stats.snapshots += 1
         if on_snapshot is not None:
-            on_snapshot(batch_end.date(), valuator.rankings())
-
-    return stats
-
-
-# ----------------------------------------------------------- fitting rho --
-
-
-@dataclass
-class RhoFit:
-    """Result of estimating replacement value from unbalanced trades."""
-
-    rho: float  # what the published run should use
-    path: list[float]  # estimate after each iteration, for the log
-    unbalanced: int  # trades that carried any information about rho
-    raw: float  # final estimate before clamping
-    converged: bool
-
-
-def fit_rho(
-    make_valuator: Callable[[float], Valuator],
-    events: list[dict],
-    start: date,
-    end: date,
-    step: timedelta,
-    seed: float,
-    iterations: int = 25,
-    tolerance: float = 1.0,
-) -> RhoFit:
-    """Estimate ρ from unbalanced trades by fixed-point iteration.
-
-    ρ enters the trade rule only as ρ·(|B|−|A|), so balanced trades carry no
-    information about it — the estimate rests entirely on trades whose sides
-    differ in size. Least squares over those gives ρ̂ = Σ(d·n)/Σ(n²), where d
-    is the value gap between the sides and n the size gap.
-
-    Iterated because d depends on the values, which depend on ρ: each pass
-    replays the whole event stream with a fixed ρ, collects the statistics,
-    solves for a new one, and starts over from the ADP seed. Passes build no
-    snapshots and touch no database, so this costs a fraction of a published
-    run.
-
-    A negative estimate is clamped to zero — replacement value is a floor a
-    roster spot is worth, and a negative floor is not a thing — but the raw
-    value is kept so the log can say the data asked for something impossible.
-
-    Convergence is monotone but unhurried: against synthetic trades planted at
-    a known ρ, starting from the seed of 17 it took ~18 passes to settle,
-    which is why the iteration budget is 25 rather than a handful. A run that
-    exhausts it reports `converged=False` instead of quietly publishing a
-    half-converged value.
-    """
-    rho = seed
-    path: list[float] = []
-    unbalanced = 0
-    raw = seed
-    converged = False
-
-    for _ in range(iterations):
-        v = make_valuator(rho)
-        replay(v, events, start, end, step, None)
-        unbalanced = v.unbalanced_trades
-        if v.rho_nn <= 0:
-            # No unbalanced trades at all: ρ is not identified by this data.
-            return RhoFit(
-                rho=seed, path=path, unbalanced=0, raw=seed, converged=True
+            counts: dict[str, int] = {}
+            for t in window_trades:
+                for p in (*t.side_a, *t.side_b):
+                    counts[p] = counts.get(p, 0) + 1
+            on_snapshot(
+                batch_end.date(), market_frame(fit, tracker, players, counts)
             )
-        raw = v.rho_dn / v.rho_nn
-        nxt = max(0.0, raw)
-        path.append(nxt)
-        if abs(nxt - rho) < tolerance:
-            rho = nxt
-            converged = True
-            break
-        rho = nxt
 
-    return RhoFit(
-        rho=rho, path=path, unbalanced=unbalanced, raw=raw, converged=converged
-    )
+    if fit is not None:
+        stats.diagnostics = market_value.fit_diagnostics(
+            fit, in_window, prior, asof=window_end
+        )
+    return stats

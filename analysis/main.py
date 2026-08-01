@@ -1,11 +1,16 @@
 """
 Player valuation CLI — full replays only.
 
-The model lives in src/valuation.py (recursive-belief estimator over ADP,
-trades, and weekly scores). Inputs come from the archive database
-(ARCHIVE_DATABASE_URL: complete Sleeper history) plus the cloud database
-(DATABASE_URL: player identities and finalized scoring); every valuation write
-lands in the cloud. Both URLs are read from analysis/.env.
+The model is a robust anchored market estimator (src/market_value.py): at
+every snapshot boundary all player market scores are refitted jointly from
+the recency-weighted trade window, anchored by an ADP prior, and published
+through one explicit calibration curve. A separate magnitude-preserving
+performance signal (src/performance.py) rides along as projected_par.
+
+Inputs come from the archive database (ARCHIVE_DATABASE_URL: complete Sleeper
+history) plus the cloud database (DATABASE_URL: player identities and
+finalized scoring); every valuation write lands in the cloud. Both URLs are
+read from analysis/.env.
 
 Each database run rebuilds the requested window from scratch and republishes
 it. Incremental/checkpoint processing is deliberately NOT in this program —
@@ -17,6 +22,7 @@ RUN
     python main.py --segment ppr-sf-10 --season 2025 \
         --start 2025-08-25 --step 24h [--end YYYY-MM-DD]
     python main.py --from-bundle /tmp/ff-sims-player-valuations/<run-id>
+    python main.py --evaluate-bundle /tmp/ff-sims-player-valuations/<run-id>
 """
 
 from __future__ import annotations
@@ -28,83 +34,14 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from src import db, progress, staging, valuation
-from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS, week_ts
-from src.models import RunState
-from src.runner import adp_frame, build_events, fit_rho, replay, validate_step
-from src.valuation import LAMBDA_ADP, RHO, V_TOP, Valuator, curve, curve_rank
-
-SEASON_2025 = SEASONS["2025"]
+from src import db, evaluation, market_value, progress, staging
+from src.config import DEFAULT_SEGMENT_KEY, SEASONS, SEGMENTS
+from src.models import PlayerProfile
+from src.runner import replay_market, validate_step
 
 EXIT_LOCKED = 2  # another replay holds the advisory lock
-
-
-# ----------------------------------------------------------------------------- #
-# DEMO generator (synthetic league, no DB needed)
-# ----------------------------------------------------------------------------- #
-
-
-def make_demo(seed: int = 7) -> tuple[pd.DataFrame, list[dict]]:
-    rng = np.random.default_rng(seed)
-    counts = {"QB": 12, "RB": 24, "WR": 28, "TE": 8}
-    players = []
-    pid = 0
-    for pos, n in counts.items():
-        for _ in range(n):
-            players.append(
-                {
-                    "player_id": f"p{pid:03d}",
-                    "player_name": f"{pos}_{pid:03d}",
-                    "position": pos,
-                }
-            )
-            pid += 1
-    pdf = pd.DataFrame(players)
-    order = rng.permutation(len(pdf))  # true talent order
-    pdf["true_rank"] = np.argsort(order) + 1
-    pdf["true_value"] = pdf["true_rank"].map(curve)
-
-    # ADP = true rank observed with noise across 4 synthetic drafts
-    adp = pdf["true_rank"].to_numpy()[:, None] + rng.normal(0, 3, size=(len(pdf), 4))
-    adp = np.clip(adp.mean(axis=1), 1, None)
-    adp_df = pdf[["player_id", "player_name", "position"]].copy()
-    adp_df["adp"] = adp
-
-    events: list[dict] = []
-
-    # weekly scores, weeks 1..14
-    pos_scale = {"QB": 1.6, "RB": 1.0, "WR": 1.05, "TE": 0.7}
-    for week in range(1, 15):
-        mean = pdf.apply(
-            lambda r: pos_scale[r.position] * (26 * r.true_value / V_TOP + 4), axis=1
-        )
-        pts = np.maximum(0.0, rng.normal(mean.to_numpy(), (mean * 0.4).to_numpy()))
-        wk = pdf[["player_id", "position"]].copy()
-        wk["points"] = np.round(pts, 1)
-        events.append({"ts": week_ts(SEASON_2025, week), "kind": "week", "scores": wk})
-
-    # ~15 roughly-fair trades scattered across the season
-    ids = pdf["player_id"].to_numpy()
-    for _ in range(15):
-        anchor = rng.choice(ids)
-        partners = rng.choice(ids, size=2, replace=False)
-        # keep it plausible: anchor for two players of similar combined value
-        events.append(
-            {
-                "ts": datetime.combine(
-                    SEASON_2025.season_start + timedelta(days=int(rng.integers(5, 95))),
-                    datetime.min.time(),
-                ),
-                "kind": "trade",
-                "side_a": [str(anchor)],
-                "side_b": [str(p) for p in partners],
-            }
-        )
-
-    return adp_df, events
 
 
 # ----------------------------------------------------------------------------- #
@@ -165,6 +102,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="replay a staged Parquet run directory; no database access, no writes",
     )
+    ap.add_argument(
+        "--evaluate-bundle",
+        type=Path,
+        metavar="DIR",
+        help="score the model against a staged bundle's held-out trades"
+        " (league-blocked and time-blocked, plus the flat negative control);"
+        " never connects to either database",
+    )
     ap.add_argument("--season", default="2025", choices=sorted(SEASONS))
     ap.add_argument(
         "--segment",
@@ -185,21 +130,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay batch/snapshot cadence, e.g. 24h (required for a database run)",
     )
     ap.add_argument("--top", type=int, default=30, help="how many players to print")
-    ap.add_argument(
-        "--rho",
-        type=float,
-        metavar="VALUE",
-        help="pin replacement value instead of fitting it from unbalanced"
-        " trades (for comparing a fitted run against a fixed one)",
-    )
-    ap.add_argument(
-        "--lam",
-        type=float,
-        metavar="VALUE",
-        help="curve steepness (default 0.04). Never fitted: trade fairness has"
-        " a global optimum at a flat curve, so it cannot identify a shape —"
-        " see note 7 in src/valuation.py. This is a knob for trying one by hand",
-    )
     return ap
 
 
@@ -208,200 +138,188 @@ def build_parser() -> argparse.ArgumentParser:
 # ----------------------------------------------------------------------------- #
 
 
-def _print_rankings(v: Valuator, top: int, source: str) -> None:
-    print(f"\nPlayer valuations  ({source})")
-    print(f"ρ (replacement) = {v.rho:.0f}   |   top of curve = {V_TOP:.0f}\n")
-    print(v.rankings().head(top).to_string())
+def _name_of(players: dict[str, PlayerProfile], pid: str) -> str:
+    profile = players.get(pid)
+    return (profile.name if profile else "") or pid
+
+
+def _log_market_diagnostics(
+    diagnostics: dict | None,
+    players: dict[str, PlayerProfile],
+    frame: pd.DataFrame,
+) -> None:
+    """One block at the end describing how healthy the final fit is."""
+    if not diagnostics:
+        return
+    d = diagnostics
+    print("  market diagnostics:", flush=True)
     print(
-        "\nvalue = current belief (additive scale) | vorp = value - ρ"
-        " | sd = uncertainty band"
-        "\ngames = decayed effective games scored | trades = raw count of"
-        " trades the player appeared in\n"
+        f"    players {d['players_fit']}"
+        f" (prior {d['players_with_prior']},"
+        f" trade-only {d['trade_only_players']})"
+        f" · trades used {d['trades_used']}"
+        f" · outliers removed {d['outliers_removed']}"
+        f" ({100 * d['outlier_share']:.1f}% of window)",
+        flush=True,
+    )
+    if d["inlier_gap_p50"] is not None:
+        print(
+            f"    inlier |residual|: mean {d['inlier_gap_mean']:,.0f}"
+            f" · p50 {d['inlier_gap_p50']:,.0f}"
+            f" · p90 {d['inlier_gap_p90']:,.0f}"
+            f" · p99 {d['inlier_gap_p99']:,.0f}"
+            f" · max {d['inlier_gap_max']:,.0f}"
+            f" ({100 * d['inlier_package_pct_error']:.1f}% of package)",
+            flush=True,
+        )
+        share = d["top_league_weight_share"]
+        print(
+            f"    leagues {d['leagues']}"
+            + (
+                f" · heaviest league carries {100 * share:.1f}% of trade weight"
+                if share is not None
+                else ""
+            ),
+            flush=True,
+        )
+    else:
+        print("    no trades in window — values are the ADP prior", flush=True)
+    movers = ""
+    if d["risers"]:
+        names = ", ".join(
+            f"{_name_of(players, p)} +{delta}" for p, delta in d["risers"]
+        )
+        movers += f" · risers: {names}"
+    if d["fallers"]:
+        names = ", ".join(
+            f"{_name_of(players, p)} {delta}" for p, delta in d["fallers"]
+        )
+        movers += f" · fallers: {names}"
+    spearman = (
+        f"{d['prior_spearman']:.3f}"
+        if d["prior_spearman"] is not None
+        else "n/a (fewer than 3 prior players)"
+    )
+    print(f"    prior agreement: Spearman {spearman} vs ADP{movers}", flush=True)
+    if d["dispersion_p50"] is not None:
+        print(
+            f"    dispersion: p50 {d['dispersion_p50']:,.0f}"
+            f" · p90 {d['dispersion_p90']:,.0f}"
+            f" · at floor {d['dispersion_at_floor']}/{d['players_fit']}",
+            flush=True,
+        )
+    scored = int((frame["games"] > 0).sum())
+    print(
+        f"    performance: scored {scored} of {len(frame)} published players",
+        flush=True,
+    )
+
+
+def _print_rankings(frame: pd.DataFrame, top: int, source: str) -> None:
+    print(f"\nPlayer valuations  ({source})")
+    print(
+        f"top of curve = {market_value.PUBLISHED_TOP:.0f}"
+        f"   |   floor = {market_value.PUBLISHED_FLOOR:.0f}\n"
+    )
+    print(frame.head(top).to_string())
+    print(
+        "\nvalue = published curve at market rank | market_score = fitted"
+        " trade-market score"
+        "\nmarket_dispersion = spread of recent implied trade values |"
+        " projected_par = rest-of-season weekly PAR proxy\n"
     )
 
 
 def run_demo(top: int) -> None:
-    adp, events = make_demo()
-    v = Valuator(
-        start_ts=datetime.combine(SEASON_2025.draft_date, datetime.min.time()),
-        repl_rank_by_pos=SEGMENTS[DEFAULT_SEGMENT_KEY].repl_rank_by_pos,
-    )
-    v.seed_from_adp(adp)
-    v.advance(events)
-    _print_rankings(v, top, "built-in demo data")
-
-
-def _trade_fit_note(v: Valuator):
-    """Per-interval trade volume and fit, for the progress line.
-
-    Differences the valuator's cumulative counters, so each line describes the
-    interval it closes rather than the run so far — a run-so-far average would
-    flatten out and stop showing whether trades are still moving values.
-    """
-    seen = {"trades": 0, "gap": 0.0}
-
-    def note() -> str:
-        trades = v.trades_applied - seen["trades"]
-        gap = v.trade_abs_gap - seen["gap"]
-        seen["trades"], seen["gap"] = v.trades_applied, v.trade_abs_gap
-        if not trades:
-            return "no trades"
-        return f"{trades} trades, mean |gap| {gap / trades:,.0f}"
-
-    return note
-
-
-def _log_diagnostics(v: Valuator) -> None:
-    """One block at the end describing what the model actually ended up with."""
-    d = v.diagnostics()
-    print("  model diagnostics:", flush=True)
-    print(
-        f"    beliefs {d['beliefs']} · with score evidence {d['scored']}"
-        f" · never scored {d['never_scored']}",
-        flush=True,
-    )
-    print(
-        f"    value: top {d['value_top']:,.0f}"
-        f" (≈ADP rank {curve_rank(d['value_top'], d['lam']):.0f} on its curve)"
-        f" · median {d['value_p50']:,.0f}",
-        flush=True,
-    )
-    print(
-        f"    curve: ρ {d['rho']:,.0f} · λ {d['lam']:.4f}"
-        f" (e-fold every {1 / d['lam']:.0f} picks)",
-        flush=True,
-    )
-    print(
-        f"    sd: median {d['sd_p50']:,.0f} · p90 {d['sd_p90']:,.0f}"
-        f" · last evidence {d['last_ts'].date()}",
-        flush=True,
-    )
-    print(
-        f"    trade fit: {d['trades_applied']:,} trades"
-        f" ({d['unbalanced_trades']:,} unbalanced, the only ones that identify"
-        f" ρ), mean |gap| {d['trade_mean_abs_gap']:,.0f}",
-        flush=True,
-    )
-    print(
-        f"    |gap| spread: p50 {d['gap_p50']:,.0f} · p90 {d['gap_p90']:,.0f}"
-        f" · p99 {d['gap_p99']:,.0f} · max {d['gap_max']:,.0f}",
-        flush=True,
-    )
-    # The model treats every trade as fair. These two numbers say how much of
-    # the value movement comes from trades that plainly are not: the share of
-    # trades whose residual exceeds its own expected spread, and the share of
-    # total movement they cause. A small count carrying a large share of the
-    # movement is the case where rejecting outliers changes the answer.
-    print(
-        f"    outliers (|z| > {valuation.OUTLIER_Z:g}):"
-        f" {d['outlier_trades']:,} trades = {100 * d['outlier_share']:.1f}%"
-        f" of trades, causing {100 * d['outlier_move_share']:.1f}% of all"
-        f" value movement · z p50 {d['z_p50']:.2f} p99 {d['z_p99']:.2f}",
-        flush=True,
-    )
-
-    # Positions the weekly-score query cannot return (it filters to the
-    # fantasy set), so these beliefs can never receive performance evidence:
-    # they enter through trades and keep whatever the trade stream implies.
-    unscoreable = {
-        pos: n
-        for pos, n in sorted(d["by_position"].items())
-        if pos not in db.FANTASY_POSITIONS
+    """The synthetic market with known true values, replayed like a real run."""
+    market = evaluation.synthetic_market()
+    players = {
+        a.player_id: PlayerProfile(
+            player_id=a.player_id, name=a.player_name, position=a.position
+        )
+        for a in market.adp
     }
-    if unscoreable:
-        census = ", ".join(f"{pos} {n}" for pos, n in unscoreable.items())
-        print(
-            f"    never scoreable ({sum(unscoreable.values())} beliefs"
-            f" outside the fantasy positions): {census}",
-            flush=True,
-        )
+    start, end = market.start.date(), market.end.date() + timedelta(days=1)
+
+    last_frame: dict[str, pd.DataFrame] = {}
+    stats = replay_market(
+        market.trades, [], market.adp, players, SEASONS["2025"],
+        start, end, timedelta(days=1),
+        SEGMENTS[DEFAULT_SEGMENT_KEY].repl_rank_by_pos,
+        lambda d, frame: last_frame.__setitem__("frame", frame),
+    )
+    print(f"  {stats.snapshots} snapshots, {stats.events_applied} events applied")
+    frame = last_frame["frame"]
+    truth_rank = {p: i + 1 for i, p in enumerate(market.players)}
+    rho = evaluation.spearman(
+        dict(zip(frame["player_id"], frame["market_score"])),
+        {p: -r for p, r in truth_rank.items()},
+    )
+    print(f"  rank recovery vs planted truth: Spearman {rho:.3f}")
+    _log_market_diagnostics(stats.diagnostics, players, frame)
+    _print_rankings(frame, top, "built-in demo data")
 
 
-def _resolve_curve(
-    segment_key: str,
-    inputs,
-    events: list[dict],
-    start: date,
-    end: date,
-    step: timedelta,
-    rho_pin: float | None,
-    lam_pin: float | None,
-) -> tuple[float, float]:
-    """Settle the two curve parameters for this run.
+def run_evaluate_bundle(bundle_dir: Path, segment_key: str, season: str) -> None:
+    """Score the model against a staged bundle's held-out trades.
 
-    λ is taken as given — from --lam, else the seed default. It is deliberately
-    not fitted: trade fairness has a global optimum at a flat curve (see note 7
-    in src/valuation.py), so minimizing trade residuals over λ just walks to
-    zero. ρ is fitted, because unbalanced trades do identify it.
-
-    Reported in full — the iteration path, the identifying sample size, and the
-    raw pre-clamp value — because a ρ fitted from a thin sample deserves less
-    trust than the seed it replaced, and the log is the only place that
-    difference is visible.
+    League-blocked and time-blocked holdouts, each shown beside the flat
+    negative control. Package error alone never selects a model — the
+    curve_valid gate is what a flat solution cannot pass. This mode never
+    connects to a database; the bundle is the entire input.
     """
-    lam = LAMBDA_ADP if lam_pin is None else lam_pin
-    if lam_pin is not None:
-        print(f"  λ pinned at {lam:.4f} (never fitted; see note 7)", flush=True)
+    manifest = staging.read_manifest(bundle_dir)
+    args = manifest.get("args", {})
+    end = date.fromisoformat(args["end"])
+    segment_key = args.get("segment", segment_key)
+    season = args.get("season", season)
 
-    if rho_pin is not None:
-        print(f"  ρ pinned at {rho_pin:,.0f} (not fitted)", flush=True)
-        return rho_pin, lam
-
-    fit = fit_rho(
-        lambda r: _seeded_valuator(
-            segment_key, inputs.adp, start, inputs.players, r, lam
-        ),
-        events,
-        start,
-        end,
-        step,
-        seed=RHO,
-    )
-    if not fit.unbalanced:
-        print(
-            "  ρ not identifiable — no unbalanced trades in window;"
-            f" keeping the seed {fit.rho:,.0f}",
-            flush=True,
-        )
-        return fit.rho, lam
-
-    path = " -> ".join(f"{r:,.0f}" for r in fit.path)
+    inputs = staging.read_bundle(bundle_dir)
+    print(f"[{segment_key}/{season}] evaluating staged bundle {bundle_dir}")
     print(
-        f"  ρ fitted to {fit.rho:,.0f} from {fit.unbalanced:,} unbalanced"
-        f" trades (seed {RHO:,.0f}; {path};"
-        f" {'converged' if fit.converged else 'did NOT converge'})",
-        flush=True,
+        f"  inputs: {len(inputs.adp)} ADP players, {len(inputs.trades)} trades,"
+        f" {len(inputs.scores)} weekly score rows"
     )
-    if fit.raw < 0:
+
+    prior = market_value.adp_prior(inputs.adp)
+
+    def report_block(label: str, train, test, asof: datetime) -> None:
+        if not test:
+            print(f"  {label}: unavailable (no held-out trades)")
+            return
+        print(f"  {label}: {len(train)} train / {len(test)} test trades")
+        fit = market_value.fit_snapshot(train, asof=asof, adp_prior=prior)
         print(
-            f"    note: the raw estimate was {fit.raw:,.0f} — the data asked"
-            " for a negative replacement value, which was clamped to 0",
-            flush=True,
+            evaluation.format_report("model", evaluation.evaluate(fit.values, test))
         )
-    return fit.rho, lam
+        print(
+            evaluation.format_report(
+                "flat control",
+                evaluation.flat_control_report(sorted(fit.values), test),
+            )
+        )
 
+    window_end = datetime.combine(end, datetime.min.time())
+    with_league = [t for t in inputs.trades if t.league_id]
+    if with_league:
+        train, test = evaluation.league_blocked_split(inputs.trades)
+        report_block("league-blocked holdout", train, test, window_end)
+    else:
+        print(
+            "  league-blocked holdout: unavailable — bundle has no league ids"
+            " (staged before schema v3)"
+        )
 
-def _seeded_valuator(
-    segment_key: str,
-    adp,
-    start: date,
-    players=None,
-    rho: float | None = None,
-    lam: float | None = None,
-) -> Valuator:
-    """players: the full resolved identity map, so a player who only ever shows
-    up inside a trade still gets their real name and position."""
-    v = Valuator(
-        start_ts=datetime.combine(start, datetime.min.time()),
-        repl_rank_by_pos=SEGMENTS[segment_key].repl_rank_by_pos,
-        identities={
-            pid: (p.name, p.position) for pid, p in (players or {}).items()
-        },
-        rho=rho,
-        lam=lam,
-    )
-    v.seed_from_adp(adp_frame(adp))
-    return v
+    if inputs.trades:
+        span_start = min(t.ts for t in inputs.trades)
+        span_end = max(t.ts for t in inputs.trades)
+        cutoff = span_start + (span_end - span_start) * 3 / 4
+        train, test = evaluation.time_blocked_split(inputs.trades, cutoff)
+        report_block(
+            f"time-blocked holdout (cutoff {cutoff.date()})", train, test, cutoff
+        )
+    else:
+        print("  time-blocked holdout: unavailable — bundle has no trades")
 
 
 def run_from_bundle(
@@ -424,23 +342,23 @@ def run_from_bundle(
         f" {len(inputs.scores)} weekly score rows"
     )
 
-    events = build_events(inputs.trades, inputs.scores, SEASONS[season])
-    resolved_rho, resolved_lam = _resolve_curve(
-        segment_key, inputs, events, start, end, step,
-        manifest.get("rho"), manifest.get("lam"),
-    )
-    v = _seeded_valuator(
-        segment_key, inputs.adp, start, inputs.players, resolved_rho, resolved_lam
-    )
-    reporter = progress.ProgressReporter(
-        progress.total_batches(start, end, step), extra=_trade_fit_note(v)
-    )
-    stats = replay(
-        v, events, start, end, step, on_snapshot=lambda d, df: reporter.tick(d)
+    reporter = progress.ProgressReporter(progress.total_batches(start, end, step))
+    last_frame: dict[str, pd.DataFrame] = {}
+
+    def on_snapshot(day: date, frame: pd.DataFrame) -> None:
+        last_frame["frame"] = frame
+        reporter.tick(day)
+
+    stats = replay_market(
+        inputs.trades, inputs.scores, inputs.adp, inputs.players,
+        SEASONS[season], start, end, step,
+        SEGMENTS[segment_key].repl_rank_by_pos, on_snapshot,
     )
     print(f"  {stats.snapshots} snapshots, {stats.events_applied} events applied")
-    _log_diagnostics(v)
-    _print_rankings(v, top, f"{segment_key} season {season} (staged bundle)")
+    _log_market_diagnostics(stats.diagnostics, inputs.players, last_frame["frame"])
+    _print_rankings(
+        last_frame["frame"], top, f"{segment_key} season {season} (staged bundle)"
+    )
 
 
 def run_replay(
@@ -450,28 +368,23 @@ def run_replay(
     end: date,
     step: timedelta,
     top: int,
-    rho: float | None = None,
-    lam: float | None = None,
 ) -> None:
     segment = SEGMENTS[segment_key]
     season_dates = SEASONS[season]
     validate_step(start, end, step)
 
     # --start is both the input window's lower bound and the model clock's
-    # origin, so a later start would seed from ADP and then silently skip every
-    # trade and score before it — publishing snapshots, and replacing
-    # valuation_state, with a model that never saw that evidence. (replay()'s
-    # dropped_before_start counter cannot catch this: load_inputs already
-    # windows its queries to [start, end), so there is nothing left to drop.)
-    # Supporting it properly means replaying from the draft date and only
-    # publishing the requested window, which is the incremental behavior this
-    # CLI deliberately does not have.
+    # origin, so a later start would fit from a partial trade window and
+    # publish snapshots that silently omit every trade before it. Supporting
+    # it properly means loading from the draft date and only publishing the
+    # requested window, which is the incremental behavior this CLI
+    # deliberately does not have.
     if start != season_dates.draft_date:
         sys.exit(
             f"--start must be the {season} draft date"
             f" ({season_dates.draft_date}), got {start}. This CLI replays a"
             " season in full; a later start would omit every event before it"
-            " while still rewriting the model state."
+            " while still rewriting the published range."
         )
 
     started = time.monotonic()
@@ -519,11 +432,6 @@ def run_replay(
             if not inputs.adp:
                 sys.exit("no ADP data for this segment/season — nothing to seed")
 
-            events = build_events(inputs.trades, inputs.scores, season_dates)
-            resolved_rho, resolved_lam = _resolve_curve(
-                segment.key, inputs, events, start, end, step, rho, lam
-            )
-
             manifest = staging.write_bundle(
                 run_dir,
                 adp=inputs.adp,
@@ -534,8 +442,6 @@ def run_replay(
                     **staging.manifest_args(segment.key, season, start, end, step),
                     "skipped_trades": inputs.skipped_trades,
                     "skipped_nonfantasy": inputs.skipped_nonfantasy,
-                    "rho": resolved_rho,
-                    "lam": resolved_lam,
                 },
             )
             print(f"  staged bundle checksums: {manifest['checksums']}")
@@ -566,35 +472,20 @@ def run_replay(
                 )
                 sys.exit(EXIT_LOCKED)
 
-            v = _seeded_valuator(
-                segment.key, inputs.adp, start, inputs.players,
-                resolved_rho, resolved_lam,
-            )
-
             db.delete_snapshots(sources.cloud, segment.key, start, end)
 
-            reporter = progress.ProgressReporter(total, extra=_trade_fit_note(v))
+            reporter = progress.ProgressReporter(total)
+            last_frame: dict[str, pd.DataFrame] = {}
 
-            def on_snapshot(day: date, rankings: pd.DataFrame) -> None:
-                db.write_snapshot(sources.cloud, segment.key, day, rankings)
+            def on_snapshot(day: date, frame: pd.DataFrame) -> None:
+                db.write_snapshot(sources.cloud, segment.key, day, frame)
+                last_frame["frame"] = frame
                 reporter.tick(day)
 
-            stats = replay(v, events, start, end, step, on_snapshot)
-
-            db.save_state(sources.cloud, segment.key, v.to_state())
-            db.save_run(
-                sources.cloud,
-                RunState(
-                    segment=segment.key,
-                    season=season,
-                    last_event_ts=v.last_ts,
-                    last_transaction_created=max(
-                        (t.created_ms for t in inputs.trades), default=0
-                    ),
-                    last_week_processed=max(
-                        (s.week for s in inputs.scores), default=0
-                    ),
-                ),
+            stats = replay_market(
+                inputs.trades, inputs.scores, inputs.adp, inputs.players,
+                season_dates, start, end, step,
+                SEGMENTS[segment.key].repl_rank_by_pos, on_snapshot,
             )
             sources.cloud.commit()
         except BaseException:
@@ -604,9 +495,8 @@ def run_replay(
             sources.cloud.rollback()
             raise
 
-    rows = stats.snapshots * len(v.beliefs)
     print(
-        f"  wrote {stats.snapshots} daily snapshots (~{rows} rows),"
+        f"  wrote {stats.snapshots} daily snapshots,"
         f" {stats.events_applied} events applied"
     )
     if stats.dropped_before_start or stats.dropped_at_or_after_end:
@@ -615,8 +505,10 @@ def run_replay(
             f" {stats.dropped_at_or_after_end} at/after {end}"
         )
     print(f"  elapsed {time.monotonic() - started:.1f}s")
-    _log_diagnostics(v)
-    _print_rankings(v, top, f"{segment.key} season {season} (database)")
+    _log_market_diagnostics(stats.diagnostics, inputs.players, last_frame["frame"])
+    _print_rankings(
+        last_frame["frame"], top, f"{segment.key} season {season} (database)"
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -625,6 +517,9 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.demo:
         run_demo(args.top)
+        return
+    if args.evaluate_bundle:
+        run_evaluate_bundle(args.evaluate_bundle, args.segment, args.season)
         return
     if args.from_bundle:
         run_from_bundle(args.from_bundle, args.segment, args.season, args.top)
@@ -641,10 +536,7 @@ def main(argv: list[str] | None = None) -> None:
         ap.error("--start is required for a database run (e.g. --start 2025-08-25)")
 
     end = args.end or default_end()
-    run_replay(
-        args.segment, args.season, args.start, end, args.step, args.top,
-        args.rho, args.lam,
-    )
+    run_replay(args.segment, args.season, args.start, end, args.step, args.top)
 
 
 if __name__ == "__main__":

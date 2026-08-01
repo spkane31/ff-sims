@@ -11,6 +11,8 @@ dependencies = [
     # staged Parquet run artifacts (src/staging.py)
     "pyarrow>=18.0",
     "python-dotenv>=1.0",
+    # sparse matrices/solves for the market estimator (src/market_value.py)
+    "scipy>=1.13",
 ]
 
 [dependency-groups]

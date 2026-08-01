@@ -28,9 +28,7 @@ from dotenv import load_dotenv
 from .config import MIN_ADP_DRAFTS, SeasonDates, Segment, week_ts
 from .models import (
     AverageDraftPosition,
-    PlayerBeliefState,
     PlayerProfile,
-    RunState,
     Trade,
     WeeklyScore,
 )
@@ -243,7 +241,7 @@ def get_trades(
     """
     sql = """
         SELECT t.sleeper_transaction_id, t.created_at_sleeper,
-               t.adds, t.draft_picks, t.waiver_budget
+               t.adds, t.draft_picks, t.waiver_budget, t.sleeper_league_id
         FROM sleeper_transactions t
         JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id
         WHERE t.type = 'trade' AND t.status = 'complete'
@@ -266,7 +264,10 @@ def get_trades(
             ),
         )
         rows = cur.fetchall()
-    parsed = [parse_trade(r[0], r[1], r[2], r[3], r[4]) for r in rows]
+    parsed = [
+        parse_trade(r[0], r[1], r[2], r[3], r[4], league_id=r[5] or "")
+        for r in rows
+    ]
     trades = [t for t in parsed if t is not None]
     return trades, len(parsed) - len(trades)
 
@@ -415,85 +416,7 @@ def load_inputs(
     )
 
 
-# --------------------------------------------------------- state + output --
-
-
-def load_state(conn: psycopg.Connection, segment_key: str) -> list[PlayerBeliefState]:
-    sql = """
-        SELECT sleeper_player_id, guess, var, games, cum_par, position, name,
-               trades
-        FROM valuation_state WHERE segment = %s
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, (segment_key,))
-        return [
-            PlayerBeliefState(
-                player_id=r[0], guess=r[1], var=r[2], games=r[3],
-                cum_par=r[4], position=r[5] or "DEFAULT", name=r[6] or "",
-                trades=int(r[7] or 0),
-            )
-            for r in cur.fetchall()
-        ]
-
-
-def save_state(
-    conn: psycopg.Connection, segment_key: str, states: list[PlayerBeliefState]
-) -> None:
-    """Full replace: the in-memory Valuator is the source of truth."""
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM valuation_state WHERE segment = %s", (segment_key,))
-        cur.executemany(
-            """
-            INSERT INTO valuation_state
-                (segment, sleeper_player_id, guess, var, games, cum_par,
-                 position, name, trades, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-            """,
-            [
-                (segment_key, s.player_id, s.guess, s.var, s.games, s.cum_par,
-                 s.position, s.name, s.trades)
-                for s in states
-            ],
-        )
-
-
-def get_run(
-    conn: psycopg.Connection, segment_key: str, season: str
-) -> RunState | None:
-    sql = """
-        SELECT last_event_ts, last_transaction_created, last_week_processed
-        FROM valuation_runs WHERE segment = %s AND season = %s
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, (segment_key, season))
-        row = cur.fetchone()
-    if row is None:
-        return None
-    last_event_ts = row[0].replace(tzinfo=None) if row[0] is not None else None
-    return RunState(
-        segment=segment_key, season=season, last_event_ts=last_event_ts,
-        last_transaction_created=row[1], last_week_processed=row[2],
-    )
-
-
-def save_run(conn: psycopg.Connection, run: RunState) -> None:
-    sql = """
-        INSERT INTO valuation_runs
-            (segment, season, last_event_ts, last_transaction_created,
-             last_week_processed, last_run_at)
-        VALUES (%s, %s, %s, %s, %s, now())
-        ON CONFLICT (segment, season) DO UPDATE SET
-            last_event_ts = EXCLUDED.last_event_ts,
-            last_transaction_created = EXCLUDED.last_transaction_created,
-            last_week_processed = EXCLUDED.last_week_processed,
-            last_run_at = now()
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            sql,
-            (run.segment, run.season, run.last_event_ts,
-             run.last_transaction_created, run.last_week_processed),
-        )
+# ------------------------------------------------------------------ output --
 
 
 def write_snapshot(
@@ -502,16 +425,22 @@ def write_snapshot(
     valuation_date: date,
     rankings: pd.DataFrame,
 ) -> None:
-    """rankings = Valuator.rankings(): index is rank, columns include
-    player_id, pos, pos_rank, value, vorp, sd, games."""
+    """rankings = runner.market_frame(): index is market rank, columns include
+    player_id, pos, pos_rank, value, market_score, market_dispersion,
+    projected_par, projection_uncertainty, games, trades."""
     sql = """
         INSERT INTO player_valuations
             (segment, sleeper_player_id, valuation_date, rank, pos_rank,
-             value, vorp, sd, games, position, trades)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (segment, sleeper_player_id, valuation_date) DO UPDATE SET
+             value, market_score, market_dispersion, projected_par,
+             projection_uncertainty, games, position, trades)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (segment, sleeper_player_id, valuation_date)
+        DO UPDATE SET
             rank = EXCLUDED.rank, pos_rank = EXCLUDED.pos_rank,
-            value = EXCLUDED.value, vorp = EXCLUDED.vorp, sd = EXCLUDED.sd,
+            value = EXCLUDED.value, market_score = EXCLUDED.market_score,
+            market_dispersion = EXCLUDED.market_dispersion,
+            projected_par = EXCLUDED.projected_par,
+            projection_uncertainty = EXCLUDED.projection_uncertainty,
             games = EXCLUDED.games, position = EXCLUDED.position,
             trades = EXCLUDED.trades
     """
@@ -520,8 +449,10 @@ def write_snapshot(
             sql,
             [
                 (segment_key, row.player_id, valuation_date, rank,
-                 int(row.pos_rank), float(row.value), float(row.vorp),
-                 float(row.sd), float(row.games), row.pos, int(row.trades))
+                 int(row.pos_rank), float(row.value),
+                 float(row.market_score), float(row.market_dispersion),
+                 float(row.projected_par), float(row.projection_uncertainty),
+                 float(row.games), row.pos, int(row.trades))
                 for rank, row in zip(rankings.index, rankings.itertuples(index=False))
             ],
         )
@@ -568,18 +499,14 @@ __all__ = [
     "delete_snapshots",
     "get_adp_picks",
     "get_connection",
-    "get_run",
     "get_trades",
     "get_weekly_scores",
     "latest_snapshot_date",
     "load_inputs",
-    "load_state",
     "open_sources",
     "read_only_snapshot",
     "resolve_players",
     "rows_to_scores",
-    "save_run",
-    "save_state",
     "try_advisory_xact_lock",
     "write_snapshot",
 ]

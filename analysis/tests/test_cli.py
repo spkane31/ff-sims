@@ -82,6 +82,14 @@ def test_no_incremental_or_backtest_mode_remains():
             _parse([flag])
 
 
+def test_no_old_model_knobs_or_versioning_remain():
+    """There is only THE model: no --model selector until a published v1
+    exists, and the old estimator's ρ/λ knobs are gone with it."""
+    for argv in (["--model", "market-v2"], ["--rho", "100"], ["--lam", "0.04"]):
+        with pytest.raises(SystemExit):
+            _parse(argv)
+
+
 def test_demo_mode_needs_no_database(monkeypatch):
     called = {}
     monkeypatch.setattr(main, "run_demo", lambda top: called.setdefault("top", top))
@@ -98,9 +106,8 @@ def test_replay_receives_the_defaulted_end(monkeypatch):
     monkeypatch.setattr(main, "default_end", lambda: date(2026, 7, 28))
     monkeypatch.setattr(
         main, "run_replay",
-        lambda segment, season, start, end, step, top, rho, lam: seen.update(
+        lambda segment, season, start, end, step, top: seen.update(
             segment=segment, season=season, start=start, end=end, step=step,
-            rho=rho, lam=lam,
         ),
     )
     main.main(SCHEDULED)
@@ -108,6 +115,4 @@ def test_replay_receives_the_defaulted_end(monkeypatch):
         "segment": "ppr-sf-10", "season": "2025",
         "start": date(2025, 8, 25), "end": date(2026, 7, 28),
         "step": timedelta(hours=24),
-        # the scheduled invocation pins neither: ρ is fitted, λ takes its seed
-        "rho": None, "lam": None,
     }

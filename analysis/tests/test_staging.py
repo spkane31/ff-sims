@@ -17,6 +17,7 @@ TRADES = [
     Trade(
         trade_id="t1", ts=datetime(2025, 9, 3, 14, 30),
         side_a=["p1"], side_b=["p2", "p3"], created_ms=1756909800000,
+        league_id="lgA",
     )
 ]
 SCORES = [
@@ -100,6 +101,57 @@ def test_incomplete_bundle_has_no_manifest(tmp_path):
     run_dir = staging.new_run_dir(tmp_path, run_id="partial")
     with pytest.raises(staging.BundleError, match="incomplete"):
         staging.read_bundle(run_dir)
+
+
+def test_trades_round_trip_league_id(tmp_path):
+    run_dir, _ = _write(tmp_path)
+    got = staging.read_bundle(run_dir)
+    assert [t.league_id for t in got.trades] == ["lgA"]
+
+
+def test_v2_bundle_reads_with_unknown_league(tmp_path):
+    """Bundles staged before league_id existed (schema v2) must stay
+    replayable; their trades come back with league_id ''. League-blocked
+    evaluation is simply unavailable for them."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    run_dir = staging.new_run_dir(tmp_path, run_id="v2-era")
+    v2_trades_schema = pa.schema(
+        [
+            pa.field("trade_id", pa.string(), nullable=False),
+            pa.field("ts", pa.timestamp("us"), nullable=False),
+            pa.field("side_a", pa.list_(pa.string()), nullable=False),
+            pa.field("side_b", pa.list_(pa.string()), nullable=False),
+            pa.field("created_ms", pa.int64(), nullable=False),
+        ]
+    )
+    # the other three files use the current writers (their schemas are
+    # unchanged between v2 and v3); the trades file is then replaced with a
+    # v2-era one
+    staging.write_bundle(run_dir, adp=ADP, trades=[], scores=SCORES, players=PLAYERS)
+    t = TRADES[0]
+    pq.write_table(
+        pa.table(
+            {
+                "trade_id": [t.trade_id],
+                "ts": [t.ts],
+                "side_a": [list(t.side_a)],
+                "side_b": [list(t.side_b)],
+                "created_ms": [t.created_ms],
+            },
+            schema=v2_trades_schema,
+        ),
+        run_dir / staging.TRADES_FILE,
+    )
+    manifest = json.loads((run_dir / staging.MANIFEST_FILE).read_text())
+    manifest["schema_version"] = 2
+    manifest["checksums"].pop(staging.TRADES_FILE, None)
+    (run_dir / staging.MANIFEST_FILE).write_text(json.dumps(manifest))
+
+    got = staging.read_bundle(run_dir)
+    assert [t.league_id for t in got.trades] == [""]
+    assert got.trades[0].side_b == ["p2", "p3"]
 
 
 def test_unknown_schema_version_is_refused(tmp_path):
