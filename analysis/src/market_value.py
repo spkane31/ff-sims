@@ -44,7 +44,13 @@ PUBLISHED_LAM = 0.04
 # --- fit knobs ---------------------------------------------------------------
 HALF_LIFE_DAYS = 30.0  # trade weight halves every 30 days of age
 PRIOR_WEIGHT = 1.0  # quadratic pull of each drafted player toward ADP
-RIDGE_WEIGHT = 1e-6  # numeric floor for players with no prior at all
+# Undrafted players are anchored at score 0 with the same weight: no draft
+# capital is itself market information. Without a real anchor (an early
+# version used a 1e-6 numeric ridge) a single dump trade could set an
+# unanchored player's score to the stud's — and by absorbing the residual,
+# the free variable also hid that trade from the outlier gate. Repeated
+# recent trades still lift a genuine waiver star past this anchor.
+UNDRAFTED_PRIOR_WEIGHT = PRIOR_WEIGHT
 TRADE_MASS_PER_PLAYER = 4.0  # total trade weight is capped at this per player
 LEAGUE_CAP_MULTIPLE = 3.0  # no league carries more than 3x the median league
 DUPLICATE_CAP = 3.0  # identical package in one league counts at most 3x
@@ -268,7 +274,10 @@ def fit_snapshot(
 
     prior_vec = np.array([adp_prior.get(p, 0.0) for p in players])
     prior_w = np.array(
-        [PRIOR_WEIGHT if p in adp_prior else RIDGE_WEIGHT for p in players]
+        [
+            PRIOR_WEIGHT if p in adp_prior else UNDRAFTED_PRIOR_WEIGHT
+            for p in players
+        ]
     )
     x0 = np.array(
         [

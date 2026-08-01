@@ -111,17 +111,20 @@ def test_recent_market_wins():
     The old updater did the opposite — early evidence shrank variance, so the
     newest trades moved the belief least."""
     asof = T0 + timedelta(days=60)
-    prior = {}
+    # X is drafted at the old regime's level: the prior agrees with the old
+    # market, so any pull above it comes from the trades — which makes the
+    # recency weighting the thing under test
+    prior = {"X": 4000.0}
     trades = []
-    for i in range(4):  # old regime: X for a 4,000 player, 60 days ago
+    for i in range(16):  # old regime: X for a 4,000 player, 60 days ago
         anchor = f"a4k_{i}"
         prior[anchor] = 4000.0
         trades.append(_trade(i, ["X"], [anchor], T0, league=f"lgA{i}"))
-    for i in range(4):  # new regime: X for an 8,000 player, today
+    for i in range(16):  # new regime: X for an 8,000 player, today
         anchor = f"a8k_{i}"
         prior[anchor] = 8000.0
         trades.append(
-            _trade(10 + i, ["X"], [anchor], asof - timedelta(hours=1),
+            _trade(100 + i, ["X"], [anchor], asof - timedelta(hours=1),
                    league=f"lgB{i}")
         )
 
@@ -178,6 +181,46 @@ def test_outlier_does_not_increase_confidence():
     assert abs(with_crazy.scores["p50"] - base.scores["p50"]) < 0.05 * max(
         base.scores["p50"], 1.0
     )
+
+
+def test_a_single_trade_cannot_mint_a_market_price_for_an_unanchored_player():
+    """Production regression (rosebud run 2026-08-01): undrafted players with
+    exactly one trade — Royce Freeman, Aaron Bailey, Layne Pryor — ranked in
+    the top 50, because a player with no ADP prior had only the numeric
+    ridge holding them down. One dump trade against a stud then set their
+    score to the stud's at nearly zero cost, and by absorbing the residual
+    the free variable also hid the trade from the outlier gate."""
+    market = evaluation.synthetic_market(n_players=40, seed=5, n_trades=150)
+    prior = market_value.adp_prior(market.adp)
+    ghost_trade = _trade(
+        9000, ["ghost"], ["p00"], market.end - timedelta(hours=3),
+        league="synlg0",
+    )
+    fit = market_value.fit_snapshot(
+        market.trades + [ghost_trade], asof=market.end, adp_prior=prior
+    )
+    assert fit.scores["ghost"] < 0.3 * fit.scores["p00"]
+    # the dump is now visible to the outlier pass instead of absorbed
+    assert fit.ranks["ghost"] > 20
+
+
+def test_repeated_market_evidence_still_lifts_an_undrafted_player():
+    """The flip side of the anchor: a waiver pickup the market keeps paying
+    a real price for (many leagues, recent) must be able to rise."""
+    market = evaluation.synthetic_market(n_players=40, seed=5, n_trades=150)
+    prior = market_value.adp_prior(market.adp)
+    # eight different leagues recently traded the pickup for the ~rank-6 player
+    hype = [
+        _trade(
+            9100 + i, ["pickup"], ["p05"],
+            market.end - timedelta(hours=2, minutes=i), league=f"synlg{i}",
+        )
+        for i in range(8)
+    ]
+    fit = market_value.fit_snapshot(
+        market.trades + hype, asof=market.end, adp_prior=prior
+    )
+    assert fit.scores["pickup"] > 0.5 * fit.scores["p05"]
 
 
 # ---------------------------------------------------------- diagnostics --
