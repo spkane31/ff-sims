@@ -212,6 +212,37 @@ def test_missing_database_url_fails_before_connecting(monkeypatch):
             pass
 
 
+def test_connect_strips_pgx_only_query_parameters(monkeypatch):
+    url = (
+        "postgresql://user:password@db.example.com:25061/ff_sims"
+        "?sslmode=require&default_query_exec_mode=simple_protocol"
+    )
+    monkeypatch.setenv(db.CLOUD_URL_ENV, url)
+
+    class Connection:
+        def cursor(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def execute(self, _):
+            pass
+
+        def commit(self):
+            pass
+
+    seen = []
+    monkeypatch.setattr(db.psycopg, "connect", lambda value: seen.append(value) or Connection())
+
+    db.connect(db.CLOUD_URL_ENV)
+
+    assert seen == ["postgresql://user:password@db.example.com:25061/ff_sims?sslmode=require"]
+
+
 # ------------------------------------------- unvaluable positions --
 
 

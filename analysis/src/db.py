@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import psycopg
@@ -41,6 +42,11 @@ FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
 CLOUD_URL_ENV = "DATABASE_URL"
 ARCHIVE_URL_ENV = "ARCHIVE_DATABASE_URL"
+
+# The Go workers use pgx's default_query_exec_mode to select the simple
+# protocol through DigitalOcean's pgbouncer pool. psycopg/libpq rejects it as
+# an unknown URI parameter, even though both processes share these URLs.
+_PGX_ONLY_PARAMS = {"default_query_exec_mode"}
 
 # First key of the two-int advisory lock: a private namespace for this job, so
 # it can't collide with a lock some other part of the system takes.
@@ -90,11 +96,21 @@ class Inputs:
     skipped_nonfantasy: int = 0
 
 
+def _strip_pgx_only_params(url: str) -> str:
+    parts = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in _PGX_ONLY_PARAMS
+    ]
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def connect(env_var: str) -> psycopg.Connection:
     url = os.environ.get(env_var)
     if not url:
         raise RuntimeError(f"{env_var} is not set — refusing to run")
-    conn = psycopg.connect(url)
+    conn = psycopg.connect(_strip_pgx_only_params(url))
     with conn.cursor() as cur:
         cur.execute("SET TIME ZONE 'UTC'")  # naive-UTC convention end-to-end
     conn.commit()
