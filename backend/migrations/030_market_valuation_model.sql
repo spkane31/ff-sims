@@ -11,23 +11,26 @@
 --   market_dispersion      robust spread of recent implied trade values
 --   projected_par          rest-of-season weekly points-above-replacement proxy
 --   projection_uncertainty error band for projected_par
-ALTER TABLE player_valuations ADD COLUMN market_score FLOAT;
-ALTER TABLE player_valuations ADD COLUMN market_dispersion FLOAT;
-ALTER TABLE player_valuations ADD COLUMN projected_par FLOAT;
-ALTER TABLE player_valuations ADD COLUMN projection_uncertainty FLOAT;
+-- A briefly-deployed predecessor used version 029 for this exact change.
+-- Those databases have the schema but Goose only records the number, so make
+-- this renumbered migration safe to apply when that old 029 is recorded.
+ALTER TABLE player_valuations ADD COLUMN IF NOT EXISTS market_score FLOAT;
+ALTER TABLE player_valuations ADD COLUMN IF NOT EXISTS market_dispersion FLOAT;
+ALTER TABLE player_valuations ADD COLUMN IF NOT EXISTS projected_par FLOAT;
+ALTER TABLE player_valuations ADD COLUMN IF NOT EXISTS projection_uncertainty FLOAT;
 
 -- Dead columns from the old model: `vorp` subtracted one global fitted rho
 -- from every position (replacement is league- and position-specific at query
 -- time now), and `sd` was recursive filter confidence, not calibrated
 -- uncertainty — market_dispersion and projection_uncertainty replace it.
-ALTER TABLE player_valuations DROP COLUMN vorp;
-ALTER TABLE player_valuations DROP COLUMN sd;
+ALTER TABLE player_valuations DROP COLUMN IF EXISTS vorp;
+ALTER TABLE player_valuations DROP COLUMN IF EXISTS sd;
 
 -- The old model's incremental belief state and watermarks have no writers or
 -- readers left: every market snapshot is a pure function of the staged
 -- inputs before it.
-DROP TABLE valuation_state;
-DROP TABLE valuation_runs;
+DROP TABLE IF EXISTS valuation_state;
+DROP TABLE IF EXISTS valuation_runs;
 
 -- +goose Down
 

@@ -425,16 +425,32 @@ def test_the_trade_count_is_published_with_each_snapshot(monkeypatch, staging_di
     assert rows["p2"] == 0
 
 
-def test_migration_adds_the_market_columns():
-    """Migration 029 replaces the old model's schema: market columns in,
-    global-rho vorp and recursive sd out, belief state tables dropped."""
+def test_migrations_reconcile_the_legacy_market_model_version_29():
+    """A database that recorded the old market migration as 029 can advance.
+
+    That old migration has already added the market columns and removed the
+    obsolete state. Migration 030 must therefore be safe to apply again, and
+    031 restores the trade count skipped when Goose treated old 029 as current
+    029_valuation_trade_counts.sql.
+    """
     sql = (
         Path(__file__).resolve().parents[2]
         / "backend/migrations/030_market_valuation_model.sql"
     ).read_text()
     for needle in (
-        "market_score", "market_dispersion", "projected_par",
-        "projection_uncertainty", "DROP COLUMN vorp", "DROP COLUMN sd",
-        "DROP TABLE valuation_state", "DROP TABLE valuation_runs",
+        "ADD COLUMN IF NOT EXISTS market_score FLOAT",
+        "ADD COLUMN IF NOT EXISTS market_dispersion FLOAT",
+        "ADD COLUMN IF NOT EXISTS projected_par FLOAT",
+        "ADD COLUMN IF NOT EXISTS projection_uncertainty FLOAT",
+        "DROP COLUMN IF EXISTS vorp",
+        "DROP COLUMN IF EXISTS sd",
+        "DROP TABLE IF EXISTS valuation_state",
+        "DROP TABLE IF EXISTS valuation_runs",
     ):
         assert needle in sql
+
+    reconciliation = (
+        Path(__file__).resolve().parents[2]
+        / "backend/migrations/031_reconcile_legacy_valuation_trade_counts.sql"
+    ).read_text()
+    assert "ADD COLUMN IF NOT EXISTS trades INT NOT NULL DEFAULT 0" in reconciliation
