@@ -7,6 +7,7 @@ import {
   NAV_ICONS,
 } from "./nav-items";
 import MoreMenu from "./MoreMenu";
+import { isActiveNavItem } from "./navigation";
 import { FOCUS_RING } from "@/components/design-system/focus-ring";
 
 /**
@@ -27,8 +28,8 @@ export default function BottomNav() {
     ? LEAGUE_MORE_ITEMS.map((item) => ({ label: item.label, href: item.href(leagueId) }))
     : [];
 
-  const isActive = (href: string) =>
-    router.asPath === href || router.asPath.startsWith(`${href}/`);
+  const isActive = (href: string, exact?: boolean) =>
+    isActiveNavItem(router.asPath, href, exact);
 
   return (
     <nav
@@ -42,7 +43,7 @@ export default function BottomNav() {
       {navItems.map((item) => {
         const Icon = NAV_ICONS[item.id];
         const href = item.href(leagueId);
-        const active = isActive(href);
+        const active = isActive(href, item.exact);
 
         return (
           <Link
