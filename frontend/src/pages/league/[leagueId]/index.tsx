@@ -1,10 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { useLeague } from "@/hooks/useLeagues";
 import { useTeams } from "@/hooks/useTeams";
 import { useSchedule } from "@/hooks/useSchedule";
 import type { Team } from "@/services/teamsService";
+import {
+  expectedWinsService,
+  type CurrentSeasonStanding,
+} from "@/services/expectedWinsService";
+import { leaguesService } from "@/services/leaguesService";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
 import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
@@ -56,8 +61,66 @@ export default function LeagueDashboard() {
     isLoading: isScheduleLoading,
     error: scheduleError,
   } = useSchedule(id);
+  const [seasonYear, setSeasonYear] = useState<number | null>(null);
+  const [seasonStandings, setSeasonStandings] = useState<Team[]>([]);
+  const [isStandingsLoading, setIsStandingsLoading] = useState(true);
+  const [standingsError, setStandingsError] = useState<Error | null>(null);
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    async function fetchCurrentStandings() {
+      try {
+        setIsStandingsLoading(true);
+        setStandingsError(null);
+
+        const { years } = await leaguesService.getLeagueYears(id);
+        const latestYear = years[0];
+        if (!latestYear) {
+          if (!cancelled) {
+            setSeasonYear(null);
+            setSeasonStandings([]);
+          }
+          return;
+        }
+
+        const response = await expectedWinsService.getCurrentSeasonStandings(id, latestYear);
+        if (cancelled) return;
+
+        setSeasonYear(response.year);
+        setSeasonStandings(
+          response.standings.map((standing: CurrentSeasonStanding, index) => ({
+            id: String(standing.team_id),
+            espnId: standing.espn_id,
+            name: standing.team_name,
+            owner: standing.owner,
+            record: standing.record,
+            playoffRecord: { wins: 0, losses: 0, ties: 0 },
+            points: standing.points,
+            rank: index + 1,
+            playoffChance: 0,
+          }))
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setStandingsError(
+            err instanceof Error ? err : new Error("Failed to fetch current standings")
+          );
+        }
+      } finally {
+        if (!cancelled) setIsStandingsLoading(false);
+      }
+    }
+
+    fetchCurrentStandings();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const filteredTeams = useMemo(
     () =>
@@ -68,35 +131,14 @@ export default function LeagueDashboard() {
     [teams]
   );
 
-  const adjustedRecords = useMemo(() => {
-    if (!schedule?.data?.matchups || !filteredTeams) {
-      return new Map<string, { wins: number; losses: number }>();
-    }
-
-    const records = new Map<string, { wins: number; losses: number }>();
-    filteredTeams.forEach((team) => {
-      records.set(team.espnId, { wins: 0, losses: 0 });
-    });
-
-    schedule.data.matchups.forEach((matchup) => {
-      if (matchup.homeScore > 0 || matchup.awayScore > 0) {
-        const homeId = matchup.homeTeamESPNID.toString();
-        const awayId = matchup.awayTeamESPNID.toString();
-
-        if (records.has(homeId) && records.has(awayId)) {
-          if (matchup.homeScore > matchup.awayScore) {
-            records.get(homeId)!.wins++;
-            records.get(awayId)!.losses++;
-          } else if (matchup.awayScore > matchup.homeScore) {
-            records.get(awayId)!.wins++;
-            records.get(homeId)!.losses++;
-          }
-        }
-      }
-    });
-
-    return records;
-  }, [schedule, filteredTeams]);
+  const visibleSeasonStandings = useMemo(
+    () =>
+      seasonStandings.filter(
+        (team) =>
+          !team.owner.includes("Knapp") && !team.owner.includes("Landry")
+      ),
+    [seasonStandings]
+  );
 
   const headToHeadRecords = useMemo(() => {
     if (!schedule?.data?.matchups || !filteredTeams) {
@@ -253,9 +295,9 @@ export default function LeagueDashboard() {
   };
 
   const sortedTeams =
-    isLoading || !filteredTeams
+    isStandingsLoading
       ? []
-      : [...filteredTeams].sort((a, b) => {
+      : [...visibleSeasonStandings].sort((a, b) => {
           let fieldA: string | number;
           let fieldB: string | number;
 
@@ -265,12 +307,12 @@ export default function LeagueDashboard() {
               fieldB = b.name;
               break;
             case "wins":
-              fieldA = adjustedRecords.get(a.espnId)?.wins ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.wins ?? 0;
+              fieldA = a.record.wins;
+              fieldB = b.record.wins;
               break;
             case "losses":
-              fieldA = adjustedRecords.get(a.espnId)?.losses ?? 0;
-              fieldB = adjustedRecords.get(b.espnId)?.losses ?? 0;
+              fieldA = a.record.losses;
+              fieldB = b.record.losses;
               break;
             case "pf":
               fieldA = a.points.scored;
@@ -324,22 +366,22 @@ export default function LeagueDashboard() {
       id: "wins",
       header: "W",
       sortable: true,
-      cell: (team) => adjustedRecords.get(team.espnId)?.wins ?? 0,
+      cell: (team) => team.record.wins,
     },
     {
       id: "losses",
       header: "L",
       sortable: true,
-      cell: (team) => adjustedRecords.get(team.espnId)?.losses ?? 0,
+      cell: (team) => team.record.losses,
     },
     {
       id: "pf",
       header: "PF / G",
       sortable: true,
       cell: (team) => {
-        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-        const totalGames = wins + losses;
+        const wins = team.record.wins;
+        const losses = team.record.losses;
+        const totalGames = wins + losses + team.record.ties;
         const avgPF = totalGames > 0 ? team.points.scored / totalGames : 0;
         return formatAvgTotal(avgPF, team.points.scored);
       },
@@ -349,9 +391,9 @@ export default function LeagueDashboard() {
       header: "PA / G",
       sortable: true,
       cell: (team) => {
-        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-        const totalGames = wins + losses;
+        const wins = team.record.wins;
+        const losses = team.record.losses;
+        const totalGames = wins + losses + team.record.ties;
         const avgPA = totalGames > 0 ? team.points.against / totalGames : 0;
         return formatAvgTotal(avgPA, team.points.against);
       },
@@ -361,9 +403,9 @@ export default function LeagueDashboard() {
       header: "Diff",
       sortable: true,
       cell: (team) => {
-        const wins = adjustedRecords.get(team.espnId)?.wins ?? 0;
-        const losses = adjustedRecords.get(team.espnId)?.losses ?? 0;
-        const totalGames = wins + losses;
+        const wins = team.record.wins;
+        const losses = team.record.losses;
+        const totalGames = wins + losses + team.record.ties;
         const totalDiff = team.points.scored - team.points.against;
         const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
         return formatAvgTotal(avgDiff, totalDiff, true);
@@ -395,10 +437,12 @@ export default function LeagueDashboard() {
     },
   ];
 
-  if (error || scheduleError) {
+  if (error || scheduleError || standingsError) {
     return (
       <ErrorState
-        message={[error?.message, scheduleError?.message].filter(Boolean).join(" ")}
+        message={[error?.message, scheduleError?.message, standingsError?.message]
+          .filter(Boolean)
+          .join(" ")}
       />
     );
   }
@@ -435,9 +479,9 @@ export default function LeagueDashboard() {
         <Card>
           <CardContent className="p-6">
             <h3 className="mb-6 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-              Standings
+              Standings{seasonYear ? ` (${seasonYear})` : ""}
             </h3>
-            {isLoading ? (
+            {isStandingsLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
