@@ -16,6 +16,7 @@ def parse_trade(
     adds: dict[str, int] | None,
     draft_picks: list | None,
     waiver_budget: list | None,
+    league_id: str = "",
 ) -> Trade | None:
     """Build a two-sided player trade from a sleeper_transactions row.
 
@@ -38,4 +39,5 @@ def parse_trade(
         side_a=side_a,
         side_b=side_b,
         created_ms=created_ms,
+        league_id=league_id,
     )

@@ -20,8 +20,9 @@ two-fleet (DigitalOcean + Raspberry Pi) setup happened for the Go worker.
 3. The first run installs the pinned Go toolchain and `uv` (Python package/venv manager —
    also provisions Python 3.12 itself if it's not already on the machine), creates the
    service user, masks sleep/suspend/hibernate targets, does an initial Go build and an
-   initial `uv sync` for the ESPN worker, installs the systemd units, and writes a
-   placeholder env file at `/etc/ff-sims-worker.env` — then stops and tells you to edit it.
+   initial `uv sync` for both Python environments (the ESPN worker and the
+   player-valuation model), installs the systemd units, and writes a placeholder env file
+   at `/etc/ff-sims-worker.env` — then stops and tells you to edit it.
 4. Edit `/etc/ff-sims-worker.env` with real values for `DATABASE_URL`,
    `TEMPORAL_NAMESPACE_ENDPOINT`, `TEMPORAL_NAMESPACE`, `TEMPORAL_API_KEY`. Both the Go and
    Python workers read this same file — ESPN league credentials (SWID/`espn_s2`) are stored
@@ -33,8 +34,13 @@ two-fleet (DigitalOcean + Raspberry Pi) setup happened for the Go worker.
    dashboard — it expects a plain IPv4 address in that format — the workers can't reach the
    database until you do.
 7. Run `make worker-host-setup-archive-db` to provision the local archive Postgres (see
-   `setup-archive-db.sh`). It prints an `ARCHIVE_DATABASE_URL` — add it to
-   `/etc/ff-sims-worker.env` and `sudo systemctl restart ff-sims-worker` to pick it up.
+   `setup-archive-db.sh`). It prints an `ARCHIVE_DATABASE_URL` — fill in the (empty)
+   `ARCHIVE_DATABASE_URL=` line in `/etc/ff-sims-worker.env` and `sudo systemctl restart
+   ff-sims-worker` to pick it up. This step is optional for the Go worker (it just runs
+   with the archive disabled) but **required** by `ff-sims-player-valuations.service`,
+   which reads every model input from the archive and exits non-zero without it — so
+   `setup.sh` leaves that timer disabled until the URL is set. Re-run `make
+   worker-host-setup` afterwards to arm it.
 8. Disable unattended-upgrades' automatic reboot so it can't restart the machine out from
    under the worker/archive DB: set `Unattended-Upgrade::Automatic-Reboot "false";` in
    `/etc/apt/apt.conf.d/50unattended-upgrades`. This is a one-time, eyes-on edit — not
@@ -56,11 +62,59 @@ after a full reinstall) — it picks up wherever it left off. Same for
     list -deps` against `backend/cmd/worker` / `backend/cmd/cron`).
   - The ESPN worker's dependencies are only re-synced (`uv sync`) and the service only
     restarted when the new commits touch anything under `workers/espn`.
-  - A docs/frontend-only push just logs "up to date, no ... changes" for all three and skips
+  - The player-valuation model's dependencies are only re-synced when the new commits
+    touch anything under `analysis`. Nothing is restarted — it's a `Type=oneshot` timer
+    job, so a restart would launch an unscheduled full replay; the next 00:00 UTC tick
+    picks up the new checkout on its own.
+  - A docs/frontend-only push just logs "up to date, no ... changes" for all four and skips
     every rebuild/resync.
 - Force an immediate deploy check without waiting for the timer: `sudo systemctl start ff-sims-deploy.service`
+
+### Rolling out a new or changed systemd unit
+
+**`deploy.sh` installs only the two player-valuation units**, via
+`install_player_valuation_timer()`, and only when the checkout's copy of them changed (or
+the analysis environment did). Every other unit file reaches `/etc/systemd/system` solely
+through `install_units()` in `setup.sh`. So when a commit adds or edits any *other* unit —
+its `ExecStart`, timer schedule, or `TimeoutStartSec` — the 5-minute deploy timer will
+happily advance the checkout and leave the host running the *old* unit, or for a brand-new
+one, no unit at all.
+
+After merging a change to any unit except those two, run this once on the host:
+
+```bash
+make worker-host-setup   # idempotent: reinstalls units, daemon-reloads, enables + starts timers
+```
+
+The player-valuation units are special-cased because they were added alongside the deploy
+path that installs them; the same treatment has not been extended to the rest.
+
+This applies to every unit here, not just the new player-valuation one; it is why
+`make worker-host-setup` is documented as safe to re-run at any time.
 - Discovery cron job logs (runs hourly, `Type=oneshot`): `journalctl -u ff-sims-discovery -f`
 - Force an immediate discovery run without waiting for the timer: `sudo systemctl start ff-sims-discovery.service`
+- Player-valuation replay logs (runs daily at 00:00 UTC, `Type=oneshot`):
+  `journalctl -u ff-sims-player-valuations -f`
+  - Each run is a **full replay** of the 2025 `ppr-sf-10` season from 2025-08-25 through
+    a snapshot dated the current UTC day (covering events through the end of yesterday),
+    not an incremental tick. It reads inputs from the archive
+    database and writes every `player_valuations` row to the cloud database, so it needs
+    both `ARCHIVE_DATABASE_URL` and `DATABASE_URL` in `/etc/ff-sims-worker.env`.
+  - `setup.sh` only arms this timer once `ARCHIVE_DATABASE_URL` is non-empty in
+    `/etc/ff-sims-worker.env` (step 7 below); until then it is left disabled rather than
+    failing every midnight. Every other service starts regardless — they run fine with the
+    archive disabled. Fill the URL in and re-run `make worker-host-setup` to arm it.
+  - Once armed, the timer deliberately does not fire on boot or catch up missed runs, so
+    nothing starts a surprise full replay. Kick off the first production run by hand:
+    `sudo systemctl start ff-sims-player-valuations.service`
+  - Check the schedule: `systemctl list-timers ff-sims-player-valuations.timer`
+  - Every run prints its staged Parquet directory (default
+    `/tmp/ff-sims-player-valuations/<run-id>/`), kept on success and failure for
+    inspection and pruned after 14 days. See [`analysis/README.md`](../../analysis/README.md)
+    for the artifact layout and the retention/staging env vars.
+  - A run that finds another replay already holding the advisory lock exits `2` without
+    touching cloud output — that is expected if you start it by hand while the timer run
+    is still going.
 - The Go worker runs the *same* `backend/cmd/worker` binary as production, so it polls all
   five Temporal task queues (drafts, transactions, player-sync, week-stats, ADP), not just
   transactions — the idle pollers on the other queues cost nothing.

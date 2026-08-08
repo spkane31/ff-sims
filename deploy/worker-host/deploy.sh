@@ -8,6 +8,9 @@ GO_BIN="${GO_BIN:-/usr/local/go/bin/go}"
 [[ -x "$GO_BIN" ]] || GO_BIN="go"
 UV_BIN="${UV_BIN:-/usr/local/bin/uv}"
 [[ -x "$UV_BIN" ]] || UV_BIN="uv"
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+ENV_FILE="${ENV_FILE:-/etc/ff-sims-worker.env}"
+SERVICE_USER="${SERVICE_USER:-ffsims}"
 
 # Persists the sha each binary/service was last actually deployed from.
 # Needed because git reset --hard (in deploy(), below) already advances HEAD
@@ -21,6 +24,7 @@ UV_BIN="${UV_BIN:-/usr/local/bin/uv}"
 WORKER_SHA_FILE="$REPO_DIR/backend/.worker-deployed-sha"
 CRON_SHA_FILE="$REPO_DIR/backend/.cron-deployed-sha"
 ESPN_SHA_FILE="$REPO_DIR/workers/espn/.espn-deployed-sha"
+ANALYSIS_SHA_FILE="$REPO_DIR/analysis/.analysis-deployed-sha"
 
 current_and_remote_sha() {
   # `|| return 1` is required, not decorative: this function runs inside a
@@ -87,17 +91,55 @@ sync_espn_worker() {
   (cd "$REPO_DIR/workers/espn" && "$UV_BIN" sync --frozen --no-dev)
 }
 
+# Same shape as espn_relevant_changed: the player-valuation model is a Python
+# program with no compiled binary, so a plain path diff is the whole test.
+analysis_relevant_changed() {
+  local old_sha="$1" new_sha="$2"
+  [[ -n "$(git -C "$REPO_DIR" diff --name-only "$old_sha" "$new_sha" -- analysis)" ]]
+}
+
+player_valuation_units_changed() {
+  local old_sha="$1" new_sha="$2"
+  [[ -n "$(git -C "$REPO_DIR" diff --name-only "$old_sha" "$new_sha" -- \
+    deploy/worker-host/ff-sims-player-valuations.service \
+    deploy/worker-host/ff-sims-player-valuations.timer)" ]]
+}
+
+sync_analysis() {
+  (cd "$REPO_DIR/analysis" && "$UV_BIN" sync --frozen --no-dev)
+}
+
+archive_url_configured() {
+  [[ -f "$ENV_FILE" ]] && grep -qE '^[[:space:]]*ARCHIVE_DATABASE_URL=[^[:space:]]+' "$ENV_FILE"
+}
+
+install_player_valuation_timer() {
+  local unit
+  for unit in ff-sims-player-valuations.service ff-sims-player-valuations.timer; do
+    sed "s#{{REPO_DIR}}#${REPO_DIR}#g; s#{{SERVICE_USER}}#${SERVICE_USER}#g" \
+      "$REPO_DIR/deploy/worker-host/$unit" > "$SYSTEMD_DIR/$unit"
+  done
+  systemctl daemon-reload
+
+  if archive_url_configured; then
+    systemctl enable ff-sims-player-valuations.timer
+    systemctl start ff-sims-player-valuations.timer
+  fi
+}
+
 install_and_restart() {
-  local sha last_worker_sha last_cron_sha last_espn_sha
+  local sha last_worker_sha last_cron_sha last_espn_sha last_analysis_sha
   sha="$(git -C "$REPO_DIR" rev-parse HEAD)"
   last_worker_sha=""
   last_cron_sha=""
   last_espn_sha=""
+  last_analysis_sha=""
   [[ -f "$WORKER_SHA_FILE" ]] && last_worker_sha="$(<"$WORKER_SHA_FILE")"
   [[ -f "$CRON_SHA_FILE" ]] && last_cron_sha="$(<"$CRON_SHA_FILE")"
   [[ -f "$ESPN_SHA_FILE" ]] && last_espn_sha="$(<"$ESPN_SHA_FILE")"
+  [[ -f "$ANALYSIS_SHA_FILE" ]] && last_analysis_sha="$(<"$ANALYSIS_SHA_FILE")"
 
-  local rebuild_worker=1 rebuild_cron=1 rebuild_espn=1
+  local rebuild_worker=1 rebuild_cron=1 rebuild_espn=1 resync_analysis=1 reinstall_player_valuation_timer=1
   if [[ -n "$last_worker_sha" ]] && ! relevant_changed "$last_worker_sha" "$sha" ./cmd/worker; then
     rebuild_worker=0
   fi
@@ -106,6 +148,12 @@ install_and_restart() {
   fi
   if [[ -n "$last_espn_sha" ]] && ! espn_relevant_changed "$last_espn_sha" "$sha"; then
     rebuild_espn=0
+  fi
+  if [[ -n "$last_analysis_sha" ]] && ! analysis_relevant_changed "$last_analysis_sha" "$sha"; then
+    resync_analysis=0
+  fi
+  if [[ -n "$last_analysis_sha" ]] && ! player_valuation_units_changed "$last_analysis_sha" "$sha"; then
+    reinstall_player_valuation_timer=0
   fi
 
   if [[ "$rebuild_worker" -eq 0 ]]; then
@@ -129,6 +177,13 @@ install_and_restart() {
     return 1
   fi
 
+  if [[ "$resync_analysis" -eq 0 ]]; then
+    echo "player-valuations: up to date, no changes since ${last_analysis_sha:0:5}"
+  elif ! sync_analysis; then
+    echo "uv sync failed at $sha, leaving previous player-valuation deps in place" >&2
+    return 1
+  fi
+
   if [[ "$rebuild_worker" -eq 1 ]]; then
     mv "$REPO_DIR/backend/worker.new" "$REPO_DIR/backend/worker"
     systemctl restart "$WORKER_SERVICE"
@@ -146,6 +201,16 @@ install_and_restart() {
     systemctl restart "$ESPN_SERVICE"
     echo "$sha" > "$ESPN_SHA_FILE"
     echo "deployed espn-worker $sha"
+  fi
+
+  if [[ "$resync_analysis" -eq 1 || "$reinstall_player_valuation_timer" -eq 1 ]]; then
+    install_player_valuation_timer
+    # No service restart: ff-sims-player-valuations is a Type=oneshot timer
+    # job, not a long-running daemon. Restarting it would kick off an
+    # unscheduled full replay; the next 00:00 UTC tick runs the updated
+    # checkout on its own.
+    echo "$sha" > "$ANALYSIS_SHA_FILE"
+    echo "deployed player-valuations $sha"
   fi
 }
 

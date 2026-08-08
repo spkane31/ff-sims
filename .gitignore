@@ -6,7 +6,6 @@
 # Subagent-driven-development / brainstorming scratch
 .superpowers/
 
-
 scripts/venv
 scripts/test.yaml
 .env

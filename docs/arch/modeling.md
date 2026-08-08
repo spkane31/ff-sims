@@ -1,8 +1,34 @@
 # Player Valuation Model — Architecture
 
-**Status:** Draft
+**Status:** Superseded (historical draft — see below)
 **Date:** 2026-06-27
 **Author:** Sean Kane
+
+> **Superseded 2026-07-31.** The estimator this draft describes was diagnosed
+> in [PLAYER_VALUATION_MODEL_REVIEW.md](../../analysis/PLAYER_VALUATION_MODEL_REVIEW.md)
+> and rebuilt per
+> [PLAYER_VALUATION_REBUILD_HANDOFF.md](../../analysis/PLAYER_VALUATION_REBUILD_HANDOFF.md).
+> Three claims below are known to be wrong and must not be reused:
+>
+> - **Held-out trade error is NOT a ground-truth metric.** The trade-fairness
+>   objective has a perfect flat-value solution (every player equal, `ρ` set
+>   to the same constant), so lower held-out package error can mean a worse
+>   model. Evaluation now uses league/time-blocked splits plus a flat
+>   negative control that a constant model must fail
+>   (`analysis/src/evaluation.py`).
+> - **The global fitted `ρ` is NOT a VORP replacement level.** Replacement is
+>   league- and position-specific, computed at query time from the league's
+>   rosters and available players (`analysis/src/performance.py`).
+> - **The recursive belief `sd` is NOT calibrated uncertainty.** It was filter
+>   confidence that shrank with every correlated observation. It is replaced
+>   by `market_dispersion` (spread of recent implied trade values) and
+>   `projection_uncertainty` (error band on projected PAR).
+>
+> The live model is the market estimator (`analysis/src/market_value.py` +
+> `performance.py` + `suggestions.py`). It replaced the recursive-belief
+> estimator outright — the old model was never load-bearing in production
+> and lives on in git history; there is no model versioning until a v1 is
+> published and usable.
 
 ---
 
@@ -211,7 +237,7 @@ Where `A` and `k` are tunable constants controlling scale and steepness. The tar
 
 This scale makes multi-player trades mathematically coherent. Trading a 10,000-value player for a 5,000 + 3,000 player (8,000 total) shows a clear deficit. The exponential gap at the top reflects the real scarcity of elite fantasy producers.
 
-Both `A` and `k` are configurable per segment. Phase 1 calibration: tune empirically once first-season valuations are generated, targeting alignment with publicly available consensus values (FantasyCalc, KTC) as a sanity check. The curve itself is for UX interpretability; it is not derived from the optimization and should not be calibrated against the same trade data used to train the solver (circularity).
+Both `A` and `k` are configurable per segment. Phase 1 calibration: tune empirically once first-season valuations are generated, targeting alignment with publicly available consensus values as a sanity check. The curve itself is for UX interpretability; it is not derived from the optimization and should not be calibrated against the same trade data used to train the solver (circularity).
 
 ---
 
@@ -273,12 +299,12 @@ Success of each model version is measured against explicit metrics before any ve
 | Metric | Description |
 |---|---|
 | **Held-out trade error** | Hold out 20% of trades; measure mean squared error of `\|Σ value(side_A) - Σ value(side_B)\|` across held-out set. Primary training objective. |
-| **Spearman vs FantasyCalc (redraft)** | Rank correlation of player values against FantasyCalc consensus for current-season redraft |
-| **Spearman vs KTC (dynasty/keeper)** | Rank correlation against KeepTradeCut dynasty values |
+| **Spearman vs external consensus (redraft)** | Rank correlation of player values against a public consensus source for current-season redraft |
+| **Spearman vs external consensus (dynasty/keeper)** | Rank correlation against public dynasty consensus values |
 | **Next-month ADP shift** | Does a rising trade value predict a rising ADP in the following month? |
 | **End-of-season points** | Do mid-season values (week 8) predict end-of-season total fantasy points? |
 
-The held-out trade error is the ground truth metric for the solver. External comparisons (FantasyCalc, KTC) are sanity checks, not optimization targets — the model may legitimately diverge from consensus when data supports it.
+The held-out trade error is the ground truth metric for the solver. External comparisons are sanity checks, not optimization targets — the model may legitimately diverge from consensus when data supports it.
 
 ---
 

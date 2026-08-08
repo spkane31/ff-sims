@@ -1,13 +1,4 @@
-from src.db import rows_to_adp, rows_to_scores
-
-
-def test_rows_to_adp():
-    rows = [("p1", "Josh Allen", "QB", 1.8), ("p2", "Bijan Robinson", "RB", 2.4)]
-    adp = rows_to_adp(rows)
-    assert adp[0].player_id == "p1"
-    assert adp[0].player_name == "Josh Allen"
-    assert adp[0].position == "QB"
-    assert adp[0].adp == 1.8
+from src.db import rows_to_scores
 
 
 def test_rows_to_scores():

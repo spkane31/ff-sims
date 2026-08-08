@@ -1,0 +1,25 @@
+[Unit]
+Description=ff-sims player valuation daily replay (ppr-sf-10, season 2025)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{SERVICE_USER}}
+WorkingDirectory={{REPO_DIR}}/analysis
+# Supplies both DATABASE_URL (cloud: player metadata, finalized scoring, and
+# every player_valuations write) and ARCHIVE_DATABASE_URL (complete Sleeper
+# history for the model's inputs). The job refuses to start without both.
+EnvironmentFile=/etc/ff-sims-worker.env
+# The replay is defined entirely in UTC days; leave nothing to host timezone.
+Environment=TZ=UTC
+# systemd hands the job a pipe, which Python block-buffers: without this the
+# progress lines would all land at exit, i.e. exactly when they stop being
+# useful for telling a slow run from a stuck one.
+Environment=PYTHONUNBUFFERED=1
+# This version rebuilds the whole season on every run rather than resuming from
+# a checkpoint, so the ceiling has to cover a full ~11-month replay, not an
+# incremental tick. If a run ever hits this, inspect the staged Parquet run
+# directory (printed at startup) and the journal before raising it.
+TimeoutStartSec=2h
+ExecStart={{REPO_DIR}}/analysis/.venv/bin/python main.py --segment ppr-sf-10 --season 2025 --start 2025-08-25 --step 24h

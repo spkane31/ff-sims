@@ -39,6 +39,21 @@ def test_null_adds_skipped():
     assert parse_trade("t7", 0, {}, [], []) is None
 
 
+def test_parse_trade_carries_league_id():
+    t = parse_trade(
+        "t8", 1728000000000, {"pA": 3, "pB": 7}, [], [], league_id="lg42"
+    )
+    assert t is not None
+    assert t.league_id == "lg42"
+
+
+def test_league_id_defaults_to_unknown():
+    # v2 bundles predate league_id; their trades read back with it blank
+    t = parse_trade("t9", 1728000000000, {"pA": 3, "pB": 7}, [], [])
+    assert t is not None
+    assert t.league_id == ""
+
+
 def test_ms_to_dt_is_naive_utc():
     dt = ms_to_dt(1728000000000)
     assert dt == datetime(2024, 10, 4, 0, 0)
