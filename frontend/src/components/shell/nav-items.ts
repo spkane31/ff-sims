@@ -31,6 +31,7 @@ export interface ShellNavItem {
   id: ShellNavId;
   label: string;
   href: (leagueId?: string) => string;
+  exact?: boolean;
 }
 
 export interface MoreMenuItem {
@@ -40,7 +41,7 @@ export interface MoreMenuItem {
 
 // League-scoped context (a leagueId is present in the route).
 export const LEAGUE_NAV_ITEMS: ShellNavItem[] = [
-  { id: "overview", label: "Overview", href: (id) => `/league/${id}` },
+  { id: "overview", label: "Overview", href: (id) => `/league/${id}`, exact: true },
   { id: "schedule", label: "Schedule", href: (id) => `/league/${id}/schedule` },
   { id: "teams", label: "Teams", href: (id) => `/league/${id}/teams` },
   { id: "players", label: "Players", href: () => "/players" },
