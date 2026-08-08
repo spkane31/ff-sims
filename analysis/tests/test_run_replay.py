@@ -430,7 +430,7 @@ def test_migration_adds_the_market_columns():
     global-rho vorp and recursive sd out, belief state tables dropped."""
     sql = (
         Path(__file__).resolve().parents[2]
-        / "backend/migrations/029_market_valuation_model.sql"
+        / "backend/migrations/030_market_valuation_model.sql"
     ).read_text()
     for needle in (
         "market_score", "market_dispersion", "projected_par",
