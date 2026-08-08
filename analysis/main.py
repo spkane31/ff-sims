@@ -311,9 +311,7 @@ def run_evaluate_bundle(bundle_dir: Path, segment_key: str, season: str) -> None
         )
 
     if inputs.trades:
-        span_start = min(t.ts for t in inputs.trades)
-        span_end = max(t.ts for t in inputs.trades)
-        cutoff = span_start + (span_end - span_start) * 3 / 4
+        cutoff = evaluation.time_cutoff(inputs.trades)
         train, test = evaluation.time_blocked_split(inputs.trades, cutoff)
         report_block(
             f"time-blocked holdout (cutoff {cutoff.date()})", train, test, cutoff

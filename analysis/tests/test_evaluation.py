@@ -61,6 +61,28 @@ def test_unknown_league_trades_stay_in_train():
     assert all(t.league_id != "" for t in test)
 
 
+def test_time_cutoff_splits_by_trade_count_not_calendar_span():
+    """Production regression (rosebud eval 2026-08-07): redraft trading dies
+    when the season ends, so 3/4 of the *calendar* span is dead offseason —
+    a span-based cutoff put 39,234 trades in train and exactly 1 in test.
+    The cutoff must be a quantile of trade timestamps by count."""
+    # 90 trades in one in-season week, then 10 straggling across a dead year
+    trades = [
+        _trade(i, "lg1", T0 + timedelta(hours=i), ["a"], ["b"])
+        for i in range(90)
+    ] + [
+        _trade(900 + i, "lg1", T0 + timedelta(days=40 + 30 * i), ["a"], ["b"])
+        for i in range(10)
+    ]
+    cutoff = evaluation.time_cutoff(trades, test_fraction=0.25)
+    train, test = evaluation.time_blocked_split(trades, cutoff)
+    assert len(test) >= 20  # ~25 of 100, never a degenerate handful
+    assert len(train) >= 60
+    # a span-based cutoff would have put every in-season trade in train
+    span_cutoff = T0 + (trades[-1].ts - T0) * 3 / 4
+    assert sum(1 for t in trades if t.ts >= span_cutoff) < 5
+
+
 def test_time_blocked_split_cuts_at_the_boundary():
     trades = _many_trades(48)
     cutoff = T0 + timedelta(hours=24)

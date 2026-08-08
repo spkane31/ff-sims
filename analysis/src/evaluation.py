@@ -73,6 +73,23 @@ def time_blocked_split(
     return train, test
 
 
+def time_cutoff(trades: list[Trade], test_fraction: float = 0.25) -> datetime:
+    """Cutoff timestamp leaving ~test_fraction of TRADES after it.
+
+    A quantile of trade timestamps by count, deliberately not of the calendar
+    span: redraft trading dies when the season ends, so most of the calendar
+    is dead offseason and a span-based 3/4 point can leave a single trade in
+    the test block (measured on real data: 39,234 train / 1 test).
+    """
+    if not trades:
+        raise ValueError("no trades to split")
+    if not 0.0 < test_fraction < 1.0:
+        raise ValueError(f"test_fraction must be in (0, 1), got {test_fraction}")
+    ordered = sorted(t.ts for t in trades)
+    idx = min(len(ordered) - 1, int(len(ordered) * (1.0 - test_fraction)))
+    return ordered[idx]
+
+
 # ----------------------------------------------------------------- metrics --
 
 
