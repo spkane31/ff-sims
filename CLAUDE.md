@@ -80,3 +80,17 @@ Frontend services in `src/services/` correspond to these backend handlers, using
 ## TypeScript Integration
 
 The frontend `src/types/models.ts` mirrors backend Go structs, ensuring type safety across the full stack. When modifying backend models, update the corresponding TypeScript interfaces.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are local Markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Local issues use the default triage-label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. See `docs/agents/domain.md`.

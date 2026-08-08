@@ -143,9 +143,9 @@ def evaluate(
 ) -> EvaluationReport:
     """Score one model's values against a block of held-out trades.
 
-    `reference` is an optional dated benchmark (synthetic truth, FantasyCalc
-    pull, next-season ADP) for rank recovery; package error alone must never
-    select a model, so `valid` comes from the curve gate.
+    `reference` is an optional dated benchmark (synthetic truth, an external
+    consensus snapshot, next-season ADP) for rank recovery; package error
+    alone must never select a model, so `valid` comes from the curve gate.
     """
     gaps: list[float] = []
     pcts: list[float] = []

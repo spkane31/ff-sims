@@ -1,7 +1,26 @@
 # analysis
 
-Bayesian player valuation on real Sleeper data. See
-`docs/superpowers/specs/2026-07-02-player-valuation-sleeper-data-design.md`.
+Player valuation on real Sleeper data. There is one model — a robust
+anchored market estimator, rebuilt per `PLAYER_VALUATION_REBUILD_HANDOFF.md`
+after `PLAYER_VALUATION_MODEL_REVIEW.md` diagnosed the original
+recursive-belief estimator's structural flat-value optimum (the old model
+lives on in git history only; no versioning until a v1 is published and
+usable):
+
+- **`src/market_value.py`** — at every snapshot boundary, all player market
+  scores are refitted jointly from the recency-weighted trade window (Huber
+  IRLS, ADP prior on every fit, per-league and per-duplicate weight caps,
+  two-pass |z|>3 outlier removal), then published through one explicit
+  calibration `value(rank) = 300 + 9700·exp(-0.04·(rank-1))`.
+- **`src/performance.py`** — a separate magnitude-preserving `projected_par`
+  signal (never blended into market value), plus per-position, per-league
+  replacement/VORP at query time.
+- **`src/suggestions.py`** — roster-aware trade suggestions: market fairness
+  and lineup-utility improvement scored separately, Pareto-improving first.
+- **`src/evaluation.py`** — league-blocked and time-blocked holdouts,
+  curve-anchor validity gates, and a flat negative control. Held-out trade
+  error alone is **not** a ground-truth metric: a constant value for
+  everyone scores perfectly on it.
 
 ```bash
 uv sync
@@ -14,6 +33,10 @@ uv run python main.py --segment ppr-sf-10 --season 2025 \
 
 # re-run a staged bundle with no database access at all
 uv run python main.py --from-bundle /tmp/ff-sims-player-valuations/<run-id>
+
+# score the model + the flat control on a bundle's held-out trades;
+# never connects to a database
+uv run python main.py --evaluate-bundle /tmp/ff-sims-player-valuations/<run-id>
 ```
 
 **This CLI does full replays only.** `--step` is what selects the database
@@ -36,9 +59,11 @@ the job refuses to start if either is missing. Inputs come from the archive
 because the cloud database only keeps a hot window; output goes to the cloud so
 the API can serve it.
 
-Outputs land in `player_valuations` (dated snapshots), `valuation_state`
-(beliefs), `valuation_runs` (watermarks). Segments live in `src/config.py`;
-`ppr-sf-10` is the one on a daily timer (see `deploy/worker-host/`).
+Outputs land in `player_valuations` (dated snapshots). There is no
+incremental model state: every snapshot is a pure function of the staged
+inputs before it, so nothing else needs persisting. Segments live in
+`src/config.py`; `ppr-sf-10` is the one on a daily timer (see
+`deploy/worker-host/`).
 
 ## Replay semantics
 
