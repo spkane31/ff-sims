@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 @activity.defn
 def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
     if params.year < 2024:
-        logger.info("Transactions not available before 2024 — skipping year %d", params.year)
+        logger.info(
+            "Transactions not available before 2024 — skipping year %d", params.year
+        )
         return
 
     league = League(
@@ -27,7 +29,9 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
         league_id = resolve_league_id(conn, params.espn_league_id)
 
         with conn.cursor() as cur:
-            cur.execute("SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,))
+            cur.execute(
+                "SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,)
+            )
             team_map = {row[0]: row[1] for row in cur.fetchall()}
 
         offset = 0
@@ -48,7 +52,7 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
                             cur.execute(
                                 "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
                                 "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
-                                "ON CONFLICT (espn_id) DO UPDATE SET espn_id = players.espn_id "
+                                "ON CONFLICT (espn_id) WHERE espn_id <> 0 DO UPDATE SET espn_id = players.espn_id "
                                 "RETURNING id",
                                 (player.playerId, player.name, player.position),
                             )
@@ -66,14 +70,24 @@ def fetch_and_upsert_transactions(params: ESPNLeagueSyncParams) -> None:
                                     "(team_id, player_id, transaction_type, player_name, "
                                     "bid_amount, date, year, league_id, created_at, updated_at) "
                                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
-                                    (team_db_id, player_db_id, tx_type, player.name,
-                                     int(bid_amount), tx_date, league.year, league_id),
+                                    (
+                                        team_db_id,
+                                        player_db_id,
+                                        tx_type,
+                                        player.name,
+                                        int(bid_amount),
+                                        tx_date,
+                                        league.year,
+                                        league_id,
+                                    ),
                                 )
                     offset += 25
                     # Commit per page, not once per league — see schedule.py's per-week commit comment.
                     conn.commit()
                 except Exception as exc:
-                    logger.error("Transaction fetch error at offset %d: %s", offset, exc)
+                    logger.error(
+                        "Transaction fetch error at offset %d: %s", offset, exc
+                    )
                     break
 
 

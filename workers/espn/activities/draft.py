@@ -22,7 +22,9 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
         league_id = resolve_league_id(conn, params.espn_league_id)
 
         with conn.cursor() as cur:
-            cur.execute("SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,))
+            cur.execute(
+                "SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,)
+            )
             team_map = {row[0]: row[1] for row in cur.fetchall()}
 
         with conn.cursor() as cur:
@@ -31,14 +33,16 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
                     info = league.player_info(playerId=pick.playerId)
                     position = info.position if info else "Unknown"
                 except Exception as exc:
-                    logger.warning("player_info failed for %s: %s", pick.playerName, exc)
+                    logger.warning(
+                        "player_info failed for %s: %s", pick.playerName, exc
+                    )
                     position = "Unknown"
 
                 # Atomic upsert — see activities/schedule.py's _upsert_player comment.
                 cur.execute(
                     "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
                     "VALUES (%s, %s, %s, 'active', NOW(), NOW()) "
-                    "ON CONFLICT (espn_id) DO UPDATE SET espn_id = players.espn_id "
+                    "ON CONFLICT (espn_id) WHERE espn_id <> 0 DO UPDATE SET espn_id = players.espn_id "
                     "RETURNING id",
                     (pick.playerId, pick.playerName, position),
                 )
@@ -46,7 +50,10 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
 
                 team_db_id = team_map.get(pick.team.team_id)
                 if team_db_id is None:
-                    logger.warning("No team found for ESPN team_id=%s, skipping pick", pick.team.team_id)
+                    logger.warning(
+                        "No team found for ESPN team_id=%s, skipping pick",
+                        pick.team.team_id,
+                    )
                     continue
 
                 cur.execute(
@@ -59,8 +66,16 @@ def fetch_and_upsert_draft(params: ESPNLeagueSyncParams) -> None:
                         "INSERT INTO draft_selections "
                         "(player_id, player_name, player_position, team_id, round, pick, year, league_id, created_at, updated_at) "
                         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
-                        (player_db_id, pick.playerName, position,
-                         team_db_id, pick.round_num, pick.round_pick, league.year, league_id),
+                        (
+                            player_db_id,
+                            pick.playerName,
+                            position,
+                            team_db_id,
+                            pick.round_num,
+                            pick.round_pick,
+                            league.year,
+                            league_id,
+                        ),
                     )
 
                 # Commit per pick, not once per draft — see schedule.py's per-week commit comment.
