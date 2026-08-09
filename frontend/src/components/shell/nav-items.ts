@@ -11,10 +11,9 @@ import {
 /**
  * Real nav destinations, corrected against the app's existing
  * `Header.tsx` (which this replaces): nav content depends on whether the
- * current route carries a `leagueId`. No destination is added or removed
- * relative to what `Header.tsx` already links to today — in particular,
- * `/admin` and `/sleeper/transactions` are reachable by direct URL only,
- * not from nav, and that stays true here.
+ * current route carries a `leagueId`. League-scoped navigation keeps a
+ * persistent Home destination so users can return to the global routes.
+ * `/admin` and `/sleeper/transactions` remain reachable by direct URL only.
  */
 
 export type ShellNavId =
@@ -39,8 +38,16 @@ export interface MoreMenuItem {
   href: (leagueId?: string) => string;
 }
 
+export const HOME_NAV_ITEM: ShellNavItem = {
+  id: "home",
+  label: "Home",
+  href: () => "/",
+  exact: true,
+};
+
 // League-scoped context (a leagueId is present in the route).
 export const LEAGUE_NAV_ITEMS: ShellNavItem[] = [
+  HOME_NAV_ITEM,
   { id: "overview", label: "Overview", href: (id) => `/league/${id}`, exact: true },
   { id: "schedule", label: "Schedule", href: (id) => `/league/${id}/schedule` },
   { id: "teams", label: "Teams", href: (id) => `/league/${id}/teams` },
@@ -50,15 +57,14 @@ export const LEAGUE_NAV_ITEMS: ShellNavItem[] = [
 export const LEAGUE_MORE_ITEMS: MoreMenuItem[] = [
   { label: "Simulations", href: (id) => `/league/${id}/simulations` },
   { label: "Transactions", href: (id) => `/league/${id}/transactions` },
-  { label: "All Leagues", href: () => "/" },
 ];
 
 // Global context (no leagueId in the route: home, /players, /admin, /sleeper/*).
 // Only 4 real destinations exist here, so all 4 are shown directly with no
-// "More" overflow needed (unlike the league-scoped context's 4 primary + 3
-// overflow, which doesn't fit in 5 slots without one).
+// "More" overflow needed (unlike the league-scoped context, which also
+// exposes simulations and transactions).
 export const GLOBAL_NAV_ITEMS: ShellNavItem[] = [
-  { id: "home", label: "Home", href: () => "/" },
+  HOME_NAV_ITEM,
   { id: "players", label: "Players", href: () => "/players" },
   { id: "trades", label: "Trade Data", href: () => "/sleeper/trades" },
   { id: "drafts", label: "Draft Data", href: () => "/sleeper/drafts" },
