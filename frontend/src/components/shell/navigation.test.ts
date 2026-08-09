@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { LEAGUE_NAV_ITEMS } from "./nav-items";
 import { isActiveNavItem } from "./navigation";
 
 test("only the exact league overview route activates Overview", () => {
@@ -19,4 +20,11 @@ test("nested routes keep their parent tab active", () => {
     isActiveNavItem("/league/42/schedule/99", "/league/42/schedule"),
     true,
   );
+});
+
+test("league navigation exposes a direct Home destination", () => {
+  const homeItem = LEAGUE_NAV_ITEMS.find((item) => item.id === "home");
+
+  assert.equal(homeItem?.label, "Home");
+  assert.equal(homeItem?.href(), "/");
 });
