@@ -1,9 +1,12 @@
 from unittest.mock import MagicMock, patch
 
 import psycopg
-import pytest
 
-from activities.player_status import PlayerStatusParams, mark_players_updated, update_active_players
+from activities.player_status import (
+    PlayerStatusParams,
+    mark_players_updated,
+    update_active_players,
+)
 
 
 def _seed_credentials(conn: psycopg.Connection, espn_league_id: str) -> None:
@@ -16,12 +19,14 @@ def _seed_credentials(conn: psycopg.Connection, espn_league_id: str) -> None:
     conn.commit()
 
 
-def _seed_player(conn: psycopg.Connection, espn_id: int, position: str = "WR", status: str = "active") -> int:
+def _seed_player(
+    conn: psycopg.Connection, espn_id: int, position: str = "WR", status: str = "active"
+) -> int:
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO players (espn_id, name, position, status, created_at, updated_at) "
             "VALUES (%s, 'Test Player', %s, %s, NOW(), NOW()) "
-            "ON CONFLICT (espn_id) DO UPDATE SET position = EXCLUDED.position, status = EXCLUDED.status "
+            "ON CONFLICT (espn_id) WHERE espn_id <> 0 DO UPDATE SET position = EXCLUDED.position, status = EXCLUDED.status "
             "RETURNING id",
             (espn_id, position, status),
         )
@@ -33,7 +38,9 @@ def test_update_active_players_marks_missing_as_inactive(db_conn):
     _seed_player(db_conn, 55001)
     mock_league = MagicMock()
     mock_league.player_info.return_value = None
-    params = PlayerStatusParams(espn_league_id="5500", espn_s2="s2", swid="swid", year=2025)
+    params = PlayerStatusParams(
+        espn_league_id="5500", espn_s2="s2", swid="swid", year=2025
+    )
 
     with patch("activities.player_status.League", return_value=mock_league):
         update_active_players(params)
@@ -49,7 +56,9 @@ def test_update_active_players_updates_changed_position(db_conn):
     updated.position = "WR"
     mock_league = MagicMock()
     mock_league.player_info.return_value = updated
-    params = PlayerStatusParams(espn_league_id="5501", espn_s2="s2", swid="swid", year=2025)
+    params = PlayerStatusParams(
+        espn_league_id="5501", espn_s2="s2", swid="swid", year=2025
+    )
 
     with patch("activities.player_status.League", return_value=mock_league):
         update_active_players(params)
