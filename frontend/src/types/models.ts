@@ -238,8 +238,6 @@ export interface TradeSidePlayer {
   id: string;
   name: string;
   position: string;
-  /** Model valuation as of the trade date; absent when no snapshot exists. */
-  value?: number;
   /** Internal players.id for linking to /players/:id; absent when the Sleeper player has no matching ESPN player. */
   player_id?: string;
 }
@@ -248,7 +246,7 @@ export interface TradeSide {
   roster_id: number;
   players: TradeSidePlayer[];
   picks: string[];
-  /** Sum of valued players on this side (picks unvalued); null when none valued. */
+  /** Set only when every player on the side has a persisted valuation; null otherwise, whether because the league's format isn't covered by the model or a player on the side hasn't gotten a fresh-enough valuation yet. */
   total_value: number | null;
 }
 

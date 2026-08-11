@@ -1,11 +1,15 @@
 [Unit]
-Description=Run the ff-sims player valuation replay daily at 00:00 UTC
+Description=Run the ff-sims player valuation replay twice daily, 06:00 and 18:00 UTC
 
 [Timer]
-# Midnight UTC. --end defaults to the current UTC date and is exclusive, so a
-# run firing here ends on a snapshot dated today covering every event through
-# the end of yesterday — the newest state that is fully observed at 00:00.
-OnCalendar=*-*-* 00:00:00 UTC
+# 06:00 and 18:00 UTC. NOTE: analysis/main.py's default_end() is date-only
+# (utc_today(), no time-of-day) — two runs on the same calendar day compute
+# an identical window and produce byte-identical output. This cadence bump
+# does not improve trade-valuation freshness today; it ships as inert prep
+# for a later change to make the replay's end boundary time-aware. See the
+# "Update (2026-08-10, plan phase)" note in
+# docs/superpowers/specs/2026-08-10-trade-valuation-totals-design.md.
+OnCalendar=*-*-* 06,18:00:00 UTC
 # No OnBootSec and no Persistent=true, deliberately: enabling or starting this
 # timer must not kick off a full replay. The first production run is invoked
 # explicitly (systemctl start ff-sims-player-valuations.service) so it can be
