@@ -93,9 +93,9 @@ func TestComputeTradeValues_FullCoverage(t *testing.T) {
 		"p3": {{ValuationDate: now.Add(-6 * time.Hour), Value: 7000}},
 	}
 
-	raw, ok := valuation.ComputeTradeValues(rosterPlayers, now, history)
-	if !ok {
-		t.Fatal("expected a computed result")
+	raw, complete := valuation.ComputeTradeValues(rosterPlayers, now, history)
+	if !complete {
+		t.Fatal("expected complete=true — every roster resolved")
 	}
 	var totals map[string]float64
 	if err := json.Unmarshal(raw, &totals); err != nil {
@@ -109,6 +109,13 @@ func TestComputeTradeValues_FullCoverage(t *testing.T) {
 	}
 }
 
+// TestComputeTradeValues_PartialSideStaysAbsent is the regression test for
+// the bug where a trade with one resolved side and one still-pending side
+// was marked complete (because ComputeTradeValues's second return value used
+// to mean "got anything at all", not "everything resolved"), which made
+// ReconcileTradeValues's `trade_values IS NULL` gate skip it forever —
+// pending side 7 could never be filled in once its player's valuation
+// arrived. complete must be false here even though values is non-nil.
 func TestComputeTradeValues_PartialSideStaysAbsent(t *testing.T) {
 	now := time.Date(2025, 10, 1, 12, 0, 0, 0, time.UTC)
 	rosterPlayers := map[int][]string{
@@ -120,9 +127,12 @@ func TestComputeTradeValues_PartialSideStaysAbsent(t *testing.T) {
 		"p3": {{ValuationDate: now.Add(-6 * time.Hour), Value: 7000}},
 	}
 
-	raw, ok := valuation.ComputeTradeValues(rosterPlayers, now, history)
-	if !ok {
-		t.Fatal("expected a computed result (roster 8 is fully valued)")
+	raw, complete := valuation.ComputeTradeValues(rosterPlayers, now, history)
+	if complete {
+		t.Fatal("expected complete=false — roster 7 still has an unvalued player")
+	}
+	if raw == nil {
+		t.Fatal("expected a non-nil result — roster 8 is fully valued")
 	}
 	var totals map[string]float64
 	if err := json.Unmarshal(raw, &totals); err != nil {
@@ -143,8 +153,12 @@ func TestComputeTradeValues_StaleSnapshotTreatedAsAbsent(t *testing.T) {
 		"p1": {{ValuationDate: now.Add(-30 * time.Hour), Value: 5000}},
 	}
 
-	if _, ok := valuation.ComputeTradeValues(rosterPlayers, now, history); ok {
-		t.Error("expected no result — the only snapshot is 30h stale, beyond FreshnessWindow")
+	raw, complete := valuation.ComputeTradeValues(rosterPlayers, now, history)
+	if raw != nil {
+		t.Errorf("expected nil result — the only snapshot is 30h stale, beyond FreshnessWindow, got %s", raw)
+	}
+	if complete {
+		t.Error("expected complete=false — roster 7 never resolved")
 	}
 }
 
@@ -158,9 +172,9 @@ func TestComputeTradeValues_PicksOnlySideStaysAbsent(t *testing.T) {
 		"p1": {{ValuationDate: now.Add(-6 * time.Hour), Value: 5000}},
 	}
 
-	raw, ok := valuation.ComputeTradeValues(rosterPlayers, now, history)
-	if !ok {
-		t.Fatal("expected a computed result for roster 7")
+	raw, complete := valuation.ComputeTradeValues(rosterPlayers, now, history)
+	if !complete {
+		t.Fatal("expected complete=true — roster 7 is the only non-empty roster and it resolved")
 	}
 	var totals map[string]float64
 	json.Unmarshal(raw, &totals)
@@ -172,7 +186,27 @@ func TestComputeTradeValues_PicksOnlySideStaysAbsent(t *testing.T) {
 func TestComputeTradeValues_NoneValuedReturnsFalse(t *testing.T) {
 	now := time.Date(2025, 10, 1, 12, 0, 0, 0, time.UTC)
 	rosterPlayers := map[int][]string{7: {"unvalued"}}
-	if _, ok := valuation.ComputeTradeValues(rosterPlayers, now, map[string][]valuation.Snapshot{}); ok {
-		t.Error("expected no result when nothing is valued")
+	raw, complete := valuation.ComputeTradeValues(rosterPlayers, now, map[string][]valuation.Snapshot{})
+	if raw != nil {
+		t.Errorf("expected nil result when nothing is valued, got %s", raw)
+	}
+	if complete {
+		t.Error("expected complete=false — roster 7 never resolved")
+	}
+}
+
+// TestComputeTradeValues_EmptyRosterPlayersIsVacuouslyComplete covers a
+// trade whose adds map is empty (e.g. a picks-only trade — GroupPlayersByRoster
+// never produces a roster entry for a side that only received picks). There
+// is nothing to resolve, so it must be reported complete immediately rather
+// than being retried by ReconcileTradeValues forever.
+func TestComputeTradeValues_EmptyRosterPlayersIsVacuouslyComplete(t *testing.T) {
+	now := time.Date(2025, 10, 1, 12, 0, 0, 0, time.UTC)
+	raw, complete := valuation.ComputeTradeValues(map[int][]string{}, now, map[string][]valuation.Snapshot{})
+	if raw != nil {
+		t.Errorf("expected nil result for an empty trade, got %s", raw)
+	}
+	if !complete {
+		t.Error("expected complete=true — there is nothing left to resolve")
 	}
 }

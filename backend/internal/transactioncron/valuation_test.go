@@ -40,26 +40,38 @@ func TestComputeTradeValuesForRows(t *testing.T) {
 
 	got := computeTradeValuesForRows(context.Background(), db, inputs)
 
-	if _, ok := got["tx-full"]; !ok {
-		t.Fatal("expected tx-full to have computed values")
+	full, ok := got["tx-full"]
+	if !ok {
+		t.Fatal("expected tx-full to have a result")
 	}
-	var full map[string]float64
-	json.Unmarshal(got["tx-full"], &full)
-	if full["7"] != 5000 || full["8"] != 1500 {
-		t.Errorf("expected {7:5000, 8:1500}, got %+v", full)
+	if !full.Complete {
+		t.Error("expected tx-full Complete=true — both rosters resolved")
+	}
+	var fullTotals map[string]float64
+	json.Unmarshal(full.Values, &fullTotals)
+	if fullTotals["7"] != 5000 || fullTotals["8"] != 1500 {
+		t.Errorf("expected {7:5000, 8:1500}, got %+v", fullTotals)
 	}
 
-	if raw, ok := got["tx-partial"]; ok {
-		var partial map[string]float64
-		json.Unmarshal(raw, &partial)
-		if _, present := partial["8"]; present {
-			t.Errorf("expected roster 8 absent for tx-partial (p3 unvalued), got %+v", partial)
-		}
-		if partial["7"] != 5000 {
-			t.Errorf("expected roster 7 = 5000 for tx-partial, got %+v", partial)
-		}
-	} else {
-		t.Error("expected tx-partial to still have a partial result (roster 7 is valued)")
+	// tx-partial is the regression case for the bug where a trade with one
+	// resolved side and one still-pending side got marked complete and
+	// ReconcileTradeValues's WHERE clause then skipped it forever: roster 7
+	// resolves (has a value worth persisting) but roster 8 (p3, unvalued)
+	// does not, so Complete must be false even though Values is non-nil.
+	partial, ok := got["tx-partial"]
+	if !ok {
+		t.Fatal("expected tx-partial to still have a result (roster 7 is valued)")
+	}
+	if partial.Complete {
+		t.Error("expected tx-partial Complete=false — roster 8 (p3) is still unvalued")
+	}
+	var partialTotals map[string]float64
+	json.Unmarshal(partial.Values, &partialTotals)
+	if _, present := partialTotals["8"]; present {
+		t.Errorf("expected roster 8 absent for tx-partial (p3 unvalued), got %+v", partialTotals)
+	}
+	if partialTotals["7"] != 5000 {
+		t.Errorf("expected roster 7 = 5000 for tx-partial, got %+v", partialTotals)
 	}
 
 	if _, ok := got["tx-uncovered"]; ok {

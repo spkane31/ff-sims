@@ -103,35 +103,45 @@ func GroupPlayersByRoster(adds map[string]int) map[int][]string {
 
 // ComputeTradeValues sums each roster's players into a total, requiring
 // every player on a roster to resolve via ValueAsOf before that roster's
-// total is included — a roster with any unvalued player, or with no players
-// at all (a picks-only side), is simply omitted. Returns (nil, false) when
-// no roster is fully valued, so callers can store SQL NULL rather than {}.
-func ComputeTradeValues(rosterPlayers map[int][]string, tradeTime time.Time, history map[string][]Snapshot) (json.RawMessage, bool) {
+// total is included in values — a roster with any unvalued player, or with
+// no players at all (a picks-only side), is simply omitted from values.
+//
+// complete reports whether every non-empty roster resolved (vacuously true
+// when there are none, e.g. a picks-only trade) — independent of whether
+// values itself is nil. This distinction is what lets a caller keep retrying
+// a trade with some resolved sides and some still-pending ones: values can
+// be non-nil (one side already has a total worth showing) while complete is
+// still false (another side's player hasn't been valued yet), so the caller
+// knows to try again later rather than treating the trade as settled.
+func ComputeTradeValues(rosterPlayers map[int][]string, tradeTime time.Time, history map[string][]Snapshot) (values json.RawMessage, complete bool) {
 	totals := map[string]float64{}
+	nonEmptyRosters := 0
 	for rosterID, playerIDs := range rosterPlayers {
 		if len(playerIDs) == 0 {
 			continue
 		}
+		nonEmptyRosters++
 		var total float64
-		complete := true
+		resolved := true
 		for _, pid := range playerIDs {
 			v, ok := ValueAsOf(history[pid], tradeTime, FreshnessWindow)
 			if !ok {
-				complete = false
+				resolved = false
 				break
 			}
 			total += v
 		}
-		if complete {
+		if resolved {
 			totals[strconv.Itoa(rosterID)] = total
 		}
 	}
+	complete = len(totals) == nonEmptyRosters
 	if len(totals) == 0 {
-		return nil, false
+		return nil, complete
 	}
 	raw, err := json.Marshal(totals)
 	if err != nil {
 		return nil, false
 	}
-	return raw, true
+	return raw, complete
 }

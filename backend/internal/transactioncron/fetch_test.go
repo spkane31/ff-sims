@@ -590,10 +590,58 @@ func TestFlushLeagueTransactions_ComputesTradeValuesForCoveredLeague(t *testing.
 	if len(tx.TradeValues) == 0 {
 		t.Fatal("expected trade_values to be populated")
 	}
+	if !tx.TradeValuesComplete {
+		t.Error("expected trade_values_complete=true — both rosters resolved")
+	}
 	var totals map[string]float64
 	json.Unmarshal(tx.TradeValues, &totals)
 	if totals["7"] != 5000 || totals["8"] != 1500 {
 		t.Errorf("expected {7:5000, 8:1500}, got %+v", totals)
+	}
+}
+
+// TestFlushLeagueTransactions_PartialSideLeavesIncomplete is the regression
+// test for the bug where a trade with one resolved side and one still-
+// pending side got trade_values IS NOT NULL and was never revisited by
+// ReconcileTradeValues. At insert time, a partially-valued trade must
+// persist the resolved side's total (worth showing on /trades right away)
+// while leaving trade_values_complete false, so the reconcile sweep keeps
+// retrying it once the pending side's player gets a valuation.
+func TestFlushLeagueTransactions_PartialSideLeavesIncomplete(t *testing.T) {
+	db := newTestDB(t)
+	ppr10League(t, db, "lg1")
+
+	tradeTime := time.Now().UTC()
+	db.Create(&valuation.Snapshot{Segment: "ppr-sf-10", SleeperPlayerID: "p1", ValuationDate: tradeTime.Add(-6 * time.Hour), Value: 5000})
+	// p2 (roster 8) has no snapshot at all.
+
+	batch := []transactioncron.LeagueTransactionFetchResult{{
+		LeagueID: "lg1",
+		CloudRows: []models.SleeperTransaction{{
+			SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "trade", Status: "complete",
+			CreatedAtSleeper: tradeTime.UnixMilli(),
+			Adds:             json.RawMessage(`{"p1": 7, "p2": 8}`),
+		}},
+	}}
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, db, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var tx models.SleeperTransaction
+	if err := db.First(&tx, "sleeper_transaction_id = ?", "tx1").Error; err != nil {
+		t.Fatalf("lookup transaction: %v", err)
+	}
+	if tx.TradeValuesComplete {
+		t.Error("expected trade_values_complete=false — roster 8 (p2) is still unvalued")
+	}
+	var totals map[string]float64
+	json.Unmarshal(tx.TradeValues, &totals)
+	if totals["7"] != 5000 {
+		t.Errorf("expected roster 7 = 5000 already persisted, got %+v", totals)
+	}
+	if _, present := totals["8"]; present {
+		t.Errorf("expected roster 8 absent (p2 unvalued), got %+v", totals)
 	}
 }
 
@@ -618,5 +666,8 @@ func TestFlushLeagueTransactions_LeavesTradeValuesNullWhenUnvalued(t *testing.T)
 	db.First(&tx, "sleeper_transaction_id = ?", "tx1")
 	if len(tx.TradeValues) != 0 {
 		t.Errorf("expected trade_values to stay null, got %s", tx.TradeValues)
+	}
+	if tx.TradeValuesComplete {
+		t.Error("expected trade_values_complete=false — roster 7 never resolved")
 	}
 }

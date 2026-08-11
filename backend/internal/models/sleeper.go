@@ -107,7 +107,15 @@ type SleeperTransaction struct {
 	DraftPicks           json.RawMessage `gorm:"column:draft_picks;type:jsonb"`
 	WaiverBudget         json.RawMessage `gorm:"column:waiver_budget;type:jsonb"`
 	TradeValues          json.RawMessage `gorm:"column:trade_values;type:jsonb"`
-	CreatedAt            time.Time       `gorm:"column:created_at;autoCreateTime"`
+	// TradeValuesComplete reports whether every side of the trade that has
+	// traded players has a value in TradeValues — independent of whether
+	// TradeValues itself is nil. A trade can have TradeValues non-nil (one
+	// side resolved) while this stays false (another side is still
+	// pending); ReconcileTradeValues gates on this field, not on
+	// TradeValues being null, so a partially-resolved trade keeps getting
+	// retried instead of being treated as settled.
+	TradeValuesComplete bool      `gorm:"column:trade_values_complete"`
+	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime"`
 }
 
 func (SleeperTransaction) TableName() string { return "sleeper_transactions" }

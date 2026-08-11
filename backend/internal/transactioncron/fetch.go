@@ -204,11 +204,16 @@ type leagueValuationSettings struct {
 	LeagueType      string   `gorm:"column:league_type"`
 }
 
-// attachTradeValues sets TradeValues on each complete trade row in rows
-// whose league is in a covered valuation segment and whose players all have
-// a fresh-enough valuation. Best-effort: any lookup failure just leaves
-// TradeValues nil for ReconcileTradeValues to retry later — it must never
-// fail the insert this is called from.
+// attachTradeValues sets TradeValues and TradeValuesComplete on each
+// complete trade row in rows whose league is in a covered valuation
+// segment. A partially-valued trade (one side resolved, another still
+// pending) gets its resolved side's total persisted immediately with
+// TradeValuesComplete left false, so ReconcileTradeValues keeps retrying it
+// once the pending side's player gets a valuation — see
+// docs/superpowers/specs/2026-08-10-trade-valuation-totals-design.md.
+// Best-effort: any lookup failure just leaves both fields at their zero
+// values (nil, false) for ReconcileTradeValues to retry later — it must
+// never fail the insert this is called from.
 func attachTradeValues(ctx context.Context, tx *gorm.DB, leagueIDs []string, rows []models.SleeperTransaction) {
 	var leagues []leagueValuationSettings
 	if err := tx.WithContext(ctx).Table("sleeper_leagues").
@@ -252,8 +257,10 @@ func attachTradeValues(ctx context.Context, tx *gorm.DB, leagueIDs []string, row
 		return
 	}
 
-	for id, tv := range computeTradeValuesForRows(ctx, tx, inputs) {
-		rows[rowIndexByID[id]].TradeValues = tv
+	for id, res := range computeTradeValuesForRows(ctx, tx, inputs) {
+		idx := rowIndexByID[id]
+		rows[idx].TradeValues = res.Values
+		rows[idx].TradeValuesComplete = res.Complete
 	}
 }
 

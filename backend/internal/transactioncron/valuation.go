@@ -24,16 +24,29 @@ type tradeValuationInput struct {
 	Segment   string
 }
 
+// tradeValuationResult is one trade's outcome from computeTradeValuesForRows.
+// Values holds whatever sides resolved (nil if none), and Complete reports
+// whether every side that has traded players now has a value — a trade can
+// have Values non-nil (one side resolved) while Complete is still false
+// (another side is still pending), which is what lets ReconcileTradeValues
+// keep retrying it instead of treating it as settled just because
+// trade_values is non-null.
+type tradeValuationResult struct {
+	Values   json.RawMessage
+	Complete bool
+}
+
 // computeTradeValuesForRows batch-loads player_valuations once per distinct
 // segment present in inputs (not once per trade), then computes each
 // trade's per-side totals. Mirrors the batching handlers.GetSleeperTrades
 // used to do inline before this package took over — see
 // docs/superpowers/specs/2026-08-10-trade-valuation-totals-design.md.
-// Returns a map from trade ID to its computed trade_values JSON; a trade
-// with an empty Segment or no fully-valued side is simply absent from the
-// result, not present with a nil/empty value.
-func computeTradeValuesForRows(ctx context.Context, db *gorm.DB, inputs []tradeValuationInput) map[string]json.RawMessage {
-	result := map[string]json.RawMessage{}
+// Returns a map from trade ID to its result; a trade with an empty Segment
+// is simply absent from the result (it was never attempted at all — the
+// caller decides which trades qualify, this function skips only that
+// exclusion), not present with a zero-value result.
+func computeTradeValuesForRows(ctx context.Context, db *gorm.DB, inputs []tradeValuationInput) map[string]tradeValuationResult {
+	result := map[string]tradeValuationResult{}
 
 	playersBySegment := map[string]map[string]struct{}{}
 	var minTime, maxTime time.Time
@@ -72,9 +85,8 @@ func computeTradeValuesForRows(ctx context.Context, db *gorm.DB, inputs []tradeV
 			continue
 		}
 		rosterPlayers := valuation.GroupPlayersByRoster(in.Adds)
-		if tv, ok := valuation.ComputeTradeValues(rosterPlayers, in.TradeTime, historyBySegment[in.Segment]); ok {
-			result[in.ID] = tv
-		}
+		values, complete := valuation.ComputeTradeValues(rosterPlayers, in.TradeTime, historyBySegment[in.Segment])
+		result[in.ID] = tradeValuationResult{Values: values, Complete: complete}
 	}
 	return result
 }

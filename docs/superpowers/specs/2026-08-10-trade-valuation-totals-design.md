@@ -13,6 +13,22 @@ anyway (at `06:00`/`18:00 UTC` per the plan) as inert prep for a later change to
 replay's end boundary time-aware; the freshness gate and reconcile-sweep backfill described
 below don't depend on it and work the same either way.
 
+**Update (2026-08-11, post-merge bug fix):** The design below (and the plan built from it)
+had a real bug, caught in post-merge review: `ComputeTradeValues` wrote a non-NULL
+`trade_values` the moment **any one side** of a trade resolved, but `ReconcileTradeValues`
+only ever retried rows where `trade_values IS NULL`. A trade with one resolved side and one
+still-pending side therefore got permanently stuck with a partial total — the pending side
+could never be filled in later, even after its player got a valuation, because the row had
+already dropped out of the reconcile query's candidate set. Fixed by adding
+`sleeper_transactions.trade_values_complete` (migration `033_trade_values_complete.sql`), a
+column tracking per-trade completeness independently of whether `trade_values` itself is
+null. `ReconcileTradeValues` now gates on `trade_values_complete = false` instead of
+`trade_values IS NULL`; every write path (insert-time `attachTradeValues` and the reconcile
+sweep) sets both columns together from `valuation.ComputeTradeValues`'s new second return
+value (`complete bool`, replacing the old "resolved anything at all" `bool`). Every mention
+of "trade_values IS NULL" below describes the original (buggy) gate — the actual gate is
+`trade_values_complete = false`.
+
 ## Problem
 
 `/trades` on the frontend shows a per-side total valuation for some trades and leaves it
