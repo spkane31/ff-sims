@@ -106,6 +106,7 @@ type SleeperTransaction struct {
 	Drops                json.RawMessage `gorm:"column:drops;type:jsonb"`
 	DraftPicks           json.RawMessage `gorm:"column:draft_picks;type:jsonb"`
 	WaiverBudget         json.RawMessage `gorm:"column:waiver_budget;type:jsonb"`
+	TradeValues          json.RawMessage `gorm:"column:trade_values;type:jsonb"`
 	CreatedAt            time.Time       `gorm:"column:created_at;autoCreateTime"`
 }
 
