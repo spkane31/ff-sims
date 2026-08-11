@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import LeagueFilterBar from "../../components/LeagueFilterBar";
-import { useSleeperTransactions } from "../../hooks/useSleeperData";
-import { SleeperLeagueFilters } from "../../types/models";
+import LeagueFilterBar from "../components/LeagueFilterBar";
+import { useSleeperTransactions } from "../hooks/useSleeperData";
+import { SleeperLeagueFilters } from "../types/models";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";

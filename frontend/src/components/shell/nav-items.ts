@@ -13,7 +13,7 @@ import {
  * `Header.tsx` (which this replaces): nav content depends on whether the
  * current route carries a `leagueId`. League-scoped navigation keeps a
  * persistent Home destination so users can return to the global routes.
- * `/admin` and `/sleeper/transactions` remain reachable by direct URL only.
+ * `/admin` and `/transactions` remain reachable by direct URL only.
  */
 
 export type ShellNavId =
@@ -59,15 +59,15 @@ export const LEAGUE_MORE_ITEMS: MoreMenuItem[] = [
   { label: "Transactions", href: (id) => `/league/${id}/transactions` },
 ];
 
-// Global context (no leagueId in the route: home, /players, /admin, /sleeper/*).
+// Global context (no leagueId in the route: home, /players, /admin, /trades, /drafts).
 // Only 4 real destinations exist here, so all 4 are shown directly with no
 // "More" overflow needed (unlike the league-scoped context, which also
 // exposes simulations and transactions).
 export const GLOBAL_NAV_ITEMS: ShellNavItem[] = [
   HOME_NAV_ITEM,
   { id: "players", label: "Players", href: () => "/players" },
-  { id: "trades", label: "Trade Data", href: () => "/sleeper/trades" },
-  { id: "drafts", label: "Draft Data", href: () => "/sleeper/drafts" },
+  { id: "trades", label: "Trade Data", href: () => "/trades" },
+  { id: "drafts", label: "Draft Data", href: () => "/drafts" },
 ];
 
 export const NAV_ICONS: Record<ShellNavId, ComponentType<IconProps>> = {

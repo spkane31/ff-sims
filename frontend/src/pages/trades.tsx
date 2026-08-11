@@ -1,9 +1,9 @@
 import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import LeagueFilterBar from "../../components/LeagueFilterBar";
-import { useSleeperTrades } from "../../hooks/useSleeperData";
-import { SleeperLeagueFilters, SleeperTrade, TradeSidePlayer } from "../../types/models";
+import LeagueFilterBar from "../components/LeagueFilterBar";
+import { useSleeperTrades } from "../hooks/useSleeperData";
+import { SleeperLeagueFilters, SleeperTrade, TradeSidePlayer } from "../types/models";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

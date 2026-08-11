@@ -91,19 +91,19 @@ export default function Home() {
             {
               label: "Leagues",
               count: sleeperStats?.leagues_expanded ?? null,
-              link: "/sleeper/drafts",
+              link: "/drafts",
               description: "Total leagues tracked",
             },
             {
               label: "Trades",
               count: sleeperStats?.trade_count ?? null,
-              link: "/sleeper/trades",
+              link: "/trades?page=1&league_size=10&scoring_format=ppr&superflex=true&league_type=redraft",
               description: "Completed trades recorded",
             },
             {
               label: "Drafts",
               count: sleeperStats?.draft_count ?? null,
-              link: "/sleeper/drafts",
+              link: "/drafts",
               description: "Completed drafts with picks",
             },
           ].map((card) => (
