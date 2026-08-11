@@ -37,6 +37,13 @@ type Config struct {
 	// ShutdownGracePeriod stops new claims before the cron's hard deadline so
 	// in-flight Sleeper requests and their final DB batch can finish cleanly.
 	ShutdownGracePeriod time.Duration `env:"CRON_TXN_SHUTDOWN_GRACE_PERIOD_DURATION,default=30s,min=0s"`
+	// ReconcileLimit caps how many null-valued trades ReconcileTradeValues
+	// attempts per tick — bounds its worst-case cost regardless of backlog
+	// size.
+	ReconcileLimit int `env:"CRON_TXN_RECONCILE_LIMIT,default=200,min=1"`
+	// ReconcileTimeout is the sweep's own deadline, independent of the run's
+	// overall -max-duration — it must never be the reason a tick runs long.
+	ReconcileTimeout time.Duration `env:"CRON_TXN_RECONCILE_TIMEOUT_DURATION,default=5s,min=1s"`
 }
 
 // LoadConfig reads Config from env.
@@ -75,6 +82,18 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 		"batchSize", cfg.BatchSize, "batchFlushInterval", cfg.BatchFlushInterval,
 		"shutdownGracePeriod", cfg.ShutdownGracePeriod)
 	start := time.Now()
+
+	// Launched concurrently with (not after) fetch -> flush below, so its
+	// own short deadline overlaps the real wall-clock time fetch -> flush
+	// already spends on Sleeper API calls, rather than adding to the tick's
+	// total duration in the common case. See docs/superpowers/specs/
+	// 2026-08-10-trade-valuation-totals-design.md.
+	reconcileCtx, reconcileCancel := context.WithTimeout(ctx, cfg.ReconcileTimeout)
+	defer reconcileCancel()
+	reconcileErrCh := make(chan error, 1)
+	go func() {
+		reconcileErrCh <- ReconcileTradeValues(reconcileCtx, dfa.DB, cfg.ReconcileLimit)
+	}()
 
 	state, err := dfa.Sleeper.GetNFLState(ctx)
 	if err != nil {
@@ -122,6 +141,10 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 			logger.Info("league transaction sync completed", "leagueID", lg.LeagueID, "duration", duration)
 		},
 	)
+
+	if err := <-reconcileErrCh; err != nil {
+		logger.Warn("trade value reconciliation failed", "error", err)
+	}
 
 	report := Report{
 		LeaguesProcessed: result.Processed,

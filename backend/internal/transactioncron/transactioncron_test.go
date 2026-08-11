@@ -18,6 +18,7 @@ import (
 	"backend/internal/sleeper"
 	"backend/internal/testutil"
 	"backend/internal/transactioncron"
+	"backend/internal/valuation"
 )
 
 // TestRunTransactionSync_ProcessesLeaguesToCompletion needs real Postgres,
@@ -116,5 +117,66 @@ func TestRunTransactionSync_AggregatesClaimErrors(t *testing.T) {
 	}
 	if report.LeaguesProcessed != 0 {
 		t.Errorf("expected nothing processed when claiming always fails, got %+v", report)
+	}
+}
+
+// TestRunTransactionSync_ReconcilesTradeValuesConcurrently seeds a trade
+// with trade_values already null (as if a previous flush ran before its
+// players had valuations) and a matching player_valuations snapshot, then
+// asserts a single RunTransactionSync call reconciles it — proving the
+// sweep is actually wired in and awaited before the run returns, not just
+// unit-testable in isolation (Task 5 already covers the sweep's own logic).
+func TestRunTransactionSync_ReconcilesTradeValuesConcurrently(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; RunTransactionSync needs Postgres (FOR UPDATE SKIP LOCKED claim query)")
+	}
+	scopedDSN := testutil.NewPGSchema(t, dsn, "transactioncron_reconcile_test")
+	db := testutil.OpenGORM(t, scopedDSN)
+	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &valuation.Snapshot{}); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+
+	now := time.Now().UTC()
+	ppr := 1.0
+	sf := true
+	// last_transactions_fetched_at already set so this league is not
+	// re-claimed for a fetch — this test only cares about the reconcile
+	// sweep, not the claim/fetch pipeline (already covered elsewhere).
+	db.Create(&models.SleeperLeague{
+		SleeperLeagueID: "lg1", Season: "2026", LastFetchedAt: &now, LastTransactionsFetchedAt: &now,
+		PPR: &ppr, IsSuperflex: &sf, TotalRosters: 10, LeagueType: "redraft",
+	})
+	tradeTime := now.Add(-time.Hour)
+	db.Create(&models.SleeperTransaction{
+		SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "trade", Status: "complete",
+		CreatedAtSleeper: tradeTime.UnixMilli(), Adds: json.RawMessage(`{"p1": 7}`),
+	})
+	db.Create(&valuation.Snapshot{Segment: "ppr-sf-10", SleeperPlayerID: "p1", ValuationDate: tradeTime.Add(-6 * time.Hour), Value: 3300})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/state/nfl" {
+			json.NewEncoder(w).Encode(sleeper.NFLState{Season: "2026", Week: 3})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	dfa := &activities.DataFetchActivities{DB: db, Sleeper: sleeper.NewWithBaseURL(srv.URL)}
+	cfg := transactioncron.Config{
+		PoolSize: 2, RefillBatch: 1, BatchSize: 5, BatchFlushInterval: 5 * time.Second,
+		ReconcileLimit: 200, ReconcileTimeout: 5 * time.Second,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	if _, err := transactioncron.RunTransactionSync(ctx, dfa, cfg); err != nil {
+		t.Fatalf("RunTransactionSync error: %v", err)
+	}
+
+	var tx models.SleeperTransaction
+	db.First(&tx, "sleeper_transaction_id = ?", "tx1")
+	if len(tx.TradeValues) == 0 {
+		t.Fatal("expected trade_values to be reconciled by the end of RunTransactionSync")
 	}
 }
