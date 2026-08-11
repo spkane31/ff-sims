@@ -3,6 +3,16 @@
 **Date:** 2026-08-10
 **Status:** Approved
 
+**Update (2026-08-10, plan phase):** `analysis/main.py`'s `default_end()` is date-only
+(`utc_today()`, no time-of-day) — its own docstring says the newest snapshot a run writes
+"covers every event through the end of yesterday," deliberately never a same-day/partial
+snapshot. Two runs on the same calendar day therefore compute an identical window and
+produce byte-identical output: **a cadence bump alone does not improve trade-valuation
+freshness today**, regardless of which two times of day are chosen. The timer change ships
+anyway (at `06:00`/`18:00 UTC` per the plan) as inert prep for a later change to make the
+replay's end boundary time-aware; the freshness gate and reconcile-sweep backfill described
+below don't depend on it and work the same either way.
+
 ## Problem
 
 `/trades` on the frontend shows a per-side total valuation for some trades and leaves it
