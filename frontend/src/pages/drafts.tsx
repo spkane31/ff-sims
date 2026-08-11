@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import ADPFilterBar from "../../components/ADPFilterBar";
-import { useSleeperADPAll } from "../../hooks/useSleeperData";
-import { SleeperADPFilters } from "../../types/models";
+import ADPFilterBar from "../components/ADPFilterBar";
+import { useSleeperADPAll } from "../hooks/useSleeperData";
+import { SleeperADPFilters } from "../types/models";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
