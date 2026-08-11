@@ -67,6 +67,16 @@ export interface PlayerDetail {
   gameLog: GameLogEntry[];
 }
 
+export interface PlayerValuationPoint {
+  date: string;
+  value: number;
+}
+
+export interface PlayerValuationHistory {
+  segment: string;
+  valuations: PlayerValuationPoint[];
+}
+
 export interface PlayerSummary {
   id: string;
   espnId: string;
@@ -151,6 +161,14 @@ export const playersService = {
     }`;
 
     return apiClient.get<PlayerDetail>(endpoint);
+  },
+
+  /**
+   * Get a player's daily model valuation history for the default
+   * 10-team, full-PPR, superflex segment.
+   */
+  getPlayerValuationHistory: async (id: string | number): Promise<PlayerValuationHistory> => {
+    return apiClient.get<PlayerValuationHistory>(`/players/${id}/valuation-history`);
   },
 
   /**

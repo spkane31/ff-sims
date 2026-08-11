@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"backend/internal/database"
 	"backend/internal/models"
@@ -97,6 +98,20 @@ type PlayerDetailResponse struct {
 	TotalStats           PlayerStatsResponse `json:"totalStats"`
 	AnnualStats          []AnnualStatsEntry  `json:"annualStats"`
 	GameLog              []GameLogEntry      `json:"gameLog"`
+}
+
+const defaultPlayerValuationSegment = "ppr-sf-10"
+
+// PlayerValuationPoint is a daily model valuation for a player in the
+// default 10-team, full-PPR, superflex segment.
+type PlayerValuationPoint struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+}
+
+type PlayerValuationHistoryResponse struct {
+	Segment    string                 `json:"segment"`
+	Valuations []PlayerValuationPoint `json:"valuations"`
 }
 
 type GetPlayersResponse struct {
@@ -292,6 +307,59 @@ func GetPlayers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetPlayerValuationHistory returns a player's model valuations over time for
+// the default 10-team, full-PPR, superflex segment.
+func GetPlayerValuationHistory(c *gin.Context) {
+	id := c.Param("id")
+	playerID, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid player ID"})
+		return
+	}
+
+	var player models.Player
+	if err := database.DB.Select("sleeper_id").Where("id = ?", playerID).First(&player).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Player not found"})
+			return
+		}
+		slog.Error("Failed to fetch player for valuation history", "error", err, "id", id)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player valuation history"})
+		return
+	}
+
+	response := PlayerValuationHistoryResponse{
+		Segment:    defaultPlayerValuationSegment,
+		Valuations: []PlayerValuationPoint{},
+	}
+	if player.SleeperID == "" {
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
+	var rows []struct {
+		ValuationDate time.Time `gorm:"column:valuation_date"`
+		Value         float64   `gorm:"column:value"`
+	}
+	if err := database.DB.Table("player_valuations").
+		Select("valuation_date, value").
+		Where("segment = ? AND sleeper_player_id = ?", defaultPlayerValuationSegment, player.SleeperID).
+		Order("valuation_date ASC").
+		Scan(&rows).Error; err != nil {
+		slog.Error("Failed to fetch player valuation history", "error", err, "id", id)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch player valuation history"})
+		return
+	}
+
+	for _, row := range rows {
+		response.Valuations = append(response.Valuations, PlayerValuationPoint{
+			Date:  row.ValuationDate.Format("2006-01-02"),
+			Value: row.Value,
+		})
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // GetPlayerByID returns a player by ID with detailed statistics
