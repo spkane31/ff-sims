@@ -11,6 +11,7 @@ import {
   PlayerStats,
   AnnualStatsEntry,
   GameLogEntry,
+  PlayerValuationHistory,
 } from "@/services/playersService";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,10 +29,119 @@ import EmptyState from "@/components/design-system/EmptyState";
 import ErrorState from "@/components/design-system/ErrorState";
 import StatCard from "@/components/design-system/StatCard";
 import DataTable, { type DataTableColumn } from "@/components/design-system/DataTable";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-type Tab = "overview" | "stats" | "gamelog" | "market";
+type Tab = "overview" | "stats" | "gamelog";
 
 const MARKET_TRADE_LIMIT = 10;
+
+const AXIS_TICK_STYLE = { fontSize: 11, fill: "var(--chart-axis-text)" };
+const TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "var(--chart-tooltip-bg)",
+  borderColor: "var(--chart-tooltip-border)",
+  color: "var(--chart-tooltip-text)",
+};
+const TOOLTIP_LABEL_STYLE = { color: "var(--chart-tooltip-text)" };
+
+function formatValuationDate(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function PlayerValuationChart({ playerId }: { playerId: string }) {
+  const [history, setHistory] = useState<PlayerValuationHistory | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchHistory() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await playersService.getPlayerValuationHistory(playerId);
+        if (!cancelled) setHistory(data);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err : new Error("Failed to load valuation history"));
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    fetchHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId]);
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+          Model Valuation
+        </h2>
+        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+          Daily valuation history for 10-team PPR superflex leagues.
+        </p>
+        <div className="mt-4">
+          {error ? (
+            <ErrorState message={`Failed to load valuation history: ${error.message}`} />
+          ) : isLoading ? (
+            <Skeleton className="h-[300px] w-full" />
+          ) : !history || history.valuations.length === 0 ? (
+            <EmptyState title="No model valuation history is available for this player." />
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={history.valuations} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" opacity={0.5} />
+                <XAxis
+                  dataKey="date"
+                  tick={AXIS_TICK_STYLE}
+                  minTickGap={40}
+                  tickFormatter={formatValuationDate}
+                />
+                <YAxis
+                  tick={AXIS_TICK_STYLE}
+                  width={70}
+                  tickFormatter={(value) => Number(value).toLocaleString()}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
+                  labelFormatter={(label) => formatValuationDate(String(label))}
+                  formatter={(value) => Number(value).toLocaleString()}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name="Model valuation"
+                  stroke="var(--chart-series-1)"
+                  strokeWidth={2}
+                  dot={history.valuations.length === 1}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function formatTradeDate(unixMs: number): string {
   return new Date(unixMs).toLocaleDateString(undefined, {
@@ -699,13 +809,24 @@ export default function PlayerDetailPage() {
           <TabsTrigger value="gamelog" className="px-4">
             Game Log
           </TabsTrigger>
-          <TabsTrigger value="market" className="px-4">
-            Market
-          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
+          <PlayerValuationChart playerId={player.id} />
+
+          {player.sleeperId ? (
+            <PlayerMarket sleeperId={player.sleeperId} />
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <p style={{ color: "var(--text-muted)" }}>
+                  Trade and draft data are not available because this player has no Sleeper identity.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardContent className="p-6">
               <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
@@ -1179,19 +1300,6 @@ export default function PlayerDetailPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="market" className="space-y-6">
-          {player.sleeperId ? (
-            <PlayerMarket sleeperId={player.sleeperId} />
-          ) : (
-            <Card>
-              <CardContent className="p-6">
-                <p style={{ color: "var(--text-muted)" }}>
-                  Market data is not available because this player has no Sleeper identity.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
       </Tabs>
     </div>
   );
