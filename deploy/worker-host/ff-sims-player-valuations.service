@@ -1,5 +1,5 @@
 [Unit]
-Description=ff-sims player valuation daily replay (ppr-sf-10, season 2025)
+Description=ff-sims player valuation replay (ppr-sf-10, season 2025), twice daily
 After=network-online.target
 Wants=network-online.target
 
