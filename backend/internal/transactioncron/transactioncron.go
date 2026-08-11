@@ -88,12 +88,15 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 	// already spends on Sleeper API calls, rather than adding to the tick's
 	// total duration in the common case. See docs/superpowers/specs/
 	// 2026-08-10-trade-valuation-totals-design.md.
-	reconcileCtx, reconcileCancel := context.WithTimeout(ctx, cfg.ReconcileTimeout)
-	defer reconcileCancel()
-	reconcileErrCh := make(chan error, 1)
-	go func() {
-		reconcileErrCh <- ReconcileTradeValues(reconcileCtx, dfa.DB, cfg.ReconcileLimit)
-	}()
+	var reconcileErrCh chan error
+	if cfg.ReconcileLimit > 0 && cfg.ReconcileTimeout > 0 {
+		reconcileCtx, reconcileCancel := context.WithTimeout(ctx, cfg.ReconcileTimeout)
+		defer reconcileCancel()
+		reconcileErrCh = make(chan error, 1)
+		go func() {
+			reconcileErrCh <- ReconcileTradeValues(reconcileCtx, dfa.DB, cfg.ReconcileLimit)
+		}()
+	}
 
 	state, err := dfa.Sleeper.GetNFLState(ctx)
 	if err != nil {
@@ -142,8 +145,10 @@ func RunTransactionSync(ctx context.Context, dfa *activities.DataFetchActivities
 		},
 	)
 
-	if err := <-reconcileErrCh; err != nil {
-		logger.Warn("trade value reconciliation failed", "error", err)
+	if reconcileErrCh != nil {
+		if err := <-reconcileErrCh; err != nil {
+			logger.Warn("trade value reconciliation failed", "error", err)
+		}
 	}
 
 	report := Report{

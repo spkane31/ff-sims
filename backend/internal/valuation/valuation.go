@@ -51,9 +51,13 @@ func SegmentKeyForLeague(ppr *float64, isSuperflex *bool, totalRosters int, leag
 	return key
 }
 
-// LoadSnapshotHistory fetches one segment's valuation snapshots up to upTo
-// for the given players, grouped per player and sorted by date ascending.
-func LoadSnapshotHistory(db *gorm.DB, segment string, playerIDs []string, upTo time.Time) map[string][]Snapshot {
+// LoadSnapshotHistory fetches one segment's valuation snapshots dated within
+// [from, upTo] for the given players, grouped per player and sorted by date
+// ascending. Rows older than `from` are provably unusable by ValueAsOf's
+// FreshnessWindow check (they can never resolve for any ts >= from), so
+// bounding both ends keeps this from loading a whole segment's history on
+// every call.
+func LoadSnapshotHistory(db *gorm.DB, segment string, playerIDs []string, from, upTo time.Time) map[string][]Snapshot {
 	history := map[string][]Snapshot{}
 	if segment == "" || len(playerIDs) == 0 {
 		return history
@@ -61,7 +65,7 @@ func LoadSnapshotHistory(db *gorm.DB, segment string, playerIDs []string, upTo t
 	var snaps []Snapshot
 	db.Table("player_valuations").
 		Select("sleeper_player_id, valuation_date, value").
-		Where("segment = ? AND sleeper_player_id IN ? AND valuation_date <= ?", segment, playerIDs, upTo).
+		Where("segment = ? AND sleeper_player_id IN ? AND valuation_date >= ? AND valuation_date <= ?", segment, playerIDs, from, upTo).
 		Order("sleeper_player_id, valuation_date ASC").
 		Scan(&snaps)
 	for _, s := range snaps {

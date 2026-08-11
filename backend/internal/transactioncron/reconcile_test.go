@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/activities"
 	"backend/internal/models"
 	"backend/internal/transactioncron"
 	"backend/internal/valuation"
@@ -23,8 +22,6 @@ func TestReconcileTradeValues_FillsNullRowWhenValuationExists(t *testing.T) {
 	})
 	db.Create(&valuation.Snapshot{Segment: "ppr-sf-10", SleeperPlayerID: "p1", ValuationDate: tradeTime.Add(-6 * time.Hour), Value: 4200})
 
-	dfa := &activities.DataFetchActivities{DB: db}
-	_ = dfa
 	if err := transactioncron.ReconcileTradeValues(context.Background(), db, 200); err != nil {
 		t.Fatalf("ReconcileTradeValues error: %v", err)
 	}

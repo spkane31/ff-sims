@@ -85,6 +85,8 @@ throttles.
 | `CRON_TXN_BATCH_SIZE` | 20 | Fetched league results accumulated before one bulk flush write. |
 | `CRON_TXN_BATCH_FLUSH_INTERVAL_DURATION` | 5s | Flush accumulated results at least this often, even short of `CRON_TXN_BATCH_SIZE` (a Go duration string, e.g. `5s`, `500ms`). |
 | `CRON_TXN_SHUTDOWN_GRACE_PERIOD_DURATION` | 30s | Stop claiming new leagues this long before the cron deadline so in-flight fetches and the final batch flush can finish cleanly. |
+| `CRON_TXN_RECONCILE_LIMIT` | 200 | Max trades ReconcileTradeValues attempts to backfill per tick. |
+| `CRON_TXN_RECONCILE_TIMEOUT_DURATION` | 5s | ReconcileTradeValues's own deadline, independent of the run's overall `-max-duration` (a Go duration string). |
 
 These take effect on cron's next invocation — no restart needed or possible,
 since `cron -job=transactions` is a fresh process each timer tick, not a
@@ -115,6 +117,17 @@ periodically flushes accumulated results as one bulk write per batch
 (`FlushLeagueTransactions`) instead of one write per league. The per-league
 leg loop is capped at the current NFL week (past seasons still sweep legs
 1–18).
+
+`RunTransactionSync` also launches `ReconcileTradeValues` as a goroutine
+concurrently with (not after) the `fdb.RunPool` call above — it backfills
+`sleeper_transactions.trade_values` for trades whose players didn't have a
+fresh-enough valuation at insert time, and is the sole mechanism that fills
+in pre-existing/historical trades too (no separate backfill job). It runs
+under its own `CRON_TXN_RECONCILE_TIMEOUT_DURATION` deadline and a
+`CRON_TXN_RECONCILE_LIMIT`-row cap, and a failure or timeout here is only
+logged — it can never fail the tick or delay new-trade ingestion. See
+`docs/superpowers/specs/2026-08-10-trade-valuation-totals-design.md` for the
+full design rationale.
 
 Logs: `journalctl -u ff-sims-transactions -f`. A crashed or killed cron run,
 or a batch whose flush failed, has nothing to restart — the affected
@@ -147,6 +160,13 @@ leaves the affected leagues' claims in place; they re-queue once the
 20-minute claim TTL expires and the next timer tick claims them again — no
 heartbeat or activity retry involved, since there's no long-running process
 to detect a crash in.
+
+**Trade value reconciliation:** a timeout or DB error in `ReconcileTradeValues`
+logs `"trade value reconciliation failed"` (WARN) and is otherwise silent —
+no leagues are affected, no claims are touched. If `trade_values` stops
+backfilling in production, check for this log line first; it means the sweep
+is failing or consistently timing out, most likely because `CRON_TXN_RECONCILE_TIMEOUT_DURATION`
+is too tight for the current backlog size.
 
 **Both:** Sleeper state endpoint down — the leg loop falls back to the full
 18-leg sweep (slower, still correct). Claim query errors — logged, and the

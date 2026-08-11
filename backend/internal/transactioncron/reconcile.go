@@ -36,7 +36,7 @@ func ReconcileTradeValues(ctx context.Context, db *gorm.DB, limit int) error {
 	if err := db.WithContext(ctx).Table("sleeper_transactions t").
 		Select("t.sleeper_transaction_id, t.adds, t.created_at_sleeper, l.ppr, l.is_superflex, l.total_rosters, l.league_type").
 		Joins("JOIN sleeper_leagues l ON l.sleeper_league_id = t.sleeper_league_id").
-		Where("t.type = ? AND t.status = ? AND t.trade_values IS NULL AND l.ppr = ? AND l.is_superflex = ? AND l.league_type = ?",
+		Where("t.type = ? AND t.status = ? AND t.trade_values IS NULL AND l.ppr = ? AND l.is_superflex = ? AND l.league_type = ? AND l.total_rosters IN (8, 10, 12)",
 			"trade", "complete", 1.0, true, "redraft").
 		Order("t.created_at_sleeper DESC").
 		Limit(limit).

@@ -36,10 +36,13 @@ func computeTradeValuesForRows(ctx context.Context, db *gorm.DB, inputs []tradeV
 	result := map[string]json.RawMessage{}
 
 	playersBySegment := map[string]map[string]struct{}{}
-	var maxTime time.Time
+	var minTime, maxTime time.Time
 	for _, in := range inputs {
 		if in.Segment == "" {
 			continue
+		}
+		if minTime.IsZero() || in.TradeTime.Before(minTime) {
+			minTime = in.TradeTime
 		}
 		if in.TradeTime.After(maxTime) {
 			maxTime = in.TradeTime
@@ -61,7 +64,7 @@ func computeTradeValuesForRows(ctx context.Context, db *gorm.DB, inputs []tradeV
 		for id := range idSet {
 			ids = append(ids, id)
 		}
-		historyBySegment[seg] = valuation.LoadSnapshotHistory(db.WithContext(ctx), seg, ids, maxTime)
+		historyBySegment[seg] = valuation.LoadSnapshotHistory(db.WithContext(ctx), seg, ids, minTime.Add(-valuation.FreshnessWindow), maxTime)
 	}
 
 	for _, in := range inputs {
