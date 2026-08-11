@@ -238,8 +238,6 @@ export interface TradeSidePlayer {
   id: string;
   name: string;
   position: string;
-  /** Model valuation as of the trade date; absent when no snapshot exists. */
-  value?: number;
   /** Internal players.id for linking to /players/:id; absent when the Sleeper player has no matching ESPN player. */
   player_id?: string;
 }
