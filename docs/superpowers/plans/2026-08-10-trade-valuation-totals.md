@@ -169,8 +169,8 @@ func TestValueAsOf(t *testing.T) {
 	if _, ok := valuation.ValueAsOf(snaps, d(7), valuation.FreshnessWindow); ok {
 		t.Error("expected no value before first snapshot")
 	}
-	if v, ok := valuation.ValueAsOf(snaps, time.Date(2025, 9, 18, 14, 30, 0, 0, time.UTC), valuation.FreshnessWindow); !ok || v != 1200 {
-		t.Errorf("expected 1200 between snapshots, got %v ok=%v", v, ok)
+	if v, ok := valuation.ValueAsOf(snaps, d(15).Add(14*time.Hour), valuation.FreshnessWindow); !ok || v != 1200 {
+		t.Errorf("expected 1200 between snapshots (within freshness window), got %v ok=%v", v, ok)
 	}
 	if v, ok := valuation.ValueAsOf(snaps, d(8), valuation.FreshnessWindow); !ok || v != 1000 {
 		t.Errorf("expected same-day snapshot 1000, got %v ok=%v", v, ok)
