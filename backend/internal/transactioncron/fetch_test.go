@@ -18,6 +18,7 @@ import (
 	"backend/internal/models"
 	"backend/internal/sleeper"
 	"backend/internal/transactioncron"
+	"backend/internal/valuation"
 )
 
 // newTestDB opens an in-memory SQLite DB migrated with the cloud models this
@@ -33,7 +34,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("unwrap sql.DB: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}); err != nil {
+	if err := db.AutoMigrate(&models.SleeperLeague{}, &models.SleeperTransaction{}, &valuation.Snapshot{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -544,5 +545,78 @@ func TestFetchLeagueTransactions_ExcludesDraftPicksWhenArchiveNil(t *testing.T) 
 	}
 	if len(res.CloudRows) != 1 || res.CloudRows[0].SleeperTransactionID != "tx-clean" {
 		t.Errorf("expected only tx-clean in CloudRows (no archive configured), got %+v", res.CloudRows)
+	}
+}
+
+func ppr10League(t *testing.T, db *gorm.DB, id string) {
+	t.Helper()
+	ppr := 1.0
+	sf := true
+	now := time.Now().UTC()
+	l := models.SleeperLeague{
+		SleeperLeagueID: id, Season: "2025", LastFetchedAt: &now, ClaimedAt: &now,
+		PPR: &ppr, IsSuperflex: &sf, TotalRosters: 10, LeagueType: "redraft",
+	}
+	if err := db.Create(&l).Error; err != nil {
+		t.Fatalf("seed league: %v", err)
+	}
+}
+
+func TestFlushLeagueTransactions_ComputesTradeValuesForCoveredLeague(t *testing.T) {
+	db := newTestDB(t)
+	ppr10League(t, db, "lg1")
+
+	tradeTime := time.Now().UTC()
+	db.Create(&valuation.Snapshot{Segment: "ppr-sf-10", SleeperPlayerID: "p1", ValuationDate: tradeTime.Add(-6 * time.Hour), Value: 5000})
+	db.Create(&valuation.Snapshot{Segment: "ppr-sf-10", SleeperPlayerID: "p2", ValuationDate: tradeTime.Add(-6 * time.Hour), Value: 1500})
+
+	batch := []transactioncron.LeagueTransactionFetchResult{{
+		LeagueID: "lg1",
+		CloudRows: []models.SleeperTransaction{{
+			SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "trade", Status: "complete",
+			CreatedAtSleeper: tradeTime.UnixMilli(),
+			Adds:             json.RawMessage(`{"p1": 7, "p2": 8}`),
+		}},
+	}}
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, db, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var tx models.SleeperTransaction
+	if err := db.First(&tx, "sleeper_transaction_id = ?", "tx1").Error; err != nil {
+		t.Fatalf("lookup transaction: %v", err)
+	}
+	if len(tx.TradeValues) == 0 {
+		t.Fatal("expected trade_values to be populated")
+	}
+	var totals map[string]float64
+	json.Unmarshal(tx.TradeValues, &totals)
+	if totals["7"] != 5000 || totals["8"] != 1500 {
+		t.Errorf("expected {7:5000, 8:1500}, got %+v", totals)
+	}
+}
+
+func TestFlushLeagueTransactions_LeavesTradeValuesNullWhenUnvalued(t *testing.T) {
+	db := newTestDB(t)
+	ppr10League(t, db, "lg1")
+
+	batch := []transactioncron.LeagueTransactionFetchResult{{
+		LeagueID: "lg1",
+		CloudRows: []models.SleeperTransaction{{
+			SleeperTransactionID: "tx1", SleeperLeagueID: "lg1", Type: "trade", Status: "complete",
+			CreatedAtSleeper: time.Now().UTC().UnixMilli(),
+			Adds:             json.RawMessage(`{"p1": 7}`), // no player_valuations rows seeded
+		}},
+	}}
+	dfa := &activities.DataFetchActivities{DB: db}
+	if err := transactioncron.FlushLeagueTransactions(context.Background(), dfa, db, batch); err != nil {
+		t.Fatalf("FlushLeagueTransactions error: %v", err)
+	}
+
+	var tx models.SleeperTransaction
+	db.First(&tx, "sleeper_transaction_id = ?", "tx1")
+	if len(tx.TradeValues) != 0 {
+		t.Errorf("expected trade_values to stay null, got %s", tx.TradeValues)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"backend/internal/helpers"
 	"backend/internal/models"
 	"backend/internal/sleeper"
+	"backend/internal/valuation"
 )
 
 type ClaimLeaguesForTransactionsParams struct {
@@ -193,6 +194,69 @@ func FetchLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActiv
 	return res, nil
 }
 
+// leagueValuationSettings is the subset of a league's settings needed to
+// resolve its valuation segment (valuation.SegmentKeyForLeague).
+type leagueValuationSettings struct {
+	SleeperLeagueID string   `gorm:"column:sleeper_league_id"`
+	PPR             *float64 `gorm:"column:ppr"`
+	IsSuperflex     *bool    `gorm:"column:is_superflex"`
+	TotalRosters    int      `gorm:"column:total_rosters"`
+	LeagueType      string   `gorm:"column:league_type"`
+}
+
+// attachTradeValues sets TradeValues on each complete trade row in rows
+// whose league is in a covered valuation segment and whose players all have
+// a fresh-enough valuation. Best-effort: any lookup failure just leaves
+// TradeValues nil for ReconcileTradeValues to retry later — it must never
+// fail the insert this is called from.
+func attachTradeValues(ctx context.Context, tx *gorm.DB, leagueIDs []string, rows []models.SleeperTransaction) {
+	var leagues []leagueValuationSettings
+	if err := tx.WithContext(ctx).Table("sleeper_leagues").
+		Select("sleeper_league_id, ppr, is_superflex, total_rosters, league_type").
+		Where("sleeper_league_id IN ?", leagueIDs).
+		Scan(&leagues).Error; err != nil {
+		return
+	}
+	settingsByLeague := make(map[string]leagueValuationSettings, len(leagues))
+	for _, l := range leagues {
+		settingsByLeague[l.SleeperLeagueID] = l
+	}
+
+	inputs := make([]tradeValuationInput, 0, len(rows))
+	rowIndexByID := make(map[string]int, len(rows))
+	for i, r := range rows {
+		if r.Type != "trade" || r.Status != "complete" {
+			continue
+		}
+		ls, ok := settingsByLeague[r.SleeperLeagueID]
+		if !ok {
+			continue
+		}
+		seg := valuation.SegmentKeyForLeague(ls.PPR, ls.IsSuperflex, ls.TotalRosters, ls.LeagueType)
+		if seg == "" {
+			continue
+		}
+		var adds map[string]int
+		if len(r.Adds) > 0 {
+			if err := json.Unmarshal(r.Adds, &adds); err != nil {
+				continue
+			}
+		}
+		inputs = append(inputs, tradeValuationInput{
+			ID: r.SleeperTransactionID, TradeTime: time.UnixMilli(r.CreatedAtSleeper).UTC(),
+			Adds: adds, Segment: seg,
+		})
+		rowIndexByID[r.SleeperTransactionID] = i
+	}
+	if len(inputs) == 0 {
+		return
+	}
+
+	for id, tv := range computeTradeValuesForRows(ctx, tx, inputs) {
+		rows[rowIndexByID[id]].TradeValues = tv
+	}
+}
+
 // FlushLeagueTransactions is the batch-write counterpart to
 // FetchLeagueTransactions: one bulk insert for all of the batch's cloud rows
 // (against tx, the transaction fdb.RunPool already opened for this batch),
@@ -215,6 +279,7 @@ func FlushLeagueTransactions(ctx context.Context, dfa *activities.DataFetchActiv
 	}
 
 	if len(cloudRows) > 0 {
+		attachTradeValues(ctx, tx, leagueIDs, cloudRows)
 		if err := tx.WithContext(ctx).
 			Clauses(clause.OnConflict{DoNothing: true}).
 			CreateInBatches(cloudRows, 500).Error; err != nil {
