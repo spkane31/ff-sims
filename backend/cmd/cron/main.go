@@ -22,6 +22,7 @@ import (
 	"backend/internal/sleeper"
 	"backend/internal/statscron"
 	"backend/internal/transactioncron"
+	"gorm.io/gorm"
 )
 
 // buildID identifies the commit this binary was built from. Set via
@@ -31,6 +32,14 @@ import (
 var buildID = "dev"
 
 var errUnknownJob = errors.New("unknown job")
+
+// sleeperDiscoveryEnabled pauses the high-volume Sleeper graph-expansion cron
+// during the Temporal Cloud redeployment. Keep the systemd timer running so
+// its operational wiring remains verified; this job exits successfully
+// without making Sleeper API calls until discovery is intentionally resumed.
+const sleeperDiscoveryEnabled = false
+
+var runDiscovery = discoverycron.RunDiscovery
 
 // resolveJob looks up name in registry, returning errUnknownJob (wrapped
 // with the attempted name) if it isn't registered.
@@ -81,6 +90,19 @@ func txnJobFailed(report transactioncron.Report) error {
 	return nil
 }
 
+func runDiscoveryJob(ctx context.Context, db *gorm.DB, sc *sleeper.Client) error {
+	if !sleeperDiscoveryEnabled {
+		log.Println("Sleeper discovery cron is paused")
+		return nil
+	}
+
+	report, err := runDiscovery(ctx, db, sc, discoverycron.LoadConfig())
+	if err != nil {
+		return err
+	}
+	return jobFailed(report)
+}
+
 func main() {
 	jobName := flag.String("job", "", "job to run (see registry in main.go)")
 	maxDuration := flag.Duration("max-duration", 0, "hard deadline for the job, e.g. 50m")
@@ -117,11 +139,7 @@ func main() {
 
 	registry := map[string]func(context.Context) error{
 		"discovery": func(ctx context.Context) error {
-			report, err := discoverycron.RunDiscovery(ctx, database.DB, sc, discoverycron.LoadConfig())
-			if err != nil {
-				return err
-			}
-			return jobFailed(report)
+			return runDiscoveryJob(ctx, database.DB, sc)
 		},
 		"lifetime-counts": func(ctx context.Context) error {
 			_, err := statscron.RunSnapshot(ctx, database.DB, database.Archive)

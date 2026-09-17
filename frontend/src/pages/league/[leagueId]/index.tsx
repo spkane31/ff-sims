@@ -10,6 +10,7 @@ import {
   type CurrentSeasonStanding,
 } from "@/services/expectedWinsService";
 import { leaguesService } from "@/services/leaguesService";
+import { toSeasonStandingTeam } from "@/utils/current-season-standings";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
 import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
@@ -24,6 +25,7 @@ type SortField =
   | "name"
   | "wins"
   | "losses"
+  | "expectedRecord"
   | "pf"
   | "pa"
   | "playoffs"
@@ -93,17 +95,9 @@ export default function LeagueDashboard() {
 
         setSeasonYear(response.year);
         setSeasonStandings(
-          response.standings.map((standing: CurrentSeasonStanding, index) => ({
-            id: String(standing.team_id),
-            espnId: standing.espn_id,
-            name: standing.team_name,
-            owner: standing.owner,
-            record: standing.record,
-            playoffRecord: { wins: 0, losses: 0, ties: 0 },
-            points: standing.points,
-            rank: index + 1,
-            playoffChance: 0,
-          }))
+          response.standings.map((standing: CurrentSeasonStanding, index) =>
+            toSeasonStandingTeam(standing, index + 1)
+          )
         );
       } catch (err) {
         if (!cancelled) {
@@ -314,6 +308,10 @@ export default function LeagueDashboard() {
               fieldA = a.record.losses;
               fieldB = b.record.losses;
               break;
+            case "expectedRecord":
+              fieldA = a.expectedWins?.expectedWins ?? 0;
+              fieldB = b.expectedWins?.expectedWins ?? 0;
+              break;
             case "pf":
               fieldA = a.points.scored;
               fieldB = b.points.scored;
@@ -373,6 +371,15 @@ export default function LeagueDashboard() {
       header: "L",
       sortable: true,
       cell: (team) => team.record.losses,
+    },
+    {
+      id: "expectedRecord",
+      header: "Expected Record",
+      sortable: true,
+      cell: (team) =>
+        team.expectedWins
+          ? `${team.expectedWins.expectedWins.toFixed(2)}-${team.expectedWins.expectedLosses.toFixed(2)}`
+          : "—",
     },
     {
       id: "pf",

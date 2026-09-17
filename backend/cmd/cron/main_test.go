@@ -6,8 +6,28 @@ import (
 	"testing"
 
 	"backend/internal/discoverycron"
+	"backend/internal/sleeper"
 	"backend/internal/transactioncron"
+	"gorm.io/gorm"
 )
+
+func TestRunDiscoveryJob_IsPausedWithoutCallingSleeper(t *testing.T) {
+	originalRunDiscovery := runDiscovery
+	t.Cleanup(func() { runDiscovery = originalRunDiscovery })
+
+	called := false
+	runDiscovery = func(context.Context, *gorm.DB, *sleeper.Client, discoverycron.Config) (discoverycron.Report, error) {
+		called = true
+		return discoverycron.Report{}, nil
+	}
+
+	if err := runDiscoveryJob(context.Background(), nil, nil); err != nil {
+		t.Fatalf("runDiscoveryJob error: %v", err)
+	}
+	if called {
+		t.Error("paused discovery job called Sleeper discovery")
+	}
+}
 
 func TestResolveJob_KnownJobReturnsItsFunc(t *testing.T) {
 	called := false
