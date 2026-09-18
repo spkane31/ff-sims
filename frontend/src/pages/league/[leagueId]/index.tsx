@@ -11,6 +11,7 @@ import {
 } from "@/services/expectedWinsService";
 import { leaguesService } from "@/services/leaguesService";
 import { toSeasonStandingTeam } from "@/utils/current-season-standings";
+import { calculateHomepagePlayoffOdds } from "@/utils/homepage-playoff-odds";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
 import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
@@ -31,6 +32,8 @@ type SortField =
   | "playoffs"
   | "diff";
 type SortDirection = "asc" | "desc";
+
+const HOMEPAGE_PLAYOFF_ODDS_ITERATIONS = 5_000;
 
 function formatAvgTotal(avg: number, total: number, sign = false): string {
   const avgSign = sign && avg > 0 ? "+" : "";
@@ -115,6 +118,30 @@ export default function LeagueDashboard() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (seasonYear === null || isScheduleLoading) {
+      return;
+    }
+
+    const playoffOdds = calculateHomepagePlayoffOdds(
+      schedule.data.matchups,
+      seasonYear,
+      HOMEPAGE_PLAYOFF_ODDS_ITERATIONS,
+    );
+    if (playoffOdds.size === 0) {
+      return;
+    }
+
+    setSeasonStandings((currentStandings) =>
+      currentStandings.map((team) => {
+        const odds = playoffOdds.get(Number(team.espnId));
+        return odds === undefined
+          ? team
+          : { ...team, playoffChance: odds * 100 };
+      }),
+    );
+  }, [isScheduleLoading, schedule.data.matchups, seasonYear]);
 
   const filteredTeams = useMemo(
     () =>
@@ -437,7 +464,7 @@ export default function LeagueDashboard() {
             />
           </div>
           <span className="mt-1 block text-xs" style={{ color: "var(--text-muted)" }}>
-            {team.playoffChance}%
+            {team.playoffChance.toFixed(1)}%
           </span>
         </div>
       ),
