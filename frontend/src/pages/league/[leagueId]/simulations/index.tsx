@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import { buildSimulationSchedule } from "@/utils/simulation-schedule";
 import { Simulator } from "@/utils/simulator";
 import { TeamScoringData, Schedule, Matchup } from "@/types/simulation";
 import { scheduleService } from "@/services/scheduleService";
@@ -175,7 +176,9 @@ export default function Simulations() {
 
         // Get all available weeks from the full schedule
         // The simulator will handle filtering out playoff games at the matchup level
-        const allWeeks = schedule.map((_, index) => index + 1);
+        const allWeeks = schedule.flatMap((week, index) =>
+          week.length ? [index + 1] : []
+        );
         setAvailableWeeks(allWeeks);
 
         // Find current week (first week with incomplete games) in the full schedule
@@ -183,7 +186,9 @@ export default function Simulations() {
           week.some((matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
-          currentWeekIndex === -1 ? allWeeks.length : currentWeekIndex + 1;
+          currentWeekIndex === -1
+            ? (allWeeks[allWeeks.length - 1] ?? 0)
+            : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
 
         // Set the default startWeek to the current week
@@ -210,8 +215,8 @@ export default function Simulations() {
 
         // Get all available weeks from the full schedule
         // The simulator will handle filtering out playoff games at the matchup level
-        const allWeeks = schedule.map(
-          (_: Matchup[], index: number) => index + 1
+        const allWeeks = schedule.flatMap((week, index) =>
+          week.length ? [index + 1] : []
         );
         setAvailableWeeks(allWeeks);
 
@@ -220,7 +225,9 @@ export default function Simulations() {
           week.some((matchup: Matchup) => !matchup.completed)
         );
         const detectedCurrentWeek =
-          currentWeekIndex === -1 ? allWeeks.length : currentWeekIndex + 1;
+          currentWeekIndex === -1
+            ? (allWeeks[allWeeks.length - 1] ?? 0)
+            : currentWeekIndex + 1;
         setCurrentWeek(detectedCurrentWeek);
 
         // Set the default startWeek to the current week
@@ -241,88 +248,7 @@ export default function Simulations() {
       // Use the v2 schedule service to get all matchup data, then filter by year
       const response = await scheduleService.getFullSchedule(leagueId);
 
-      // Filter matchups by the selected year
-      const yearMatchups = response.data.matchups.filter(
-        (matchup) => matchup.year === year
-      );
-
-      // Convert v2 API format to simulator format
-      const schedule: Schedule = [];
-      const weekMap = new Map<number, Matchup[]>();
-
-      yearMatchups.forEach((matchup) => {
-        if (!weekMap.has(matchup.week)) {
-          weekMap.set(matchup.week, []);
-        }
-
-        weekMap.get(matchup.week)?.push({
-          homeTeamName: matchup.homeTeamName,
-          awayTeamName: matchup.awayTeamName,
-          homeTeamESPNID: matchup.homeTeamESPNID,
-          awayTeamESPNID: matchup.awayTeamESPNID,
-          homeTeamFinalScore: matchup.homeScore,
-          awayTeamFinalScore: matchup.awayScore,
-          completed: matchup.homeScore > 0 || matchup.awayScore > 0,
-          week: matchup.week,
-          gameType: matchup.gameType,
-        });
-      });
-
-      // Ensure we have a full regular season (weeks 1-14) for simulation
-      // If we're missing future weeks, create placeholder incomplete matchups
-      const completedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
-      const lastCompletedWeek = completedWeeks[completedWeeks.length - 1] || 0;
-
-      // Get all unique teams from completed matchups to generate future matchups
-      const teams = new Set<number>();
-      const teamNames = new Map<number, string>();
-
-      yearMatchups.forEach((matchup) => {
-        teams.add(matchup.homeTeamESPNID);
-        teams.add(matchup.awayTeamESPNID);
-        teamNames.set(matchup.homeTeamESPNID, matchup.homeTeamName);
-        teamNames.set(matchup.awayTeamESPNID, matchup.awayTeamName);
-      });
-
-      const teamList = Array.from(teams);
-
-      // Generate incomplete matchups for remaining regular season weeks (up to week 14)
-      for (let week = lastCompletedWeek + 1; week <= 14; week++) {
-        if (!weekMap.has(week)) {
-          weekMap.set(week, []);
-
-          // Create placeholder matchups for this week
-          // This is a simple pairing - in reality, you'd want the actual schedule pattern
-          // But for simulation purposes, we just need to ensure all teams play
-          for (let i = 0; i < teamList.length; i += 2) {
-            if (i + 1 < teamList.length) {
-              const homeTeamId = teamList[i];
-              const awayTeamId = teamList[i + 1];
-
-              weekMap.get(week)?.push({
-                homeTeamName: teamNames.get(homeTeamId) || `Team ${homeTeamId}`,
-                awayTeamName: teamNames.get(awayTeamId) || `Team ${awayTeamId}`,
-                homeTeamESPNID: homeTeamId,
-                awayTeamESPNID: awayTeamId,
-                homeTeamFinalScore: 0,
-                awayTeamFinalScore: 0,
-                completed: false,
-                week: week,
-                gameType: "NONE",
-              });
-            }
-          }
-        }
-      }
-
-      // Convert map to ordered array by week
-      const sortedWeeks = Array.from(weekMap.keys()).sort((a, b) => a - b);
-      sortedWeeks.forEach((week) => {
-        const weekGames = weekMap.get(week) || [];
-        schedule.push(weekGames);
-      });
-
-      return schedule;
+      return buildSimulationSchedule(response.data.matchups, year);
     } catch (error) {
       console.error("Error fetching schedule data for year:", error);
       throw error;

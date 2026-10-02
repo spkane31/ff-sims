@@ -51,22 +51,27 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
         )
 
         with conn.cursor() as cur:
-            for week in range(1, 18):
-                if week > league.current_week and datetime.now().year == league.year:
-                    break
+            last_week = 17
+            if datetime.now().year == league.year:
+                # Future playoff opponents are not yet determined, but ESPN
+                # already publishes the entire regular-season schedule.
+                last_week = max(league.current_week, league.settings.reg_season_count)
 
+            for week in range(1, last_week + 1):
                 activity.heartbeat(f"week {week}")
                 logger.info(
                     "Processing schedule week %d/%d for league %s year %d",
                     week,
-                    min(17, league.current_week),
+                    last_week,
                     params.espn_league_id,
                     params.year,
                 )
-                # box_scores() raises outright before 2019; scoreboard() covers every year but lacks projections/lineups.
+                # box_scores() clamps future weeks to the current week. Use
+                # scoreboard() for actual future opponents, also for pre-2019
+                # seasons where box_scores() is unsupported.
                 entries = (
                     league.scoreboard(week=week)
-                    if league.year < 2019
+                    if league.year < 2019 or week > league.current_week
                     else league.box_scores(week=week)
                 )
 

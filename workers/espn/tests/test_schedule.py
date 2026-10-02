@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock, call, patch
 
 import psycopg
 import pytest
@@ -63,8 +64,10 @@ def test_fetch_and_upsert_schedule_creates_matchup(db_conn):
     _seed_credentials(db_conn, "8001")
 
     mock_league = MagicMock()
-    mock_league.year = 2026  # matches current year so break condition fires at week > current_week
+    mock_league.year = 2026
     mock_league.current_week = 1
+    mock_league.settings.reg_season_count = 14
+    mock_league.scoreboard.return_value = []
     mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
 
     params = ESPNLeagueSyncParams(espn_league_id="8001", year=2026, espn_s2="s2", swid="swid")
@@ -91,6 +94,8 @@ def test_fetch_and_upsert_schedule_is_idempotent(db_conn):
     mock_league = MagicMock()
     mock_league.year = 2026
     mock_league.current_week = 1
+    mock_league.settings.reg_season_count = 14
+    mock_league.scoreboard.return_value = []
     mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
 
     params = ESPNLeagueSyncParams(espn_league_id="8002", year=2026, espn_s2="s2", swid="swid")
@@ -112,3 +117,61 @@ def test_mark_schedule_fetched_sets_timestamp(db_conn):
             "SELECT last_schedule_fetched_at FROM espn_league_credentials WHERE espn_league_id = '8003'"
         )
         assert cur.fetchone()[0] is not None
+
+
+@pytest.mark.parametrize("regular_season_weeks", [12, 14, 16])
+def test_schedule_sync_imports_real_future_opponents(regular_season_weeks):
+    mock_league = MagicMock()
+    mock_league.year = 2026
+    mock_league.current_week = 4
+    mock_league.settings.reg_season_count = regular_season_weeks
+    mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
+
+    def future_scoreboard(week):
+        # Real opponents change by week; scoreboard entries have no lineups.
+        bs = _mock_box_score(1, 3 if week % 2 else 4, 0, 0)
+        bs.matchup_type = "NONE"
+        del bs.home_lineup
+        del bs.away_lineup
+        return [bs]
+
+    mock_league.scoreboard.side_effect = future_scoreboard
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [(1, 101), (2, 102), (3, 103), (4, 104)]
+    cur.fetchone.side_effect = lambda: (
+        (123,) if cur.execute.call_args.args[0].startswith("INSERT") else None
+    )
+    params = ESPNLeagueSyncParams(
+        espn_league_id="8004", year=2026, espn_s2="s2", swid="swid"
+    )
+
+    with (
+        patch("activities.schedule.League", return_value=mock_league),
+        patch("activities.schedule.get_connection") as get_connection,
+        patch("activities.schedule.resolve_league_id", return_value=1),
+        patch("activities.schedule.activity.heartbeat"),
+        patch("activities.schedule.datetime") as clock,
+    ):
+        get_connection.return_value.__enter__.return_value = conn
+        clock.now.return_value = datetime(2026, 10, 1)
+        fetch_and_upsert_schedule(params)
+
+    assert mock_league.box_scores.call_args_list == [call(week=w) for w in range(1, 5)]
+    assert mock_league.scoreboard.call_args_list == [
+        call(week=w) for w in range(5, regular_season_weeks + 1)
+    ]
+    inserted = [
+        c.args[1]
+        for c in cur.execute.call_args_list
+        if c.args[0].startswith("INSERT INTO matchups")
+    ]
+    future = [row for row in inserted if row[1] > 4]
+    assert len(future) == regular_season_weeks - 4
+    assert [(row[1], row[4]) for row in future] == [
+        (week, 103 if week % 2 else 104) for week in range(5, regular_season_weeks + 1)
+    ]
+    assert all(
+        row[5:7] == (0, 0) and row[9] is False and row[11] == "NONE"
+        for row in future
+    )
