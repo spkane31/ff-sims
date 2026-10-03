@@ -50,6 +50,11 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
             "Team map loaded: %d teams for league_id=%d", len(team_map), league_id
         )
 
+        # ESPN leaves a matchup's winner UNDECIDED until its scoring period is
+        # final, so it is the only signal that separates live scores from final
+        # ones — totals are published all week long.
+        outcomes = {team.team_id: team.outcomes for team in league.teams}
+
         with conn.cursor() as cur:
             last_week = 17
             if datetime.now().year == league.year:
@@ -102,11 +107,11 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
                     away_score = getattr(bs, "away_score", 0)
                     home_proj = getattr(bs, "home_projected", -1)
                     away_proj = getattr(bs, "away_projected", -1)
-                    completed = (
-                        league.current_week >= week
-                        and home_score > 0
-                        and away_score > 0
+                    team_outcomes = outcomes.get(bs.home_team.team_id) or []
+                    decided = (
+                        week <= len(team_outcomes) and team_outcomes[week - 1] != "U"
                     )
+                    completed = decided and home_score > 0 and away_score > 0
 
                     cur.execute(
                         "SELECT id FROM matchups WHERE league_id = %s AND week = %s AND year = %s "

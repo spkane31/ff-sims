@@ -175,3 +175,51 @@ def test_schedule_sync_imports_real_future_opponents(regular_season_weeks):
         row[5:7] == (0, 0) and row[9] is False and row[11] == "NONE"
         for row in future
     )
+
+
+def test_in_progress_week_is_not_completed():
+    # ESPN publishes live scores all week and leaves the winner UNDECIDED until
+    # the scoring period is final, so mid-week scores must not count as final.
+    mock_league = MagicMock()
+    mock_league.year = 2026
+    mock_league.current_week = 4
+    mock_league.settings.reg_season_count = 14
+    mock_league.teams = [
+        MagicMock(team_id=1, outcomes=["W", "L", "W", "U"]),
+        MagicMock(team_id=2, outcomes=["L", "W", "L", "U"]),
+    ]
+    mock_league.box_scores.side_effect = lambda week: [
+        _mock_box_score(1, 2, 11.94, 21.0)
+        if week == 4
+        else _mock_box_score(1, 2, 110.0, 95.0)
+    ]
+    mock_league.scoreboard.side_effect = lambda week: []
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [(1, 101), (2, 102)]
+    cur.fetchone.side_effect = lambda: (
+        (123,) if cur.execute.call_args.args[0].startswith("INSERT") else None
+    )
+    params = ESPNLeagueSyncParams(
+        espn_league_id="8005", year=2026, espn_s2="s2", swid="swid"
+    )
+
+    with (
+        patch("activities.schedule.League", return_value=mock_league),
+        patch("activities.schedule.get_connection") as get_connection,
+        patch("activities.schedule.resolve_league_id", return_value=1),
+        patch("activities.schedule.activity.heartbeat"),
+        patch("activities.schedule.datetime") as clock,
+    ):
+        get_connection.return_value.__enter__.return_value = conn
+        clock.now.return_value = datetime(2026, 10, 3)
+        fetch_and_upsert_schedule(params)
+
+    completed_by_week = {
+        c.args[1][1]: c.args[1][9]
+        for c in cur.execute.call_args_list
+        if c.args[0].startswith("INSERT INTO matchups")
+    }
+    assert completed_by_week[4] is False
+    assert [completed_by_week[week] for week in (1, 2, 3)] == [True, True, True]
+

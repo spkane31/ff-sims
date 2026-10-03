@@ -88,7 +88,7 @@ export default function Teams() {
 
     // Process all completed matchups (including playoffs)
     schedule.data.matchups.forEach((matchup) => {
-      if (matchup.homeScore > 0 || matchup.awayScore > 0) {
+      if (matchup.completed) {
         const homeId = matchup.homeTeamESPNID.toString();
         const awayId = matchup.awayTeamESPNID.toString();
 
@@ -153,7 +153,7 @@ export default function Teams() {
     }
 
     const completedMatchups = schedule.data.matchups.filter(
-      (matchup) => matchup.homeScore > 0 && matchup.awayScore > 0
+      (matchup) => matchup.completed
     );
     let highestScore = { score: 0, teamName: "", week: 0 };
     let closestMatchup = {

@@ -54,7 +54,7 @@ export default function Schedule() {
           awayScore: game.awayScore,
           homeProjectedScore: game.homeProjectedScore,
           awayProjectedScore: game.awayProjectedScore,
-          completed: game.homeScore > 0 || game.awayScore > 0,
+          completed: game.completed,
           homeTeam: game.homeTeam,
           awayTeam: game.awayTeam,
           gameType: game.gameType,
