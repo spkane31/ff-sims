@@ -1,43 +1,16 @@
 import { useState, useEffect } from "react";
 import { Simulator } from "../utils/simulator";
-import { Schedule, Matchup, TeamScoringData } from "../types/simulation";
+import { Schedule, Matchup, TeamScoringData, BigGame } from "../types/simulation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface PivotalGame {
-  week: number;
-  homeTeamId: number;
-  awayTeamId: number;
-  homeTeamName: string;
-  awayTeamName: string;
-  totalSwing: number;
-  homeTeamWinScenario: {
-    homePlayoffOdds: number;
-    awayPlayoffOdds: number;
-    homeLastPlaceOdds: number;
-    awayLastPlaceOdds: number;
-  };
-  awayTeamWinScenario: {
-    homePlayoffOdds: number;
-    awayPlayoffOdds: number;
-    homeLastPlaceOdds: number;
-    awayLastPlaceOdds: number;
-  };
-  defaultOdds: {
-    homePlayoffOdds: number;
-    awayPlayoffOdds: number;
-    homeLastPlaceOdds: number;
-    awayLastPlaceOdds: number;
-  };
-}
 
 interface InteractiveSimulationProps {
   schedule: Schedule;
   startWeek: number;
   iterations?: number;
   autoRun?: boolean;
-  onPivotalGamesCalculated?: (games: PivotalGame[]) => void;
+  onPivotalGamesCalculated?: (games: BigGame[]) => void;
 }
 
 type MatchupState = "win" | "loss" | "none";

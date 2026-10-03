@@ -92,3 +92,35 @@ export interface SimulationIteration {
   matchupOutcomes: MatchupOutcome[];
   teamResults: Map<number, SingleTeamResult>;
 }
+
+// One team's playoff/last-place odds under each outcome of a single game, plus
+// how far those outcomes move it away from its baseline odds.
+export interface BigGameTeamOdds {
+  teamId: number;
+  teamName: string;
+  baselinePlayoffOdds: number;
+  baselineLastPlaceOdds: number;
+  homeWinPlayoffOdds: number;
+  homeWinLastPlaceOdds: number;
+  awayWinPlayoffOdds: number;
+  awayWinLastPlaceOdds: number;
+  /**
+   * |homeWin − baseline| + |awayWin − baseline| across both playoff and
+   * last-place odds. Because baseline is the convex combination of the two
+   * outcomes, this also equals |homeWin − awayWin| summed over both metrics.
+   */
+  swing: number;
+}
+
+// An upcoming game ranked by how much its outcome reshuffles the league.
+export interface BigGame {
+  week: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  /** Every team's swing added together, so it can exceed 1. */
+  totalSwing: number;
+  /** All teams, ordered by their own swing descending. */
+  teams: BigGameTeamOdds[];
+}

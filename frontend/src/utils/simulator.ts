@@ -7,7 +7,35 @@ import {
   TeamScoringData,
   SimulationIteration,
   MatchupOutcome,
+  BigGame,
+  BigGameTeamOdds,
 } from "../types/simulation";
+
+/**
+ * Fewer matching iterations than this on either side of a game and its odds
+ * are noise, so the game is left out of the importance ranking.
+ */
+const MIN_SCENARIO_ITERATIONS = 10;
+
+interface CandidateMatchup {
+  /** "week-homeTeamId-awayTeamId", matching the selection keys. */
+  key: string;
+  week: number;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeTeamName: string;
+  awayTeamName: string;
+}
+
+/** Per-team finish counts for one game, split by which side won. */
+interface OutcomeTally {
+  homeWins: number;
+  awayWins: number;
+  homePlayoff: number[];
+  homeLast: number[];
+  awayPlayoff: number[];
+  awayLast: number[];
+}
 
 class SingleSeasonResults {
   results: Map<number, SingleTeamResult>;
@@ -604,213 +632,236 @@ export class Simulator {
     return this.teamStats.get(teamID);
   }
 
-  // Get the N most important upcoming matchups based on playoff/last place odds swing
+  /**
+   * The upcoming games whose outcome moves the league's playoff and last-place
+   * odds the most, biggest first.
+   *
+   * A game's score is every team's `swing` added up, so a game matters when it
+   * reshuffles the whole league and not only the two teams playing it. Games
+   * scoring below `minSwing` are dropped, as are games whose outcome is so
+   * lopsided that one side has too few iterations to measure.
+   */
   getMostImportantMatchups(
-    n: number = 3
-  ): Array<{
-    week: number;
-    homeTeamId: number;
-    awayTeamId: number;
-    homeTeamName: string;
-    awayTeamName: string;
-    totalSwing: number;
-    homeTeamWinScenario: {
-      homePlayoffOdds: number;
-      awayPlayoffOdds: number;
-      homeLastPlaceOdds: number;
-      awayLastPlaceOdds: number;
-    };
-    awayTeamWinScenario: {
-      homePlayoffOdds: number;
-      awayPlayoffOdds: number;
-      homeLastPlaceOdds: number;
-      awayLastPlaceOdds: number;
-    };
-    defaultOdds: {
-      homePlayoffOdds: number;
-      awayPlayoffOdds: number;
-      homeLastPlaceOdds: number;
-      awayLastPlaceOdds: number;
-    };
-  }> {
+    n: number = 5,
+    weekWindow: number = 4,
+    minSwing: number = 0.02
+  ): BigGame[] {
     if (this.iterations.length === 0) {
       return [];
     }
 
-    // Get all unique upcoming matchups (from startWeek onwards)
-    const upcomingMatchups = new Map<
-      string,
-      {
-        week: number;
-        homeTeamId: number;
-        awayTeamId: number;
-        homeTeamName: string;
-        awayTeamName: string;
+    const endWeek = this.startWeek + weekWindow - 1;
+    const candidates = this.candidateMatchups(endWeek);
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    // Flat slots so the per-iteration tallies are array indexing rather than
+    // repeated Map lookups.
+    const teamIds = Array.from(this.teamStats.keys()).filter((teamId) =>
+      this.idToOwner.has(teamId)
+    );
+    const teamSlots = new Map<number, number>();
+    teamIds.forEach((teamId, slot) => teamSlots.set(teamId, slot));
+
+    const tallies = this.tallyOutcomes(
+      candidates,
+      endWeek,
+      teamIds.length,
+      teamSlots
+    );
+
+    const baseline = new Map<number, TeamScoringData>();
+    this.getTeamScoringData().forEach((team) => baseline.set(team.id, team));
+
+    const games: BigGame[] = [];
+
+    candidates.forEach((candidate, index) => {
+      const tally = tallies[index];
+
+      // Too few iterations on one side to read odds off of.
+      if (
+        tally.homeWins < MIN_SCENARIO_ITERATIONS ||
+        tally.awayWins < MIN_SCENARIO_ITERATIONS
+      ) {
+        return;
       }
-    >();
+
+      const teams: BigGameTeamOdds[] = [];
+      let totalSwing = 0;
+
+      for (let slot = 0; slot < teamIds.length; slot++) {
+        const teamId = teamIds[slot];
+        const base = baseline.get(teamId);
+        const teamName = this.idToOwner.get(teamId);
+        if (!base || !teamName) {
+          continue;
+        }
+
+        const homeWinPlayoffOdds = tally.homePlayoff[slot] / tally.homeWins;
+        const homeWinLastPlaceOdds = tally.homeLast[slot] / tally.homeWins;
+        const awayWinPlayoffOdds = tally.awayPlayoff[slot] / tally.awayWins;
+        const awayWinLastPlaceOdds = tally.awayLast[slot] / tally.awayWins;
+
+        const swing =
+          Math.abs(homeWinPlayoffOdds - base.playoffOdds) +
+          Math.abs(awayWinPlayoffOdds - base.playoffOdds) +
+          Math.abs(homeWinLastPlaceOdds - base.lastPlaceOdds) +
+          Math.abs(awayWinLastPlaceOdds - base.lastPlaceOdds);
+
+        totalSwing += swing;
+        teams.push({
+          teamId,
+          teamName,
+          baselinePlayoffOdds: base.playoffOdds,
+          baselineLastPlaceOdds: base.lastPlaceOdds,
+          homeWinPlayoffOdds,
+          homeWinLastPlaceOdds,
+          awayWinPlayoffOdds,
+          awayWinLastPlaceOdds,
+          swing,
+        });
+      }
+
+      if (totalSwing < minSwing) {
+        return;
+      }
+
+      teams.sort((a, b) => b.swing - a.swing);
+      games.push({
+        week: candidate.week,
+        homeTeamId: candidate.homeTeamId,
+        awayTeamId: candidate.awayTeamId,
+        homeTeamName: candidate.homeTeamName,
+        awayTeamName: candidate.awayTeamName,
+        totalSwing,
+        teams,
+      });
+    });
+
+    return games.sort((a, b) => b.totalSwing - a.totalSwing).slice(0, n);
+  }
+
+  /**
+   * Simulated games from startWeek through endWeek, keyed the same way as the
+   * "choose your own results" selection keys. Playoff games are excluded: their
+   * bracket is derived, not scheduled.
+   */
+  private candidateMatchups(endWeek: number): CandidateMatchup[] {
+    const candidates: CandidateMatchup[] = [];
+    const seen = new Set<string>();
 
     this.schedule.forEach((week, weekIndex) => {
       const currentWeek = weekIndex + 1;
+      if (currentWeek < this.startWeek || currentWeek > endWeek) {
+        return;
+      }
 
-      if (currentWeek >= this.startWeek) {
-        week.forEach((matchup) => {
-          if (matchup.gameType !== "NONE") {
-            return;
-          }
+      week.forEach((matchup) => {
+        if (matchup.gameType !== "NONE") {
+          return;
+        }
 
-          const matchupKey = `${currentWeek}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
-          upcomingMatchups.set(matchupKey, {
-            week: currentWeek,
-            homeTeamId: matchup.homeTeamESPNID,
-            awayTeamId: matchup.awayTeamESPNID,
-            homeTeamName: matchup.homeTeamName,
-            awayTeamName: matchup.awayTeamName,
-          });
+        const key = `${currentWeek}-${matchup.homeTeamESPNID}-${matchup.awayTeamESPNID}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        candidates.push({
+          key,
+          week: currentWeek,
+          homeTeamId: matchup.homeTeamESPNID,
+          awayTeamId: matchup.awayTeamESPNID,
+          homeTeamName: matchup.homeTeamName,
+          awayTeamName: matchup.awayTeamName,
         });
-      }
-    });
-
-    // Calculate default odds (no filtering)
-    const defaultData = this.getTeamScoringData();
-    const defaultOddsMap = new Map<
-      number,
-      { playoffOdds: number; lastPlaceOdds: number }
-    >();
-    defaultData.forEach((team) => {
-      defaultOddsMap.set(team.id, {
-        playoffOdds: team.playoffOdds,
-        lastPlaceOdds: team.lastPlaceOdds,
       });
     });
 
-    // Analyze each matchup
-    const matchupImportance: Array<{
-      week: number;
-      homeTeamId: number;
-      awayTeamId: number;
-      homeTeamName: string;
-      awayTeamName: string;
-      totalSwing: number;
-      homeTeamWinScenario: {
-        homePlayoffOdds: number;
-        awayPlayoffOdds: number;
-        homeLastPlaceOdds: number;
-        awayLastPlaceOdds: number;
-      };
-      awayTeamWinScenario: {
-        homePlayoffOdds: number;
-        awayPlayoffOdds: number;
-        homeLastPlaceOdds: number;
-        awayLastPlaceOdds: number;
-      };
-      defaultOdds: {
-        homePlayoffOdds: number;
-        awayPlayoffOdds: number;
-        homeLastPlaceOdds: number;
-        awayLastPlaceOdds: number;
-      };
-    }> = [];
+    return candidates;
+  }
 
-    upcomingMatchups.forEach((matchup, matchupKey) => {
-      // Scenario 1: Home team wins
-      const homeWinFilter = new Map<string, number>();
-      homeWinFilter.set(matchupKey, matchup.homeTeamId);
-      const homeWinData = this.getFilteredTeamScoringData(homeWinFilter);
+  /**
+   * Walks the stored iterations once, splitting each candidate game's
+   * iterations by winner and counting how often every team made the playoffs or
+   * finished last within each half.
+   */
+  private tallyOutcomes(
+    candidates: CandidateMatchup[],
+    endWeek: number,
+    teamCount: number,
+    teamSlots: Map<number, number>
+  ): OutcomeTally[] {
+    const slotByKey = new Map<string, number>();
+    candidates.forEach((candidate, index) =>
+      slotByKey.set(candidate.key, index)
+    );
 
-      // Scenario 2: Away team wins
-      const awayWinFilter = new Map<string, number>();
-      awayWinFilter.set(matchupKey, matchup.awayTeamId);
-      const awayWinData = this.getFilteredTeamScoringData(awayWinFilter);
+    const tallies: OutcomeTally[] = candidates.map(() => ({
+      homeWins: 0,
+      awayWins: 0,
+      homePlayoff: new Array<number>(teamCount).fill(0),
+      homeLast: new Array<number>(teamCount).fill(0),
+      awayPlayoff: new Array<number>(teamCount).fill(0),
+      awayLast: new Array<number>(teamCount).fill(0),
+    }));
 
-      // Skip if either scenario has too few matching iterations
-      if (
-        homeWinData.matchingCount < 10 ||
-        awayWinData.matchingCount < 10
-      ) {
-        return;
-      }
+    // 0 means "this iteration recorded no outcome for that game"; ESPN team IDs
+    // are always positive.
+    const winners = new Array<number>(candidates.length).fill(0);
+    const madePlayoffs = new Array<number>(teamCount).fill(0);
+    const lastPlace = new Array<number>(teamCount).fill(0);
 
-      // Find team data in both scenarios
-      const homeTeamHomeWin = homeWinData.data.find(
-        (t) => t.id === matchup.homeTeamId
-      );
-      const awayTeamHomeWin = homeWinData.data.find(
-        (t) => t.id === matchup.awayTeamId
-      );
-      const homeTeamAwayWin = awayWinData.data.find(
-        (t) => t.id === matchup.homeTeamId
-      );
-      const awayTeamAwayWin = awayWinData.data.find(
-        (t) => t.id === matchup.awayTeamId
-      );
-
-      if (
-        !homeTeamHomeWin ||
-        !awayTeamHomeWin ||
-        !homeTeamAwayWin ||
-        !awayTeamAwayWin
-      ) {
-        return;
-      }
-
-      // Get default odds
-      const homeDefaultOdds = defaultOddsMap.get(matchup.homeTeamId);
-      const awayDefaultOdds = defaultOddsMap.get(matchup.awayTeamId);
-
-      if (!homeDefaultOdds || !awayDefaultOdds) {
-        return;
-      }
-
-      // Calculate total swing (sum of absolute changes for both teams, both metrics)
-      const homePlayoffSwing =
-        Math.abs(homeTeamHomeWin.playoffOdds - homeTeamAwayWin.playoffOdds);
-      const awayPlayoffSwing =
-        Math.abs(awayTeamHomeWin.playoffOdds - awayTeamAwayWin.playoffOdds);
-      const homeLastPlaceSwing =
-        Math.abs(
-          homeTeamHomeWin.lastPlaceOdds - homeTeamAwayWin.lastPlaceOdds
+    for (const iteration of this.iterations) {
+      winners.fill(0);
+      for (const outcome of iteration.matchupOutcomes) {
+        if (outcome.week < this.startWeek || outcome.week > endWeek) {
+          continue;
+        }
+        const slot = slotByKey.get(
+          `${outcome.week}-${outcome.homeTeamId}-${outcome.awayTeamId}`
         );
-      const awayLastPlaceSwing =
-        Math.abs(
-          awayTeamHomeWin.lastPlaceOdds - awayTeamAwayWin.lastPlaceOdds
-        );
+        if (slot !== undefined) {
+          winners[slot] = outcome.winnerId;
+        }
+      }
 
-      const totalSwing =
-        homePlayoffSwing +
-        awayPlayoffSwing +
-        homeLastPlaceSwing +
-        awayLastPlaceSwing;
-
-      matchupImportance.push({
-        week: matchup.week,
-        homeTeamId: matchup.homeTeamId,
-        awayTeamId: matchup.awayTeamId,
-        homeTeamName: matchup.homeTeamName,
-        awayTeamName: matchup.awayTeamName,
-        totalSwing,
-        homeTeamWinScenario: {
-          homePlayoffOdds: homeTeamHomeWin.playoffOdds,
-          awayPlayoffOdds: awayTeamHomeWin.playoffOdds,
-          homeLastPlaceOdds: homeTeamHomeWin.lastPlaceOdds,
-          awayLastPlaceOdds: awayTeamHomeWin.lastPlaceOdds,
-        },
-        awayTeamWinScenario: {
-          homePlayoffOdds: homeTeamAwayWin.playoffOdds,
-          awayPlayoffOdds: awayTeamAwayWin.playoffOdds,
-          homeLastPlaceOdds: homeTeamAwayWin.lastPlaceOdds,
-          awayLastPlaceOdds: awayTeamAwayWin.lastPlaceOdds,
-        },
-        defaultOdds: {
-          homePlayoffOdds: homeDefaultOdds.playoffOdds,
-          awayPlayoffOdds: awayDefaultOdds.playoffOdds,
-          homeLastPlaceOdds: homeDefaultOdds.lastPlaceOdds,
-          awayLastPlaceOdds: awayDefaultOdds.lastPlaceOdds,
-        },
+      // Flatten this iteration's finish flags once instead of per candidate.
+      madePlayoffs.fill(0);
+      lastPlace.fill(0);
+      iteration.teamResults.forEach((result, teamId) => {
+        const slot = teamSlots.get(teamId);
+        if (slot === undefined) {
+          return;
+        }
+        madePlayoffs[slot] = result.madePlayoffs ? 1 : 0;
+        lastPlace[slot] = result.lastPlace ? 1 : 0;
       });
-    });
 
-    // Sort by total swing (descending) and return top N
-    return matchupImportance.sort((a, b) => b.totalSwing - a.totalSwing).slice(0, n);
+      for (let index = 0; index < candidates.length; index++) {
+        const winnerId = winners[index];
+        if (winnerId === 0) {
+          continue;
+        }
+
+        const tally = tallies[index];
+        const homeWon = winnerId === candidates[index].homeTeamId;
+        if (homeWon) {
+          tally.homeWins++;
+        } else {
+          tally.awayWins++;
+        }
+
+        const playoff = homeWon ? tally.homePlayoff : tally.awayPlayoff;
+        const last = homeWon ? tally.homeLast : tally.awayLast;
+        for (let slot = 0; slot < teamCount; slot++) {
+          playoff[slot] += madePlayoffs[slot];
+          last[slot] += lastPlace[slot];
+        }
+      }
+    }
+
+    return tallies;
   }
 
   // Filter simulations based on selected matchup outcomes

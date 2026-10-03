@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { buildSimulationSchedule } from "@/utils/simulation-schedule";
 import { Simulator } from "@/utils/simulator";
-import { TeamScoringData, Schedule, Matchup } from "@/types/simulation";
+import { TeamScoringData, Schedule, Matchup, BigGame } from "@/types/simulation";
 import { scheduleService } from "@/services/scheduleService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import BigGames from "@/components/BigGames";
 import ErrorState from "@/components/design-system/ErrorState";
 import DataTable, {
   type DataTableColumn,
@@ -22,6 +23,9 @@ import DataTable, {
 import { FOCUS_RING } from "@/components/design-system/focus-ring";
 
 type MatchupState = "win" | "loss" | "none";
+
+// Weeks ahead the "Big Games" section ranks over.
+const BIG_GAMES_WEEK_WINDOW = 4;
 
 // Static class strings (not template-built) so Tailwind's content scanner can
 // find these arbitrary-value utilities even though the state key is picked at
@@ -151,6 +155,12 @@ export default function Simulations() {
     new Map()
   ); // key: "week-homeTeamId-awayTeamId", value: winning team ID
   const [filteredResults, setFilteredResults] = useState<TeamScoringData[]>([]);
+  // Ranked off the real schedule, so "Choose Your Own Results" picks do not
+  // re-rank them.
+  const [bigGames, setBigGames] = useState<BigGame[]>([]);
+  const [bigGamesWindow, setBigGamesWindow] = useState(
+    BIG_GAMES_WEEK_WINDOW
+  );
   const [matchingSimCount, setMatchingSimCount] = useState<number>(iterations);
 
   // New useEffect to load schedule and determine available weeks/years
@@ -360,6 +370,22 @@ export default function Simulations() {
     return teamMatchups;
   };
 
+  /**
+   * Regular-season weeks left from startWeek, capped at the window, so the
+   * Big Games heading does not promise four weeks in week 13.
+   */
+  const countBigGamesWeeks = (
+    schedule: Schedule,
+    startWeek: number
+  ): number => {
+    const weeksLeft = schedule.filter(
+      (week, index) =>
+        index + 1 >= startWeek &&
+        week.some((matchup) => matchup.gameType === "NONE")
+    ).length;
+    return Math.min(BIG_GAMES_WEEK_WINDOW, Math.max(weeksLeft, 1));
+  };
+
   const handleSimulation = async () => {
     if (selectedYear === null) {
       setError("Please select a year first");
@@ -389,6 +415,8 @@ export default function Simulations() {
       setSimulator(sim); // Store the simulator instance
       setFilteredResults(sim.getTeamScoringData()); // Initialize with all results
       setMatchingSimCount(iterations); // Initialize with total iterations
+      setBigGames(sim.getMostImportantMatchups(5, BIG_GAMES_WEEK_WINDOW));
+      setBigGamesWindow(countBigGamesWeeks(schedule, startWeekNum));
       setResults(
         `Simulation completed for ${selectedYear} season with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
           6
@@ -791,6 +819,8 @@ export default function Simulations() {
             >
               {results}
             </p>
+
+            <BigGames games={bigGames} weekWindow={bigGamesWindow} />
 
             {/* Interactive "Choose Your Own Results" Section */}
             {remainingMatchups.size > 0 &&
