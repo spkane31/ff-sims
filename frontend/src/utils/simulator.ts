@@ -9,6 +9,7 @@ import {
   MatchupOutcome,
   BigGame,
   BigGameTeamOdds,
+  WeeklyLeverage,
 } from "../types/simulation";
 
 /**
@@ -630,6 +631,84 @@ export class Simulator {
 
   getTeamStats(teamID: number): TeamStats | undefined {
     return this.teamStats.get(teamID);
+  }
+
+  /**
+   * Range of conditional odds across complete combinations of startWeek's
+   * regular-season winners. Later weeks remain unconstrained. Unobserved
+   * combinations have no estimate; sample counts expose that uncertainty.
+   */
+  getWeeklyLeverage(): WeeklyLeverage | null {
+    const candidates = this.candidateMatchups(this.startWeek);
+    if (this.iterations.length === 0 || candidates.length === 0) return null;
+
+    const baseline = this.getTeamScoringData();
+    const slots = new Map(candidates.map((candidate, index) => [candidate.key, index]));
+    const scenarios = new Map<string, {
+      count: number;
+      playoff: number[];
+      lastPlace: number[];
+    }>();
+
+    for (const iteration of this.iterations) {
+      const winners: (number | undefined)[] = new Array(candidates.length).fill(undefined);
+      for (const outcome of iteration.matchupOutcomes) {
+        if (outcome.week !== this.startWeek) continue;
+        const slot = slots.get(`${outcome.week}-${outcome.homeTeamId}-${outcome.awayTeamId}`);
+        if (slot !== undefined &&
+            (outcome.winnerId === candidates[slot].homeTeamId ||
+             outcome.winnerId === candidates[slot].awayTeamId)) {
+          winners[slot] = outcome.winnerId;
+        }
+      }
+      if (winners.some((winner) => winner === undefined)) continue;
+
+      const key = winners.join(",");
+      let scenario = scenarios.get(key);
+      if (!scenario) {
+        scenario = {
+          count: 0,
+          playoff: new Array<number>(baseline.length).fill(0),
+          lastPlace: new Array<number>(baseline.length).fill(0),
+        };
+        scenarios.set(key, scenario);
+      }
+      scenario.count++;
+      baseline.forEach((team, index) => {
+        const result = iteration.teamResults.get(team.id);
+        scenario.playoff[index] += result?.madePlayoffs ? 1 : 0;
+        scenario.lastPlace[index] += result?.lastPlace ? 1 : 0;
+      });
+    }
+
+    if (scenarios.size === 0) return null;
+
+    const teams = baseline.map((team) => ({
+      teamId: team.id,
+      teamName: team.teamName,
+      playoff: { baseline: team.playoffOdds, min: 1, max: 0 },
+      lastPlace: { baseline: team.lastPlaceOdds, min: 1, max: 0 },
+    }));
+    let smallestScenarioCount = Infinity;
+    for (const scenario of scenarios.values()) {
+      smallestScenarioCount = Math.min(smallestScenarioCount, scenario.count);
+      teams.forEach((team, index) => {
+        const playoff = scenario.playoff[index] / scenario.count;
+        const lastPlace = scenario.lastPlace[index] / scenario.count;
+        team.playoff.min = Math.min(team.playoff.min, playoff);
+        team.playoff.max = Math.max(team.playoff.max, playoff);
+        team.lastPlace.min = Math.min(team.lastPlace.min, lastPlace);
+        team.lastPlace.max = Math.max(team.lastPlace.max, lastPlace);
+      });
+    }
+
+    return {
+      week: this.startWeek,
+      scenarioCount: scenarios.size,
+      possibleScenarioCount: 2 ** candidates.length,
+      smallestScenarioCount,
+      teams,
+    };
   }
 
   /**

@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { buildSimulationSchedule } from "@/utils/simulation-schedule";
 import { Simulator } from "@/utils/simulator";
-import { TeamScoringData, Schedule, Matchup, BigGame } from "@/types/simulation";
+import { TeamScoringData, Schedule, Matchup, BigGame, WeeklyLeverage } from "@/types/simulation";
 import { scheduleService } from "@/services/scheduleService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import BigGames from "@/components/BigGames";
+import WeeklyLeverageCharts from "@/components/WeeklyLeverageCharts";
 import ErrorState from "@/components/design-system/ErrorState";
 import DataTable, {
   type DataTableColumn,
@@ -158,6 +159,7 @@ export default function Simulations() {
   // Ranked off the real schedule, so "Choose Your Own Results" picks do not
   // re-rank them.
   const [bigGames, setBigGames] = useState<BigGame[]>([]);
+  const [weeklyLeverage, setWeeklyLeverage] = useState<WeeklyLeverage | null>(null);
   const [bigGamesWindow, setBigGamesWindow] = useState(
     BIG_GAMES_WEEK_WINDOW
   );
@@ -416,6 +418,7 @@ export default function Simulations() {
       setFilteredResults(sim.getTeamScoringData()); // Initialize with all results
       setMatchingSimCount(iterations); // Initialize with total iterations
       setBigGames(sim.getMostImportantMatchups(5, BIG_GAMES_WEEK_WINDOW));
+      setWeeklyLeverage(sim.getWeeklyLeverage());
       setBigGamesWindow(countBigGamesWeeks(schedule, startWeekNum));
       setResults(
         `Simulation completed for ${selectedYear} season with ${iterations.toLocaleString()} iterations starting from week ${startWeekNum} (ε = ${sim.epsilon.toFixed(
@@ -819,6 +822,8 @@ export default function Simulations() {
             >
               {results}
             </p>
+
+            <WeeklyLeverageCharts leverage={weeklyLeverage} />
 
             <BigGames games={bigGames} weekWindow={bigGamesWindow} />
 

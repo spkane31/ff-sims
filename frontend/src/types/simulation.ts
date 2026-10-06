@@ -93,6 +93,28 @@ export interface SimulationIteration {
   teamResults: Map<number, SingleTeamResult>;
 }
 
+/** Probabilities (0–1) across sampled combinations of one week's winners. */
+export interface WeeklyOddsRange {
+  baseline: number;
+  min: number;
+  max: number;
+}
+
+export interface WeeklyTeamLeverage {
+  teamId: number;
+  teamName: string;
+  playoff: WeeklyOddsRange;
+  lastPlace: WeeklyOddsRange;
+}
+
+export interface WeeklyLeverage {
+  week: number;
+  scenarioCount: number;
+  possibleScenarioCount: number;
+  smallestScenarioCount: number;
+  teams: WeeklyTeamLeverage[];
+}
+
 // One team's playoff/last-place odds under each outcome of a single game, plus
 // how far those outcomes move it away from its baseline odds.
 export interface BigGameTeamOdds {
