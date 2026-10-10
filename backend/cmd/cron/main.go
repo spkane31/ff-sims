@@ -2,10 +2,10 @@
 // max-duration, runs the matching job under a deadline context, and exits.
 // It's the replacement entrypoint for pipelines migrated off Temporal — see
 // docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md.
-// Registers "discovery", "lifetime-counts", and "transactions"; adding
-// another (draft-sync, etc., when its turn comes) is a matter of registering
-// another function in the registry built in main(), not restructuring this
-// file.
+// "discovery", "lifetime-counts", and "transactions" are retired and exit
+// before connecting to either database. Their implementations are retained
+// for now; they must not be re-enabled while the Sleeper tables are retired.
+// New jobs can be added to the registry in main().
 package main
 
 import (
@@ -113,6 +113,15 @@ func main() {
 	}
 	if *maxDuration <= 0 {
 		log.Fatal("missing required -max-duration flag (e.g. -max-duration=50m)")
+	}
+
+	// Keep old timers and manual invocations harmless, including hosts where
+	// the retired systemd units have not yet been disabled. This must precede
+	// database initialization, not just guard the individual job functions.
+	switch *jobName {
+	case "discovery", "transactions", "lifetime-counts":
+		log.Printf("job %s is retired — Sleeper league and transaction writes are disabled (build_id=%s)", *jobName, buildID)
+		return
 	}
 
 	cfg, err := config.Load()

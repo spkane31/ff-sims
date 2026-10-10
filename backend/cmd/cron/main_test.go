@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"backend/internal/discoverycron"
@@ -10,6 +14,33 @@ import (
 	"backend/internal/transactioncron"
 	"gorm.io/gorm"
 )
+
+// Run the real entrypoint in a subprocess: a retired job must succeed even
+// without valid database configuration, including when launched manually.
+func TestRetiredJobsDoNotConnectToDatabase(t *testing.T) {
+	if job := os.Getenv("FF_SIMS_TEST_RETIRED_JOB"); job != "" {
+		flag.CommandLine = flag.NewFlagSet("cron", flag.ExitOnError)
+		os.Args = []string{"cron", "-job=" + job, "-max-duration=1s"}
+		main()
+		return
+	}
+	for _, job := range []string{"discovery", "transactions", "lifetime-counts"} {
+		t.Run(job, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestRetiredJobsDoNotConnectToDatabase$")
+			cmd.Dir = t.TempDir()
+			cmd.Env = append(os.Environ(), "FF_SIMS_TEST_RETIRED_JOB="+job,
+				"DATABASE_URL=invalid://retired-job-must-not-connect",
+				"ARCHIVE_DATABASE_URL=invalid://retired-job-must-not-connect")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("retired job failed: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "job "+job+" is retired") {
+				t.Fatalf("missing retirement message: %s", out)
+			}
+		})
+	}
+}
 
 func TestRunDiscoveryJob_IsPausedWithoutCallingSleeper(t *testing.T) {
 	originalRunDiscovery := runDiscovery

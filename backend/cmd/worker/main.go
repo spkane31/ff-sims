@@ -87,33 +87,12 @@ func main() {
 	log.Printf("worker deployment: name=%s build_id=%s", deploymentName, buildID)
 
 	sc := sleeper.New()
-	dfa := &activities.DataFetchActivities{DB: database.DB, Archive: database.Archive, Sleeper: sc}
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
 
-	// The drafts sync queue is I/O-bound, and Temporal task distribution is
-	// pull-based: the fleet with more free activity slots and pollers takes a
-	// larger share of the queue. These are env-tunable so the worker host
-	// (idles well under 10% CPU on this workload) can be scaled up as needed.
-	//
-	//	WORKER_ACTIVITY_SLOTS    max concurrent activities for the drafts queue (default 100)
-	//	WORKER_ACTIVITY_POLLERS  activity task pollers for the drafts queue (0 = SDK default)
-	syncWorkerOptions := worker.Options{
-		MaxConcurrentActivityExecutionSize: max(helpers.GetEnv("WORKER_ACTIVITY_SLOTS", 100), 1),
-		MaxConcurrentWorkflowTaskPollers:   10,
-		DeploymentOptions:                  deploymentOpts,
-		SysInfoProvider:                    sysinfo.SysInfoProvider(),
-	}
-	if pollers := helpers.GetEnv("WORKER_ACTIVITY_POLLERS", 0); pollers > 0 {
-		syncWorkerOptions.MaxConcurrentActivityTaskPollers = pollers
-	}
-	log.Printf("sync worker tuning: activity_slots=%d activity_pollers=%d (0 = SDK default)",
-		syncWorkerOptions.MaxConcurrentActivityExecutionSize, syncWorkerOptions.MaxConcurrentActivityTaskPollers)
-
-	// Drafts worker: DraftSyncDispatcher (claim-drain batch model)
-	draftsw := worker.New(c, workflows.TaskQueueDrafts, syncWorkerOptions)
-	draftsw.RegisterWorkflow(workflows.DraftSyncDispatcher)
-	draftsw.RegisterActivity(dfa)
+	// Draft sync and archive backfill are retired. Do not poll their queues
+	// or register their activities: queued/manual executions must not write
+	// sleeper_leagues or sleeper_transactions after a restart.
 
 	// Player sync worker: PlayerDatabaseSyncWorkflow
 	psw := worker.New(c, workflows.TaskQueuePlayerSync, worker.Options{
@@ -132,17 +111,8 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	workers := []worker.Worker{draftsw, psw, wsw}
+	workers := []worker.Worker{psw, wsw}
 	if cfg.ArchiveDB.Enabled() {
-		sa := &activities.ScavengerActivities{Cloud: database.DB, Archive: database.Archive}
-		aw := worker.New(c, workflows.TaskQueueArchive, worker.Options{
-			DeploymentOptions: deploymentOpts,
-			SysInfoProvider:   sysinfo.SysInfoProvider(),
-		})
-		aw.RegisterWorkflow(workflows.ArchiveBackfillWorkflow)
-		aw.RegisterActivity(sa)
-		workers = append(workers, aw)
-
 		// ADP worker: ADPRollupDispatcher + SegmentSeasonADPRollupWorkflow.
 		// Requires the archive DB (Read) — see ADPRollupActivities.
 		aa := &activities.ADPRollupActivities{Read: database.Archive, Write: database.DB}

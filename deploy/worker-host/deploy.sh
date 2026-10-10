@@ -192,6 +192,11 @@ install_and_restart() {
   fi
 
   if [[ "$rebuild_cron" -eq 1 ]]; then
+    # Swapping the binary does not stop an old cron process already running.
+    # Retire the timers and their active services before installing the no-op
+    # entrypoint so this rollout stops existing writes as well as future ticks.
+    systemctl disable --now ff-sims-discovery.timer ff-sims-transactions.timer ff-sims-lifetime-counts.timer
+    systemctl stop ff-sims-discovery.service ff-sims-transactions.service ff-sims-lifetime-counts.service
     mv "$REPO_DIR/backend/cron.new" "$REPO_DIR/backend/cron"
     echo "$sha" > "$CRON_SHA_FILE"
     echo "deployed cron $sha"

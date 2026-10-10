@@ -63,4 +63,32 @@ if archive_url_configured "$tmp_blank"; then fail "a whitespace-only ARCHIVE_DAT
 if archive_url_configured "$WORK_MISSING"; then fail "a nonexistent env file should not count as configured"; fi
 
 rm -f "$tmp_env" "$tmp_commented" "$tmp_blank"
+
+# Exercise the setup entrypoint without provisioning a real host. Retired
+# jobs must be stopped even on a host where they were previously enabled.
+(
+  calls="$(mktemp)"
+  trap 'rm -f "$calls"' EXIT
+  systemctl() { echo "$*" >> "$calls"; }
+  ensure_go() { :; }
+  ensure_uv() { :; }
+  ensure_service_user() { :; }
+  disable_sleep() { :; }
+  first_build() { :; }
+  first_sync_espn() { :; }
+  first_sync_analysis() { :; }
+  install_units() { :; }
+  ensure_env_file() { return 0; }
+  archive_url_configured() { return 1; }
+  print_summary() { :; }
+  main
+  for job in discovery transactions lifetime-counts; do
+    grep -qE "^disable --now .*ff-sims-${job}\.timer" "$calls" || fail "setup must disable and stop $job timer"
+    grep -qE "^stop .*ff-sims-${job}\.service" "$calls" || fail "setup must stop active $job service"
+    if grep -qE "^(enable|start) .*ff-sims-${job}\." "$calls"; then
+      fail "setup must not re-enable or start retired $job"
+    fi
+  done
+  grep -qE '^restart ff-sims-worker.service$' "$calls" || fail "setup must restart the worker to stop retired pollers"
+)
 echo "PASS: setup.sh unit tests"

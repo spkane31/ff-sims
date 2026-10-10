@@ -53,6 +53,16 @@ after a full reinstall) — it picks up wherever it left off. Same for
 
 ## Operating
 
+Sleeper league/transaction ingestion is retired. Setup and cron deployments
+disable and stop `ff-sims-discovery.timer`, `ff-sims-transactions.timer`, and
+`ff-sims-lifetime-counts.timer`, including their active services. The cron
+entrypoint also treats these jobs as no-ops before connecting to either database.
+The Go worker pauses the existing draft schedule on startup and no longer polls
+the draft or archive-backfill queues. Player sync, week stats, ADP, ESPN, and the
+player-valuation replay remain enabled. Existing data is retained; see
+[`docs/sleeper-write-shutdown.md`](../../docs/sleeper-write-shutdown.md) for rollout
+and verification, including outstanding Temporal executions.
+
 - Go worker logs: `journalctl -u ff-sims-worker -f`
 - Python ESPN worker logs: `journalctl -u ff-sims-espn-worker -f`
 - Deploy-check history (whether it found a new commit, built/synced, restarted):
@@ -91,8 +101,7 @@ path that installs them; the same treatment has not been extended to the rest.
 
 This applies to every unit here, not just the new player-valuation one; it is why
 `make worker-host-setup` is documented as safe to re-run at any time.
-- Discovery cron job logs (runs hourly, `Type=oneshot`): `journalctl -u ff-sims-discovery -f`
-- Force an immediate discovery run without waiting for the timer: `sudo systemctl start ff-sims-discovery.service`
+- Historical discovery logs: `journalctl -u ff-sims-discovery`. This job is retired.
 - Player-valuation replay logs (runs daily at 00:00 UTC, `Type=oneshot`):
   `journalctl -u ff-sims-player-valuations -f`
   - Each run is a **full replay** of the 2025 `ppr-sf-10` season from 2025-08-25 through
@@ -115,9 +124,8 @@ This applies to every unit here, not just the new player-valuation one; it is wh
   - A run that finds another replay already holding the advisory lock exits `2` without
     touching cloud output — that is expected if you start it by hand while the timer run
     is still going.
-- The Go worker runs the *same* `backend/cmd/worker` binary as production, so it polls all
-  five Temporal task queues (drafts, transactions, player-sync, week-stats, ADP), not just
-  transactions — the idle pollers on the other queues cost nothing.
+- The Go worker polls player-sync and week-stats, plus ADP when the archive is
+  configured. Draft and archive-backfill pollers have been removed.
 - This host is the promoting fleet for the shared Temporal Worker Deployment
   (`ff-sims-worker`) — see [`docs/worker-versioning.md`](../../docs/worker-versioning.md) for
   how versioning works and how to inspect/promote versions. That doc covers the Go worker

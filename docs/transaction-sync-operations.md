@@ -1,5 +1,11 @@
 # Sleeper Sync Operations (transactions + drafts)
 
+**Retired (2026-10-10):** Discovery, transactions, lifetime-counts/archive sync,
+draft sync, and archive backfill no longer run in the deployed entrypoints.
+The tuning and pipeline descriptions below are historical. Do not restart these
+pipelines while the league and transaction tables are retired. See
+[Sleeper write shutdown](sleeper-write-shutdown.md) for rollout and verification.
+
 User/league discovery moved off Temporal to a `cmd/cron`-driven job — see
 `internal/discoverycron` and
 `docs/superpowers/specs/2026-07-15-discovery-cron-migration-design.md` for

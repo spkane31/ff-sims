@@ -203,9 +203,17 @@ main() {
   first_sync_analysis
   install_units
 
+  # Retire both future ticks and already-running jobs. Keep the unit files
+  # installed so upgrades converge even when these timers used to be enabled.
+  systemctl disable --now ff-sims-discovery.timer ff-sims-transactions.timer ff-sims-lifetime-counts.timer
+  systemctl stop ff-sims-discovery.service ff-sims-transactions.service ff-sims-lifetime-counts.service
+
   if ensure_env_file; then
-    systemctl enable ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer ff-sims-transactions.timer
-    systemctl start ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.timer ff-sims-discovery.timer ff-sims-lifetime-counts.timer ff-sims-transactions.timer
+    systemctl enable ff-sims-worker.service ff-sims-espn-worker.service ff-sims-deploy.timer
+    # first_build replaced the binary; restart an existing worker too so its
+    # retired draft/archive activity pollers cannot keep writing in memory.
+    systemctl restart ff-sims-worker.service
+    systemctl start ff-sims-espn-worker.service ff-sims-deploy.timer
 
     # Gated separately: everything above runs fine without the archive DB.
     # Converges either way, since this script is meant to be re-run — filling

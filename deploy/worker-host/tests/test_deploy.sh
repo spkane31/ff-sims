@@ -101,6 +101,10 @@ bash "$REPO/deploy/worker-host/deploy.sh"
 [[ -x "$REPO/backend/worker" ]] || fail "expected a worker binary to be built"
 [[ -x "$REPO/backend/cron" ]] || fail "expected a cron binary to be built"
 grep -q "restart ff-sims-worker.service" "$CALLS" || fail "expected systemctl restart to be called"
+for job in discovery transactions lifetime-counts; do
+  grep -qE "^disable --now .*ff-sims-${job}\.timer" "$CALLS" || fail "deploy must disable and stop $job timer"
+  grep -qE "^stop .*ff-sims-${job}\.service" "$CALLS" || fail "deploy must stop active $job service"
+done
 grep -q "espn sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the ESPN worker on first deploy"
 grep -q "analysis sync --frozen --no-dev" "$UV_CALLS" || fail "expected uv sync to be called for the player-valuation model on first deploy"
 grep -q "restart ff-sims-espn-worker.service" "$CALLS" || fail "expected systemctl restart to be called for the ESPN worker"
@@ -231,7 +235,7 @@ worker_hash_after="$(shasum -a 256 "$REPO/backend/worker" | awk '{print $1}')"
 cron_hash_after="$(shasum -a 256 "$REPO/backend/cron" | awk '{print $1}')"
 [[ "$worker_hash_before" == "$worker_hash_after" ]] || fail "worker binary should not rebuild for a cron-only change"
 [[ "$cron_hash_before" != "$cron_hash_after" ]] || fail "cron binary should have been rebuilt for a cron-only change"
-[[ ! -s "$CALLS" ]] || fail "systemctl should not restart the worker service for a cron-only change"
+if grep -q '^restart ' "$CALLS"; then fail "systemctl should not restart services for a cron-only change"; fi
 [[ ! -s "$UV_CALLS" ]] || fail "uv should not have been called for a cron-only change"
 
 # --- scenario 8: a build failure must keep being retried on later cycles even
