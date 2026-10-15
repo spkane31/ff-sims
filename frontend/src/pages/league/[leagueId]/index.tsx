@@ -70,6 +70,7 @@ export default function LeagueDashboard() {
   const [seasonStandings, setSeasonStandings] = useState<Team[]>([]);
   const [isStandingsLoading, setIsStandingsLoading] = useState(true);
   const [standingsError, setStandingsError] = useState<Error | null>(null);
+  const [playoffSettingsAvailable, setPlayoffSettingsAvailable] = useState(false);
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -123,25 +124,34 @@ export default function LeagueDashboard() {
     if (seasonYear === null || isScheduleLoading) {
       return;
     }
+    let cancelled = false;
+    setPlayoffSettingsAvailable(false);
 
-    const playoffOdds = calculateHomepagePlayoffOdds(
-      schedule.data.matchups,
-      seasonYear,
-      HOMEPAGE_PLAYOFF_ODDS_ITERATIONS,
-    );
-    if (playoffOdds.size === 0) {
-      return;
+    async function calculateOdds() {
+      try {
+        const settings = await leaguesService.getLeaguePlayoffSettings(id, seasonYear!);
+        const playoffOdds = calculateHomepagePlayoffOdds(
+          schedule.data.matchups,
+          seasonYear!,
+          HOMEPAGE_PLAYOFF_ODDS_ITERATIONS,
+          { teamCount: settings.team_count, roundWeeks: settings.round_weeks },
+        );
+        if (cancelled || playoffOdds.size === 0) return;
+        setSeasonStandings((currentStandings) =>
+          currentStandings.map((team) => {
+            const odds = playoffOdds.get(Number(team.espnId));
+            return odds === undefined ? team : { ...team, playoffChance: odds * 100 };
+          }),
+        );
+        setPlayoffSettingsAvailable(true);
+      } catch (err) {
+        console.error("Failed to load playoff settings:", err);
+      }
     }
 
-    setSeasonStandings((currentStandings) =>
-      currentStandings.map((team) => {
-        const odds = playoffOdds.get(Number(team.espnId));
-        return odds === undefined
-          ? team
-          : { ...team, playoffChance: odds * 100 };
-      }),
-    );
-  }, [isScheduleLoading, schedule.data.matchups, seasonYear]);
+    calculateOdds();
+    return () => { cancelled = true; };
+  }, [id, isScheduleLoading, schedule.data.matchups, seasonYear]);
 
   const filteredTeams = useMemo(
     () =>
@@ -419,21 +429,30 @@ export default function LeagueDashboard() {
           id: "winDistribution",
           header: "Win odds",
           cell: (team: Team) => team.winDistribution ? (
-            <div className="flex items-end gap-1" aria-label={`${team.name} simulated win distribution`}>
+            <div className="flex items-end" aria-label={`${team.name} simulated win distribution`}>
               {winCounts.map((wins) => {
                 const probability = team.winDistribution?.[wins] ?? 0;
                 const percentage = `${(probability * 100).toFixed(1)}%`;
                 return (
                   <span
                     key={wins}
-                    className="flex w-6 flex-col items-center gap-1"
-                    title={`${wins} ${wins === 1 ? "win" : "wins"}: ${percentage} of simulations`}
+                    className="group relative flex w-4 flex-col items-center gap-1"
                     aria-label={`${wins} ${wins === 1 ? "win" : "wins"}: ${percentage} of simulations`}
                     tabIndex={0}
                   >
-                    <span className="flex h-10 w-4 items-end rounded-sm" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                    <span
+                      className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded px-2 py-1 text-xs shadow-sm group-hover:block group-focus:block"
+                      style={{
+                        backgroundColor: "var(--surface-raised)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {wins} {wins === 1 ? "win" : "wins"}: {percentage}
+                    </span>
+                    <span className="flex h-10 w-full items-end" style={{ backgroundColor: "var(--surface-sunken)" }}>
                       <span
-                        className="w-full rounded-sm"
+                        className="w-full"
                         style={{
                           height: `${probability * 100}%`,
                           backgroundColor: "var(--action-primary)",
@@ -489,7 +508,7 @@ export default function LeagueDashboard() {
       id: "playoffs",
       header: "Playoff %",
       sortable: true,
-      cell: (team) => (
+      cell: (team) => playoffSettingsAvailable ? (
         <div>
           <div
             className="h-2.5 w-full rounded-full"
@@ -507,7 +526,7 @@ export default function LeagueDashboard() {
             {team.playoffChance.toFixed(1)}%
           </span>
         </div>
-      ),
+      ) : "—",
     },
   ];
 

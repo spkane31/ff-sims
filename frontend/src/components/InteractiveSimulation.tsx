@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Simulator } from "../utils/simulator";
-import { Schedule, Matchup, TeamScoringData, BigGame } from "../types/simulation";
+import { Schedule, Matchup, TeamScoringData, BigGame, PlayoffConfig } from "../types/simulation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface InteractiveSimulationProps {
   schedule: Schedule;
   startWeek: number;
+  playoffConfig: PlayoffConfig;
   iterations?: number;
   autoRun?: boolean;
   onPivotalGamesCalculated?: (games: BigGame[]) => void;
@@ -48,6 +49,7 @@ const MATCHUP_STYLES: Record<
 export default function InteractiveSimulation({
   schedule,
   startWeek,
+  playoffConfig,
   iterations = 10000,
   autoRun = false,
   onPivotalGamesCalculated,
@@ -77,7 +79,7 @@ export default function InteractiveSimulation({
     setIsSimulating(true);
     try {
       // Create and run simulator
-      const sim = new Simulator(schedule, startWeek);
+      const sim = new Simulator(schedule, startWeek, playoffConfig);
 
       for (let i = 0; i < iterations; i++) {
         sim.step();

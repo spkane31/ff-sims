@@ -1,5 +1,5 @@
 import { Simulator } from "./simulator";
-import type { Matchup, Schedule } from "../types/simulation";
+import type { Matchup, Schedule, PlayoffConfig } from "../types/simulation";
 
 export interface HomepageScheduleMatchup {
   year: number;
@@ -20,6 +20,7 @@ export function calculateHomepagePlayoffOdds(
   matchups: HomepageScheduleMatchup[],
   year: number,
   iterations: number,
+  playoffConfig: PlayoffConfig,
 ): Map<number, number> {
   const matchupsByWeek = new Map<number, Matchup[]>();
 
@@ -55,7 +56,7 @@ export function calculateHomepagePlayoffOdds(
   );
   const startWeek =
     firstIncompleteWeek === -1 ? schedule.length + 1 : firstIncompleteWeek + 1;
-  const simulator = new Simulator(schedule, startWeek);
+  const simulator = new Simulator(schedule, startWeek, playoffConfig);
 
   for (let iteration = 0; iteration < iterations; iteration++) {
     simulator.step();

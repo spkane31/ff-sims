@@ -10,6 +10,7 @@ import {
   BigGame,
   BigGameTeamOdds,
   WeeklyLeverage,
+  PlayoffConfig,
 } from "../types/simulation";
 
 /**
@@ -42,8 +43,9 @@ class SingleSeasonResults {
   results: Map<number, SingleTeamResult>;
   teamStats: Map<number, TeamStats>;
   leagueStats: LeagueStats;
+  playoffConfig: PlayoffConfig;
 
-  constructor(teamAvgs: Map<number, TeamStats>, leagueStats: LeagueStats) {
+  constructor(teamAvgs: Map<number, TeamStats>, leagueStats: LeagueStats, playoffConfig: PlayoffConfig) {
     this.results = new Map();
 
     for (const [key] of teamAvgs.entries()) {
@@ -61,6 +63,7 @@ class SingleSeasonResults {
     }
     this.teamStats = teamAvgs;
     this.leagueStats = leagueStats;
+    this.playoffConfig = playoffConfig;
   }
 
   teamWin(teamID: number): void {
@@ -103,8 +106,7 @@ class SingleSeasonResults {
       return aResults.pointsAgainst - bResults.pointsAgainst;
     });
 
-    // Mark top 6 teams as made playoffs
-    resultsArray.slice(0, 6).forEach((team) => {
+    resultsArray.slice(0, this.playoffConfig.teamCount).forEach((team) => {
       team[1].madePlayoffs = true;
     });
 
@@ -123,72 +125,78 @@ class SingleSeasonResults {
   }
 
   private simulatePlayoffs(resultsArray: [number, SingleTeamResult][]): void {
-    if (resultsArray.length < 6) return;
+    const { teamCount, roundWeeks } = this.playoffConfig;
+    if (resultsArray.length < teamCount) return;
 
-    const teams = resultsArray.map(([, result]) => result);
+    const bracketSize = 2 ** roundWeeks.length;
+    let seeds = [1, 2];
+    while (seeds.length < bracketSize) {
+      const nextSize = seeds.length * 2;
+      seeds = seeds.flatMap((seed) => [seed, nextSize + 1 - seed]);
+    }
+    let round: (SingleTeamResult | null)[] = seeds.map((seed) =>
+      seed <= teamCount ? resultsArray[seed - 1][1] : null
+    );
 
-    // Semifinal 1: 3rd vs 6th
-    const semifinal1Winner = this.simulateGame(teams[2], teams[5]);
-    const semifinal1Loser = semifinal1Winner === teams[2] ? teams[5] : teams[2];
-    semifinal1Loser.playoffResult = 6;
+    let semifinalLosers: SingleTeamResult[] = [];
+    for (let roundIndex = 0; roundIndex < roundWeeks.length; roundIndex++) {
+      const winners: (SingleTeamResult | null)[] = [];
+      const losers: SingleTeamResult[] = [];
+      for (let index = 0; index < round.length; index += 2) {
+        const first = round[index];
+        const second = round[index + 1];
+        if (!first || !second) {
+          winners.push(first ?? second);
+          continue;
+        }
+        const winner = this.simulateGame(first, second, roundWeeks[roundIndex]);
+        const loser = winner === first ? second : first;
+        winners.push(winner);
+        losers.push(loser);
+      }
 
-    // Semifinal 2: 4th vs 5th
-    const semifinal2Winner = this.simulateGame(teams[3], teams[4]);
-    const semifinal2Loser = semifinal2Winner === teams[3] ? teams[4] : teams[3];
-    semifinal2Loser.playoffResult = 5;
-
-    // Championship semifinal 1: 1st vs semifinal2 winner
-    const champSemi1Winner = this.simulateGame(teams[0], semifinal2Winner);
-    const champSemi1Loser =
-      champSemi1Winner === teams[0] ? semifinal2Winner : teams[0];
-
-    // Championship semifinal 2: 2nd vs semifinal1 winner
-    const champSemi2Winner = this.simulateGame(teams[1], semifinal1Winner);
-    const champSemi2Loser =
-      champSemi2Winner === teams[1] ? semifinal1Winner : teams[1];
-
-    // Championship game
-    const champion = this.simulateGame(champSemi1Winner, champSemi2Winner);
-    const runnerUp =
-      champion === champSemi1Winner ? champSemi2Winner : champSemi1Winner;
-
-    champion.playoffResult = 1;
-    runnerUp.playoffResult = 2;
-
-    // Third place game
-    const thirdPlace = this.simulateGame(champSemi1Loser, champSemi2Loser);
-    const fourthPlace =
-      thirdPlace === champSemi1Loser ? champSemi2Loser : champSemi1Loser;
-
-    thirdPlace.playoffResult = 3;
-    fourthPlace.playoffResult = 4;
+      if (roundIndex === roundWeeks.length - 1) {
+        winners[0]!.playoffResult = 1;
+        losers[0].playoffResult = 2;
+        if (semifinalLosers.length === 2) {
+          const third = this.simulateGame(semifinalLosers[0], semifinalLosers[1], roundWeeks[roundIndex]);
+          third.playoffResult = 3;
+          semifinalLosers.find((team) => team !== third)!.playoffResult = 4;
+        }
+      } else if (roundIndex === roundWeeks.length - 2) {
+        semifinalLosers = losers;
+      } else {
+        losers.forEach((team, index) => {
+          team.playoffResult = winners.length + index + 1;
+        });
+      }
+      round = winners;
+    }
   }
 
   private simulateGame(
     first: SingleTeamResult,
-    second: SingleTeamResult
+    second: SingleTeamResult,
+    weeks: number
   ): SingleTeamResult {
     const firstStats = this.teamStats.get(first.id);
     const secondStats = this.teamStats.get(second.id);
 
     if (!firstStats || !secondStats) return first;
 
-    const firstJitter = Math.random() * 0.2 + 0.05;
-    const secondJitter = Math.random() * 0.2 + 0.05;
-
-    const firstScore =
-      (1 - firstJitter) *
-        normalDistribution(firstStats.average, firstStats.std_dev) +
-      firstJitter *
-        normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
-
-    const secondScore =
-      (1 - secondJitter) *
-        normalDistribution(secondStats.average, secondStats.std_dev) +
-      secondJitter *
-        normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
-
-    return firstScore > secondScore ? first : second;
+    let firstTotal = 0;
+    let secondTotal = 0;
+    for (let week = 0; week < weeks; week++) {
+      const firstJitter = Math.random() * 0.2 + 0.05;
+      const secondJitter = Math.random() * 0.2 + 0.05;
+      firstTotal +=
+        (1 - firstJitter) * normalDistribution(firstStats.average, firstStats.std_dev) +
+        firstJitter * normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
+      secondTotal +=
+        (1 - secondJitter) * normalDistribution(secondStats.average, secondStats.std_dev) +
+        secondJitter * normalDistribution(this.leagueStats.mean, this.leagueStats.stdDev);
+    }
+    return firstTotal > secondTotal ? first : second;
   }
 }
 
@@ -229,12 +237,21 @@ export class Simulator {
   results: Map<number, Results>;
   teamStats: Map<number, TeamStats>;
   leagueStats: LeagueStats = { mean: 0, stdDev: 0 };
+  playoffConfig: PlayoffConfig;
   idToOwner: Map<number, string>;
   epsilon: number = 0;
   previousStepFinalStandings: TeamScoringData[] | null = null;
   iterations: SimulationIteration[] = []; // Store all simulation iterations
 
-  constructor(schedule: Schedule, startWeek: number = 1) {
+  constructor(schedule: Schedule, startWeek: number, playoffConfig: PlayoffConfig) {
+    const bracketSize = 2 ** playoffConfig.roundWeeks.length;
+    if (!Number.isInteger(playoffConfig.teamCount) || playoffConfig.teamCount < 2 ||
+        playoffConfig.teamCount % 2 !== 0 || playoffConfig.teamCount > bracketSize ||
+        playoffConfig.teamCount <= bracketSize / 2 ||
+        playoffConfig.roundWeeks.some((weeks) => !Number.isInteger(weeks) || weeks < 1)) {
+      throw new Error("Invalid playoff configuration");
+    }
+    this.playoffConfig = playoffConfig;
     this.schedule = schedule;
     this.weeks = schedule.length;
     this.startWeek = startWeek;
@@ -446,7 +463,8 @@ export class Simulator {
   step(): void {
     const singleSeasonResults = new SingleSeasonResults(
       this.teamStats,
-      this.leagueStats
+      this.leagueStats,
+      this.playoffConfig
     );
 
     // Store matchup outcomes for this iteration

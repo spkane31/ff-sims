@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 
+from psycopg.types.json import Jsonb
+
 from espn_api.football import League
 from temporalio import activity
 
@@ -8,6 +10,22 @@ from activities.teams import ESPNLeagueSyncParams
 from db import get_connection, resolve_league_id
 
 logger = logging.getLogger(__name__)
+
+
+def extract_playoff_settings(settings) -> tuple[int, list[int]]:
+    """Read the bracket size and each round's scoring-week count from ESPN."""
+    team_count = settings.playoff_team_count
+    periods = settings.matchup_periods
+    round_weeks = [
+        len(weeks)
+        for period, weeks in sorted(periods.items(), key=lambda item: int(item[0]))
+        if int(period) > settings.reg_season_count
+    ]
+    if team_count < 2 or team_count % 2 or len(round_weeks) != (team_count - 1).bit_length() or any(
+        weeks < 1 for weeks in round_weeks
+    ):
+        raise ValueError("Invalid ESPN playoff settings")
+    return team_count, round_weeks
 
 
 def _upsert_player(cur, espn_id: int, name: str, position: str) -> int:
@@ -38,10 +56,20 @@ def fetch_and_upsert_schedule(params: ESPNLeagueSyncParams) -> None:
     logger.info(
         "League loaded: current_week=%d year=%d", league.current_week, league.year
     )
+    playoff_team_count, round_weeks = extract_playoff_settings(league.settings)
 
     with get_connection() as conn:
         league_id = resolve_league_id(conn, params.espn_league_id)
         with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO league_playoff_settings "
+                "(league_id, year, playoff_team_count, round_weeks) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (league_id, year) DO UPDATE SET "
+                "playoff_team_count = EXCLUDED.playoff_team_count, "
+                "round_weeks = EXCLUDED.round_weeks",
+                (league_id, params.year, playoff_team_count, Jsonb(round_weeks)),
+            )
             cur.execute(
                 "SELECT espn_id, id FROM teams WHERE league_id = %s", (league_id,)
             )

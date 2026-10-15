@@ -60,7 +60,7 @@ test("keeps real future opponents, week numbers, and selection keys through simu
   assert.equal(schedule[2][0].awayTeamESPNID, 3);
   assert.equal(schedule[3][0].awayTeamESPNID, 4);
 
-  const simulator = new Simulator(schedule, 3);
+  const simulator = new Simulator(schedule, 3, { teamCount: 6, roundWeeks: [1, 1, 1] });
   simulator.step();
   const outcomes = simulator.iterations[0].matchupOutcomes;
   assert.deepEqual(

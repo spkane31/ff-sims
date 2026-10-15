@@ -5,6 +5,7 @@ import { buildSimulationSchedule } from "@/utils/simulation-schedule";
 import { Simulator } from "@/utils/simulator";
 import { TeamScoringData, Schedule, Matchup, BigGame, WeeklyLeverage } from "@/types/simulation";
 import { scheduleService } from "@/services/scheduleService";
+import { leaguesService } from "@/services/leaguesService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -146,6 +147,7 @@ export default function Simulations() {
   const [simulationResults, setSimulationResults] = useState<TeamScoringData[]>(
     []
   );
+  const [playoffTeamCount, setPlayoffTeamCount] = useState(0);
   const [simulator, setSimulator] = useState<Simulator | null>(null);
 
   // Interactive "Choose Your Own Results" state
@@ -399,13 +401,19 @@ export default function Simulations() {
 
     try {
       // Fetch the schedule data for simulation for the selected year
-      const schedule = await fetchScheduleDataForYear(selectedYear);
+      const [schedule, settings] = await Promise.all([
+        fetchScheduleDataForYear(selectedYear),
+        leaguesService.getLeaguePlayoffSettings(leagueId, selectedYear),
+      ]);
 
       // Parse the start week value
       const startWeekNum = parseInt(startWeek);
 
       // Create and run the simulator with the new constructor
-      const sim = new Simulator(schedule, startWeekNum);
+      const sim = new Simulator(schedule, startWeekNum, {
+        teamCount: settings.team_count,
+        roundWeeks: settings.round_weeks,
+      });
 
       // Run the specified number of simulations
       for (let i = 0; i < iterations; i++) {
@@ -414,6 +422,7 @@ export default function Simulations() {
 
       // Update state with results
       setSimulationResults(sim.getTeamScoringData());
+      setPlayoffTeamCount(settings.team_count);
       setSimulator(sim); // Store the simulator instance
       setFilteredResults(sim.getTeamScoringData()); // Initialize with all results
       setMatchingSimCount(iterations); // Initialize with total iterations
@@ -430,7 +439,7 @@ export default function Simulations() {
       const matchupsByTeam = extractRemainingMatchups(schedule, startWeekNum);
       setRemainingMatchups(matchupsByTeam);
     } catch (err) {
-      setError("Failed to run simulation");
+      setError("Failed to run simulation. Check that playoff settings are synced for this season.");
       console.error("Simulation error:", err);
     } finally {
       setSimulating(false);
@@ -617,12 +626,11 @@ export default function Simulations() {
       header: "Team",
       cell: (team) => team.teamName,
     },
-    seedColumn("seed1", "1st Seed", 0, 0.2, 0.1),
-    seedColumn("seed2", "2nd Seed", 1, 0.15, 0.08),
-    seedColumn("seed3", "3rd Seed", 2, 0.12, 0.06),
-    seedColumn("seed4", "4th Seed", 3, 0.1, 0.05),
-    seedColumn("seed5", "5th Seed", 4, 0.1, 0.05),
-    seedColumn("seed6", "6th Seed", 5, 0.1, 0.05),
+    ...Array.from({ length: playoffTeamCount }, (_, index) => {
+      const ordinal = ["1st", "2nd", "3rd"][index] ?? `${index + 1}th`;
+      const thresholds = [[0.2, 0.1], [0.15, 0.08], [0.12, 0.06]][index] ?? [0.1, 0.05];
+      return seedColumn(`seed${index + 1}`, `${ordinal} Seed`, index, thresholds[0], thresholds[1]);
+    }),
     {
       id: "lastPlace",
       header: "Last Place",

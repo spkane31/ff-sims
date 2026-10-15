@@ -64,7 +64,7 @@ function buildSchedule(): Schedule {
 function runSimulator(seed: number): Simulator {
   const restore = stubRandom(seed);
   try {
-    const sim = new Simulator(buildSchedule(), START_WEEK);
+    const sim = new Simulator(buildSchedule(), START_WEEK, { teamCount: 6, roundWeeks: [1, 1, 1] });
     for (let i = 0; i < ITERATIONS; i++) {
       sim.step();
     }

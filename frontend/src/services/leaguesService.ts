@@ -17,6 +17,11 @@ export interface LeagueYearsResponse {
   years: number[];
 }
 
+export interface LeaguePlayoffSettings {
+  team_count: number;
+  round_weeks: number[];
+}
+
 export const leaguesService = {
   getLeagues: async (): Promise<GetLeaguesResponse> => {
     return apiClient.get<GetLeaguesResponse>('/leagues');
@@ -28,5 +33,9 @@ export const leaguesService = {
 
   getLeagueYears: async (leagueId: number): Promise<LeagueYearsResponse> => {
     return apiClient.get<LeagueYearsResponse>(`/leagues/${leagueId}/years`);
+  },
+
+  getLeaguePlayoffSettings: async (leagueId: number, year: number): Promise<LeaguePlayoffSettings> => {
+    return apiClient.get<LeaguePlayoffSettings>(`/leagues/${leagueId}/playoff-settings/${year}`);
   },
 };

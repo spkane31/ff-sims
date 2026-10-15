@@ -31,6 +31,11 @@ export interface Matchup {
 
 export type Schedule = Matchup[][];
 
+export interface PlayoffConfig {
+  teamCount: number;
+  roundWeeks: number[];
+}
+
 // Single team result for one simulation
 export interface SingleTeamResult {
   id: number;

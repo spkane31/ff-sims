@@ -67,6 +67,8 @@ def test_fetch_and_upsert_schedule_creates_matchup(db_conn):
     mock_league.year = 2026
     mock_league.current_week = 1
     mock_league.settings.reg_season_count = 14
+    mock_league.settings.playoff_team_count = 4
+    mock_league.settings.matchup_periods = {str(week): [week] for week in range(1, 17)}
     mock_league.scoreboard.return_value = []
     mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
 
@@ -95,6 +97,8 @@ def test_fetch_and_upsert_schedule_is_idempotent(db_conn):
     mock_league.year = 2026
     mock_league.current_week = 1
     mock_league.settings.reg_season_count = 14
+    mock_league.settings.playoff_team_count = 4
+    mock_league.settings.matchup_periods = {str(week): [week] for week in range(1, 17)}
     mock_league.scoreboard.return_value = []
     mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
 
@@ -125,6 +129,8 @@ def test_schedule_sync_imports_real_future_opponents(regular_season_weeks):
     mock_league.year = 2026
     mock_league.current_week = 4
     mock_league.settings.reg_season_count = regular_season_weeks
+    mock_league.settings.playoff_team_count = 4
+    mock_league.settings.matchup_periods = {str(week): [week] for week in range(1, regular_season_weeks + 3)}
     mock_league.box_scores.return_value = [_mock_box_score(1, 2)]
 
     def future_scoreboard(week):
@@ -184,6 +190,8 @@ def test_in_progress_week_is_not_completed():
     mock_league.year = 2026
     mock_league.current_week = 4
     mock_league.settings.reg_season_count = 14
+    mock_league.settings.playoff_team_count = 4
+    mock_league.settings.matchup_periods = {str(week): [week] for week in range(1, 17)}
     mock_league.teams = [
         MagicMock(team_id=1, outcomes=["W", "L", "W", "U"]),
         MagicMock(team_id=2, outcomes=["L", "W", "L", "U"]),

@@ -3,7 +3,9 @@ package handlers
 import (
 	"backend/internal/database"
 	"backend/internal/models"
+	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -86,4 +88,45 @@ func GetLeagueYears(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, GetLeagueYearsResponse{Years: years})
+}
+
+type LeaguePlayoffSettingsResponse struct {
+	TeamCount  int   `json:"team_count"`
+	RoundWeeks []int `json:"round_weeks"`
+}
+
+func GetLeaguePlayoffSettings(c *gin.Context) {
+	leagueID, ok := parseLeagueID(c)
+	if !ok {
+		return
+	}
+	year, err := strconv.Atoi(c.Param("year"))
+	if err != nil || year < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid year"})
+		return
+	}
+
+	var row struct {
+		TeamCount  int
+		RoundWeeks string
+	}
+	err = database.DB.Table("league_playoff_settings").
+		Select("playoff_team_count AS team_count, round_weeks::text AS round_weeks").
+		Where("league_id = ? AND year = ?", leagueID, year).
+		Take(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "playoff settings not synced for this season"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch playoff settings"})
+		return
+	}
+
+	var weeks []int
+	if err := json.Unmarshal([]byte(row.RoundWeeks), &weeks); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid playoff settings"})
+		return
+	}
+	c.JSON(http.StatusOK, LeaguePlayoffSettingsResponse{TeamCount: row.TeamCount, RoundWeeks: weeks})
 }

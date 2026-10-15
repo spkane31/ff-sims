@@ -16,7 +16,7 @@ function fixture(): Simulator {
     [matchup(1, 1, 2), matchup(1, 3, 4)],
     [matchup(2, 1, 2), matchup(2, 3, 4), matchup(2, 5, 6, "WINNERS_BRACKET")],
     [matchup(3, 1, 3), matchup(3, 2, 4)],
-  ], 2);
+  ], 2, { teamCount: 4, roundWeeks: [1, 1] });
 }
 
 function addScenario(sim: Simulator, winners: number[], count: number, playoffs: number, last: number) {
