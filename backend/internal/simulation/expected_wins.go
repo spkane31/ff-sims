@@ -40,6 +40,26 @@ type ExpectedWinsResult struct {
 	StrengthOfSchedule float64 `json:"strength_of_schedule"`
 }
 
+// WinTotalProbabilities returns the probability of 0 through N wins from
+// independent weekly schedule simulations. The mean matches the sum of the
+// weekly expected wins used for Expected Record.
+func WinTotalProbabilities(weeklyWinProbabilities []float64) []float64 {
+	if len(weeklyWinProbabilities) == 0 {
+		return nil
+	}
+
+	distribution := []float64{1}
+	for _, winProbability := range weeklyWinProbabilities {
+		next := make([]float64, len(distribution)+1)
+		for wins, probability := range distribution {
+			next[wins] += probability * (1 - winProbability)
+			next[wins+1] += probability * winProbability
+		}
+		distribution = next
+	}
+	return distribution
+}
+
 // CalculateExpectedWins calculates expected wins using hypothetical schedule simulations
 // This approach generates thousands of random schedules using actual team scores
 // and averages the win totals to determine true expected performance

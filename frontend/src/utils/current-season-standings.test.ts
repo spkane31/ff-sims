@@ -16,6 +16,7 @@ test("maps API expected wins into the homepage standings row", () => {
       expected_wins: 4.67,
       expected_losses: 1.33,
       win_luck: -0.67,
+      win_distribution: [0, 0, 0, 0, 0.33, 0.67, 0],
     },
     1,
   );
@@ -26,4 +27,5 @@ test("maps API expected wins into the homepage standings row", () => {
     winLuck: -0.67,
     seasonsPlayed: 1,
   });
+  assert.deepEqual(team.winDistribution, [0, 0, 0, 0, 0.33, 0.67, 0]);
 });

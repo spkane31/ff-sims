@@ -2,10 +2,33 @@ package simulation
 
 import (
 	"backend/internal/models"
+	"math"
 	"os"
 	"testing"
 	"time"
 )
+
+func TestWinTotalProbabilities(t *testing.T) {
+	probabilities := WinTotalProbabilities([]float64{0.25, 0.5})
+	want := []float64{0.375, 0.5, 0.125}
+	if len(probabilities) != len(want) {
+		t.Fatalf("got %d win totals, want %d", len(probabilities), len(want))
+	}
+	var total, expectedWins float64
+	for wins, probability := range probabilities {
+		if math.Abs(probability-want[wins]) > 1e-12 {
+			t.Errorf("P(%d wins) = %f, want %f", wins, probability, want[wins])
+		}
+		total += probability
+		expectedWins += float64(wins) * probability
+	}
+	if math.Abs(total-1) > 1e-12 || math.Abs(expectedWins-0.75) > 1e-12 {
+		t.Errorf("total probability = %f, expected wins = %f", total, expectedWins)
+	}
+	if got := WinTotalProbabilities(nil); len(got) != 0 {
+		t.Errorf("empty season produced %v", got)
+	}
+}
 
 // Helper function to create test matchup
 func createTestMatchup(homeTeamID, awayTeamID uint, homeScore, awayScore float64, completed bool) *models.Matchup {

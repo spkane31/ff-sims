@@ -91,6 +91,8 @@ export interface CurrentSeasonStanding {
   expected_wins?: number;
   expected_losses?: number;
   win_luck?: number;
+  /** Indexed by total wins: 0 wins, 1 win, and so on. */
+  win_distribution?: number[];
 }
 
 export interface CurrentSeasonStandingsResponse {

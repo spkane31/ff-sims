@@ -366,6 +366,12 @@ export default function LeagueDashboard() {
           return sortDirection === "asc" ? result : -result;
         });
 
+  const winOutcomeCount = Math.max(
+    0,
+    ...visibleSeasonStandings.map((team) => team.winDistribution?.length ?? 0),
+  );
+  const winCounts = Array.from({ length: winOutcomeCount }, (_, wins) => wins);
+
   const standingsColumns: DataTableColumn<Team>[] = [
     { id: "rank", header: "Rank", sortable: true, cell: (team) => team.rank },
     {
@@ -408,6 +414,40 @@ export default function LeagueDashboard() {
           ? `${team.expectedWins.expectedWins.toFixed(2)}-${team.expectedWins.expectedLosses.toFixed(2)}`
           : "—",
     },
+    ...(winCounts.length > 0
+      ? [{
+          id: "winDistribution",
+          header: "Win odds",
+          cell: (team: Team) => team.winDistribution ? (
+            <div className="flex items-end gap-1" aria-label={`${team.name} simulated win distribution`}>
+              {winCounts.map((wins) => {
+                const probability = team.winDistribution?.[wins] ?? 0;
+                const percentage = `${(probability * 100).toFixed(1)}%`;
+                return (
+                  <span
+                    key={wins}
+                    className="flex w-6 flex-col items-center gap-1"
+                    title={`${wins} ${wins === 1 ? "win" : "wins"}: ${percentage} of simulations`}
+                    aria-label={`${wins} ${wins === 1 ? "win" : "wins"}: ${percentage} of simulations`}
+                    tabIndex={0}
+                  >
+                    <span className="flex h-10 w-4 items-end rounded-sm" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                      <span
+                        className="w-full rounded-sm"
+                        style={{
+                          height: `${probability * 100}%`,
+                          backgroundColor: "var(--action-primary)",
+                        }}
+                      />
+                    </span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{wins}</span>
+                  </span>
+                );
+              })}
+            </div>
+          ) : "—",
+        } satisfies DataTableColumn<Team>]
+      : []),
     {
       id: "pf",
       header: "PF / G",

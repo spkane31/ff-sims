@@ -28,6 +28,7 @@ export interface Team {
   playoffRecord: TeamRecord;
   points: TeamPoints;
   expectedWins?: TeamExpectedWins;
+  winDistribution?: number[];
   rank: number;
   playoffChance: number;
 }

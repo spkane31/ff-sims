@@ -12,6 +12,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/logging"
 	"backend/internal/models"
+	"backend/internal/simulation"
 	"backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -558,11 +559,12 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 
 	// Create expected wins map for quick lookup - sum up weekly expected wins for each team
 	type TeamExpectedWinsSummary struct {
-		TotalExpectedWins   float64
-		TotalExpectedLosses float64
-		TotalActualWins     int
-		TotalActualLosses   int
-		WeekCount           int
+		TotalExpectedWins      float64
+		TotalExpectedLosses    float64
+		TotalActualWins        int
+		TotalActualLosses      int
+		WeekCount              int
+		WeeklyWinProbabilities []float64
 	}
 
 	expectedWinsMap := make(map[uint]*TeamExpectedWinsSummary)
@@ -574,6 +576,7 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 		summary := expectedWinsMap[ew.TeamID]
 		// Sum the weekly expected wins (not cumulative - use WeeklyExpectedWins field)
 		summary.TotalExpectedWins += ew.WeeklyExpectedWins
+		summary.WeeklyWinProbabilities = append(summary.WeeklyWinProbabilities, ew.WeeklyExpectedWins)
 		summary.TotalExpectedLosses += ew.WeeklyExpectedLosses
 		if ew.WeeklyActualWin {
 			summary.TotalActualWins++
@@ -627,6 +630,7 @@ func GetCurrentSeasonStandings(c *gin.Context) {
 		if summary, exists := expectedWinsMap[team.ID]; exists {
 			standing.ExpectedWins = &summary.TotalExpectedWins
 			standing.ExpectedLosses = &summary.TotalExpectedLosses
+			standing.WinDistribution = simulation.WinTotalProbabilities(summary.WeeklyWinProbabilities)
 			winLuck := float64(standing.Record.Wins) - summary.TotalExpectedWins
 			standing.WinLuck = &winLuck
 		}
@@ -661,15 +665,16 @@ type GetCurrentSeasonStandingsResponse struct {
 }
 
 type CurrentSeasonStandingResponse struct {
-	TeamID         uint       `json:"team_id"`
-	ESPNID         string     `json:"espn_id"`
-	Owner          string     `json:"owner"`
-	TeamName       string     `json:"team_name"`
-	Record         TeamRecord `json:"record"`
-	Points         TeamPoints `json:"points"`
-	ExpectedWins   *float64   `json:"expected_wins,omitempty"`
-	ExpectedLosses *float64   `json:"expected_losses,omitempty"`
-	WinLuck        *float64   `json:"win_luck,omitempty"`
+	TeamID          uint       `json:"team_id"`
+	ESPNID          string     `json:"espn_id"`
+	Owner           string     `json:"owner"`
+	TeamName        string     `json:"team_name"`
+	Record          TeamRecord `json:"record"`
+	Points          TeamPoints `json:"points"`
+	ExpectedWins    *float64   `json:"expected_wins,omitempty"`
+	ExpectedLosses  *float64   `json:"expected_losses,omitempty"`
+	WinDistribution []float64  `json:"win_distribution,omitempty"`
+	WinLuck         *float64   `json:"win_luck,omitempty"`
 }
 
 // CreateTeam creates a new team

@@ -15,6 +15,7 @@ export interface CurrentSeasonStandingInput {
   expected_wins?: number;
   expected_losses?: number;
   win_luck?: number;
+  win_distribution?: number[];
 }
 
 export interface CurrentSeasonStandingTeam {
@@ -42,6 +43,7 @@ export interface CurrentSeasonStandingTeam {
     winLuck: number;
     seasonsPlayed: number;
   };
+  winDistribution?: number[];
   rank: number;
   playoffChance: number;
 }
@@ -69,6 +71,7 @@ export function toSeasonStandingTeam(
     playoffRecord: { wins: 0, losses: 0, ties: 0 },
     points: standing.points,
     expectedWins,
+    winDistribution: standing.win_distribution,
     rank,
     playoffChance: 0,
   };
