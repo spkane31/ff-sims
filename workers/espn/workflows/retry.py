@@ -14,10 +14,14 @@ from temporalio.common import RetryPolicy
 # whose writes collide on the players table shared across every league —
 # backs off predictably instead of hammering Postgres in a tight loop.
 # Temporal's server applies jitter to the computed interval itself.
+#
+# 20 attempts (~16 min of backoff) so cross-league Postgres deadlocks on the
+# players table, which clear once the colliding activities drift apart, don't
+# exhaust retries and fail the workflow.
 DB_WRITE_RETRY = RetryPolicy(
     initial_interval=datetime.timedelta(seconds=4),
     backoff_coefficient=2.0,
     maximum_interval=datetime.timedelta(seconds=60),
-    maximum_attempts=5,
+    maximum_attempts=20,
     non_retryable_error_types=["ValueError"],
 )
