@@ -66,22 +66,21 @@ export default function DraftFinishChart({ report, selectedId, onSelect }: Draft
         </label>
       </div>
       {selected && (
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-          <p className="tabular-nums" aria-live="polite">
-            <strong>{selected.pick.player}</strong> · {formatDraftRank(selected.order)} drafted → {formatDraftRank(selected.finish)} finish ·{" "}
-            {movement === 0 ? "held draft rank" : `${Math.abs(movement)} spots ${movement > 0 ? "up" : "down"}`}
-            {partial && " among ranked picks"}
-          </p>
-          {selected.pick.player_id > 0 && (
-            <Link
-              href={`/players/${selected.pick.player_id}`}
-              aria-label={`View player profile for ${selected.pick.player}`}
-              className={`rounded-sm font-medium text-[var(--action-primary)] underline underline-offset-2 ${FOCUS_RING}`}
-            >
-              View player profile
-            </Link>
-          )}
-        </div>
+        <p className="text-sm tabular-nums" aria-live="polite">
+          <strong>
+            {selected.pick.player_id > 0 ? (
+              <Link
+                href={`/players/${selected.pick.player_id}`}
+                className={`rounded-sm text-[var(--action-primary)] underline underline-offset-2 ${FOCUS_RING}`}
+              >
+                {selected.pick.player}
+              </Link>
+            ) : selected.pick.player}
+          </strong>
+          {" · "}{formatDraftRank(selected.order)} drafted → {formatDraftRank(selected.finish)} finish ·{" "}
+          {movement === 0 ? "held draft rank" : `${Math.abs(movement)} spots ${movement > 0 ? "up" : "down"}`}
+          {partial && " among ranked picks"}
+        </p>
       )}
       <div className="h-80 min-w-0 sm:h-[27rem]">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
