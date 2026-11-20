@@ -27,6 +27,8 @@ func SetupRouter(r *gin.Engine) {
 	leagueScoped.GET("/schedules/:matchupId", handlers.GetMatchup)
 	leagueScoped.GET("/transactions", handlers.GetTransactions)
 	leagueScoped.GET("/transactions/draft-picks", handlers.GetDraftPicks)
+	leagueScoped.GET("/draft/seasons", handlers.GetDraftSeasons)
+	leagueScoped.GET("/draft/:year", handlers.GetDraftRewind)
 	leagueScoped.GET("/simulations/stats", handlers.GetStats)
 	leagueScoped.GET("/expected-wins/weekly/:year", handlers.GetWeeklyExpectedWins)
 	leagueScoped.GET("/expected-wins/season/:year", handlers.GetSeasonExpectedWins)

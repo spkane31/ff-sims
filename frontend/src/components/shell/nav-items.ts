@@ -56,6 +56,7 @@ export const LEAGUE_NAV_ITEMS: ShellNavItem[] = [
 
 export const LEAGUE_MORE_ITEMS: MoreMenuItem[] = [
   { label: "Simulations", href: (id) => `/league/${id}/simulations` },
+  { label: "Draft Rewind", href: (id) => `/league/${id}/draft` },
   { label: "Transactions", href: (id) => `/league/${id}/transactions` },
 ];
 

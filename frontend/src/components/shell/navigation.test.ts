@@ -22,6 +22,13 @@ test("nested routes keep their parent tab active", () => {
   );
 });
 
+test("a shared Draft Rewind view keeps its league navigation link active", () => {
+  assert.equal(
+    isActiveNavItem("/league/42/draft?year=2024&view=finish&pick=73", "/league/42/draft"),
+    true,
+  );
+});
+
 test("league navigation exposes a direct Home destination", () => {
   const homeItem = LEAGUE_NAV_ITEMS.find((item) => item.id === "home");
 
