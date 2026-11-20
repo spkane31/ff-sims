@@ -49,7 +49,6 @@ function SortedResults<T extends { id: number }>({
 
 const teamColumns: SortableColumn<DraftRewindTeam>[] = [
   { id: "team", header: "Team", cell: (row) => row.name, sortValue: (row) => row.name },
-  { id: "ranked", header: "Picks ranked", align: "right", cell: (row) => `${row.ranked_picks} / ${row.total_picks}`, sortValue: (row) => row.ranked_picks, descending: true },
   { id: "points", header: "Actual pts", align: "right", cell: (row) => formatDraftPoints(row.actual_points), sortValue: (row) => row.actual_points, descending: true },
   { id: "projected", header: "Projected pts", align: "right", cell: (row) => formatDraftPoints(row.projected_points), sortValue: (row) => row.projected_points, descending: true },
   { id: "delta", header: "Vs. projection", align: "right", cell: (row) => formatDraftDifference(draftProjectionDifference(row)), sortValue: draftProjectionDifference, descending: true },
