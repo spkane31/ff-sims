@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useState } from "react";
 import {
   CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
@@ -65,11 +66,22 @@ export default function DraftFinishChart({ report, selectedId, onSelect }: Draft
         </label>
       </div>
       {selected && (
-        <p className="text-sm tabular-nums" aria-live="polite">
-          <strong>{selected.pick.player}</strong> · {formatDraftRank(selected.order)} drafted → {formatDraftRank(selected.finish)} finish ·{" "}
-          {movement === 0 ? "held draft rank" : `${Math.abs(movement)} spots ${movement > 0 ? "up" : "down"}`}
-          {partial && " among ranked picks"}
-        </p>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <p className="tabular-nums" aria-live="polite">
+            <strong>{selected.pick.player}</strong> · {formatDraftRank(selected.order)} drafted → {formatDraftRank(selected.finish)} finish ·{" "}
+            {movement === 0 ? "held draft rank" : `${Math.abs(movement)} spots ${movement > 0 ? "up" : "down"}`}
+            {partial && " among ranked picks"}
+          </p>
+          {selected.pick.player_id > 0 && (
+            <Link
+              href={`/players/${selected.pick.player_id}`}
+              aria-label={`View player profile for ${selected.pick.player}`}
+              className={`rounded-sm font-medium text-[var(--action-primary)] underline underline-offset-2 ${FOCUS_RING}`}
+            >
+              View player profile
+            </Link>
+          )}
+        </div>
       )}
       <div className="h-80 min-w-0 sm:h-[27rem]">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -95,6 +107,7 @@ export default function DraftFinishChart({ report, selectedId, onSelect }: Draft
                   <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3 py-2 text-sm shadow-sm">
                     <strong>{formatDraftSlot(point.pick)} · {point.pick.player}</strong>
                     <p>Drafted {formatDraftRank(point.order)} · Finished {formatDraftRank(point.finish)}</p>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">Click to select this pick</p>
                   </div>
                 );
               }}
