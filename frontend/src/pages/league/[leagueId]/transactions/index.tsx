@@ -318,6 +318,11 @@ export default function Transactions() {
 
           {/* Draft Picks tab */}
           <TabsContent value="draft-picks" className="space-y-4">
+            <div className="flex justify-end">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/league/${leagueId}/draft?year=${selectedYear}`}>Draft Rewind</Link>
+              </Button>
+            </div>
             <Card>
               <CardContent className="p-6">
                 {dpLoading ? (

@@ -3,5 +3,6 @@ export function isActiveNavItem(
   href: string,
   exact = false,
 ) {
-  return currentPath === href || (!exact && href !== "/" && currentPath.startsWith(`${href}/`));
+  const pathname = currentPath.split(/[?#]/, 1)[0];
+  return pathname === href || (!exact && href !== "/" && pathname.startsWith(`${href}/`));
 }

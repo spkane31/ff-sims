@@ -91,7 +91,7 @@ func GetTeamDraftSelections(db *gorm.DB, teamID uint, year uint) ([]DraftSelecti
 func GetLeagueDraftSelections(db *gorm.DB, leagueID uint, year uint) ([]DraftSelection, error) {
 	var selections []DraftSelection
 	err := db.Where("league_id = ? AND year = ?", leagueID, year).
-		Order("round asc, pick asc").
+		Order("round asc, pick asc, id asc").
 		Preload("Team").
 		Preload("Player").
 		Find(&selections).Error
