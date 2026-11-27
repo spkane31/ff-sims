@@ -12,6 +12,7 @@ import {
 import { leaguesService } from "@/services/leaguesService";
 import { toSeasonStandingTeam } from "@/utils/current-season-standings";
 import { calculateHomepagePlayoffOdds } from "@/utils/homepage-playoff-odds";
+import { getWinChartScale, StandingsWinChart, WinChartHeader } from "@/components/StandingsWinChart";
 import AllTimeMatchupsGrid from "@/components/AllTimeMatchupsGrid";
 import HallOfFameWallOfShame from "@/components/HallOfFameWallOfShame";
 import AllTimeRecordsTable from "@/components/AllTimeRecordsTable";
@@ -34,17 +35,17 @@ type SortField =
 type SortDirection = "asc" | "desc";
 
 const HOMEPAGE_PLAYOFF_ODDS_ITERATIONS = 5_000;
+const recordFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
-function formatAvgTotal(avg: number, total: number, sign = false): string {
-  const avgSign = sign && avg > 0 ? "+" : "";
-  const totalSign = sign && total > 0 ? "+" : "";
-  return `${avgSign}${avg.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} (${totalSign}${total.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })})`;
+type PointField = "pf" | "pa" | "diff";
+type PointDisplay = "average" | "total";
+
+function standingPoints(team: Team, field: PointField, display: PointDisplay) {
+  const { scored, against } = team.points;
+  const total = field === "pf" ? scored : field === "pa" ? against : scored - against;
+  if (display === "total") return total;
+  const games = team.record.wins + team.record.losses + team.record.ties;
+  return games ? total / games : 0;
 }
 
 function playoffBarColor(chance: number): string {
@@ -71,6 +72,7 @@ export default function LeagueDashboard() {
   const [isStandingsLoading, setIsStandingsLoading] = useState(true);
   const [standingsError, setStandingsError] = useState<Error | null>(null);
   const [playoffSettingsAvailable, setPlayoffSettingsAvailable] = useState(false);
+  const [pointDisplay, setPointDisplay] = useState<PointDisplay>("average");
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -350,20 +352,14 @@ export default function LeagueDashboard() {
               fieldB = b.expectedWins?.expectedWins ?? 0;
               break;
             case "pf":
-              fieldA = a.points.scored;
-              fieldB = b.points.scored;
-              break;
             case "pa":
-              fieldA = a.points.against;
-              fieldB = b.points.against;
+            case "diff":
+              fieldA = standingPoints(a, sortField, pointDisplay);
+              fieldB = standingPoints(b, sortField, pointDisplay);
               break;
             case "playoffs":
               fieldA = a.playoffChance;
               fieldB = b.playoffChance;
-              break;
-            case "diff":
-              fieldA = a.points.scored - a.points.against;
-              fieldB = b.points.scored - b.points.against;
               break;
             case "rank":
             default:
@@ -376,11 +372,18 @@ export default function LeagueDashboard() {
           return sortDirection === "asc" ? result : -result;
         });
 
-  const winOutcomeCount = Math.max(
-    0,
-    ...visibleSeasonStandings.map((team) => team.winDistribution?.length ?? 0),
-  );
-  const winCounts = Array.from({ length: winOutcomeCount }, (_, wins) => wins);
+  const winScale = getWinChartScale(visibleSeasonStandings.map((team) => team.winDistribution));
+  const pointColumn = (field: PointField, label: string): DataTableColumn<Team> => ({
+    id: field,
+    header: pointDisplay === "average" ? `${label} / G` : label,
+    sortable: true,
+    align: "right",
+    cell: (team) => standingPoints(team, field, pointDisplay).toLocaleString(undefined, {
+      minimumFractionDigits: pointDisplay === "average" ? 1 : 2,
+      maximumFractionDigits: pointDisplay === "average" ? 1 : 2,
+      signDisplay: field === "diff" ? "exceptZero" : "auto",
+    }),
+  });
 
   const standingsColumns: DataTableColumn<Team>[] = [
     { id: "rank", header: "Rank", sortable: true, cell: (team) => team.rank },
@@ -389,7 +392,7 @@ export default function LeagueDashboard() {
       header: "Team",
       sortable: true,
       cell: (team) => (
-        <div className="flex flex-col">
+        <div className="flex w-24 flex-col whitespace-normal break-words sm:w-36">
           <Link
             href={`/league/${id}/teams/${team.espnId}`}
             className="font-medium hover:underline"
@@ -403,6 +406,15 @@ export default function LeagueDashboard() {
         </div>
       ),
     },
+    ...(winScale.peak > 0
+      ? [{
+          id: "winDistribution",
+          header: <WinChartHeader scale={winScale} />,
+          cell: (team: Team) => (
+            <StandingsWinChart name={team.name} rank={team.rank} distribution={team.winDistribution} scale={winScale} />
+          ),
+        }]
+      : []),
     {
       id: "wins",
       header: "W",
@@ -421,89 +433,12 @@ export default function LeagueDashboard() {
       sortable: true,
       cell: (team) =>
         team.expectedWins
-          ? `${team.expectedWins.expectedWins.toFixed(2)}-${team.expectedWins.expectedLosses.toFixed(2)}`
+          ? `${recordFormat.format(team.expectedWins.expectedWins)}–${recordFormat.format(team.expectedWins.expectedLosses)}`
           : "—",
     },
-    ...(winCounts.length > 0
-      ? [{
-          id: "winDistribution",
-          header: "Win odds",
-          cell: (team: Team) => team.winDistribution ? (
-            <div className="flex items-end" aria-label={`${team.name} simulated win distribution`}>
-              {winCounts.map((wins) => {
-                const probability = team.winDistribution?.[wins] ?? 0;
-                const percentage = `${(probability * 100).toFixed(1)}%`;
-                return (
-                  <span
-                    key={wins}
-                    className="group relative flex w-4 flex-col items-center gap-1"
-                    aria-label={`${wins} ${wins === 1 ? "win" : "wins"}: ${percentage} of simulations`}
-                    tabIndex={0}
-                  >
-                    <span
-                      className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded px-2 py-1 text-xs shadow-sm group-hover:block group-focus:block"
-                      style={{
-                        backgroundColor: "var(--surface-raised)",
-                        border: "1px solid var(--border-subtle)",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {wins} {wins === 1 ? "win" : "wins"}: {percentage}
-                    </span>
-                    <span className="flex h-10 w-full items-end" style={{ backgroundColor: "var(--surface-sunken)" }}>
-                      <span
-                        className="w-full"
-                        style={{
-                          height: `${probability * 100}%`,
-                          backgroundColor: "var(--action-primary)",
-                        }}
-                      />
-                    </span>
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{wins}</span>
-                  </span>
-                );
-              })}
-            </div>
-          ) : "—",
-        } satisfies DataTableColumn<Team>]
-      : []),
-    {
-      id: "pf",
-      header: "PF / G",
-      sortable: true,
-      cell: (team) => {
-        const wins = team.record.wins;
-        const losses = team.record.losses;
-        const totalGames = wins + losses + team.record.ties;
-        const avgPF = totalGames > 0 ? team.points.scored / totalGames : 0;
-        return formatAvgTotal(avgPF, team.points.scored);
-      },
-    },
-    {
-      id: "pa",
-      header: "PA / G",
-      sortable: true,
-      cell: (team) => {
-        const wins = team.record.wins;
-        const losses = team.record.losses;
-        const totalGames = wins + losses + team.record.ties;
-        const avgPA = totalGames > 0 ? team.points.against / totalGames : 0;
-        return formatAvgTotal(avgPA, team.points.against);
-      },
-    },
-    {
-      id: "diff",
-      header: "Diff",
-      sortable: true,
-      cell: (team) => {
-        const wins = team.record.wins;
-        const losses = team.record.losses;
-        const totalGames = wins + losses + team.record.ties;
-        const totalDiff = team.points.scored - team.points.against;
-        const avgDiff = totalGames > 0 ? totalDiff / totalGames : 0;
-        return formatAvgTotal(avgDiff, totalDiff, true);
-      },
-    },
+    pointColumn("pf", "PF"),
+    pointColumn("pa", "PA"),
+    pointColumn("diff", "Diff"),
     {
       id: "playoffs",
       header: "Playoff %",
@@ -570,10 +505,33 @@ export default function LeagueDashboard() {
         </h2>
 
         <Card>
-          <CardContent className="p-6">
-            <h3 className="mb-6 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-              Standings{seasonYear ? ` (${seasonYear})` : ""}
-            </h3>
+          <CardContent className="px-2 py-3 sm:p-6 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3 px-2">
+              <div>
+                <h3 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Standings{seasonYear ? ` (${seasonYear})` : ""}
+                </h3>
+                {!isStandingsLoading && winScale.peak > 0 && (
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    Taller bars show more likely win totals when opponents are shuffled for the weeks played.
+                  </p>
+                )}
+              </div>
+              {!isStandingsLoading && sortedTeams.length > 0 && (
+                <label className="flex items-center gap-2 text-xs font-medium">
+                  Points
+                  <select
+                    aria-label="Point display"
+                    value={pointDisplay}
+                    onChange={(event) => setPointDisplay(event.target.value as PointDisplay)}
+                    className="rounded-md border bg-[var(--surface-raised)] px-2 py-1.5"
+                  >
+                    <option value="average">Per game</option>
+                    <option value="total">Season totals</option>
+                  </select>
+                </label>
+              )}
+            </div>
             {isStandingsLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-10 w-full" />
