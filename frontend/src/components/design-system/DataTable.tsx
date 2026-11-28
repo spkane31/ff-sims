@@ -4,7 +4,7 @@ import { FOCUS_RING } from "@/components/design-system/focus-ring";
 export interface DataTableColumn<T> {
   /** Unique key, also used as the sort field identifier passed to onSort. */
   id: string;
-  header: string;
+  header: ReactNode;
   /** Renders a cell's content for one row. */
   cell: (row: T) => ReactNode;
   /** Omit for non-sortable columns. */
