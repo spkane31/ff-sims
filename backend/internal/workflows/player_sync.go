@@ -15,6 +15,12 @@ import (
 // ESPN one. The second step runs right after the first on the same
 // worker/schedule specifically so it always sees that run's freshest
 // sleeper_players data — no separate scheduling needed.
+//
+// The fetch step also snapshots player availability (NFL team, injury status)
+// from the same bulk response; gaps are reported in PlayerSyncReport.Status
+// without failing the run. For a manual capture, start this workflow on the
+// private worker (temporal workflow start --type PlayerDatabaseSyncWorkflow
+// --task-queue sleeper-player-sync), keeping to one bulk fetch per day.
 func PlayerDatabaseSyncWorkflow(ctx workflow.Context) (PlayerSyncReport, error) {
 	psa := &activities.PlayerSyncActivities{}
 
@@ -66,5 +72,6 @@ func PlayerDatabaseSyncWorkflow(ctx workflow.Context) (PlayerSyncReport, error) 
 		IdentitiesCreated:       identityRes.Created,
 		IdentitiesConflicts:     identityRes.Conflicts,
 		IdentityConflictDetails: identityRes.ConflictDetails,
+		Status:                  res.Status,
 	}, nil
 }

@@ -1,6 +1,9 @@
 package workflows
 
-import "backend/internal/models"
+import (
+	"backend/internal/models"
+	"backend/internal/playerstatus"
+)
 
 type SyncWeekStatsParams struct {
 	Season string
@@ -31,6 +34,10 @@ type PlayerSyncReport struct {
 	IdentitiesCreated       int
 	IdentitiesConflicts     int
 	IdentityConflictDetails []string
+
+	// Status is the player availability snapshot taken from the same bulk
+	// response, including missing coverage, staleness and any write error.
+	Status playerstatus.Report
 }
 
 // WeekStatsReport summarizes a SyncWeekStats (or WeekStatsSyncDispatcher) run.

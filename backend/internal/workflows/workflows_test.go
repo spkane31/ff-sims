@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,6 +15,7 @@ import (
 
 	"backend/internal/activities"
 	"backend/internal/models"
+	"backend/internal/playerstatus"
 	"backend/internal/workflows"
 )
 
@@ -118,6 +120,39 @@ func TestPlayerSync_CallsFetchAndUpsert(t *testing.T) {
 		IdentitiesCreated: 7,
 	}, report)
 	env.AssertExpectations(t)
+}
+
+// Status snapshot gaps (stale capture, write failure) are reported in the
+// workflow result without failing the sync.
+func TestPlayerSync_StatusSnapshotSurfacedInReport(t *testing.T) {
+	ts := testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	prev := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
+	status := playerstatus.Report{
+		CaptureID:         "sleeper_players_bulk:1",
+		Source:            playerstatus.SourcePlayersBulk,
+		ObservedAt:        prev.Add(96 * time.Hour),
+		PreviousCaptureAt: &prev,
+		Stale:             true,
+		WriteError:        "insert observations: connection reset",
+	}
+	psa := &activities.PlayerSyncActivities{}
+	env.OnActivity(psa.FetchAndUpsertAllPlayers, mock.Anything).
+		Return(activities.PlayerSyncResult{PlayersUpserted: 42, Status: status}, nil)
+	env.OnActivity(psa.SyncPlayerIdentities, mock.Anything).
+		Return(activities.PlayerIdentitySyncResult{}, nil)
+
+	env.ExecuteWorkflow(workflows.PlayerDatabaseSyncWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var report workflows.PlayerSyncReport
+	require.NoError(t, env.GetWorkflowResult(&report))
+	require.Equal(t, status.CaptureID, report.Status.CaptureID)
+	require.True(t, report.Status.Stale)
+	require.True(t, prev.Equal(*report.Status.PreviousCaptureAt))
+	require.Equal(t, status.WriteError, report.Status.WriteError)
 }
 
 // SyncPlayerIdentities reports conflicts as data in its result, not as an

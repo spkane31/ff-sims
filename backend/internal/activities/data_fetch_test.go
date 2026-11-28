@@ -43,6 +43,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&models.SleeperDraftPick{},
 		&models.SleeperTransaction{},
 		&models.SleeperPlayer{},
+		&models.SleeperStatusCapture{},
+		&models.SleeperPlayerStatusObservation{},
 		&models.SleeperPlayerWeekStat{},
 		&models.SleeperWeekStatFetch{},
 		&models.DraftADP{},

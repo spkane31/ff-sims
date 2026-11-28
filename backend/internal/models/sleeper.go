@@ -70,6 +70,46 @@ type SleeperPlayer struct {
 
 func (SleeperPlayer) TableName() string { return "sleeper_players" }
 
+// SleeperStatusCapture records one snapshot of Sleeper player availability.
+// When the observations come from a projection response, CaptureID matches
+// that projection batch.
+type SleeperStatusCapture struct {
+	CaptureID        string    `gorm:"primaryKey;column:capture_id"`
+	Source           string    `gorm:"column:source;not null"`
+	ObservedSeason   *string   `gorm:"column:observed_season"`
+	ObservedWeek     *int      `gorm:"column:observed_week"`
+	ObservedAt       time.Time `gorm:"column:observed_at;not null"`
+	ObservationCount int       `gorm:"column:observation_count;not null"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (SleeperStatusCapture) TableName() string { return "sleeper_status_captures" }
+
+// SleeperPlayerStatusObservation is what Sleeper reported for one player at
+// ObservedAt. A nil InjuryStatus means no designation was supplied, not that
+// the player is healthy. Applicability is "unknown" unless verified evidence
+// ties the designation to ApplicableGameID or ApplicableWeek.
+type SleeperPlayerStatusObservation struct {
+	CaptureID        string    `gorm:"primaryKey;column:capture_id"`
+	SleeperPlayerID  string    `gorm:"primaryKey;column:sleeper_player_id"`
+	Source           string    `gorm:"column:source;not null"`
+	ObservedSeason   *string   `gorm:"column:observed_season"`
+	ObservedWeek     *int      `gorm:"column:observed_week"`
+	ObservedAt       time.Time `gorm:"column:observed_at;not null"`
+	NflTeam          *string   `gorm:"column:nfl_team"`
+	RosterStatus     *string   `gorm:"column:roster_status"`
+	InjuryStatus     *string   `gorm:"column:injury_status"`
+	InjuryStartDate  *string   `gorm:"column:injury_start_date"`
+	NewsUpdatedMs    *int64    `gorm:"column:news_updated_ms"`
+	Applicability    string    `gorm:"column:applicability;not null;default:unknown"`
+	ApplicableGameID *string   `gorm:"column:applicable_game_id"`
+	ApplicableWeek   *int      `gorm:"column:applicable_week"`
+}
+
+func (SleeperPlayerStatusObservation) TableName() string {
+	return "sleeper_player_status_observations"
+}
+
 type SleeperDraft struct {
 	SleeperDraftID  string     `gorm:"primaryKey;column:sleeper_draft_id"`
 	SleeperLeagueID string     `gorm:"column:sleeper_league_id"`
