@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/mocks"
+	"go.temporal.io/sdk/temporal"
 )
 
 func TestRegisterRetiresDraftSchedule(t *testing.T) {
@@ -39,9 +40,39 @@ func TestRegisterRetiresDraftSchedule(t *testing.T) {
 				require.Empty(t, created)
 			} else {
 				require.NoError(t, err)
-				require.ElementsMatch(t, []string{"sleeper-player-sync-schedule", "sleeper-week-stats-schedule", "sleeper-adp-rollup-schedule"}, created)
+				require.ElementsMatch(t, []string{"sleeper-player-sync-schedule", "sleeper-week-stats-schedule", "sleeper-projections-daily-sweep-schedule", "sleeper-projections-pregame-dispatch-schedule", "sleeper-adp-rollup-schedule"}, created)
 			}
 			h.AssertCalled(t, "Pause", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+func TestRegisterSurfacesScheduleCreateFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr bool
+	}{
+		{name: "already running", err: temporal.ErrScheduleAlreadyRunning},
+		{name: "already exists", err: serviceerror.NewAlreadyExists("exists")},
+		{name: "permission denied", err: serviceerror.NewPermissionDenied("denied", ""), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &mocks.Client{}
+			sc := &mocks.ScheduleClient{}
+			h := &mocks.ScheduleHandle{}
+			c.On("ScheduleClient").Return(sc)
+			sc.On("GetHandle", mock.Anything, "sleeper-draft-sync-schedule").Return(h)
+			h.On("Pause", mock.Anything, mock.Anything).Return(nil)
+			sc.On("Create", mock.Anything, mock.Anything).Return(nil, tc.err)
+
+			err := Register(context.Background(), c, false)
+			if tc.wantErr {
+				require.ErrorIs(t, err, tc.err)
+				require.ErrorContains(t, err, "sleeper-player-sync-schedule")
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

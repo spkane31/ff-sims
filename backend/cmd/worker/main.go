@@ -89,6 +89,10 @@ func main() {
 	sc := sleeper.New()
 	psa := &activities.PlayerSyncActivities{DB: database.DB, Sleeper: sc}
 	wsa := &activities.WeekStatsActivities{DB: database.DB, Sleeper: sc}
+	pja, err := activities.NewProjectionActivitiesFromEnv(database.DB, sc)
+	if err != nil {
+		log.Fatalf("projection activities config: %v", err)
+	}
 
 	// Draft sync and archive backfill are retired. Do not poll their queues
 	// or register their activities: queued/manual executions must not write
@@ -111,7 +115,18 @@ func main() {
 	wsw.RegisterWorkflow(workflows.SyncWeekStats)
 	wsw.RegisterActivity(wsa)
 
-	workers := []worker.Worker{psw, wsw}
+	// Projection worker: daily sweep, pregame dispatch/capture, manual capture
+	pjw := worker.New(c, workflows.TaskQueueProjections, worker.Options{
+		DeploymentOptions: deploymentOpts,
+		SysInfoProvider:   sysinfo.SysInfoProvider(),
+	})
+	pjw.RegisterWorkflow(workflows.ProjectionDailySweep)
+	pjw.RegisterWorkflow(workflows.ProjectionPregameDispatcher)
+	pjw.RegisterWorkflow(workflows.ProjectionPregameCapture)
+	pjw.RegisterWorkflow(workflows.ProjectionManualCapture)
+	pjw.RegisterActivity(pja)
+
+	workers := []worker.Worker{psw, wsw, pjw}
 	if cfg.ArchiveDB.Enabled() {
 		// ADP worker: ADPRollupDispatcher + SegmentSeasonADPRollupWorkflow.
 		// Requires the archive DB (Read) — see ADPRollupActivities.

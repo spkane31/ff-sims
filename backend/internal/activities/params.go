@@ -1,6 +1,10 @@
 package activities
 
-import "backend/internal/models"
+import (
+	"time"
+
+	"backend/internal/models"
+)
 
 type ClaimLeaguesForDraftsParams struct {
 	BatchSize int
@@ -129,4 +133,66 @@ type WeekStatsResult struct {
 // upserted for one (segment, season) pair.
 type ADPRollupResult struct {
 	PlayersUpserted int
+}
+
+// LastRegularSeasonWeek is the final NFL regular-season week projections are
+// captured for.
+const LastRegularSeasonWeek = 18
+
+// CaptureProjectionsParams identifies one projection pull. CaptureKey must be
+// stable across retries of the same workflow step (e.g. run ID plus week) so
+// a retried activity publishes at most one capture. CurrentWeek is the NFL
+// week in progress per Sleeper; a later Week is a forward capture, and only a
+// current-week pull records player status observations.
+type CaptureProjectionsParams struct {
+	CaptureKey    string
+	Season        string
+	Week          int
+	CurrentWeek   int
+	Trigger       string
+	WindowKickoff *time.Time
+}
+
+// ProjectionCaptureResult summarizes one capture attempt.
+type ProjectionCaptureResult struct {
+	Season             string
+	Week               int
+	Trigger            string
+	CaptureID          int64
+	CapturedAt         time.Time
+	Skipped            bool
+	SkipReason         string
+	Idempotent         bool
+	WeekPhase          string
+	ReplayEligible     *bool
+	ReplayNote         string
+	SourceRows         int
+	Rows               int
+	MetadataOnlyRows   int
+	StatusObservations int
+	CompanyCounts      map[string]int
+	MissingCompanies   []string
+}
+
+// KickoffWindow is one distinct verified kickoff time in a week.
+type KickoffWindow struct {
+	Season    string
+	Week      int
+	KickoffAt time.Time `gorm:"column:kickoff_at"`
+}
+
+type ListKickoffWindowsParams struct {
+	Horizon time.Duration
+}
+
+type ProjectionHealthParams struct {
+	Season string
+	Weeks  []int
+}
+
+// ProjectionHealth reports missed pregame windows and capture freshness.
+type ProjectionHealth struct {
+	MissedWindows  []KickoffWindow
+	LastCaptureAt  *time.Time
+	LastCaptureAge time.Duration
 }

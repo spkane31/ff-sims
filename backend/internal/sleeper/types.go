@@ -108,3 +108,33 @@ type NFLState struct {
 type NotFoundError struct{ URL string }
 
 func (e *NotFoundError) Error() string { return "sleeper: not found: " + e.URL }
+
+// ProjectionPlayer is the nested player object Sleeper attaches to each
+// projection row. It carries the player's status as of the response, so a
+// projection pull doubles as a status observation.
+type ProjectionPlayer struct {
+	Position        string         `json:"position"`
+	Team            FlexibleString `json:"team"`
+	InjuryStatus    FlexibleString `json:"injury_status"`
+	InjuryStartDate FlexibleString `json:"injury_start_date"`
+	NewsUpdated     *int64         `json:"news_updated"`
+}
+
+// Projection is one row of the undocumented GET /projections/nfl/{season}/{week}
+// array. A row is keyed by player and company (the projection provider, e.g.
+// "rotowire"). Stats stays raw because a row may carry only metadata (such as
+// adp_dd_ppr) rather than a projection; callers classify it.
+type Projection struct {
+	PlayerID     string            `json:"player_id"`
+	Company      string            `json:"company"`
+	Category     string            `json:"category"`
+	Season       string            `json:"season"`
+	SeasonType   string            `json:"season_type"`
+	Week         int               `json:"week"`
+	Team         FlexibleString    `json:"team"`
+	Opponent     FlexibleString    `json:"opponent"`
+	GameID       FlexibleString    `json:"game_id"`
+	LastModified *int64            `json:"last_modified"`
+	Stats        json.RawMessage   `json:"stats"`
+	Player       *ProjectionPlayer `json:"player"`
+}

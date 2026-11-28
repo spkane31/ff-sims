@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 
 	"backend/internal/workflows"
 )
@@ -72,6 +73,48 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 		return err
 	}
 
+	if err := upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-projections-daily-sweep-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Hour:   []client.ScheduleRange{{Start: 10}}, // 05:00 EST (UTC-5)
+					Minute: []client.ScheduleRange{{Start: 0}},
+				},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:                 workflows.ProjectionDailySweep,
+			TaskQueue:                workflows.TaskQueueProjections,
+			WorkflowExecutionTimeout: 60 * time.Minute,
+		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_BUFFER_ONE,
+	}); err != nil {
+		return err
+	}
+
+	// Hourly: starts a durable timer per verified kickoff window that fires
+	// 60 minutes before kickoff. The capture itself is not tied to this cadence.
+	if err := upsert(ctx, c, client.ScheduleOptions{
+		ID: "sleeper-projections-pregame-dispatch-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Hour:   []client.ScheduleRange{{Start: 0, End: 23}},
+					Minute: []client.ScheduleRange{{Start: 5}},
+				},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:                 workflows.ProjectionPregameDispatcher,
+			TaskQueue:                workflows.TaskQueueProjections,
+			WorkflowExecutionTimeout: 10 * time.Minute,
+		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_SKIP,
+	}); err != nil {
+		return err
+	}
+
 	if !archiveEnabled {
 		return nil
 	}
@@ -95,11 +138,19 @@ func Register(ctx context.Context, c client.Client, archiveEnabled bool) error {
 	})
 }
 
+// upsert creates a schedule, leaving an existing one unchanged. Any other
+// registration failure is returned so the worker does not start silently
+// without its schedules.
 func upsert(ctx context.Context, c client.Client, opts client.ScheduleOptions) error {
 	_, err := c.ScheduleClient().Create(ctx, opts)
-	if err != nil {
-		// Schedule already exists — leave it unchanged
+	var exists *serviceerror.AlreadyExists
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, temporal.ErrScheduleAlreadyRunning), errors.As(err, &exists):
 		log.Printf("schedule %q already exists, skipping", opts.ID)
+		return nil
+	default:
+		return fmt.Errorf("register schedule %q: %w", opts.ID, err)
 	}
-	return nil
 }
