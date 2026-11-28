@@ -381,3 +381,42 @@ func TestGet_ReusesConnectionAcrossRetries(t *testing.T) {
 		t.Errorf("expected connection reuse across retries (1 new conn), got %d new conns", got)
 	}
 }
+
+func TestGetProjections_DecodesRowsAndFiltersPositions(t *testing.T) {
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		w.Write([]byte(`[
+			{"player_id":"9488","company":"rotowire","season":"2026","week":13,"team":"SEA","opponent":"DAL","game_id":"202611330",
+			 "last_modified":1795887636945,"stats":{"pts_ppr":28.43,"pts_std":0},
+			 "player":{"position":"WR","team":"SEA","injury_status":"Questionable","injury_start_date":null,"news_updated":1795875632401}},
+			{"player_id":"6744","company":"rotowire","season":"2026","week":13,"team":null,"game_id":null,"stats":{"adp_dd_ppr":1000},
+			 "player":{"position":"WR","team":null,"injury_status":null,"news_updated":null}}
+		]`))
+	}))
+	defer srv.Close()
+
+	rows, err := sleeper.NewWithBaseURL(srv.URL).GetProjections(context.Background(), "2026", 13, []string{"QB", "DEF"})
+	if err != nil {
+		t.Fatalf("GetProjections error: %v", err)
+	}
+	if gotPath != "/projections/nfl/2026/13" {
+		t.Errorf("path %q", gotPath)
+	}
+	if gotQuery != "position%5B%5D=QB&position%5B%5D=DEF&season_type=regular" {
+		t.Errorf("query %q", gotQuery)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.PlayerID != "9488" || r.Company != "rotowire" || r.GameID != "202611330" || r.LastModified == nil || *r.LastModified != 1795887636945 {
+		t.Errorf("unexpected row %+v", r)
+	}
+	if r.Player == nil || r.Player.InjuryStatus != "Questionable" || r.Player.NewsUpdated == nil {
+		t.Errorf("unexpected player %+v", r.Player)
+	}
+	if rows[1].Team != "" || rows[1].GameID != "" || rows[1].LastModified != nil || string(rows[1].Stats) != `{"adp_dd_ppr":1000}` {
+		t.Errorf("metadata-only row decoded wrong: %+v", rows[1])
+	}
+}

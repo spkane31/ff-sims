@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -232,6 +233,24 @@ func (c *Client) GetWeekStats(ctx context.Context, season string, week int) (map
 		return nil, err
 	}
 	return stats, nil
+}
+
+// GetProjections fetches Sleeper's undocumented weekly projection array for a
+// regular-season week, narrowed server-side to positions. The response holds
+// the projections as published at request time, which can differ from what
+// was available before kickoff, so callers should stamp their own capture time.
+func (c *Client) GetProjections(ctx context.Context, season string, week int, positions []string) ([]Projection, error) {
+	q := url.Values{}
+	q.Set("season_type", "regular")
+	for _, p := range positions {
+		q.Add("position[]", p)
+	}
+	var rows []Projection
+	path := fmt.Sprintf("/projections/nfl/%s/%d?%s", url.PathEscape(season), week, q.Encode())
+	if err := c.get(ctx, path, &rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // GetNFLState fetches the current NFL season/week/season_type.
