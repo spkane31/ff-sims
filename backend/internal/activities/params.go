@@ -1,6 +1,9 @@
 package activities
 
-import "backend/internal/models"
+import (
+	"backend/internal/models"
+	"backend/internal/playerstatus"
+)
 
 type ClaimLeaguesForDraftsParams struct {
 	BatchSize int
@@ -97,9 +100,11 @@ type PurgeBatchResult struct {
 	Drained    bool
 }
 
-// PlayerSyncResult reports how many players FetchAndUpsertAllPlayers upserted.
+// PlayerSyncResult reports how many players FetchAndUpsertAllPlayers upserted
+// and the status snapshot taken from the same bulk response.
 type PlayerSyncResult struct {
 	PlayersUpserted int
+	Status          playerstatus.Report
 }
 
 // PlayerIdentitySyncResult reports SyncPlayerIdentities' outcome. Conflicts

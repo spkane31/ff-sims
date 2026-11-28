@@ -10,7 +10,45 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/mocks"
+	"go.temporal.io/sdk/temporal"
 )
+
+// The deployed player sync schedule predates the daily cadence, so Register
+// must rewrite its spec instead of skipping it like the other schedules.
+func TestRegisterUpdatesExistingPlayerSyncScheduleToDaily(t *testing.T) {
+	c := &mocks.Client{}
+	sc := &mocks.ScheduleClient{}
+	draft := &mocks.ScheduleHandle{}
+	player := &mocks.ScheduleHandle{}
+	c.On("ScheduleClient").Return(sc)
+	sc.On("GetHandle", mock.Anything, "sleeper-draft-sync-schedule").Return(draft)
+	draft.On("Pause", mock.Anything, mock.Anything).Return(nil)
+	sc.On("Create", mock.Anything, mock.Anything).Return(nil, temporal.ErrScheduleAlreadyRunning)
+	sc.On("GetHandle", mock.Anything, "sleeper-player-sync-schedule").Return(player)
+
+	paused := true
+	weekly := client.ScheduleSpec{Calendars: []client.ScheduleCalendarSpec{{
+		DayOfWeek: []client.ScheduleRange{{Start: 2}},
+		Hour:      []client.ScheduleRange{{Start: 8}},
+	}}}
+	var updated *client.ScheduleUpdate
+	player.On("Update", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		opts := args.Get(1).(client.ScheduleUpdateOptions)
+		var err error
+		updated, err = opts.DoUpdate(client.ScheduleUpdateInput{Description: client.ScheduleDescription{
+			Schedule: client.Schedule{Spec: &weekly, State: &client.ScheduleState{Paused: paused}},
+		}})
+		require.NoError(t, err)
+	}).Return(nil)
+
+	require.NoError(t, Register(context.Background(), c, false))
+	require.NotNil(t, updated)
+	cal := updated.Schedule.Spec.Calendars
+	require.Len(t, cal, 1)
+	require.Empty(t, cal[0].DayOfWeek, "runs every day")
+	require.Equal(t, []client.ScheduleRange{{Start: 8}}, cal[0].Hour)
+	require.True(t, updated.Schedule.State.Paused, "operator pause is preserved")
+}
 
 func TestRegisterRetiresDraftSchedule(t *testing.T) {
 	for _, tc := range []struct {
